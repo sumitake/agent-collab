@@ -21,6 +21,32 @@ class PublicDistributionContractTests(unittest.TestCase):
         self.assertEqual(claude, "# Claude Code compatibility\n\n@AGENTS.md\n")
         self.assertNotIn("## Source boundaries", claude)
 
+    def test_public_licensing_identifies_owner_and_approval_boundary(self) -> None:
+        self.assertTrue((ROOT / "NOTICE").is_file(), "NOTICE must exist")
+        self.assertTrue(
+            (ROOT / "COMMERCIAL-LICENSING.md").is_file(),
+            "COMMERCIAL-LICENSING.md must exist",
+        )
+        notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
+        commercial = (ROOT / "COMMERCIAL-LICENSING.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(
+            notice,
+            "Copyright (c) 2026 John Osumi. All rights reserved except as "
+            "expressly granted.\nCommercial licensing is administered by "
+            "Osumi Consulting LLC.\n",
+        )
+        for phrase in (
+            "explicit written approval",
+            "Repository access",
+            "installation",
+            "GitHub interaction",
+            "acceptance of a contribution",
+        ):
+            self.assertIn(phrase, commercial)
+
     def test_every_canonical_repository_pointer_targets_public_distribution(self) -> None:
         marketplace = json.loads(
             (ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
