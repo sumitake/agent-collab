@@ -10,11 +10,12 @@ SPDX 2.3 timestamp strictness and closing the GitHub command-file redirect
 coverage gap without broadening release behavior.
 
 **Architecture:** Treat the lowercase-`z` suggestion as a specification
-adjudication, not a parser expansion: SPDX output remains the exact uppercase
-`Z` form and a characterization test locks that boundary. Replace the
-workflow test's narrow local regex with one named, table-tested matcher that
-covers every official GitHub command-file variable and the common unquoted
-shell redirect spellings while leaving quoted targets valid.
+adjudication, not a parser expansion: explicitly reject lowercase `z` before
+the version-dependent standard-library parser and lock that boundary with a
+regression test. Replace the workflow test's narrow local regex with one named,
+table-tested matcher that covers every official GitHub command-file variable
+and the common unquoted shell redirect spellings while leaving quoted targets
+valid.
 
 **Tech Stack:** Python 3.10/3.12/3.14 standard library, `unittest`, regular
 expressions, GitHub Actions YAML, SPDX 2.3 JSON.
@@ -22,7 +23,8 @@ expressions, GitHub Actions YAML, SPDX 2.3 JSON.
 ## Global Constraints
 
 - No production workflow, release archive, license, manifest, or package
-  content changes.
+  content changes. The only production-code change is an explicit rejection
+  of an already-invalid lowercase-`z` timestamp.
 - No new dependency; Python standard library only.
 - SPDX `creationInfo.created` output remains
   `YYYY-MM-DDThh:mm:ssZ` with uppercase `T` and `Z`.
@@ -60,17 +62,17 @@ expressions, GitHub Actions YAML, SPDX 2.3 JSON.
 
 ---
 
-### Task 1: Lock the SPDX Timestamp Boundary
+### Task 1: Enforce the SPDX Timestamp Boundary Before Parser Dispatch
 
 **Files:**
 - Modify: `tests/test_release_evidence.py`
-- Do not modify: `scripts/build_release_evidence.py`
+- Modify: `scripts/build_release_evidence.py`
 
 **Interfaces:**
 - Consumes: `_normalize_created(value: str) -> str`.
-- Produces: a cross-version characterization that lowercase `z` is invalid.
+- Produces: a cross-version explicit rejection that lowercase `z` is invalid.
 
-- [ ] **Step 1: Add the characterization test**
+- [ ] **Step 1: Add the failing regression test**
 
 ```python
 def test_created_timestamp_rejects_lowercase_utc_suffix(self) -> None:
@@ -78,11 +80,11 @@ def test_created_timestamp_rejects_lowercase_utc_suffix(self) -> None:
         "agent_collab_evidence_lowercase_utc", EVIDENCE_SCRIPT
     )
 
-    with self.assertRaisesRegex(ValueError, "ISO 8601"):
+    with self.assertRaisesRegex(ValueError, "must use uppercase Z"):
         evidence_builder._normalize_created("2026-07-12T00:00:00z")
 ```
 
-- [ ] **Step 2: Run the characterization test**
+- [ ] **Step 2: Run the regression test and verify the red state**
 
 Run:
 
@@ -90,10 +92,31 @@ Run:
 python3 -m unittest tests.test_release_evidence.ReleaseEvidenceTests.test_created_timestamp_rejects_lowercase_utc_suffix -v
 ```
 
-Expected: PASS on the existing implementation. This proves the reviewer
-suggestion is an intentional grammar expansion, not a Python 3.10 regression.
+Expected: FAIL because the existing parser raises its generic ISO 8601 error
+instead of enforcing the uppercase-`Z` boundary before parser dispatch.
 
-- [ ] **Step 3: Record the adjudication in the inline review thread**
+- [ ] **Step 3: Add the explicit pre-parser guard**
+
+Insert immediately before the existing uppercase-`Z` normalization:
+
+```python
+if candidate.endswith("z"):
+    raise ValueError("created timestamp must use uppercase Z for UTC")
+if candidate.endswith("Z"):
+    candidate = candidate[:-1] + "+00:00"
+```
+
+- [ ] **Step 4: Rerun the regression test**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_release_evidence.ReleaseEvidenceTests.test_created_timestamp_rejects_lowercase_utc_suffix -v
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Record the adjudication in the inline review thread**
 
 Reply with the exact contract evidence: SPDX 2.3 Clause 6.9 requires
 `YYYY-MM-DDThh:mm:ssZ`; the builder already normalizes valid uppercase `Z`
@@ -191,7 +214,7 @@ Expected: all tests pass; current quoted workflow redirects remain accepted.
 ### Task 3: Verify, Commit, and Re-enter the Review Gate
 
 **Files:**
-- Verify the three changed files from Tasks 1-2 plus this plan.
+- Verify the three implementation/test files from Tasks 1-2 plus this plan.
 
 **Interfaces:**
 - Consumes: completed characterization and matcher tests.
@@ -226,9 +249,10 @@ all exit 0.
 ```bash
 git add \
   docs/superpowers/plans/2026-07-12-pr3-review-tripwire-remediation.md \
+  scripts/build_release_evidence.py \
   tests/test_release_evidence.py \
   tests/test_ci_security_contract.py
-git commit -S -m "ci: close command-file redirect coverage gaps"
+git commit -S -m "release: close final review edge cases"
 git push origin HEAD:dev/codex/source-available-license
 ```
 
