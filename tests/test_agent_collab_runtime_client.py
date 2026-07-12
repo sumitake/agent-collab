@@ -34,6 +34,27 @@ def _load_client():
     return module
 
 
+def _load_client_without_pwd():
+    """Load the public client as on a platform without the POSIX pwd module."""
+
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_runtime_client_without_pwd", CLIENT
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    original_import = __import__
+
+    def blocked_pwd_import(name, *args, **kwargs):
+        if name == "pwd":
+            raise ImportError("pwd is unavailable")
+        return original_import(name, *args, **kwargs)
+
+    with mock.patch("builtins.__import__", side_effect=blocked_pwd_import):
+        spec.loader.exec_module(module)
+    return module
+
+
 class RuntimeClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -73,6 +94,12 @@ class RuntimeClientTests(unittest.TestCase):
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
             result = self.client.resolve_runtime()
         self.assertEqual(result.status, self.client.RuntimeStatus.MANIFEST_INVALID)
+
+    def test_module_loads_without_posix_pwd_and_omits_home(self) -> None:
+        client = _load_client_without_pwd()
+        self.assertIsNone(client._operator_home())
+        env = client._scrubbed_env(tmpdir=self.root)
+        self.assertNotIn("HOME", env)
 
     def _fixture(
         self,

@@ -19,7 +19,6 @@ import importlib.util
 import json
 import os
 import platform
-import pwd
 import re
 import selectors
 import shutil
@@ -33,6 +32,11 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping
+
+try:
+    import pwd as _pwd
+except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX import
+    _pwd = None
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
@@ -573,8 +577,10 @@ def classify_host_context() -> str:
 
 
 def _operator_home() -> str | None:
+    if _pwd is None:
+        return None
     try:
-        value = pwd.getpwuid(os.getuid()).pw_dir
+        value = _pwd.getpwuid(os.getuid()).pw_dir
     except (KeyError, OSError):
         return None
     if (
