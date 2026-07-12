@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -106,6 +108,15 @@ class ReleaseEvidenceTests(unittest.TestCase):
             self.checksum.read_text(encoding="utf-8"),
             f"{expected}  {self.archive.name}\n",
         )
+
+    def test_release_evidence_outputs_are_owner_only(self) -> None:
+        previous_umask = os.umask(0)
+        try:
+            self._build()
+        finally:
+            os.umask(previous_umask)
+        self.assertEqual(stat.S_IMODE(self.sbom.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.checksum.stat().st_mode), 0o600)
 
     def test_rejects_non_semver_version_before_writing_outputs(self) -> None:
         self.assertTrue(EVIDENCE_SCRIPT.is_file())

@@ -90,7 +90,7 @@ def _write_exclusive(path: Path, data: bytes) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags, 0o644)
+    descriptor = os.open(path, flags, 0o600)
     try:
         with os.fdopen(descriptor, "wb") as stream:
             descriptor = -1
