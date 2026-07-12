@@ -1,0 +1,22 @@
+{
+  "name": "agent-collab",
+  "version": "3.0.0",
+  "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. The signed runtime artifact is intentionally absent until the private build/sign integration completes.",
+  "author": {
+    "name": "John Osumi"
+  },
+  "keywords": [
+    "agent-collab",
+    "multi-model",
+    "cross-family",
+    "governance",
+    "routing",
+    "codex",
+    "opencode",
+    "glm",
+    "zhipu",
+    "grok",
+    "gemini",
+    "claude"
+  ]
+}

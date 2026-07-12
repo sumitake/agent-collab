@@ -1,0 +1,305 @@
+# agent-collab Plugin Marketplace
+
+This repository distributes one package: **agent-collab** (v3.0.0). It gives
+Claude, Codex, Antigravity, ZCode/OpenCode, and custom primary hosts the same
+dynamic collaboration surface without publishing provider executors or
+maintaining host-specific plugin copies.
+
+The private `agent-collab-workspace` repository remains the editable source for
+runtime implementation and governance. A policy-only public release may ship
+the coordinator, skills, migration tooling, and fail-closed client without a
+native runtime. An activation release receives a privately built, signed,
+notarized native runtime artifact only after the workspace build/sign pipeline
+completes. No downloader, post-install hook, runtime cache, raw provider recipe,
+or executable source copy is shipped here.
+
+## Current package
+
+| Package | Version | Role |
+|---|---:|---|
+| `agent-collab` | 3.0.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v3.0.0
+
+- All previous host presets and provider packages are retired and deleted. The
+  marketplace, release matrix, and active package inventory contain only
+  `agent-collab`.
+- Primary id, family, active model, host runtime, and session identifier are
+  resolved dynamically or from explicit configuration. Model changes during a
+  ZCode/OpenCode session update provenance before the next route.
+- Governance review requires a complete, trustworthy, and internally
+  consistent primary id, family, active model, host runtime, and session
+  identifier. Explicit configuration may fill missing observations, but a
+  conflict with strong current-session identity blocks every route.
+- Partial or unknown primary identity may continue only for non-governance
+  delegation and always carries an independence warning.
+- The active primary and immutable artifact-author families are excluded from
+  reviewer, worker, tiebreaker, and fallback selection.
+- Claude remains asynchronous inbox-only. The shared runtime never creates a
+  synchronous Claude path.
+- A provider-free migration doctor blocks provider routing while any legacy
+  package is active and prints exact install, verify, and removal actions.
+- Policy-only safe mode disables every native model route. An asynchronous
+  inbox is eligible only when the active host explicitly reports its transport
+  available; otherwise inbox readiness also returns typed unavailable.
+
+Migration shorthand:
+
+- `codex-tools →` managed Codex backend in `agent-collab`
+- `glm-worker →` managed OpenCode backend in `agent-collab`, with
+  `opencode/glm-5.2` as the current Zhipu-family model preset
+- host-specific collaboration packages → dynamic host profiles in
+  `agent-collab`
+
+The exhaustive namespace/skill table is in
+[docs/migration-from-legacy-packages.md](docs/migration-from-legacy-packages.md).
+
+## System architecture
+
+```mermaid
+flowchart LR
+    H["Claude, Codex, Antigravity, ZCode, or custom host"] --> C0["Plugin-relative public coordinator"]
+    C0 --> P["Immutable primary and artifact snapshots"]
+    P --> G["Governance and family-independence policy"]
+    G --> S["Sealed route/action preflight"]
+    S --> N["Observed non-model seam<br/>host async-inbox readiness only"]
+    S --> C["Verified plugin-relative native runtime"]
+    C --> X["Managed Gemini, Codex, OpenCode,<br/>Grok 4.5, and Composer roles"]
+    W["Private workspace build/sign pipeline"] -. "signed and notarized artifact" .-> C
+```
+
+The plugin runtime client accepts no binary override. It selects only the
+platform/architecture entry in `runtime-manifest.json`, requires the fixed
+plugin-relative path, rejects symlinks and parent traversal, verifies exact
+size and SHA-256, and on macOS verifies the declared signing team plus
+notarization assessment. It then launches a fixed versioned JSON protocol with
+a scrubbed environment. Every artifact advertises its exact route/action contracts;
+the client rejects unadvertised rows, mismatched route/authority combinations,
+and author-family provenance drift. Missing, blocked, unsigned, mismatched, or
+unsupported artifacts fail closed with typed status.
+
+The expected Apple Developer ID Team ID is pinned in the public
+`plugins/agent-collab/signing_policy.py` policy source, independently of the
+runtime manifest. It is currently unconfigured because this host has no valid
+Developer ID signing identity; activation release remains blocked until the
+operator-owned Team ID is committed through review and the matching identity
+and notarization credentials are available.
+
+Governance plus applicable review, fallback, and worker calls carry the
+captured artifact separately from the instruction prompt. The sealed native
+JSON represents its exact bytes
+as base64 plus SHA-256, byte size, author model, and derived author family. The
+client decodes and verifies the representation before launch; neither the
+coordinator nor the native runtime may reconstruct the artifact from a prompt
+copy.
+
+The repository intentionally contains no native runtime artifact yet. Native
+Gemini, Codex, OpenCode, Grok 4.5, and Composer routes remain unavailable until
+the private build/sign integration supplies the real artifact, manifest digest,
+and complete contract declaration. Deterministic tests use temporary fixture
+executables only. The release gate requires every platform artifact to expose
+the complete required contract matrix. Retirement and a policy-only release may
+land before native parity, but an activation release cannot launch any provider
+until the signed runtime exposes the complete matrix, including Composer.
+
+## Production lifecycle
+
+1. The private workspace changes the canonical runtime or routing contract.
+2. Workspace unit, containment, provenance, and authority-boundary tests pass.
+3. A private build produces the Darwin-arm64 binary, signs it with hardened
+   runtime, notarizes it, and records size/hash/team metadata.
+4. A policy-only plugin release omits the runtime and keeps every native route
+   typed unavailable. An activation release imports only the final binary and
+   manifest metadata; no source implementation crosses the boundary.
+5. Plugin CI validates both Claude and Codex manifests/marketplaces, schemas,
+   skills, migration behavior, runtime fixtures, the dependency-free secret
+   scan, CodeQL security analysis, release consistency, and public-export
+   safety.
+6. A policy-only signed-tag release proves the runtime manifest is empty and
+   the archive contains no runtime. For activation, a macOS verification job
+   binds codesign, notarization, manifest, artifact digest, and commit SHA into
+   release evidence before the publish job may include the binary.
+7. Hosts update one package, run the migration doctor, restart, and verify the
+   resolved profile plus eligible routes.
+
+Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
+active host runtime environment and restart that host; all model-execution
+requests then return typed unavailable. An independently configured host inbox
+may still report readiness, but the public coordinator never sends through it;
+without a current availability observation it is unavailable too. Unset safe
+mode and restart after validation. Rollback never reinstalls an old package.
+
+## Install and migrate
+
+Claude Code:
+
+```text
+/plugin marketplace add sumitake/agent-collab-plugin
+/plugin install agent-collab@agent-collab
+/agent-collab:migration-doctor
+```
+
+Codex CLI/app:
+
+```text
+codex plugin marketplace add sumitake/agent-collab-plugin
+codex plugin add agent-collab@agent-collab
+```
+
+The same package carries native metadata for both hosts:
+`plugins/agent-collab/.claude-plugin/plugin.json` for Claude-compatible package
+managers and `plugins/agent-collab/.codex-plugin/plugin.json` for Codex. The
+repository Codex marketplace is generated at
+`.agents/plugins/marketplace.json`; it contains only `agent-collab`.
+
+Then invoke the `agent-collab` migration-doctor skill from a new Codex task.
+Antigravity, ZCode/OpenCode, and custom hosts must select the same single
+package through their compatible plugin manager; if that host has no native
+plugin surface, it cannot install this package directly and must remain
+temporarily unsupported rather than recreating a provider-specific shim.
+
+Remove every old package reported by the doctor, then run the doctor again.
+The doctor reads filesystem/registry state and Codex
+`[plugins."name@marketplace"]` entries from `~/.codex/config.toml`, distinguishes
+enabled from installed-disabled state, preserves the observed source host, and
+prints uninstall commands for that host's package manager. Provider routing
+stays blocked while a retired package remains installed or active. Cached but
+unselected residue is reported separately.
+
+For an unknown/custom primary, explicitly configure:
+
+| Profile field | Environment variable |
+|---|---|
+| `primary_id` | `AGENT_COLLAB_PRIMARY_ID` |
+| `primary_family` | `AGENT_COLLAB_PRIMARY_FAMILY` |
+| `active_model` | `AGENT_COLLAB_ACTIVE_MODEL` |
+| `host_runtime` | `AGENT_COLLAB_HOST_RUNTIME` |
+| `session_identifier` | `AGENT_COLLAB_SESSION_ID` |
+| asynchronous inbox availability | `AGENT_COLLAB_ASYNC_INBOX` |
+
+Known profiles still refresh their active model/family observation before each
+invocation. OpenCode is a host runtime, not a model family; GLM output carries
+Zhipu provenance. Model lineage is parsed from exact provider and model-id
+segments; conflicting lineage signals or incidental substrings resolve to
+unknown rather than whichever family happens to match first. Automatic
+detection relies on strong session signals
+(`CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`/entrypoint,
+`ANTIGRAVITY_SESSION_ID`, or `ZCODE_SESSION_ID`), never ambient installation
+paths such as `CODEX_HOME` or `OPENCODE_CONFIG`.
+The current OpenCode preset is `opencode/glm-5.2` only when explicitly observed
+from host/session or central configuration. A missing observation is typed
+unavailable; a strong live ZCode/OpenCode model observation cannot be overridden
+by conflicting explicit family/config fields, and an Anthropic-selected
+OpenCode model is prohibited.
+
+`AGENT_COLLAB_ASYNC_INBOX=available` (or request field
+`primary.async_inbox="available"`) is an availability observation, not a send
+primitive. The public coordinator accepts only `inbox/async` with
+`operation=readiness`, non-governance authority, and an exact target row:
+`{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`.
+The id/family pair and nonblank target session must be trustworthy, and the
+target family must differ from the current primary family. Execute or
+governance requests are schema errors; the coordinator never sends and never
+invokes Claude headlessly. The host-owned async transport performs any later
+handoff.
+
+## Skill surface
+
+The unified package includes review, intent, code/security, QA, logic,
+brainstorming, debate, research, long-context, visual-workflow, delegation, orchestration,
+readiness, teamwork, migration, and explicit managed-routing skills under the
+single `/agent-collab:*` namespace. Provider targets are request parameters,
+not plugin identities.
+
+The current protocol has no typed image or binary-media field. `visual-review`
+and `ui-to-code` therefore provide an explicitly primary-only workflow or
+report managed independent visual review unavailable; they never invent a
+path-based attachment or raw-provider fallback.
+
+Explicit `target=gemini`, `target=codex`, and `target=opencode` requests are
+fail-closed and never silently substituted. Gemini is read-only
+advisory/long-context; Codex advisory and OpenCode plan/workspace-write authority are
+sealed separately and never promote or demote into one another. Codex build is
+a resolvable mutation-capable request but returns typed unavailable until a
+hardened mutation backend exists; it never widens advisory.
+
+Managed xAI targets are equally explicit: `target=grok` has separate read-only
+architecture, governance, and huge-context actions; `target=composer` is
+constrained output-only code generation. Composer has no file, shell, test,
+worktree, PR, or merge authority. Both remain deterministically temporarily
+unavailable until the signed runtime advertises their exact route/action contracts.
+Grok 4.5 is reachable only through sealed `architecture`, `governance`, or
+`huge_context` actions; generic advisory, brainstorm, debate, QA, and fallback
+requests cannot select it. OpenCode build is a distinct mutation-capable
+workspace-write action and never aliases its read-only plan action.
+Applicable non-governance review, fallback, and worker requests may include an
+exact immutable artifact snapshot; its author model is resolved independently
+and that family is excluded from selection alongside the active primary family. An
+unknown artifact-author family emits an independence warning for
+non-governance work and fails governance closed.
+
+## Public-release safety
+
+The deleted packages and executor sources remain in this private repository's
+reachable history until the separately authorized rewrite is executed. Do not
+change visibility or publish an archive from this clone. A public source export
+must be a clean-history repository and pass the byte-level gate below. History
+mode inspects every ref and reachable commit, tree, blob, annotated-tag object
+and message, including direct non-commit refs. It validates release-tag form
+and targets, recursively scans nested archive members under cumulative depth,
+member-count, per-member, and decompressed-size limits, and rejects
+provider-backend archive directories, symlinks, and other unsafe tree modes.
+Python AST evaluation also catches statically constructed provider argv; only
+explicit harmless audit-literal declarations are masked.
+
+Every pull-request workflow is pinned to `ubuntu-latest`; contributor code is
+never executed on the persistent RhoNAS runner. Self-hosted execution remains
+out of this public repository unless a separately reviewed disposable,
+untrusted boundary is introduced.
+
+```text
+python3 scripts/check-public-export-safety.py --export-root <clean-export> --active-tree --history
+```
+
+The operator has authorized the primary agent to perform the backup,
+destructive rewrite, branch/tag/release cleanup, force push, and GitHub residual
+audit. Visibility must nevertheless remain private while any reachable GitHub
+PR ref or release artifact still exposes retired source.
+
+## Development and release verification
+
+Run the deterministic gates before a release candidate:
+
+```text
+python3 scripts/build_skills.py --check
+python3 scripts/build_marketplace.py --check
+python3 scripts/build-changelog.py --check
+python3 -m unittest discover -s tests -t . -v
+python3 -m unittest discover -s scripts -p 'test_*.py' -v
+python3 scripts/check_release_consistency.py
+python3 scripts/build_plugin_archive.py --output /tmp/agent-collab.plugin
+python3 scripts/secret_scan.py
+python3 scripts/check-public-export-safety.py --active-tree
+git diff --check
+```
+
+The archive builder classifies and verifies either the current policy-only
+package or an activation package. For an activation candidate, also run
+`python3 scripts/verify_runtime_release.py --git-sha "$(git rev-parse HEAD)"`
+on Darwin arm64; that verifier intentionally remains activation-only and fails
+closed against an empty manifest.
+
+`CHANGELOG.md` remains generated at release time from `changelog.d/` fragments.
+Historical changelog entries may name retired packages only as clearly
+historical records; they are not active install or rollback instructions.
+Release tags must be signed annotated tags whose target is the checked-out
+commit on `origin/main`; the release workflow verifies the GitHub tag signature
+and main ancestry before accepting macOS runtime evidence or building archives.
+Activation runtime evidence also binds inspection of a thin arm64 Mach-O with
+exactly one macOS `LC_BUILD_VERSION` declaring minimum macOS 14.0; manifest
+labels alone do not establish architecture or deployment target. In policy-only
+mode, the archive builder requires an empty artifact list and proves that no
+runtime path is packaged; the activation-only verifier is not run.
+Release consistency additionally requires the Claude and Codex plugin
+manifests to have the same name/version and the generated Codex marketplace to
+contain exactly the one local unified package.

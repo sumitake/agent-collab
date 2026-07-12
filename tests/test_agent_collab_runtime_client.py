@@ -1,0 +1,1176 @@
+"""Security contract for the co-packaged native agent-collab runtime client."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import importlib.util
+import json
+import os
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CLIENT = ROOT / "plugins" / "agent-collab" / "runtime_client.py"
+
+
+def _load_client():
+    spec = importlib.util.spec_from_file_location("agent_collab_runtime_client", CLIENT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class RuntimeClientTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = _load_client()
+
+    def setUp(self) -> None:
+        self.identity_env = mock.patch.dict(os.environ, {}, clear=True)
+        self.identity_env.start()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.team_patch = mock.patch.object(
+            self.client, "EXPECTED_DEVELOPER_ID_TEAM", "TESTTEAM01"
+        )
+        self.team_patch.start()
+        self.platform_patch = mock.patch.object(
+            self.client, "normalized_platform", return_value="darwin"
+        )
+        self.arch_patch = mock.patch.object(
+            self.client, "normalized_arch", return_value="arm64"
+        )
+        self.platform_patch.start()
+        self.arch_patch.start()
+
+    def tearDown(self) -> None:
+        self.arch_patch.stop()
+        self.platform_patch.stop()
+        self.team_patch.stop()
+        self.temp.cleanup()
+        self.identity_env.stop()
+
+    def test_manifest_team_must_equal_pinned_operator_team(self) -> None:
+        self._fixture()
+        manifest_path = self.root / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["artifacts"][0]["signing"]["team_id"] = "OTHERTEAM1"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.MANIFEST_INVALID)
+
+    def _fixture(
+        self,
+        *,
+        body: str | None = None,
+        contracts: list[tuple[str, str]] | None = None,
+    ) -> Path:
+        system = "darwin"
+        arch = "arm64"
+        binary = self.root / "runtime" / f"{system}-{arch}" / "agent-collab-runtime"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_text(
+            body
+            or """#!/usr/bin/env python3
+import json, os, sys
+request = json.loads(sys.stdin.readline())
+families = {
+    "codex": ("openai/codex-test", "openai"),
+    "opencode": (request.get("model", "opencode/glm-5.2"), "zhipu"),
+    "grok": ("xai/grok-4.5", "xai"),
+    "composer": ("xai/grok-composer-2.5-fast", "xai"),
+    "gemini": ("google/gemini-test", "google"),
+}
+author_model, author_family = families[request["route"]]
+print(json.dumps({
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {
+        "argv": sys.argv[1:],
+        "secret_present": "LEAK_ME" in os.environ,
+        "tmpdir": os.environ.get("TMPDIR", ""),
+        "tmpdir_mode": oct(os.stat(os.environ["TMPDIR"]).st_mode & 0o777),
+    },
+    "provenance": {
+        "route": request["route"],
+        "action": request["action"],
+        "authority": request["authority"],
+        "author_model": author_model,
+        "author_family": author_family,
+        "host_runtime": "fixture-runtime",
+        "session_identifier": "fixture-session",
+        "observation_sequence": 1,
+    },
+}))
+""",
+            encoding="utf-8",
+        )
+        binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+        content = binary.read_bytes()
+        manifest = {
+            "schema_version": 1,
+            "protocol_version": 1,
+            "contract_version": 1,
+            "artifacts": [
+                {
+                    "platform": system,
+                    "arch": arch,
+                    "minimum_macos": "14.0",
+                    "path": str(binary.relative_to(self.root)),
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "signing": {
+                        "team_id": "TESTTEAM01",
+                        "require_notarization": True,
+                        "hardened_runtime": True,
+                    },
+                    "contracts": [
+                        {"route": route, "action": action}
+                        for route, action in (
+                            contracts
+                            if contracts is not None
+                            else sorted(self.client.SUPPORTED_CONTRACTS)
+                        )
+                    ],
+                }
+            ],
+        }
+        (self.root / "runtime-manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        return binary
+
+    def _envelope(
+        self,
+        *,
+        route: str = "codex",
+        action: str = "advisory",
+        request_id: str = "req-1",
+        prompt: str = "review this",
+        row: dict[str, object] | None = None,
+        governance: bool = False,
+        artifact_model: str = "",
+        timeout_ms: int = 30_000,
+    ):
+        defaults: dict[tuple[str, str], dict[str, object]] = {
+            ("gemini", "advisory"): {"model": "google/gemini-test", "effort": "high"},
+            ("gemini", "long_context"): {
+                "model": "google/gemini-test",
+                "effort": "high",
+                "documents": [{"label": "a", "content": "document"}],
+            },
+            ("codex", "advisory"): {
+                "model": "openai/codex-test",
+                "effort": "high",
+                "mode": "prompt-only",
+            },
+            ("opencode", "plan"): {
+                "model": "opencode/glm-5.2",
+                "cwd": str(self.root),
+            },
+            ("opencode", "build"): {
+                "model": "opencode/glm-5.2",
+                "cwd": str(self.root),
+            },
+            ("grok", "architecture"): {"mode": "prompt-only"},
+            ("grok", "governance"): {"mode": "prompt-only"},
+            ("grok", "huge_context"): {
+                "documents": [{"label": "a", "content": "document"}]
+            },
+            ("composer", "codegen"): {},
+        }
+        policy = self.client._load_host_policy()
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            with mock.patch.object(policy, "PLUGIN_ROOT", self.root):
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ):
+                    decision = policy.issue_policy_envelope(
+                        request_id=request_id,
+                        route=route,
+                        action=action,
+                        governance=governance,
+                        prompt=prompt,
+                        timeout_ms=timeout_ms,
+                        artifact_author_model=artifact_model,
+                        artifact_content="artifact" if artifact_model else "",
+                        explicit_config={
+                            "primary_id": "claude",
+                            "active_model": "anthropic/claude-opus",
+                            "host_runtime": "claude-code",
+                            "session_identifier": "c-1",
+                        },
+                        row_config=row if row is not None else defaults[(route, action)],
+                    )
+        self.assertIsNotNone(decision.envelope, decision.warning)
+        return decision.envelope
+
+    def test_source_manifest_never_contains_unsigned_placeholder(self) -> None:
+        plugin_root = ROOT / "plugins" / "agent-collab"
+        manifest = json.loads(
+            (plugin_root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+        if manifest["artifacts"]:
+            for artifact in manifest["artifacts"]:
+                path = plugin_root / artifact["path"]
+                self.assertTrue(path.is_file())
+                self.assertFalse(path.is_symlink())
+                self.assertEqual(path.stat().st_size, artifact["size"])
+                self.assertEqual(
+                    hashlib.sha256(path.read_bytes()).hexdigest(), artifact["sha256"]
+                )
+        else:
+            self.assertFalse((plugin_root / "runtime").exists())
+        result = self.client.resolve_runtime()
+        if not manifest["artifacts"]:
+            self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+
+    def test_empty_manifest_is_unavailable_before_platform_rejection(self) -> None:
+        manifest = {
+            "schema_version": 1,
+            "protocol_version": 1,
+            "contract_version": 1,
+            "artifacts": [],
+        }
+        (self.root / "runtime-manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "normalized_platform", return_value="linux"
+        ), mock.patch.object(self.client, "normalized_arch", return_value="x86_64"):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+
+    def test_invalid_manifest_is_rejected_before_platform_rejection(self) -> None:
+        (self.root / "runtime-manifest.json").write_text("{}", encoding="utf-8")
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "normalized_platform", return_value="linux"
+        ), mock.patch.object(self.client, "normalized_arch", return_value="x86_64"):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.MANIFEST_INVALID)
+
+    def test_valid_fixture_launches_fixed_protocol_with_scrubbed_env(self) -> None:
+        self._fixture()
+        envelope = self._envelope()
+        caller_tmpdir = self.root / "caller-tmp"
+        caller_tmpdir.mkdir()
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            with mock.patch.dict(
+                os.environ,
+                {"LEAK_ME": "secret", "TMPDIR": str(caller_tmpdir)},
+                clear=False,
+            ):
+                with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    result = self.client.invoke(envelope=envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
+        self.assertFalse(result.result["secret_present"])
+        self.assertEqual(result.provenance["author_family"], "openai")
+        child_tmpdir = Path(result.result["tmpdir"])
+        self.assertNotEqual(child_tmpdir, caller_tmpdir)
+        self.assertFalse(str(child_tmpdir).startswith(str(self.root) + os.sep))
+        self.assertEqual(result.result["tmpdir_mode"], "0o700")
+        self.assertFalse(child_tmpdir.exists())
+
+    def test_each_invocation_gets_a_fresh_isolated_tmpdir(self) -> None:
+        self._fixture()
+        caller_tmpdir = self.root / "caller-tmp-fresh"
+        caller_tmpdir.mkdir()
+        observed = []
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.dict(
+            os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            for request_id in ("fresh-1", "fresh-2"):
+                result = self.client.invoke(
+                    envelope=self._envelope(request_id=request_id)
+                )
+                self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+                observed.append(Path(result.result["tmpdir"]))
+
+        self.assertEqual(len(set(observed)), 2)
+        self.assertTrue(all(path != caller_tmpdir for path in observed))
+        self.assertTrue(all(not path.exists() for path in observed))
+
+    def test_policy_safe_mode_never_launches_native_runtime(self) -> None:
+        self._fixture()
+        policy = self.client._load_host_policy()
+        with mock.patch.dict(os.environ, {"AGENT_COLLAB_SAFE_MODE": "1"}, clear=False):
+            decision = policy.issue_policy_envelope(
+                request_id="req-safe",
+                route="codex",
+                action="advisory",
+                governance=False,
+                prompt="review",
+                timeout_ms=30_000,
+                explicit_config={},
+                row_config={"model": "openai/codex", "effort": "high", "mode": "prompt-only"},
+            )
+        self.assertEqual(decision.status, policy.PreflightStatus.UNAVAILABLE)
+        self.assertIsNone(decision.envelope)
+        self.assertIn("safe mode disables native routes", decision.warning)
+        self.assertNotIn("retains async inbox", decision.warning)
+
+    def test_symlink_and_parent_escape_are_rejected(self) -> None:
+        binary = self._fixture()
+        real = binary.with_name("real-runtime")
+        binary.rename(real)
+        binary.symlink_to(real.name)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                resolution = self.client.resolve_runtime()
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.PATH_INVALID)
+
+        manifest = json.loads((self.root / "runtime-manifest.json").read_text())
+        manifest["artifacts"][0]["path"] = "../outside"
+        (self.root / "runtime-manifest.json").write_text(json.dumps(manifest))
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            resolution = self.client.resolve_runtime()
+        self.assertEqual(
+            resolution.status, self.client.RuntimeStatus.MANIFEST_INVALID
+        )
+
+    def test_size_hash_and_signature_fail_closed(self) -> None:
+        binary = self._fixture()
+        binary.write_text(binary.read_text() + "# changed\n")
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            resolution = self.client.resolve_runtime()
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
+        self._fixture()
+        with mock.patch.object(
+            self.client,
+            "_verify_macos_signature",
+            return_value=(False, "not notarized"),
+        ):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                resolution = self.client.resolve_runtime()
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.SIGNATURE_ERROR)
+
+    def test_hardened_runtime_requires_codesign_runtime_flag(self) -> None:
+        architecture = mock.Mock(returncode=0, stdout="arm64\n", stderr="")
+        load_commands = mock.Mock(
+            returncode=0,
+            stdout=(
+                "Load command 9\n"
+                "      cmd LC_BUILD_VERSION\n"
+                " platform 1\n"
+                "    minos 14.0\n"
+            ),
+            stderr="",
+        )
+        accepted = mock.Mock(
+            returncode=0,
+            stdout="",
+            stderr="accepted\nsource=Notarized Developer ID\n",
+        )
+        verify = mock.Mock(
+            returncode=0,
+            stdout="",
+            stderr="/tmp/agent-collab-runtime: valid on disk",
+        )
+        for flags, expected in (("0x0(none)", False), ("0x10000(runtime)", True)):
+            with self.subTest(flags=flags):
+                details = mock.Mock(
+                    returncode=0,
+                    stdout="",
+                    stderr=(
+                        "Executable=/tmp/agent-collab-runtime\n"
+                        "TeamIdentifier=TESTTEAM01\n"
+                        "Timestamp=Jul 12, 2026 at 12:00:00\n"
+                        f"CodeDirectory v=20500 flags={flags} hashes=1\n"
+                    ),
+                )
+                with mock.patch.object(
+                    self.client.subprocess,
+                    "run",
+                    side_effect=[
+                        architecture,
+                        load_commands,
+                        verify,
+                        details,
+                        accepted,
+                    ],
+                ):
+                    valid, error = self.client._verify_macos_signature(
+                        Path("/tmp/agent-collab-runtime"),
+                        team_id="TESTTEAM01",
+                        require_notarization=True,
+                    )
+                self.assertEqual(valid, expected)
+                if not expected:
+                    self.assertIn("hardened runtime", error)
+
+    def test_runtime_requires_thin_arm64_macho_with_exact_build_minimum(self) -> None:
+        valid_build = """Load command 9
+      cmd LC_BUILD_VERSION
+  cmdsize 32
+ platform 1
+    minos 14.0
+      sdk 15.0
+   ntools 1
+"""
+        cases = (
+            ("x86_64", valid_build, False),
+            ("arm64 x86_64", valid_build, False),
+            (
+                "arm64",
+                "Load command 9\n      cmd LC_VERSION_MIN_MACOSX\n  version 14.0\n",
+                False,
+            ),
+            ("arm64", valid_build.replace("minos 14.0", "minos 13.0"), False),
+            ("arm64", valid_build.replace("platform 1", "platform 2"), False),
+            ("arm64", valid_build, True),
+        )
+
+        for architectures, load_commands, expected in cases:
+            with self.subTest(architectures=architectures, expected=expected):
+                def run(command, **_kwargs):
+                    if command[0] == "/usr/bin/lipo":
+                        return mock.Mock(returncode=0, stdout=architectures + "\n", stderr="")
+                    if command[0] == "/usr/bin/otool":
+                        return mock.Mock(returncode=0, stdout=load_commands, stderr="")
+                    if command[0] == "/usr/bin/codesign" and "-dv" in command:
+                        return mock.Mock(
+                            returncode=0,
+                            stdout="",
+                            stderr=(
+                                "TeamIdentifier=TESTTEAM01 flags=0x10000(runtime)\n"
+                                "Timestamp=Jul 12, 2026 at 12:00:00\n"
+                            ),
+                        )
+                    return mock.Mock(
+                        returncode=0,
+                        stdout="",
+                        stderr="accepted\nsource=Notarized Developer ID\n",
+                    )
+
+                with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                    valid, error = self.client._verify_macos_signature(
+                        Path("/tmp/agent-collab-runtime"),
+                        team_id="TESTTEAM01",
+                        require_notarization=True,
+                    )
+                self.assertEqual(valid, expected)
+                if not expected:
+                    self.assertIn("Mach-O", error)
+
+    def test_signature_requires_secure_timestamp_and_exact_notarized_source(self) -> None:
+        valid_build = (
+            "Load command 9\n"
+            "      cmd LC_BUILD_VERSION\n"
+            " platform 1\n"
+            "    minos 14.0\n"
+        )
+        cases = (
+            ("", "source=Notarized Developer ID", False),
+            ("Timestamp=none", "source=Notarized Developer ID", False),
+            (
+                "Timestamp=Jul 12, 2026 at 12:00:00",
+                "source=Developer ID",
+                False,
+            ),
+            (
+                "Timestamp=Jul 12, 2026 at 12:00:00",
+                "source=Notarized Developer ID",
+                True,
+            ),
+        )
+        for timestamp, source, expected in cases:
+            with self.subTest(timestamp=timestamp, source=source):
+                def run(command, **_kwargs):
+                    if command[0] == "/usr/bin/lipo":
+                        return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
+                    if command[0] == "/usr/bin/otool":
+                        return mock.Mock(returncode=0, stdout=valid_build, stderr="")
+                    if command[0] == "/usr/bin/codesign" and "-dv" in command:
+                        return mock.Mock(
+                            returncode=0,
+                            stdout="",
+                            stderr=(
+                                "TeamIdentifier=TESTTEAM01\n"
+                                "CodeDirectory v=20500 flags=0x10000(runtime)\n"
+                                f"{timestamp}\n"
+                            ),
+                        )
+                    if command[0] == "/usr/sbin/spctl":
+                        return mock.Mock(
+                            returncode=0,
+                            stdout="",
+                            stderr=f"accepted\n{source}\n",
+                        )
+                    return mock.Mock(returncode=0, stdout="", stderr="valid")
+
+                with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                    valid, error = self.client._verify_macos_signature(
+                        Path("/tmp/agent-collab-runtime"),
+                        team_id="TESTTEAM01",
+                        require_notarization=True,
+                    )
+                self.assertEqual(valid, expected, error)
+
+    def test_manifest_rejects_cross_platform_path_mismatch(self) -> None:
+        self._fixture()
+        manifest_path = self.root / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        artifact = manifest["artifacts"][0]
+        artifact["platform"] = (
+            "linux" if artifact["platform"] == "darwin" else "darwin"
+        )
+        manifest_path.write_text(json.dumps(manifest))
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            resolution = self.client.resolve_runtime()
+        self.assertEqual(
+            resolution.status, self.client.RuntimeStatus.MANIFEST_INVALID
+        )
+
+    def test_role_target_authority_contract_is_exact(self) -> None:
+        policy = self.client._load_host_policy()
+        decision = policy.issue_policy_envelope(
+            request_id="req-invalid",
+            route="composer",
+            action="codegen",
+            governance=True,
+            prompt="generate a patch",
+            timeout_ms=30_000,
+            artifact_author_model="google/gemini",
+            artifact_content="artifact",
+            explicit_config={
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "c-1",
+            },
+            row_config={},
+        )
+        self.assertEqual(decision.status, policy.PreflightStatus.CONFIG_ERROR)
+
+        malformed = policy.issue_policy_envelope(
+            request_id="bad\nrequest",
+            route="codex",
+            action="advisory",
+            governance=False,
+            prompt="review",
+            timeout_ms=30_000,
+            explicit_config={},
+            row_config={"model": "openai/codex", "effort": "high", "mode": "prompt-only"},
+        )
+        self.assertEqual(malformed.status, policy.PreflightStatus.CONFIG_ERROR)
+
+    def test_unadvertised_native_role_is_typed_unavailable(self) -> None:
+        self._fixture(contracts=[("codex", "advisory")])
+        policy = self.client._load_host_policy()
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                policy, "PLUGIN_ROOT", self.root
+            ):
+                decision = policy.issue_policy_envelope(
+                    request_id="req-composer",
+                    route="composer",
+                    action="codegen",
+                    governance=False,
+                    prompt="generate",
+                    timeout_ms=30_000,
+                    explicit_config={
+                        "primary_id": "claude",
+                        "active_model": "anthropic/claude-opus",
+                        "host_runtime": "claude-code",
+                        "session_identifier": "c-1",
+                    },
+                    row_config={},
+                )
+        self.assertEqual(decision.status, policy.PreflightStatus.UNAVAILABLE)
+
+    def test_gemini_advisory_is_read_only_native_execution(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="req-gemini", prompt="review"
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                result = self.client.invoke(envelope=envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.provenance["author_family"], "google")
+
+    def test_codex_build_is_resolvable_but_typed_unavailable(self) -> None:
+        policy = self.client._load_host_policy()
+        decision = policy.issue_policy_envelope(
+            request_id="req-codex-build",
+            route="codex",
+            action="build",
+            governance=False,
+            prompt="implement",
+            timeout_ms=30_000,
+            explicit_config={},
+            row_config={},
+        )
+        self.assertEqual(decision.status, policy.PreflightStatus.UNAVAILABLE)
+        self.assertIsNone(decision.envelope)
+        self.assertIn(("codex", "build"), self.client.TEMPORARILY_UNAVAILABLE_CONTRACTS)
+        self.assertNotIn(("codex", "build"), self.client.SUPPORTED_CONTRACTS)
+
+    def test_response_provenance_must_match_sealed_author_family(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="opencode", action="plan", request_id="req-family", prompt="plan"
+        )
+        envelope = replace(envelope, target_author_family="google")
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                result = self.client.invoke(envelope=envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.CONFIG_ERROR)
+
+    def test_response_family_is_derived_from_author_model(self) -> None:
+        for author_model, author_family in (
+            ("google/gemini-2.5-pro", "zhipu"),
+            ("custom/unknown-model", "zhipu"),
+        ):
+            with self.subTest(author_model=author_model, author_family=author_family):
+                self._fixture(
+                    body=f"""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({{
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {{"review": "ok"}},
+    "provenance": {{
+        "route": request["route"],
+        "action": request["action"],
+        "authority": request["authority"],
+        "author_model": "{author_model}",
+        "author_family": "{author_family}",
+        "host_runtime": "fixture-runtime",
+        "session_identifier": "fixture-session",
+        "observation_sequence": 1
+    }}
+}}))
+"""
+                )
+                envelope = self._envelope(route="opencode", action="plan")
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    result = self.client.invoke(envelope=envelope)
+                self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+    def test_opencode_model_switch_updates_accepted_provenance(self) -> None:
+        cases = (
+            ("opencode/glm-5.2", "zhipu"),
+            ("google/gemini-2.5-pro", "google"),
+        )
+        for model, family in cases:
+            with self.subTest(model=model, family=family):
+                self._fixture(
+                    body=f"""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({{
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {{"review": "ok"}},
+    "provenance": {{
+        "route": request["route"],
+        "action": request["action"],
+        "authority": request["authority"],
+        "author_model": request["model"],
+        "author_family": "{family}",
+        "host_runtime": "fixture-runtime",
+        "session_identifier": "fixture-session",
+        "observation_sequence": 1
+    }}
+}}))
+"""
+                )
+                envelope = self._envelope(
+                    route="opencode",
+                    action="plan",
+                    row={"model": model, "cwd": str(self.root)},
+                )
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    result = self.client.invoke(envelope=envelope)
+                self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+                self.assertEqual(result.provenance["author_family"], family)
+
+    def test_response_model_is_bound_to_exact_sealed_route_model(self) -> None:
+        cases = (
+            (
+                "opencode",
+                "plan",
+                {"model": "opencode/glm-5.2", "cwd": str(self.root)},
+                "zhipu/glm-5.1",
+                "zhipu",
+            ),
+            ("grok", "architecture", {"mode": "prompt-only"},
+             "xai/grok-composer-2.5-fast", "xai"),
+            ("composer", "codegen", {}, "xai/grok-4.5", "xai"),
+        )
+        for route, action, row, wrong_model, family in cases:
+            with self.subTest(route=route, action=action):
+                self._fixture(
+                    body=f"""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({{
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {{"text": "wrong model"}},
+    "provenance": {{
+        "route": request["route"],
+        "action": request["action"],
+        "authority": request["authority"],
+        "author_model": "{wrong_model}",
+        "author_family": "{family}",
+        "host_runtime": "fixture-runtime",
+        "session_identifier": "fixture-session",
+        "observation_sequence": 1
+    }}
+}}))
+"""
+                )
+                envelope = self._envelope(route=route, action=action, row=row)
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    result = self.client.invoke(envelope=envelope)
+                self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+    def test_manifest_versions_reject_bool_and_float(self) -> None:
+        for field in ("schema_version", "protocol_version"):
+            for value in (True, 1.0):
+                with self.subTest(field=field, value=value):
+                    self._fixture()
+                    manifest_path = self.root / "runtime-manifest.json"
+                    manifest = json.loads(manifest_path.read_text())
+                    manifest[field] = value
+                    manifest_path.write_text(json.dumps(manifest))
+                    with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                        result = self.client.resolve_runtime()
+                    self.assertEqual(
+                        result.status, self.client.RuntimeStatus.MANIFEST_INVALID
+                    )
+
+    def test_manifest_schema_allows_only_exact_route_action_pairs(self) -> None:
+        schema = json.loads(
+            CLIENT.with_name("runtime-manifest.schema.json").read_text(encoding="utf-8")
+        )
+        item_schema = schema["properties"]["artifacts"]["items"]["properties"][
+            "contracts"
+        ]["items"]
+        self.assertEqual(set(item_schema), {"oneOf"})
+        observed = {
+            (
+                row["properties"]["route"]["const"],
+                row["properties"]["action"]["const"],
+            )
+            for row in item_schema["oneOf"]
+        }
+        self.assertEqual(observed, self.client.SUPPORTED_CONTRACTS)
+        for row in item_schema["oneOf"]:
+            self.assertFalse(row["additionalProperties"])
+            self.assertEqual(set(row["required"]), {"route", "action"})
+        size_schema = schema["properties"]["artifacts"]["items"]["properties"][
+            "size"
+        ]
+        self.assertEqual(self.client.MAX_ARTIFACT_BYTES, 64 * 1024 * 1024)
+        self.assertEqual(size_schema["maximum"], self.client.MAX_ARTIFACT_BYTES)
+        artifacts_schema = schema["properties"]["artifacts"]
+        self.assertEqual(artifacts_schema["maxItems"], 1)
+        self.assertTrue(artifacts_schema["uniqueItems"])
+
+    def test_non_darwin_arm64_release_target_is_typed_unsupported(self) -> None:
+        self._fixture()
+        with mock.patch.object(self.client, "normalized_platform", return_value="linux"):
+            with mock.patch.object(self.client, "normalized_arch", return_value="x86_64"):
+                with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.PLATFORM_UNSUPPORTED)
+
+    def test_native_typed_failures_are_preserved(self) -> None:
+        cases = {
+            "auth_error": self.client.RuntimeStatus.AUTH_ERROR,
+            "quota_error": self.client.RuntimeStatus.QUOTA_ERROR,
+            "containment_error": self.client.RuntimeStatus.CONTAINMENT_ERROR,
+            "timeout": self.client.RuntimeStatus.TIMEOUT,
+            "output_limit": self.client.RuntimeStatus.OUTPUT_LIMIT,
+            "teardown_error": self.client.RuntimeStatus.TEARDOWN_ERROR,
+            "provider_error": self.client.RuntimeStatus.PROVIDER_ERROR,
+            "unavailable": self.client.RuntimeStatus.UNAVAILABLE,
+        }
+        for native_status, expected in cases.items():
+            with self.subTest(status=native_status):
+                self._fixture(
+                    body=f"""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({{
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "{native_status}",
+    "error": "typed failure",
+}}))
+raise SystemExit(7)
+"""
+                )
+                envelope = self._envelope(
+                    request_id=f"typed-{native_status}", prompt="review"
+                )
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ):
+                    with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                        result = self.client.invoke(envelope=envelope)
+                self.assertEqual(result.status, expected)
+
+    def test_output_limit_terminates_and_reaps_child_while_running(self) -> None:
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream):
+                marker = self.root / f"{stream}-survived"
+                tmpdir_marker = self.root / f"{stream}-tmpdir"
+                caller_tmpdir = self.root / f"{stream}-caller-tmp"
+                caller_tmpdir.mkdir(exist_ok=True)
+                target = "sys.stdout.buffer" if stream == "stdout" else "sys.stderr.buffer"
+                self._fixture(
+                    body=f"""#!/usr/bin/env python3
+import os, pathlib, sys, time
+pathlib.Path({str(tmpdir_marker)!r}).write_text(os.environ["TMPDIR"])
+{target}.write(b"x" * 8192)
+{target}.flush()
+time.sleep(1)
+pathlib.Path({str(marker)!r}).write_text("survived")
+"""
+                )
+                envelope = self._envelope()
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(
+                    self.client, "PLUGIN_ROOT", self.root
+                ), mock.patch.object(
+                    self.client, "MAX_RESPONSE_BYTES", 1024
+                ), mock.patch.dict(
+                    os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
+                ):
+                    result = self.client.invoke(envelope=envelope)
+                self.assertEqual(result.status, self.client.RuntimeStatus.OUTPUT_LIMIT)
+                self.assertFalse(marker.exists())
+                child_tmpdir = Path(tmpdir_marker.read_text(encoding="utf-8"))
+                self.assertNotEqual(child_tmpdir, caller_tmpdir)
+                self.assertFalse(child_tmpdir.exists())
+
+    def test_timeout_reaps_child_and_removes_isolated_tmpdir(self) -> None:
+        tmpdir_marker = self.root / "timeout-tmpdir"
+        caller_tmpdir = self.root / "timeout-caller-tmp"
+        caller_tmpdir.mkdir()
+        self._fixture(
+            body=f"""#!/usr/bin/env python3
+import os, pathlib, time
+pathlib.Path({str(tmpdir_marker)!r}).write_text(os.environ["TMPDIR"])
+time.sleep(10)
+"""
+        )
+        envelope = self._envelope(request_id="timeout-cleanup", timeout_ms=500)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "PLUGIN_ROOT", self.root
+        ), mock.patch.dict(
+            os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
+        ):
+            result = self.client.invoke(envelope=envelope)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        child_tmpdir = Path(tmpdir_marker.read_text(encoding="utf-8"))
+        self.assertNotEqual(child_tmpdir, caller_tmpdir)
+        self.assertFalse(child_tmpdir.exists())
+
+    def test_spawn_error_removes_fresh_isolated_tmpdir(self) -> None:
+        self._fixture()
+        envelope = self._envelope(request_id="spawn-cleanup")
+        created: list[Path] = []
+        real_mkdtemp = tempfile.mkdtemp
+
+        def recording_mkdtemp(*args, **kwargs):
+            path = Path(real_mkdtemp(*args, **kwargs))
+            created.append(path)
+            return str(path)
+
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "PLUGIN_ROOT", self.root
+        ), mock.patch.object(
+            self.client.tempfile, "mkdtemp", side_effect=recording_mkdtemp
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", side_effect=OSError("spawn failed")
+        ):
+            result = self.client.invoke(envelope=envelope)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.SPAWN_ERROR)
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists())
+        self.assertFalse(str(created[0]).startswith(str(self.root) + os.sep))
+
+    def test_unexpected_collector_errors_terminate_and_reap_child(self) -> None:
+        for failure_point in ("select", "read"):
+            with self.subTest(failure_point=failure_point):
+                marker = self.root / f"collector-{failure_point}-survived"
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        (
+                            "import pathlib,sys,time; "
+                            "sys.stdout.write('x'); sys.stdout.flush(); "
+                            "time.sleep(0.5); "
+                            f"pathlib.Path({str(marker)!r}).write_text('survived')"
+                        ),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                )
+                patch_target = (
+                    mock.patch.object(
+                        self.client.selectors.DefaultSelector,
+                        "select",
+                        side_effect=OSError("selector failed"),
+                    )
+                    if failure_point == "select"
+                    else mock.patch.object(
+                        self.client.os, "read", side_effect=OSError("read failed")
+                    )
+                )
+                raised: OSError | None = None
+                collected = None
+                try:
+                    with patch_target:
+                        collected = self.client._collect_bounded_output(
+                            process, timeout_ms=5_000
+                        )
+                except OSError as exc:
+                    raised = exc
+                finally:
+                    if process.poll() is None:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+                self.assertIsNone(raised)
+                self.assertIsNotNone(collected)
+                assert collected is not None
+                self.assertIsNotNone(collected[2])
+                self.assertEqual(
+                    collected[2].status, self.client.RuntimeStatus.TEARDOWN_ERROR
+                )
+                time.sleep(0.6)
+                self.assertFalse(marker.exists())
+
+    def test_unsealed_or_tampered_envelope_cannot_launch(self) -> None:
+        self._fixture()
+        envelope = self._envelope(request_id="sealed-launch", prompt="review")
+        tampered = replace(envelope, action="build")
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.invoke(envelope=tampered)
+        self.assertEqual(result.status, self.client.RuntimeStatus.CONFIG_ERROR)
+
+    def test_hardlinked_or_group_writable_runtime_is_rejected(self) -> None:
+        binary = self._fixture()
+        hardlink = binary.with_name("hardlink")
+        os.link(binary, hardlink)
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
+        hardlink.unlink()
+
+        binary.chmod(0o775)
+        content = binary.read_bytes()
+        manifest_path = self.root / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["artifacts"][0]["size"] = len(content)
+        manifest["artifacts"][0]["sha256"] = hashlib.sha256(content).hexdigest()
+        manifest_path.write_text(json.dumps(manifest))
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
+
+    def test_native_protocol_uses_exact_route_action_fields(self) -> None:
+        self._fixture()
+        expected_row_fields = {
+            ("gemini", "advisory"): {"model", "effort"},
+            ("gemini", "long_context"): {"model", "effort", "documents"},
+            ("codex", "advisory"): {"model", "effort", "mode"},
+            ("opencode", "plan"): {"model", "cwd"},
+            ("opencode", "build"): {"model", "cwd"},
+            ("grok", "architecture"): {"mode"},
+            ("grok", "governance"): {"mode"},
+            ("grok", "huge_context"): {"documents"},
+            ("composer", "codegen"): set(),
+        }
+        base = {
+            "protocol_version",
+            "request_id",
+            "operation",
+            "route",
+            "action",
+            "authority",
+            "timeout_ms",
+            "prompt",
+        }
+        for contract, row_fields in expected_row_fields.items():
+            with self.subTest(contract=contract):
+                is_grok_governance = contract == ("grok", "governance")
+                envelope = self._envelope(
+                    route=contract[0],
+                    action=contract[1],
+                    governance=is_grok_governance,
+                    artifact_model=(
+                        "google/gemini-test" if is_grok_governance else ""
+                    ),
+                )
+                document = json.loads(self.client._native_document(envelope))
+                expected_fields = base | row_fields
+                if is_grok_governance:
+                    expected_fields = expected_fields | {"artifact"}
+                self.assertEqual(set(document), expected_fields)
+                self.assertNotIn("backend", document)
+                self.assertNotIn("argv", document)
+                self.assertNotIn("tools", document)
+                self.assertNotIn("model_override", document)
+
+    def test_native_protocol_binds_exact_artifact_bytes_model_and_hash(self) -> None:
+        policy = self.client._load_host_policy()
+        artifact_bytes = b"exact\x00artifact\xffbytes\nnot duplicated in prompt"
+        with mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("codex", "advisory")}), "digest-1"),
+        ):
+            decision = policy.issue_policy_envelope(
+                request_id="artifact-native-1",
+                route="codex",
+                action="advisory",
+                governance=True,
+                prompt="Review the separately attached artifact.",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "claude",
+                    "active_model": "anthropic/claude-opus",
+                    "host_runtime": "claude-code",
+                    "session_identifier": "c-artifact",
+                },
+                row_config={
+                    "model": "openai/codex",
+                    "effort": "high",
+                    "mode": "prompt-only",
+                },
+                artifact_author_model="google/gemini-2.5-pro",
+                artifact_content=artifact_bytes,
+            )
+        self.assertIsNotNone(decision.envelope, decision.warning)
+        envelope = decision.envelope
+        assert envelope is not None
+        document = json.loads(self.client._native_document(envelope))
+        self.assertEqual(document["prompt"], "Review the separately attached artifact.")
+        self.assertIn("artifact", document)
+        self.assertEqual(
+            set(document["artifact"]),
+            {"encoding", "content", "sha256", "size", "author_model", "author_family"},
+        )
+        self.assertEqual(document["artifact"]["encoding"], "base64")
+        self.assertEqual(
+            base64.b64decode(document["artifact"]["content"], validate=True),
+            artifact_bytes,
+        )
+        self.assertEqual(
+            document["artifact"]["sha256"], hashlib.sha256(artifact_bytes).hexdigest()
+        )
+        self.assertEqual(document["artifact"]["size"], len(artifact_bytes))
+        self.assertEqual(document["artifact"]["author_model"], "google/gemini-2.5-pro")
+        self.assertEqual(document["artifact"]["author_family"], "google")
+
+        tampered = replace(
+            envelope,
+            artifact_content_base64=base64.b64encode(b"different").decode("ascii"),
+            seal="",
+        )
+        tampered = replace(
+            tampered,
+            seal=hmac.new(
+                policy._SEAL_KEY,
+                policy._unsigned_envelope(tampered),
+                hashlib.sha256,
+            ).hexdigest(),
+        )
+        with self.assertRaisesRegex(ValueError, "artifact hash"):
+            self.client._native_document(tampered)
+
+    def test_row_escape_fields_and_anthropic_opencode_fail_before_runtime(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            for row in (
+                {
+                    "model": "opencode/glm-5.2",
+                    "cwd": "/tmp/project",
+                    "argv": ["opencode", "run"],
+                },
+                {
+                    "model": "opencode/glm-5.2",
+                    "cwd": "/tmp/project",
+                    "tools": ["shell"],
+                },
+                {"model": "anthropic/claude-sonnet", "cwd": "/tmp/project"},
+            ):
+                with self.subTest(row=row):
+                    decision = policy.issue_policy_envelope(
+                        request_id="deny-row",
+                        route="opencode",
+                        action="plan",
+                        governance=False,
+                        prompt="plan",
+                        timeout_ms=30_000,
+                        explicit_config={
+                            "primary_id": "custom",
+                            "active_model": "custom/unknown",
+                            "host_runtime": "custom",
+                            "session_identifier": "s-1",
+                        },
+                        row_config=row,
+                    )
+                    self.assertIsNone(decision.envelope)
+
+
+if __name__ == "__main__":
+    unittest.main()

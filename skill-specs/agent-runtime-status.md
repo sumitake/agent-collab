@@ -1,0 +1,59 @@
+---
+name: agent-runtime-status
+version: {{ skill_version }}
+{{ agent_runtime_status_defaults_block }}
+description: Show availability and typed readiness for the unified collaboration routes. Use when the user says "agent runtime status," "check agent runtimes," "list agent versions," "is a reviewer available," or "/{{ package_name }}:agent-runtime-status." Also offer this proactively after a managed route returns unavailable or before a multi-agent workflow whose runtime state has not been checked this session.
+---
+
+# Agent runtime status
+
+Report the installed plugin's own verified state. Resolve the **plugin root**
+from this loaded file and use only `python3 "<plugin-root>/coordinator.py"` for
+native readiness plus `python3 "<plugin-root>/migration_doctor.py" --json` for
+legacy-package and host-profile status. These files are co-packaged with the
+skill; no external repository is required.
+
+## Workflow
+
+1. Run the migration doctor. If it reports an active retired package, routing
+   is blocked until that duplicate selection is removed.
+2. Resolve the current primary/model/session from host evidence or explicit
+   configuration. Do not infer the primary from installed CLIs.
+3. Submit a bounded `readiness` request for each exact matrix row:
+   Gemini `advisory|long_context`; Codex `advisory`; OpenCode `plan|build`;
+   Grok `architecture|governance|huge_context`; Composer `codegen`.
+4. Preserve typed results such as `unavailable`, `auth_error`, `quota_error`,
+   `containment_error`, `timeout`, and `output_limit`. Do not flatten them into
+   a generic failure or try another provider command.
+5. Probe `inbox/async` only as non-governance readiness with the exact target
+   row `{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`.
+   The id/family pair and nonblank target session must be trustworthy. Report
+   it available only when the current host explicitly observes its async
+   transport available and the target is not same-family; otherwise preserve
+   the typed blocked or unavailable result. Public coordinator never sends.
+   In safe mode every native model route is unavailable. Claude is always
+   async inbox-only and is never invoked headlessly.
+
+## Output
+
+```text
+agent-collab runtime:
+- host: <primary id> / <family> / <model> / <session>
+- package conflicts: <none | names>
+- async inbox: <observed ready | typed unavailable; readiness only>
+- native artifact: <verified | typed unavailable | invalid status>
+- gemini/advisory: <status>
+- gemini/long_context: <status>
+- codex/advisory: <status>
+- opencode/plan: <status + observed author family>
+- opencode/build: <status + observed author family>
+- grok/architecture: <status>
+- grok/governance: <status>
+- grok/huge_context: <status>
+- composer/codegen: <status>
+- codex/build: temporarily unavailable (separate mutation role)
+```
+
+Never list a fixed fleet from prose. The current model and author family are
+observations, not plugin identities; OpenCode may change providers during a
+session and must be re-observed on every request.

@@ -1,0 +1,30 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Defense-in-depth: live .mcp.json may contain secrets in some deployment patterns.
+# Use .mcp.json.template (committed) as the documented starting point.
+plugins/*/.mcp.json
+
+# Build/temp artifacts
+*.tgz
+node_modules/
+dist/
+build/
+
+# Local archives (these go to GitHub Releases, not the repo)
+*.plugin
+
+# Logs
+*.log
+chain-logs/
+
+# Python — the agy-backed mcp-server (transition Phase 1)
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/

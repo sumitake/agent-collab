@@ -1,0 +1,52 @@
+name: Feature / skill request
+description: Propose a new skill, MCP tool, chain, or enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of work
+      options:
+        - New skill
+        - Skill enhancement
+        - New MCP tool
+        - MCP tool enhancement
+        - New chain (sample / production)
+        - Plugin metadata / marketplace
+        - CI / release workflow
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What underlying problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: triggers
+    attributes:
+      label: Trigger phrases (skills only)
+      description: Both explicit ("X this", "do Y") AND situational ("or when X happens") — both required per directive #1.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: cloud-run-parity
+    attributes:
+      label: Cloud Run parity impact (directive #2)
+      options:
+        - None — no new MCP tool/parameter/response shape
+        - Yes — describe the new tool/parameter/response shape
+        - Unclear
+    validations:
+      required: true

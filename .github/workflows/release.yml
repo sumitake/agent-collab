@@ -1,0 +1,196 @@
+name: Build release archive
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  verify-release-ref:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify signed annotated tag and main ancestry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
+             [[ ! "$GITHUB_REF_NAME" =~ ^v-agent-collab-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: unsupported release tag format"
+            exit 1
+          fi
+
+          REF_API="repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}"
+          TAG_OBJECT_TYPE="$(gh api "$REF_API" --jq '.object.type')"
+          TAG_OBJECT_SHA="$(gh api "$REF_API" --jq '.object.sha')"
+          if [ "$TAG_OBJECT_TYPE" != "tag" ]; then
+            echo "ERROR: release ref is not an annotated tag"
+            exit 1
+          fi
+
+          TAG_API="repos/${GITHUB_REPOSITORY}/git/tags/${TAG_OBJECT_SHA}"
+          VERIFIED="$(gh api "$TAG_API" --jq '.verification.verified')"
+          TARGET_TYPE="$(gh api "$TAG_API" --jq '.object.type')"
+          TAG_COMMIT="$(gh api "$TAG_API" --jq '.object.sha')"
+          if [ "$VERIFIED" != "true" ] || [ "$TARGET_TYPE" != "commit" ]; then
+            echo "ERROR: release tag signature is unverified or does not target a commit"
+            exit 1
+          fi
+
+          git fetch --force origin main:refs/remotes/origin/main
+          CHECKED_OUT="$(git rev-parse HEAD)"
+          RESOLVED_TAG="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          test "$TAG_COMMIT" = "$CHECKED_OUT"
+          test "$TAG_COMMIT" = "$RESOLVED_TAG"
+          git merge-base --is-ancestor "$TAG_COMMIT" refs/remotes/origin/main
+
+  classify-release:
+    needs: verify-release-ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: Classify canonical public package
+        id: classify
+        run: |
+          set -euo pipefail
+          MODE="$(python3 scripts/build_plugin_archive.py --print-mode)"
+          case "$MODE" in
+            policy-only|activation) ;;
+            *) echo "ERROR: unsupported release mode: $MODE"; exit 1 ;;
+          esac
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+  verify-runtime-macos:
+    needs: [verify-release-ref, classify-release]
+    if: needs.classify-release.outputs.mode == 'activation'
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: Verify Developer ID, hardened runtime, notarization, and release matrix
+        run: >-
+          python3 scripts/verify_runtime_release.py
+          --git-sha "$(git rev-parse HEAD)"
+          --write-evidence /tmp/runtime-verification.json
+      - name: Publish commit-bound runtime verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-verification
+          path: /tmp/runtime-verification.json
+          if-no-files-found: error
+          retention-days: 1
+
+  build-release:
+    needs: [verify-release-ref, classify-release, verify-runtime-macos]
+    if: >-
+      ${{
+        always() &&
+        needs.verify-release-ref.result == 'success' &&
+        needs.classify-release.result == 'success' &&
+        (
+          needs.classify-release.outputs.mode == 'policy-only' ||
+          needs.verify-runtime-macos.result == 'success'
+        )
+      }}
+    runs-on: ubuntu-latest
+    # CI cost hardening 2026-07-01: release.yml stays GitHub-hosted (release
+    # reliability), so cap the job to bound PAID minutes if a build ever hangs
+    # (default is 6h). Normal builds finish in well under a minute.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: Download macOS runtime verification evidence
+        if: needs.classify-release.outputs.mode == 'activation'
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-verification
+          path: /tmp/runtime-verification
+      - name: Bind macOS evidence to this commit and packaged bytes
+        if: needs.classify-release.outputs.mode == 'activation'
+        run: >-
+          python3 scripts/verify_runtime_release.py
+          --git-sha "$(git rev-parse HEAD)"
+          --evidence /tmp/runtime-verification/runtime-verification.json
+      - name: Determine plugin and version
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Supported forms are v-agent-collab-X.Y.Z and vX.Y.Z. Both resolve
+          # to the only releaseable package.
+          if [[ "$TAG" =~ ^v-([a-z0-9-]+)-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            PLUGIN="${BASH_REMATCH[1]}"
+            VER="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            VER="${BASH_REMATCH[1]}"
+            PLUGIN="agent-collab"
+          else
+            echo "ERROR: tag format must be v-<plugin>-<X.Y.Z> or v<X.Y.Z>"
+            exit 1
+          fi
+          if [ "$PLUGIN" != "agent-collab" ]; then
+            echo "ERROR: agent-collab is the only releaseable package"
+            exit 1
+          fi
+          echo "plugin=$PLUGIN" >> $GITHUB_OUTPUT
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "archive_name=$PLUGIN v${VER}.plugin" >> $GITHUB_OUTPUT
+      - name: Verify tag matches plugin.json, READMEs, and CHANGELOG
+        run: python3 scripts/check_release_consistency.py --tag "${{ github.ref_name }}"
+      - name: Re-run deterministic release gates
+        run: |
+          python3 scripts/build_skills.py --check
+          python3 scripts/build_marketplace.py --check
+          python3 scripts/build-changelog.py --check
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Materialize signed annotated release tag object
+        run: |
+          set -euo pipefail
+          TAG_REF="refs/tags/${GITHUB_REF_NAME}"
+          git fetch --force origin "${TAG_REF}:${TAG_REF}"
+          test "$(git cat-file -t "$TAG_REF")" = tag
+      - name: Verify active tree and reachable history are safe for public packaging
+        run: python3 scripts/check-public-export-safety.py --active-tree --history
+      - name: Build .plugin archive
+        run: |
+          set -euo pipefail
+          PLUGIN="${{ steps.meta.outputs.plugin }}"
+          ARCHIVE="${{ steps.meta.outputs.archive_name }}"
+          python3 scripts/build_plugin_archive.py \
+            --plugin "$PLUGIN" \
+            --output "/tmp/$ARCHIVE"
+          ls -la "/tmp/$ARCHIVE"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ needs.classify-release.outputs.mode }}" = "policy-only" ]; then
+            NOTES="Policy-only retirement release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}. This archive contains the fail-closed policy/client surface and no native runtime artifact; native routes remain unavailable. See CHANGELOG.md for changes."
+          else
+            NOTES="Activation release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }} with the commit-bound, signed, hardened, and notarized Darwin-arm64 native runtime. See CHANGELOG.md for changes."
+          fi
+          gh release create "${{ github.ref_name }}" \
+            "/tmp/${{ steps.meta.outputs.archive_name }}" \
+            --title "${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}" \
+            --notes "$NOTES"

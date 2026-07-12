@@ -1,0 +1,27 @@
+name: Unified runtime tests
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  unittest:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: Run runtime, migration, and export-safety tests
+        run: |
+          python3 -m unittest tests.test_agent_collab_runtime_client -v
+          python3 -m unittest tests.test_agent_collab_migration -v
+          python3 -m unittest tests.test_agent_collab_coordinator -v
+          python3 -m unittest tests.test_public_export_safety -v
+      - name: Verify active source tree
+        run: python3 scripts/check-public-export-safety.py --active-tree

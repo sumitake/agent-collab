@@ -1,0 +1,32 @@
+---
+name: migration-doctor
+version: 3.0.0
+description: Use when the user says "migration doctor," "check old collaboration plugins," "verify agent-collab migration," or "/agent-collab:migration-doctor." Also offer this proactively after installing or updating agent-collab, when provider routing is blocked, or when a retired package may still be selected from an installed plugin or cache.
+---
+
+# Migration doctor
+
+Resolve the **plugin root** from this loaded file and run
+`python3 "<plugin-root>/migration_doctor.py"`. The doctor and public
+`coordinator.py` are co-packaged with the skills.
+For any coordinator readiness request, first read the **Coordinator request
+schema** in `<plugin-root>/README.md`.
+
+## Workflow
+
+Run the provider-free `migration_doctor.py` beside this skill's plugin root.
+It reads only local manifests, plugin directories, cache selections, Codex
+plugin tables in `~/.codex/config.toml`, the runtime manifest, and explicit
+host-profile configuration. It never invokes a provider or downloads an
+artifact.
+
+Treat any installed or active legacy package as a hard routing conflict. Show
+each observation's source host/state and the report's exact host-manager
+install, verify, and uninstall actions. Cache-only residue is reported
+separately. After cleanup, re-run the doctor before provider selection.
+
+If the signed native artifact is absent, report native Gemini, Codex, OpenCode,
+Grok, and Composer routes as typed unavailable. An async inbox is eligible only
+after a current host availability observation; the public coordinator reports
+readiness only and never sends. Without that observation it is unavailable in
+safe mode too. Never recommend reinstalling a retired package as a rollback.

@@ -1,0 +1,20 @@
+# CHANGELOG.md is a GENERATED artifact — it is NOT committed in PRs.
+# PRs commit only a changelog.d/<id>.md fragment; CHANGELOG.md is compiled
+# from those fragments at release time (see changelog.d/README.md), so
+# concurrent PRs never touch CHANGELOG.md and cannot conflict on it.
+#
+# A former `CHANGELOG.md merge=union` driver was removed 2026-06-14: GitHub
+# ignores .gitattributes merge drivers for server-side PR merges, so it never
+# prevented the conflict; and on a real local conflict, line-union produces
+# output that fails `build-changelog.py --check`. Not committing the generated
+# file in PRs is the actual structural fix — do not re-add a merge driver here.
+
+# Grok-panel runtime scripts are deduplicated to a single canonical copy under
+# skill-panel-scripts/ and propagated, byte-for-byte, into each panel skill's
+# scripts/ tree by scripts/build_skills.py. build_skills.py --check (and the
+# TestPanelScriptParity test) byte-compare the generated copies against the
+# canonical, so the line endings must stay LF on every platform — otherwise a
+# Windows checkout with core.autocrlf=true would fail the byte-equality gate.
+skill-panel-scripts/**/*.py text eol=lf
+plugins/*/skills/*/scripts/_agent_collab_lib.py text eol=lf
+plugins/*/skills/*/scripts/_agent_collab/*.py text eol=lf
