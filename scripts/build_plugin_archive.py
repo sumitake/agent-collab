@@ -95,6 +95,7 @@ REQUIRED_ROOTS = (
     "skills",
     "coordinator.py",
     "runtime_client.py",
+    "runtime_setup.py",
     "host_policy.py",
     "migration_doctor.py",
     "signing_policy.py",

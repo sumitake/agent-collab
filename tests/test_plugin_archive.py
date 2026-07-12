@@ -131,6 +131,7 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertIn(".claude-plugin/plugin.json", names)
             self.assertIn(".codex-plugin/plugin.json", names)
             self.assertIn("runtime_client.py", names)
+            self.assertIn("runtime_setup.py", names)
             self.assertIn("signing_policy.py", names)
             self.assertIn("runtime-manifest.json", names)
             for name in LEGAL_FILES:
@@ -319,6 +320,16 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertEqual(self.builder.MAX_ARTIFACT_BYTES, 64 * 1024 * 1024)
         self.assertEqual(self.builder.RUNTIME_FILE_MODE, 0o755)
         self.assertIn("signing_policy.py", self.builder.REQUIRED_ROOTS)
+        self.assertIn("runtime_setup.py", self.builder.REQUIRED_ROOTS)
+
+    def test_archive_fails_closed_when_runtime_setup_entrypoint_is_missing(self) -> None:
+        (self.plugin / "runtime_setup.py").unlink()
+        with self.assertRaisesRegex(
+            ValueError, "required archive member is missing: runtime_setup.py"
+        ):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
 
     def test_archive_rejects_unexpected_manifest_and_skill_members(self) -> None:
         extra_manifest = self.plugin / ".claude-plugin" / "extra.dat"
