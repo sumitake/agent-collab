@@ -127,6 +127,16 @@ The public changelog intentionally records policy, compatibility, and migration 
   marketplaces and all skills, and retain the policy-only fail-closed runtime
   state until a separately verified signed native artifact is available.
 
+### agent-collab 3.1.0 — source-available licensing and neutral guidance
+
+- License the public repository and installed package under the unmodified
+  PolyForm Strict License 1.0.0. Copyright remains with John Osumi; commercial
+  use requires explicit written approval administered by Osumi Consulting LLC.
+- Make `AGENTS.md` the sole canonical public repository guide and retain
+  `CLAUDE.md` only as an `@AGENTS.md` compatibility loader.
+- Require contributor-rights evidence and package exact legal documents,
+  SHA-256 evidence, and an SPDX 2.3 SBOM in the policy-only release.
+
 <!-- changelog-fragments:end -->
 
 ---
