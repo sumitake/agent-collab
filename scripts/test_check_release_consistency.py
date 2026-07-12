@@ -8,7 +8,9 @@ production. CI runs this before trusting the consistency check itself.
 
 Run: python scripts/test_check_release_consistency.py
 """
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -94,6 +96,110 @@ class TestHostManifestConsistency(unittest.TestCase):
             any("Codex plugin manifest" in line and "2.9.0" in line for line in lines),
             lines,
         )
+
+
+class TestLicenseContract(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        plugin = self.root / "plugins" / "agent-collab"
+        for host in (".claude-plugin", ".codex-plugin"):
+            directory = plugin / host
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "name": "agent-collab",
+                        "version": "3.1.0",
+                        "license": "PolyForm-Strict-1.0.0",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        marketplace = self.root / ".claude-plugin"
+        marketplace.mkdir()
+        (marketplace / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "plugins": [
+                        {
+                            "name": "agent-collab",
+                            "version": "3.1.0",
+                            "license": "LicenseRef-PolyForm-Strict-1.0.0",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        license_bytes = (Path(__file__).resolve().parents[1] / "LICENSE").read_bytes()
+        notice = (
+            "Copyright (c) 2026 John Osumi. All rights reserved except as "
+            "expressly granted.\nCommercial licensing is administered by "
+            "Osumi Consulting LLC.\n"
+        ).encode()
+        commercial = (
+            "PolyForm Strict License 1.0.0\nexplicit written approval\n"
+            "Osumi Consulting LLC\nRepository access\ninstallation\n"
+            "GitHub interaction\nacceptance of a contribution\n"
+        ).encode()
+        for name, data in (
+            ("LICENSE", license_bytes),
+            ("NOTICE", notice),
+            ("COMMERCIAL-LICENSING.md", commercial),
+        ):
+            (self.root / name).write_bytes(data)
+            (plugin / name).write_bytes(data)
+        (self.root / "README.md").write_text(
+            "PolyForm Strict License 1.0.0\nOsumi Consulting LLC\n"
+            "[LICENSE](LICENSE) [NOTICE](NOTICE) "
+            "[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)\n",
+            encoding="utf-8",
+        )
+        (plugin / "README.md").write_text(
+            "PolyForm Strict License 1.0.0\nOsumi Consulting LLC\n"
+            "[LICENSE](LICENSE) [NOTICE](NOTICE) "
+            "[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)\n",
+            encoding="utf-8",
+        )
+        fragments = self.root / "changelog.d"
+        fragments.mkdir()
+        (fragments / "entry.md").write_text(
+            "### agent-collab 3.1.0\nPolyForm Strict License 1.0.0\n"
+            "`AGENTS.md`\nOsumi Consulting LLC\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _errors(self):
+        self.assertTrue(
+            hasattr(crc, "license_contract_errors"),
+            "license_contract_errors must enforce release licensing",
+        )
+        return crc.license_contract_errors(self.root, "3.1.0")
+
+    def test_canonical_license_contract_passes(self):
+        self.assertEqual(self._errors(), [])
+
+    def test_manifest_license_drift_is_rejected(self):
+        path = self.root / "plugins/agent-collab/.codex-plugin/plugin.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["license"] = "MIT"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertTrue(any("Codex manifest license" in e for e in self._errors()))
+
+    def test_packaged_legal_file_drift_is_rejected(self):
+        (self.root / "plugins/agent-collab/NOTICE").write_text("changed\n")
+        self.assertTrue(any("NOTICE byte parity" in e for e in self._errors()))
+
+    def test_changelog_licensing_drift_is_rejected(self):
+        (self.root / "changelog.d/entry.md").write_text(
+            "### agent-collab 3.1.0\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(any("changelog" in e for e in self._errors()))
 
 
 class TestChangelogVersion(unittest.TestCase):

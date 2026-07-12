@@ -20,6 +20,16 @@ current-session and explicit identity is a configuration error for every
 route. Partial or unknown identity is allowed only for non-governance work and
 always carries an independence warning.
 
+## License
+
+This package uses the unmodified
+[PolyForm Strict License 1.0.0](LICENSE). Copyright is owned by John Osumi;
+commercial use requires separate, explicit written approval administered by
+Osumi Consulting LLC. Source visibility and package installation do not grant
+commercial rights. See [NOTICE](NOTICE) and
+[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
+approval boundary.
+
 ## Runtime and safe mode
 
 The package may contain a privately built signed native runtime only at the

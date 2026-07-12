@@ -1,6 +1,6 @@
 # Unified agent-collab migration
 
-`agent-collab 3.0.1` replaces every prior public package with one dynamic-host
+`agent-collab 3.1.0` replaces every prior public package with one dynamic-host
 package. Remove all old packages; they are not dependencies, presets, shims, or
 rollback artifacts.
 
