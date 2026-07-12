@@ -52,6 +52,8 @@ def _normalize_created(value: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("created timestamp is required")
     candidate = value.strip()
+    if candidate.endswith("z"):
+        raise ValueError("created timestamp must use uppercase Z for UTC")
     if candidate.endswith("Z"):
         candidate = candidate[:-1] + "+00:00"
     try:

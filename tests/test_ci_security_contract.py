@@ -10,6 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+GITHUB_COMMAND_FILE_NAMES = (
+    r"GITHUB_(?:ENV|OUTPUT|PATH|STATE|STEP_SUMMARY)"
+)
+UNQUOTED_GITHUB_COMMAND_REDIRECT_RE = re.compile(
+    rf">>?\s*(?![\"'])(?:"
+    rf"\$(?:{GITHUB_COMMAND_FILE_NAMES})\b|"
+    rf"\$\{{(?:{GITHUB_COMMAND_FILE_NAMES})\}}"
+    rf")"
+)
 
 
 class CiSecurityContractTests(unittest.TestCase):
@@ -36,14 +45,38 @@ class CiSecurityContractTests(unittest.TestCase):
 
     def test_github_command_file_redirects_are_quoted(self) -> None:
         unsafe: list[str] = []
-        pattern = re.compile(
-            r">>\s+\$(?:GITHUB_OUTPUT|GITHUB_ENV|GITHUB_PATH)\b"
-        )
         for name, text in self._workflow_texts().items():
             for lineno, line in enumerate(text.splitlines(), 1):
-                if pattern.search(line):
+                if UNQUOTED_GITHUB_COMMAND_REDIRECT_RE.search(line):
                     unsafe.append(f"{name}:{lineno}:{line.strip()}")
         self.assertEqual(unsafe, [])
+
+    def test_command_file_redirect_matcher_covers_official_files_and_syntaxes(
+        self,
+    ) -> None:
+        unsafe = (
+            "echo x >> $GITHUB_OUTPUT",
+            "echo x >>$GITHUB_ENV",
+            "echo x > ${GITHUB_PATH}",
+            "echo x 2>>${GITHUB_STEP_SUMMARY}",
+            "echo x >> ${GITHUB_STATE}",
+        )
+        safe = (
+            'echo x >> "$GITHUB_OUTPUT"',
+            "echo x >> '$GITHUB_ENV'",
+            'echo x >>"${GITHUB_PATH}"',
+            "echo x >>'${GITHUB_STEP_SUMMARY}'",
+        )
+        for line in unsafe:
+            with self.subTest(line=line):
+                self.assertIsNotNone(
+                    UNQUOTED_GITHUB_COMMAND_REDIRECT_RE.search(line)
+                )
+        for line in safe:
+            with self.subTest(line=line):
+                self.assertIsNone(
+                    UNQUOTED_GITHUB_COMMAND_REDIRECT_RE.search(line)
+                )
 
     def test_comprehensive_ci_covers_supported_python_and_contracts(self) -> None:
         path = WORKFLOWS / "ci.yml"

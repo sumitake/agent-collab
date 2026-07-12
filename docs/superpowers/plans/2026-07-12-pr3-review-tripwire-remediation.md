@@ -72,7 +72,7 @@ expressions, GitHub Actions YAML, SPDX 2.3 JSON.
 - Consumes: `_normalize_created(value: str) -> str`.
 - Produces: a cross-version explicit rejection that lowercase `z` is invalid.
 
-- [ ] **Step 1: Add the failing regression test**
+- [x] **Step 1: Add the failing regression test**
 
 ```python
 def test_created_timestamp_rejects_lowercase_utc_suffix(self) -> None:
@@ -84,7 +84,7 @@ def test_created_timestamp_rejects_lowercase_utc_suffix(self) -> None:
         evidence_builder._normalize_created("2026-07-12T00:00:00z")
 ```
 
-- [ ] **Step 2: Run the regression test and verify the red state**
+- [x] **Step 2: Run the regression test and verify the red state**
 
 Run:
 
@@ -95,7 +95,7 @@ python3 -m unittest tests.test_release_evidence.ReleaseEvidenceTests.test_create
 Expected: FAIL because the existing parser raises its generic ISO 8601 error
 instead of enforcing the uppercase-`Z` boundary before parser dispatch.
 
-- [ ] **Step 3: Add the explicit pre-parser guard**
+- [x] **Step 3: Add the explicit pre-parser guard**
 
 Insert immediately before the existing uppercase-`Z` normalization:
 
@@ -106,7 +106,7 @@ if candidate.endswith("Z"):
     candidate = candidate[:-1] + "+00:00"
 ```
 
-- [ ] **Step 4: Rerun the regression test**
+- [x] **Step 4: Rerun the regression test**
 
 Run:
 
@@ -133,7 +133,7 @@ characterization test passes.
   `UNQUOTED_GITHUB_COMMAND_REDIRECT_RE: re.Pattern[str]`.
 - Consumes: every line from `_workflow_texts()`.
 
-- [ ] **Step 1: Add a failing table-driven matcher test**
+- [x] **Step 1: Add a failing table-driven matcher test**
 
 ```python
 def test_command_file_redirect_matcher_covers_official_files_and_syntaxes(
@@ -164,7 +164,7 @@ def test_command_file_redirect_matcher_covers_official_files_and_syntaxes(
             )
 ```
 
-- [ ] **Step 2: Run the new test and verify the red state**
+- [x] **Step 2: Run the new test and verify the red state**
 
 Run:
 
@@ -175,7 +175,7 @@ python3 -m unittest tests.test_ci_security_contract.CiSecurityContractTests.test
 Expected: ERROR because
 `UNQUOTED_GITHUB_COMMAND_REDIRECT_RE` is not yet defined.
 
-- [ ] **Step 3: Add the bounded matcher and use it in the live scan**
+- [x] **Step 3: Add the bounded matcher and use it in the live scan**
 
 Add near `FULL_SHA_RE`:
 
@@ -201,7 +201,7 @@ for name, text in self._workflow_texts().items():
             unsafe.append(f"{name}:{lineno}:{line.strip()}")
 ```
 
-- [ ] **Step 4: Run focused tests and verify green**
+- [x] **Step 4: Run focused tests and verify green**
 
 Run:
 
@@ -220,7 +220,7 @@ Expected: all tests pass; current quoted workflow redirects remain accepted.
 - Consumes: completed characterization and matcher tests.
 - Produces: one signed remediation commit and a new exact-head review request.
 
-- [ ] **Step 1: Run the complete local gate bundle**
+- [x] **Step 1: Run the complete local gate bundle**
 
 ```bash
 python3 -m unittest discover -s tests -t . -v
@@ -236,7 +236,7 @@ git diff --check
 
 Expected: every command exits 0.
 
-- [ ] **Step 2: Rehearse release evidence and validate SPDX 2.3**
+- [x] **Step 2: Rehearse release evidence and validate SPDX 2.3**
 
 Build into a fresh temporary directory, verify the SHA-256 sidecar, parse the
 JSON, and run SPDX Tools with `--version SPDX-2.3`.

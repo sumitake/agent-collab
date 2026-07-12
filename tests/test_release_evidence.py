@@ -267,6 +267,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
 
         self.assertFalse(self.sbom.exists())
 
+    def test_created_timestamp_rejects_lowercase_utc_suffix(self) -> None:
+        evidence_builder = _load(
+            "agent_collab_evidence_lowercase_utc", EVIDENCE_SCRIPT
+        )
+
+        with self.assertRaisesRegex(ValueError, "must use uppercase Z"):
+            evidence_builder._normalize_created("2026-07-12T00:00:00z")
+
 
 if __name__ == "__main__":
     unittest.main()
