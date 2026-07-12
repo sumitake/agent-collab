@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pre-self-merge compliance check for an agent-authored pull request.
 
-Directive #6 (project CLAUDE.md "Agent merge authority") lets an AI agent
+The public governance contract in AGENTS.md lets an AI agent
 merge its own PR ONCE four preconditions hold:
   1. the Project Decision Workflow positively converged (an independent
      Gemini cross-check returned PROCEED);

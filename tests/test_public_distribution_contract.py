@@ -10,6 +10,17 @@ PUBLIC_REPO = "https://github.com/sumitake/agent-collab"
 
 
 class PublicDistributionContractTests(unittest.TestCase):
+    def test_agent_neutral_guidance_is_canonical(self) -> None:
+        agents_path = ROOT / "AGENTS.md"
+        self.assertTrue(agents_path.is_file(), "AGENTS.md must be canonical")
+        agents = agents_path.read_text(encoding="utf-8")
+        claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+        self.assertIn("# agent-collab development guide", agents)
+        self.assertIn("## Source boundaries", agents)
+        self.assertEqual(claude, "# Claude Code compatibility\n\n@AGENTS.md\n")
+        self.assertNotIn("## Source boundaries", claude)
+
     def test_every_canonical_repository_pointer_targets_public_distribution(self) -> None:
         marketplace = json.loads(
             (ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
@@ -56,6 +67,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         )
         public_files = (
             ROOT / "README.md",
+            ROOT / "AGENTS.md",
             ROOT / "CLAUDE.md",
             ROOT / "CHANGELOG.md",
             ROOT / "docs" / "migration-from-legacy-packages.md",

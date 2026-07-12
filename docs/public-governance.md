@@ -8,7 +8,7 @@ skills, client behavior, contribution rules, and release-safety gates.
 
 ## Authoritative local surfaces
 
-- `CLAUDE.md` defines source boundaries and required validation.
+- `AGENTS.md` defines source boundaries and required validation.
 - `.github/PULL_REQUEST_TEMPLATE.md` defines the evidence contributors record.
 - `.github/workflows/compliance-trace.yml` validates the trace schema in CI.
 - `scripts/check_pr_compliance.py` is the local pre-merge form check.
