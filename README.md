@@ -1,25 +1,31 @@
-# agent-collab Plugin Marketplace
+# agent-collab
 
-This repository distributes one package: **agent-collab** (v3.0.0). It gives
+This repository distributes one package: **agent-collab** (v3.0.1). It gives
 Claude, Codex, Antigravity, ZCode/OpenCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
 
-The private `agent-collab-workspace` repository remains the editable source for
-runtime implementation and governance. A policy-only public release may ship
-the coordinator, skills, migration tooling, and fail-closed client without a
-native runtime. An activation release receives a privately built, signed,
-notarized native runtime artifact only after the workspace build/sign pipeline
-completes. No downloader, post-install hook, runtime cache, raw provider recipe,
-or executable source copy is shipped here.
+This public repository is the source of truth for the coordinator policy,
+skills, migration tooling, fail-closed client, contribution governance, and
+release-safety checks. Provider runtime implementation, build credentials, and
+signing infrastructure remain in a separate private build/sign system. A
+policy-only release contains no native runtime; an activation release may import
+only the final signed and notarized artifact plus verification metadata. No
+downloader, post-install hook, runtime cache, raw provider recipe, or executable
+source copy is shipped here.
+
+Contributors need no access to the private build/sign system. See
+[public governance](docs/public-governance.md),
+[migration guidance](docs/migration-from-legacy-packages.md), and the
+[security policy](SECURITY.md).
 
 ## Current package
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.0.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.0.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.0.0
+## What's new - v3.0.1
 
 - All previous host presets and provider packages are retired and deleted. The
   marketplace, release matrix, and active package inventory contain only
@@ -65,7 +71,7 @@ flowchart LR
     S --> N["Observed non-model seam<br/>host async-inbox readiness only"]
     S --> C["Verified plugin-relative native runtime"]
     C --> X["Managed Gemini, Codex, OpenCode,<br/>Grok 4.5, and Composer roles"]
-    W["Private workspace build/sign pipeline"] -. "signed and notarized artifact" .-> C
+    W["Private build/sign system"] -. "signed and notarized artifact" .-> C
 ```
 
 The plugin runtime client accepts no binary override. It selects only the
@@ -80,10 +86,9 @@ unsupported artifacts fail closed with typed status.
 
 The expected Apple Developer ID Team ID is pinned in the public
 `plugins/agent-collab/signing_policy.py` policy source, independently of the
-runtime manifest. It is currently unconfigured because this host has no valid
-Developer ID signing identity; activation release remains blocked until the
-operator-owned Team ID is committed through review and the matching identity
-and notarization credentials are available.
+runtime manifest. It is currently unconfigured; activation releases remain
+blocked until a reviewed Team ID is committed and matching signing and
+notarization credentials are available to the private producer.
 
 Governance plus applicable review, fallback, and worker calls carry the
 captured artifact separately from the instruction prompt. The sealed native
@@ -104,9 +109,11 @@ until the signed runtime exposes the complete matrix, including Composer.
 
 ## Production lifecycle
 
-1. The private workspace changes the canonical runtime or routing contract.
-2. Workspace unit, containment, provenance, and authority-boundary tests pass.
-3. A private build produces the Darwin-arm64 binary, signs it with hardened
+1. Public policy or protocol changes are reviewed and validated in this
+   repository; private runtime changes remain inside the build/sign system.
+2. The private producer runs its containment, provenance, and
+   authority-boundary tests without exporting implementation source.
+3. The private producer builds the Darwin-arm64 binary, signs it with hardened
    runtime, notarizes it, and records size/hash/team metadata.
 4. A policy-only plugin release omits the runtime and keeps every native route
    typed unavailable. An activation release imports only the final binary and
@@ -134,7 +141,7 @@ mode and restart after validation. Rollback never reinstalls an old package.
 Claude Code:
 
 ```text
-/plugin marketplace add sumitake/agent-collab-plugin
+/plugin marketplace add sumitake/agent-collab
 /plugin install agent-collab@agent-collab
 /agent-collab:migration-doctor
 ```
@@ -142,7 +149,7 @@ Claude Code:
 Codex CLI/app:
 
 ```text
-codex plugin marketplace add sumitake/agent-collab-plugin
+codex plugin marketplace add sumitake/agent-collab
 codex plugin add agent-collab@agent-collab
 ```
 
@@ -238,33 +245,27 @@ and that family is excluded from selection alongside the active primary family. 
 unknown artifact-author family emits an independence warning for
 non-governance work and fails governance closed.
 
-## Public-release safety
+## Clean public repository invariant
 
-The deleted packages and executor sources remain in this private repository's
-reachable history until the separately authorized rewrite is executed. Do not
-change visibility or publish an archive from this clone. A public source export
-must be a clean-history repository and pass the byte-level gate below. History
-mode inspects every ref and reachable commit, tree, blob, annotated-tag object
-and message, including direct non-commit refs. It validates release-tag form
-and targets, recursively scans nested archive members under cumulative depth,
-member-count, per-member, and decompressed-size limits, and rejects
-provider-backend archive directories, symlinks, and other unsafe tree modes.
-Python AST evaluation also catches statically constructed provider argv; only
-explicit harmless audit-literal declarations are masked.
+This repository, every reachable ref, and every release archive must remain
+free of provider executor source, raw provider invocation recipes, private
+absolute paths, credentials, retired package trees, and unreviewed native
+artifacts. The byte-level history gate inspects every ref and reachable commit,
+tree, blob, annotated-tag object, and message, including direct non-commit refs.
+It validates release-tag form and targets, recursively scans nested archive
+members under cumulative depth, member-count, per-member, and decompressed-size
+limits, and rejects provider-backend archive directories, symlinks, and other
+unsafe tree modes. Python AST evaluation also catches statically constructed
+provider argv; only explicit harmless audit-literal declarations are masked.
 
-Every pull-request workflow is pinned to `ubuntu-latest`; contributor code is
-never executed on the persistent RhoNAS runner. Self-hosted execution remains
-out of this public repository unless a separately reviewed disposable,
-untrusted boundary is introduced.
+Pull-request workflows use GitHub-hosted runners and receive no private
+build/sign credentials. If contamination is suspected, stop publication and
+report it privately under [SECURITY.md](SECURITY.md); do not copy the suspected
+material into a public issue or pull request.
 
 ```text
-python3 scripts/check-public-export-safety.py --export-root <clean-export> --active-tree --history
+python3 scripts/check-public-export-safety.py --active-tree --history
 ```
-
-The operator has authorized the primary agent to perform the backup,
-destructive rewrite, branch/tag/release cleanup, force push, and GitHub residual
-audit. Visibility must nevertheless remain private while any reachable GitHub
-PR ref or release artifact still exposes retired source.
 
 ## Development and release verification
 

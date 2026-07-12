@@ -6,9 +6,9 @@
   marketplace, release inventory, active documentation, and generated package
   surface without presets, tombstones, dependencies, or compatibility shims.
   The historical `agent-collab-plugin`, `gemini-collab`, and `grok-collab`
-  package identities are also treated as retired exact aliases; the current
-  `sumitake/agent-collab-plugin` repository remains the marketplace source and
-  is not itself an installed legacy package.
+  package identities are also treated as retired exact aliases. The clean
+  `sumitake/agent-collab` repository is the marketplace source; a repository
+  name is not itself an installed legacy package.
 - Add `agent-collab 3.0.0` as the only package and release. It resolves the
   primary, model family, active model, host runtime, and session dynamically.
   `codex-tools` → the managed Codex backend in `agent-collab`; `glm-worker`
@@ -31,7 +31,7 @@
   failures. The release
   tree contains no unsigned
   placeholder artifact; all native routes are typed unavailable until the
-  private workspace build/sign pipeline supplies the notarized binary. A
+  private build/sign system supplies the notarized binary. A
   policy-only release may ship with an empty artifact manifest and no runtime.
   Native activation remains blocked until the Darwin-arm64 artifact advertises
   the full matrix and supplies commit-bound Developer ID, hardened-runtime, and
@@ -79,7 +79,7 @@
   unsafe tree modes. It separately inspects every ref, direct blob or tree
   target, annotated-tag object/message, and release-tag form/target.
 - Pin every pull-request workflow to GitHub-hosted `ubuntu-latest`; public PR
-  code can no longer execute on the persistent RhoNAS self-hosted runner, and
+  code can no longer execute on a persistent self-hosted runner, and
   the mutable `RUNNER_TARGET` repository variable has been removed.
 - Grant CodeQL the additional read-only `actions: read` scope required to
   associate and upload pull-request analysis results; all other workflow token

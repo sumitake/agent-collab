@@ -6,11 +6,8 @@ package-agnostic Markdown document with ``{{ var }}`` placeholders that the
 generator resolves per-package using ``scripts/skill-build-config.json``.
 
 Output: ``plugins/<package>/skills/<name>/SKILL.md`` — a fully-resolved,
-self-contained file (no placeholders, no runtime indirection). The shipped
-file is what the agent reads via ``view_file`` at invocation time — zero
-two-hop latency, zero parameter-translation ambiguity (see workspace
-``drafts/antigravity-as-primary-design.md`` §4 + the Phase-2 Gemini cross-
-check round 2 verdict ready-to-proceed).
+self-contained file (no placeholders or runtime indirection). The installed
+file is the complete public skill contract read by the host at invocation.
 
 USAGE
   python3 scripts/build_skills.py

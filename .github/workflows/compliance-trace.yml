@@ -1,35 +1,17 @@
 name: Compliance trace
 
-# Initiative D Layer 2 (per the workspace repo's TODO #10): hard-fail any PR
-# whose compliance-trace block is absent or malformed, converting the
-# directive-#6 precondition "the change is recorded" from honor-system
-# (operator-runnable local check) to CI-enforced. The format-spec source of
-# truth is the WORKSPACE repo's `docs/multi-agent-coordination.md` § "PR
-# compliance trace". The parser below mirrors
-# `sumitake/agent-collab-workspace`'s `scripts/check_pr_compliance.py` C2
-# logic AND that repo's identical `.github/workflows/compliance-trace.yml`
-# — see KEEP IN SYNC comments below.
-#
-# Adding this workflow as a REQUIRED status check (branch protection) is
-# a separate follow-up — the workflow must merge and run once on `main`
-# before its check-name can appear in the branch-protection contexts
-# list. The TODO #10 entry tracks the branch-protection step.
+# Hard-fail any PR whose compliance-trace block is absent or malformed. The
+# public format contract lives in `docs/public-governance.md`; the executable
+# parser is kept in sync with `scripts/check_pr_compliance.py` in this repo.
 
 on:
   pull_request:
     # Default activity types are [opened, synchronize, reopened]; we add
-    # `edited` so a `gh pr edit --body` to fix a malformed compliance-trace
+    # `edited` so a body-only fix to a malformed compliance-trace
     # block re-fires this workflow. Without `edited`, body-only fixes leave
-    # the check red until the next push — empirically a recurring source
-    # of "I fixed it, why isn't it green?" friction (see workspace memory
-    # [[feedback-pr-body-edit-no-retrigger]]). `edited` also fires on
+    # the check red until the next push. `edited` also fires on
     # title / base-ref edits, which is harmless — the validator is
     # idempotent and runs in ~5 seconds.
-    #
-    # Mirrors the equivalent edit on workspace
-    # `sumitake/agent-collab-workspace`'s `.github/workflows/pr-governance.yml`
-    # (the consolidated governance gate that replaced the workspace's
-    # `compliance-trace.yml` on 2026-06-03).
     types: [opened, synchronize, reopened, edited]
     branches: [main]
 
@@ -138,15 +120,9 @@ jobs:
 
           # --- KEEP IN SYNC -------------------------------------------------
           # The next three constants (TRACE_START, TRACE_END, REQUIRED_KEYS)
-          # are mirrored from `sumitake/agent-collab-workspace`'s
-          # `scripts/check_pr_compliance.py` AND from that repo's identical
-          # `.github/workflows/compliance-trace.yml`. The format-spec source
-          # of truth is the workspace repo's
-          # `docs/multi-agent-coordination.md` § "PR compliance trace".
-          # If you change any of these three here, mirror the change in BOTH
-          # workspace-repo locations. Drift between the workspace check and
-          # this CI gate would create confusing pass-here / fail-there
-          # situations.
+          # mirror this repo's `scripts/check_pr_compliance.py`. The public
+          # prose contract is `docs/public-governance.md`. Change both local
+          # implementations together so CI and pre-merge checks cannot drift.
           # ------------------------------------------------------------------
           TRACE_START = "<!-- compliance-trace:start -->"
           TRACE_END = "<!-- compliance-trace:end -->"
@@ -286,10 +262,8 @@ jobs:
               for k in REQUIRED_KEYS:
                   print(f"  - {k}")
               print()
-              print("Spec: sumitake/agent-collab-workspace's")
-              print("      docs/multi-agent-coordination.md § 'PR compliance trace'.")
-              print("Local pre-merge check: sumitake/agent-collab-workspace's")
-              print("                      scripts/check_pr_compliance.py")
+              print("Spec: docs/public-governance.md")
+              print("Local pre-merge check: scripts/check_pr_compliance.py")
               sys.exit(1)
 
           print("Compliance-trace block VALID:")

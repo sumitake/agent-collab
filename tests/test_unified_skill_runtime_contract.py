@@ -148,7 +148,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     def test_root_readme_documents_current_codex_install_commands(self) -> None:
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn(
-            "codex plugin marketplace add sumitake/agent-collab-plugin", text
+            "codex plugin marketplace add sumitake/agent-collab", text
         )
         self.assertIn("codex plugin add agent-collab@agent-collab", text)
         self.assertNotIn("codex plugin install agent-collab", text)

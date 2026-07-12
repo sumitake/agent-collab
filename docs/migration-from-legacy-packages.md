@@ -1,13 +1,13 @@
 # Unified agent-collab migration
 
-`agent-collab 3.0.0` replaces every prior public package with one dynamic-host
+`agent-collab 3.0.1` replaces every prior public package with one dynamic-host
 package. Remove all old packages; they are not dependencies, presets, shims, or
 rollback artifacts.
 
 The historically public package IDs `agent-collab-plugin`, `gemini-collab`,
 and `grok-collab` are retired aliases too. Remove them if a host reports an
 exact installed plugin identity. The current GitHub repository name
-`sumitake/agent-collab-plugin` is only the marketplace source and is not a
+`sumitake/agent-collab` is the marketplace source and is not a
 legacy package selection.
 
 ## Namespace and skill mapping
@@ -95,22 +95,24 @@ Developer ID/notarization credentials exist, native activation is typed
 unavailable. This does not block an explicitly policy-only release whose
 manifest and archive contain no runtime.
 
-## Public-release history gate
+## Clean public repository invariant
 
-Deleted provider and preset sources remain in this private repository's git
-history until the separately authorized history rewrite is performed. Do not
-change repository visibility or export this clone directly. A public release
-must come from an audited clean-history export that passes both active-tree and
-history modes of `scripts/check-public-export-safety.py` after the primary
-performs the backup, rewrite, branch/tag/release cleanup, and GitHub residual
-audit. History mode reads every reachable blob as bytes, scans archive members
-and renamed executor markers, and rejects symlinks or other unsafe git tree
-modes. It also inspects all refs, annotated-tag objects and messages, direct
-blob/tree refs, release-tag form and target, and provider-backend directories
-inside recursively nested archives. Cumulative archive depth, member count,
-per-member size, and decompressed-size limits fail closed; static Python argv
-construction is scanned semantically rather than by raw substrings alone. This
-document does not authorize those destructive operations.
+Migration must not reintroduce retired package trees, provider executor source,
+raw provider invocation recipes, private paths, credentials, or an unsigned
+runtime placeholder. The public repository, every reachable ref, and every
+release archive must pass both active-tree and history modes of
+`scripts/check-public-export-safety.py`. History mode reads every reachable blob
+as bytes, scans archive members and renamed executor markers, and rejects
+symlinks or other unsafe git tree modes. It also inspects all refs,
+annotated-tag objects and messages, direct blob/tree refs, release-tag form and
+target, and provider-backend directories inside recursively nested archives.
+Cumulative archive depth, member count, per-member size, and decompressed-size
+limits fail closed; static Python argv construction is scanned semantically
+rather than by raw substrings alone.
+
+If a migration exposes suspect material, stop and use the private reporting
+path in [`SECURITY.md`](../SECURITY.md). Do not attach the material to a public
+issue or pull request.
 
 ## Native package and artifact contract
 

@@ -3,13 +3,13 @@
   "name": "agent-collab",
   "owner": {
     "name": "John Osumi",
-    "email": "john@osumi.com"
+    "email": "931193+sumitake@users.noreply.github.com"
   },
   "description": "Unified dynamic-host agent collaboration marketplace. Contains only agent-collab; legacy presets and provider packages are retired with no shims or dependencies.",
   "plugins": [],
   "metadata": {
     "description": "Agent collaboration plugin marketplace",
-    "version": "3.0.0",
-    "repository": "https://github.com/sumitake/agent-collab-plugin"
+    "version": "3.0.1",
+    "repository": "https://github.com/sumitake/agent-collab"
   }
 }

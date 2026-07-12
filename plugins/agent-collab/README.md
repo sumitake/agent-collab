@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.0.0**
+Current: **3.0.1**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -30,7 +30,7 @@ inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
 `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
 labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.0.0 package.
+identify this same 3.0.1 package.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
@@ -295,4 +295,4 @@ and release fail closed until the operator-owned Team ID is configured.
 
 The full old namespace mapping and clean-history public-export requirement are
 documented in
-[`docs/migration-from-legacy-packages.md`](https://github.com/sumitake/agent-collab-plugin/blob/main/docs/migration-from-legacy-packages.md).
+[`docs/migration-from-legacy-packages.md`](https://github.com/sumitake/agent-collab/blob/main/docs/migration-from-legacy-packages.md).

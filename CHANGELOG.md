@@ -2,7 +2,7 @@
 
 All notable changes to the unified public plugin are recorded here.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) | Semver per the [skill-versioning convention](https://github.com/sumitake/agent-collab-workspace/blob/main/drafts/skill-versioning-convention.md)
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) | Semantic versions match the package manifests and generated skill metadata.
 
 The public changelog intentionally records policy, compatibility, and migration outcomes without retaining retired provider-execution recipes or private runtime implementation detail.
 
@@ -20,9 +20,9 @@ The public changelog intentionally records policy, compatibility, and migration 
   marketplace, release inventory, active documentation, and generated package
   surface without presets, tombstones, dependencies, or compatibility shims.
   The historical `agent-collab-plugin`, `gemini-collab`, and `grok-collab`
-  package identities are also treated as retired exact aliases; the current
-  `sumitake/agent-collab-plugin` repository remains the marketplace source and
-  is not itself an installed legacy package.
+  package identities are also treated as retired exact aliases. The clean
+  `sumitake/agent-collab` repository is the marketplace source; a repository
+  name is not itself an installed legacy package.
 - Add `agent-collab 3.0.0` as the only package and release. It resolves the
   primary, model family, active model, host runtime, and session dynamically.
   `codex-tools` → the managed Codex backend in `agent-collab`; `glm-worker`
@@ -45,7 +45,7 @@ The public changelog intentionally records policy, compatibility, and migration 
   failures. The release
   tree contains no unsigned
   placeholder artifact; all native routes are typed unavailable until the
-  private workspace build/sign pipeline supplies the notarized binary. A
+  private build/sign system supplies the notarized binary. A
   policy-only release may ship with an empty artifact manifest and no runtime.
   Native activation remains blocked until the Darwin-arm64 artifact advertises
   the full matrix and supplies commit-bound Developer ID, hardened-runtime, and
@@ -93,7 +93,7 @@ The public changelog intentionally records policy, compatibility, and migration 
   unsafe tree modes. It separately inspects every ref, direct blob or tree
   target, annotated-tag object/message, and release-tag form/target.
 - Pin every pull-request workflow to GitHub-hosted `ubuntu-latest`; public PR
-  code can no longer execute on the persistent RhoNAS self-hosted runner, and
+  code can no longer execute on a persistent self-hosted runner, and
   the mutable `RUNNER_TARGET` repository variable has been removed.
 - Grant CodeQL the additional read-only `actions: read` scope required to
   associate and upload pull-request analysis results; all other workflow token
@@ -115,6 +115,17 @@ The public changelog intentionally records policy, compatibility, and migration 
   `signing_policy.py`; the manifest cannot select its own signer, and the
   unconfigured anchor blocks activation until matching signing/notarization
   credentials are provisioned.
+
+### agent-collab 3.0.1 — clean public distribution
+
+- Publish the unified policy/client package from the audited clean-history
+  `sumitake/agent-collab` marketplace without importing private pull-request
+  refs, tags, releases, workflow artifacts, or provider implementation history.
+- Localize contribution governance and security reporting so contributors and
+  plugin users do not need access to the private build/sign system.
+- Remove host-specific labels and session-owner metadata, regenerate both
+  marketplaces and all skills, and retain the policy-only fail-closed runtime
+  state until a separately verified signed native artifact is available.
 
 <!-- changelog-fragments:end -->
 
