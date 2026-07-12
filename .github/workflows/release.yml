@@ -152,9 +152,11 @@ jobs:
             echo "ERROR: agent-collab is the only releaseable package"
             exit 1
           fi
-          echo "plugin=$PLUGIN" >> $GITHUB_OUTPUT
-          echo "version=$VER" >> $GITHUB_OUTPUT
-          echo "archive_name=$PLUGIN v${VER}.plugin" >> $GITHUB_OUTPUT
+          {
+            printf 'plugin=%s\n' "$PLUGIN"
+            printf 'version=%s\n' "$VER"
+            printf 'archive_name=%s v%s.plugin\n' "$PLUGIN" "$VER"
+          } >> "$GITHUB_OUTPUT"
       - name: Verify tag matches plugin.json, READMEs, and CHANGELOG
         run: python3 scripts/check_release_consistency.py --tag "${{ github.ref_name }}"
       - name: Re-run deterministic release gates

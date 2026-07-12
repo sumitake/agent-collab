@@ -34,6 +34,17 @@ class CiSecurityContractTests(unittest.TestCase):
                     unpinned.append(f"{name}:{lineno}:{target}")
         self.assertEqual(unpinned, [])
 
+    def test_github_command_file_redirects_are_quoted(self) -> None:
+        unsafe: list[str] = []
+        pattern = re.compile(
+            r">>\s+\$(?:GITHUB_OUTPUT|GITHUB_ENV|GITHUB_PATH)\b"
+        )
+        for name, text in self._workflow_texts().items():
+            for lineno, line in enumerate(text.splitlines(), 1):
+                if pattern.search(line):
+                    unsafe.append(f"{name}:{lineno}:{line.strip()}")
+        self.assertEqual(unsafe, [])
+
     def test_comprehensive_ci_covers_supported_python_and_contracts(self) -> None:
         path = WORKFLOWS / "ci.yml"
         self.assertTrue(path.is_file(), "comprehensive ci.yml must exist")
