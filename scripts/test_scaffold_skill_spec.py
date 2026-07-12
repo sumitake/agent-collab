@@ -74,8 +74,12 @@ class ClassifyDefaultTierTests(unittest.TestCase):
 
     def test_pro_for_reasoning_heavy(self):
         # Sample reasoning-heavy skills
-        for name in ("second-opinion", "debate", "code-review", "red-team", "ai-merge-resolve"):
+        for name in ("second-opinion", "debate", "code-review", "red-team", "merge-resolve"):
             self.assertEqual(scaffold.classify_default_tier(name), "pro")
+
+    def test_merge_resolve_is_the_only_named_merge_skill_classification(self):
+        self.assertIn("merge-resolve", scaffold.VERIFIER_INDEPENDENCE_YES)
+        self.assertNotIn("ai-merge-resolve", scaffold.VERIFIER_INDEPENDENCE_YES)
 
     def test_pro_for_unclassified(self):
         self.assertEqual(scaffold.classify_default_tier("brand-new-skill"), "pro")

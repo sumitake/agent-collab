@@ -370,6 +370,8 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         self.assertIn("verify-release-ref", workflow)
         self.assertIn("fetch-depth: 0", workflow)
         self.assertIn("runtime-verification", workflow)
+        self.assertIn("runs-on: macos-15", workflow)
+        self.assertNotIn("runs-on: macos-14", workflow)
         self.assertIn("build_plugin_archive.py", workflow)
         self.assertIn("build_release_evidence.py", workflow)
         self.assertIn(".sha256", workflow)

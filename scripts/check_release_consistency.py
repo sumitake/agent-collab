@@ -254,19 +254,11 @@ def parse_tag_full(tag: str) -> tuple[str | None, str | None]:
     Accepts:
       - 'vX.Y.Z'              -> (None, 'X.Y.Z')  -- canonical default plugin
                                                      (agent-collab; see PLUGIN constant)
-      - 'v-<plugin>-X.Y.Z'    -> ('<plugin>', 'X.Y.Z')
+      - 'v-agent-collab-X.Y.Z' -> ('agent-collab', 'X.Y.Z')
 
-    Returns (None, None) if the tag doesn't match either form (or is None /
-    empty / whitespace).
-
-    The plugin_name slot lets `run_tag_check` validate a release tag against
-    the correct plugin's plugin.json (e.g., `v-agent-collab-1.0.0` against
-    plugins/agent-collab/.claude-plugin/plugin.json, not the canonical
-    agent-collab one). Prior to this split (Phase 1b release-tag follow-up,
-    2026-05-25) the script hardcoded agent-collab as the source-of-truth,
-    which caused per-plugin release builds to FAIL by comparing the plugin's
-    version against agent-collab's plugin.json. (Historical: first surfaced
-    in the historical multi-package release flow.)
+    Returns (None, None) for every other package-qualified tag, including the
+    retired preset/provider aliases, or if the input is empty. This repository
+    has one package and no compatibility release surface.
 
     Regex robustness: the version sub-pattern is inlined (`(\\d+\\.\\d+\\.\\d+)`)
     rather than reusing the module-level `_SEMVER` constant. This decouples
@@ -279,7 +271,7 @@ def parse_tag_full(tag: str) -> tuple[str | None, str | None]:
     tag = tag.strip()
     if not tag:
         return (None, None)
-    m = re.fullmatch(r"v-([a-z0-9-]+)-(\d+\.\d+\.\d+)", tag)
+    m = re.fullmatch(r"v-(agent-collab)-(\d+\.\d+\.\d+)", tag)
     if m:
         return (m.group(1), m.group(2))
     m = re.fullmatch(r"v(\d+\.\d+\.\d+)", tag)
@@ -640,21 +632,14 @@ def run_monotonicity(root: Path, ref: str, plugin: str | None = None) -> tuple[b
 
 
 def run_tag_check(root: Path, tag: str) -> tuple[bool, list[str]]:
-    """Validate a release tag against the named plugin's plugin.json.
+    """Validate a canonical release tag against agent-collab's plugin.json.
 
     Tag forms (parse_tag_full handles both):
       - 'vX.Y.Z'              -> validates against the canonical plugin
                                  (the PLUGIN constant; currently `agent-collab`,
                                  the canonical-default for bare-version tags
                                  cut via `gh release create vX.Y.Z`).
-      - 'v-<plugin>-X.Y.Z'    -> validates against
-                                 plugins/<plugin>/.claude-plugin/plugin.json
-                                 (where <plugin> is any plugin in the marketplace).
-
-    The plugin-name-in-tag dispatch (added 2026-05-25 Phase 1b release-tag
-    follow-up) is what makes per-plugin release builds work — without it, a
-    tag like `v-agent-collab-1.0.0` was checked against agent-collab's
-    plugin.json (currently 2.0.0) and always failed.
+      - 'v-agent-collab-X.Y.Z' -> validates against the same canonical plugin.
 
     Default-dispatch invariant: a bare `vX.Y.Z` tag must always validate
     against the canonical PLUGIN's plugin.json, preserving the pre-Phase-1b
@@ -662,7 +647,10 @@ def run_tag_check(root: Path, tag: str) -> tuple[bool, list[str]]:
     """
     plugin_in_tag, resolved = parse_tag_full(tag)
     if resolved is None:
-        return False, [f"FAIL  tag '{tag}': not a release-tag form (vX.Y.Z or v-<plugin>-X.Y.Z)"]
+        return False, [
+            f"FAIL  tag '{tag}': not a canonical release-tag form "
+            "(vX.Y.Z or v-agent-collab-X.Y.Z)"
+        ]
     target_plugin = plugin_in_tag if plugin_in_tag else PLUGIN
     target_version = plugin_version(root, target_plugin)
     if not target_version:
@@ -679,7 +667,7 @@ def run_tag_check(root: Path, tag: str) -> tuple[bool, list[str]]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="agent-collab release-version consistency check (canonical + deprecation aliases)")
+        description="agent-collab canonical release-version consistency check")
     ap.add_argument("--against-ref", metavar="REF",
                     help="also assert plugin.json version >= REF's version")
     ap.add_argument("--tag", metavar="TAG",

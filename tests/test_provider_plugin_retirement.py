@@ -115,6 +115,7 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             {
                 "coordinator.py",
                 "runtime_client.py",
+                "runtime_setup.py",
                 "host_policy.py",
                 "migration_doctor.py",
                 "signing_policy.py",
@@ -196,7 +197,6 @@ class ProviderPluginRetirementTests(unittest.TestCase):
         shared = {
             "agent-readiness",
             "agent-runtime-status",
-            "ai-merge-resolve",
             "autonomy-readiness",
             "brainstorm",
             "chain",
@@ -225,6 +225,14 @@ class ProviderPluginRetirementTests(unittest.TestCase):
                 with self.subTest(package=package, skill=skill):
                     self.assertIn(f"/{package}:{skill}", migration)
                     self.assertIn(f"/agent-collab:{skill}", migration)
+        for package in (
+            "agent-collab",
+            "claude-collab",
+            "codex-collab",
+            "antigravity-collab",
+        ):
+            self.assertIn(f"/{package}:ai-merge-resolve", migration)
+        self.assertIn("/agent-collab:merge-resolve", migration)
         for command in (
             "/codex-tools:codex-build-coding",
             "/codex-tools:codex-high-stakes-advisor",

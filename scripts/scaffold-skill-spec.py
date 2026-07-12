@@ -35,7 +35,7 @@ DESIGN
       - Verifier-independence block included by default for skills in the
         YES list per `_AUTHORING_BRIEF.md` § 10:
             second-opinion, debate, code-review, qa-verify, logic-check,
-            red-team, ai-merge-resolve
+            red-team, merge-resolve
         Omitted by default for skills in the explicit NO list:
             brainstorm, long-context, simulate-user, delegate, dev-delegate,
             chain, chain-configurator
@@ -72,7 +72,7 @@ VERIFIER_INDEPENDENCE_YES = frozenset({
     "qa-verify",
     "logic-check",
     "red-team",
-    "ai-merge-resolve",
+    "merge-resolve",
 })
 VERIFIER_INDEPENDENCE_NO = frozenset({
     "brainstorm",

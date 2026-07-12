@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import platform
+import pwd
 import re
 import selectors
 import shutil
@@ -51,6 +52,13 @@ _VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,2}$")
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 EXPECTED_MINIMUM_MACOS = "14.0"
 ISOLATED_TEMP_ROOT = Path("/tmp")
+CODEX_DESKTOP_TUPLE = {
+    "CODEX_SANDBOX": "seatbelt",
+    "__CFBundleIdentifier": "com.openai.codex",
+    "CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "Codex Desktop",
+    "CODEX_CI": "1",
+}
+MANAGEMENT_ACTIONS = frozenset({"status", "prepare", "grok_login"})
 
 
 def _load_signing_policy():
@@ -558,10 +566,32 @@ def runtime_contract_snapshot() -> tuple[frozenset[tuple[str, str]], str]:
     return resolution.contracts, resolution.manifest_digest
 
 
+def classify_host_context() -> str:
+    if all(os.environ.get(key) == value for key, value in CODEX_DESKTOP_TUPLE.items()):
+        return "codex_desktop"
+    return "generic"
+
+
+def _operator_home() -> str | None:
+    try:
+        value = pwd.getpwuid(os.getuid()).pw_dir
+    except (KeyError, OSError):
+        return None
+    if (
+        type(value) is not str
+        or not value
+        or "\0" in value
+        or len(value) > 4096
+        or not Path(value).is_absolute()
+    ):
+        return None
+    return value
+
+
 def _scrubbed_env(*, tmpdir: Path) -> dict[str, str]:
     env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
-    value = os.environ.get("HOME")
-    if value and "\0" not in value and len(value) <= 4096 and Path(value).is_absolute():
+    value = _operator_home()
+    if value is not None:
         env["HOME"] = value
     env["TMPDIR"] = str(tmpdir)
     return env
@@ -640,6 +670,7 @@ def _native_document(envelope: object) -> bytes:
         "action": envelope.action,
         "authority": envelope.authority,
         "timeout_ms": envelope.timeout_ms,
+        "host_context": classify_host_context(),
         **validated,
     }
     if envelope.artifact_present:
@@ -683,6 +714,81 @@ def _native_document(envelope: object) -> bytes:
     if len(encoded) > MAX_REQUEST_BYTES:
         raise ValueError("runtime request exceeds the fixed protocol limit")
     return encoded
+
+
+def _management_document(
+    *, action: str, request_id: str, timeout_ms: int
+) -> bytes:
+    if action not in MANAGEMENT_ACTIONS:
+        raise ValueError("runtime management action is invalid")
+    if type(request_id) is not str or not _REQUEST_ID_RE.fullmatch(request_id):
+        raise ValueError("runtime management request identifier is invalid")
+    if type(timeout_ms) is not int or not 1 <= timeout_ms <= MAX_TIMEOUT_MS:
+        raise ValueError("runtime management timeout is invalid")
+    document = {
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": request_id,
+        "operation": "manage",
+        "management_action": action,
+        "host_context": classify_host_context(),
+        "timeout_ms": timeout_ms,
+    }
+    encoded = (
+        json.dumps(document, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    if len(encoded) > MAX_REQUEST_BYTES:
+        raise ValueError("runtime management request exceeds the fixed protocol limit")
+    return encoded
+
+
+def _failure_response_result(response: Mapping[str, Any]) -> RuntimeResult | None:
+    status = response.get("status")
+    if status not in KNOWN_NATIVE_FAILURES:
+        return None
+    mapping = {
+        "unavailable": RuntimeStatus.UNAVAILABLE,
+        "auth_error": RuntimeStatus.AUTH_ERROR,
+        "quota_error": RuntimeStatus.QUOTA_ERROR,
+        "containment_error": RuntimeStatus.CONTAINMENT_ERROR,
+        "timeout": RuntimeStatus.TIMEOUT,
+        "output_limit": RuntimeStatus.OUTPUT_LIMIT,
+        "teardown_error": RuntimeStatus.TEARDOWN_ERROR,
+        "provider_error": RuntimeStatus.PROVIDER_ERROR,
+    }
+    return RuntimeResult(mapping[status], error=str(response["error"]))
+
+
+def _parse_management_response(
+    out: bytes, *, request_id: str, returncode: int
+) -> RuntimeResult:
+    try:
+        response = json.loads(out.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError):
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="invalid runtime management response")
+    if not isinstance(response, dict):
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime management response contract mismatch")
+    if response.get("status") in KNOWN_NATIVE_FAILURES:
+        if (
+            set(response) != {"protocol_version", "request_id", "status", "error"}
+            or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+            or response.get("request_id") != request_id
+            or not isinstance(response.get("error"), str)
+            or len(response["error"].encode("utf-8")) > 4096
+        ):
+            return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime management failure contract mismatch")
+        result = _failure_response_result(response)
+        return result or RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime management failure contract mismatch")
+    if returncode != 0:
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="native runtime failed without a typed management result")
+    if (
+        set(response) != {"protocol_version", "request_id", "status", "result"}
+        or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+        or response.get("request_id") != request_id
+        or response.get("status") != "ok"
+        or not isinstance(response.get("result"), dict)
+    ):
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime management response contract mismatch")
+    return RuntimeResult(RuntimeStatus.OK, result=response["result"])
 
 
 def _parse_response(out: bytes, envelope: object, returncode: int) -> RuntimeResult:
@@ -799,7 +905,7 @@ def _terminate_and_reap(process: subprocess.Popen[bytes]) -> bool:
 
 
 def _collect_bounded_output(
-    process: subprocess.Popen[bytes], *, timeout_ms: int
+    process: subprocess.Popen[bytes], *, timeout_ms: int, relay_stderr: bool = False
 ) -> tuple[bytes, bytes, RuntimeResult | None]:
     if process.stdout is None or process.stderr is None:
         _terminate_and_reap(process)
@@ -807,7 +913,9 @@ def _collect_bounded_output(
             RuntimeStatus.SPAWN_ERROR, error="native runtime pipes are unavailable"
         )
     selector = selectors.DefaultSelector()
-    streams = {"stdout": process.stdout, "stderr": process.stderr}
+    streams = {"stdout": process.stdout}
+    if process.stderr is not None:
+        streams["stderr"] = process.stderr
     buffers = {"stdout": bytearray(), "stderr": bytearray()}
     deadline = time.monotonic() + timeout_ms / 1000
     try:
@@ -853,6 +961,13 @@ def _collect_bounded_output(
                         else f"native runtime {name} limit exceeded and teardown failed"
                     )
                     return b"", b"", RuntimeResult(status, error=error)
+                if name == "stderr" and relay_stderr:
+                    pending = memoryview(chunk)
+                    while pending:
+                        written = os.write(2, pending)
+                        if written <= 0:
+                            raise OSError("runtime management stderr relay made no progress")
+                        pending = pending[written:]
         remaining = deadline - time.monotonic()
         try:
             process.wait(timeout=max(remaining, 0.001))
@@ -888,24 +1003,18 @@ def _collect_bounded_output(
                 stream.close()
 
 
-def invoke(*, envelope: object) -> RuntimeResult:
-    try:
-        payload = _native_document(envelope)
-    except (AttributeError, RuntimeError, TypeError, ValueError, RecursionError):
-        return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="invalid or unsealed policy envelope")
-    if (envelope.route, envelope.action) in TEMPORARILY_UNAVAILABLE_CONTRACTS:
-        return RuntimeResult(
-            RuntimeStatus.UNAVAILABLE,
-            error=TEMPORARILY_UNAVAILABLE_CONTRACTS[(envelope.route, envelope.action)],
-        )
-    resolution = resolve_runtime()
-    if resolution.status != RuntimeStatus.OK or resolution.path is None:
-        return RuntimeResult(resolution.status, error=resolution.error)
-    if resolution.manifest_digest != envelope.runtime_manifest_digest:
-        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime manifest changed after policy selection")
-    if (envelope.route, envelope.action) not in resolution.contracts:
-        return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime does not advertise the sealed route/action")
-    if resolution.identity is None or _safe_file_identity(resolution.path, executable=True) != resolution.identity:
+def _launch_runtime(
+    *,
+    resolution: RuntimeResolution,
+    payload: bytes,
+    timeout_ms: int,
+    envelope: object | None = None,
+    management_request_id: str = "",
+    relay_stderr: bool = False,
+) -> RuntimeResult:
+    if resolution.path is None or resolution.identity is None:
+        return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime is unavailable")
+    if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime identity changed before launch")
     command = [str(resolution.path), "invoke", "--protocol", str(PROTOCOL_VERSION)]
     try:
@@ -923,13 +1032,21 @@ def invoke(*, envelope: object) -> RuntimeResult:
                     start_new_session=True,
                     close_fds=True,
                 )
-                out, err, collection_error = _collect_bounded_output(
-                    process, timeout_ms=envelope.timeout_ms
+                out, _err, collection_error = _collect_bounded_output(
+                    process,
+                    timeout_ms=timeout_ms,
+                    relay_stderr=relay_stderr,
                 )
                 if collection_error is not None:
-                    result = collection_error
-                else:
-                    result = _parse_response(out, envelope, process.returncode)
+                    return collection_error
+                returncode = process.returncode if process.returncode is not None else -1
+                if envelope is not None:
+                    return _parse_response(out, envelope, returncode)
+                return _parse_management_response(
+                    out,
+                    request_id=management_request_id,
+                    returncode=returncode,
+                )
     except _RuntimeTempCleanupError:
         return RuntimeResult(
             RuntimeStatus.TEARDOWN_ERROR,
@@ -939,4 +1056,49 @@ def invoke(*, envelope: object) -> RuntimeResult:
         return RuntimeResult(RuntimeStatus.HOST_BLOCKED, error="host blocked runtime launch")
     except (OSError, ValueError):
         return RuntimeResult(RuntimeStatus.SPAWN_ERROR, error="native runtime could not start")
-    return result
+
+
+def manage_runtime(*, action: str, request_id: str, timeout_ms: int) -> RuntimeResult:
+    try:
+        payload = _management_document(
+            action=action,
+            request_id=request_id,
+            timeout_ms=timeout_ms,
+        )
+    except (TypeError, ValueError, RecursionError):
+        return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="invalid runtime management request")
+    resolution = resolve_runtime()
+    if resolution.status != RuntimeStatus.OK:
+        return RuntimeResult(resolution.status, error=resolution.error)
+    return _launch_runtime(
+        resolution=resolution,
+        payload=payload,
+        timeout_ms=timeout_ms,
+        management_request_id=request_id,
+        relay_stderr=action == "grok_login",
+    )
+
+
+def invoke(*, envelope: object) -> RuntimeResult:
+    try:
+        payload = _native_document(envelope)
+    except (AttributeError, RuntimeError, TypeError, ValueError, RecursionError):
+        return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="invalid or unsealed policy envelope")
+    if (envelope.route, envelope.action) in TEMPORARILY_UNAVAILABLE_CONTRACTS:
+        return RuntimeResult(
+            RuntimeStatus.UNAVAILABLE,
+            error=TEMPORARILY_UNAVAILABLE_CONTRACTS[(envelope.route, envelope.action)],
+        )
+    resolution = resolve_runtime()
+    if resolution.status != RuntimeStatus.OK or resolution.path is None:
+        return RuntimeResult(resolution.status, error=resolution.error)
+    if resolution.manifest_digest != envelope.runtime_manifest_digest:
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime manifest changed after policy selection")
+    if (envelope.route, envelope.action) not in resolution.contracts:
+        return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime does not advertise the sealed route/action")
+    return _launch_runtime(
+        resolution=resolution,
+        payload=payload,
+        timeout_ms=envelope.timeout_ms,
+        envelope=envelope,
+    )

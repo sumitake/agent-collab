@@ -12,6 +12,13 @@ Resolve the **plugin root** from this loaded file and run
 For any coordinator readiness request, first read the **Coordinator request
 schema** in `<plugin-root>/README.md`.
 
+For an activation release, use only the co-packaged managed setup surface:
+`python3 "<plugin-root>/runtime_setup.py" status`, then `prepare`, and use
+`login-grok` only when the status result reports that managed Grok
+authentication is unavailable. The command accepts no provider, model, path,
+environment, binary, tool, or raw argument overrides. Never invoke the native
+runtime or a provider CLI directly.
+
 ## Workflow
 
 Run the provider-free `migration_doctor.py` beside this skill's plugin root.

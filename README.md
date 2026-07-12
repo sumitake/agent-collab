@@ -81,6 +81,12 @@ approval. See [NOTICE](NOTICE) and
 [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
 approval boundary.
 
+An activation archive also redistributes CPython 3.13.14, Nuitka 4.1.3 runtime
+material, and their incorporated components under their own terms. The exact,
+digest-pinned inventory is shipped as `THIRD-PARTY-NOTICES.txt` and
+`third-party-licenses/` inside the plugin package. Those files are excluded from
+policy-only archives because no native runtime is present.
+
 ## System architecture
 
 ```mermaid
@@ -138,7 +144,8 @@ until the signed runtime exposes the complete matrix, including Composer.
    runtime, notarizes it, and records size/hash/team metadata.
 4. A policy-only plugin release omits the runtime and keeps every native route
    typed unavailable. An activation release imports only the final binary and
-   manifest metadata; no source implementation crosses the boundary.
+   manifest metadata plus the exact third-party notice/license tree; no private
+   source implementation crosses the boundary.
 5. Plugin CI validates both Claude and Codex manifests/marketplaces, schemas,
    skills, migration behavior, runtime fixtures, the dependency-free secret
    scan, CodeQL security analysis, release consistency, and public-export
@@ -146,9 +153,13 @@ until the signed runtime exposes the complete matrix, including Composer.
 6. A policy-only signed-tag release proves the runtime manifest is empty and
    the archive contains no runtime. For activation, a macOS verification job
    binds codesign, notarization, manifest, artifact digest, and commit SHA into
-   release evidence before the publish job may include the binary.
+   release evidence before the publish job may include the binary. SPDX 2.3
+   evidence distinguishes project-owned PolyForm material from the embedded
+   CPython, Nuitka, and incorporated third-party components.
 7. Hosts update one package, run the migration doctor, restart, and verify the
-   resolved profile plus eligible routes.
+   resolved profile plus eligible routes. Activation hosts then run the
+   co-packaged `runtime_setup.py status` and `prepare` commands; managed Grok
+   device login is exposed only as `runtime_setup.py login-grok`.
 
 Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
 active host runtime environment and restart that host; all model-execution
@@ -185,6 +196,24 @@ Antigravity, OpenCode, ZCode, and custom hosts must select the same single
 package through their compatible plugin manager; if that host has no native
 plugin surface, it cannot install this package directly and must remain
 temporarily unsupported rather than recreating a provider-specific shim.
+
+An activation release adds a closed signed-runtime management surface beside
+the coordinator. Resolve the installed plugin root and run only:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" status
+python3 "<plugin-root>/runtime_setup.py" prepare
+python3 "<plugin-root>/runtime_setup.py" login-grok
+```
+
+These operations accept no provider, model, path, environment, binary, tool,
+or raw-argument overrides. The public client keeps the process environment
+scrubbed and sends only `generic` or `codex_desktop` as a closed host-context
+observation; the signed runtime derives and validates its own state roots from
+the OS login identity. Exact supported Codex, OpenCode, and Grok CLIs remain
+external prerequisites and must be installed and authenticated through their
+vendor-supported interfaces. No workspace checkout or provider-specific plugin
+is required. Policy-only releases report the management surface unavailable.
 
 Remove every old package reported by the doctor, then run the doctor again.
 The doctor reads filesystem/registry state and Codex
@@ -338,6 +367,11 @@ package or an activation package. For an activation candidate, also run
 `python3 scripts/verify_runtime_release.py --git-sha "$(git rev-parse HEAD)"`
 on Darwin arm64; that verifier intentionally remains activation-only and fails
 closed against an empty manifest.
+
+Activation packaging also requires the exact digest-pinned
+`THIRD-PARTY-NOTICES.txt` and `third-party-licenses/` tree. Missing, extra,
+linked, hardlinked, unsafe, or modified legal members fail before archive or
+SBOM publication. Policy-only archives intentionally omit that tree.
 
 `CHANGELOG.md` remains generated at release time from `changelog.d/` fragments.
 Historical changelog entries may name retired packages only as clearly

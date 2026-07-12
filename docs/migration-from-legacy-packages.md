@@ -18,7 +18,7 @@ For every row below, all listed old namespaces map to the single new command.
 |---|---|
 | `/claude-collab:agent-readiness`, `/codex-collab:agent-readiness`, `/antigravity-collab:agent-readiness` | `/agent-collab:agent-readiness` |
 | `/claude-collab:agent-runtime-status`, `/codex-collab:agent-runtime-status`, `/antigravity-collab:agent-runtime-status` | `/agent-collab:agent-runtime-status` |
-| `/claude-collab:ai-merge-resolve`, `/codex-collab:ai-merge-resolve`, `/antigravity-collab:ai-merge-resolve` | `/agent-collab:ai-merge-resolve` |
+| `/agent-collab:ai-merge-resolve`, `/claude-collab:ai-merge-resolve`, `/codex-collab:ai-merge-resolve`, `/antigravity-collab:ai-merge-resolve` | `/agent-collab:merge-resolve` |
 | `/claude-collab:autonomy-readiness`, `/codex-collab:autonomy-readiness`, `/antigravity-collab:autonomy-readiness` | `/agent-collab:autonomy-readiness` |
 | `/claude-collab:brainstorm`, `/codex-collab:brainstorm`, `/antigravity-collab:brainstorm` | `/agent-collab:brainstorm` |
 | `/claude-collab:chain`, `/codex-collab:chain`, `/antigravity-collab:chain` | `/agent-collab:chain` |
@@ -86,6 +86,12 @@ and archive; it installs the migration and policy surface while every native
 route stays typed unavailable. An activation release requires the complete
 contracts plus commit-bound macOS signing/notarization evidence. No raw launcher
 is a migration fallback.
+
+Activation also requires the exact digest-pinned third-party notice/license
+tree and component-aware SPDX evidence for CPython, Nuitka, and incorporated
+runtime components. Missing, unexpected, linked, or modified legal members
+block archive publication. Policy-only archives omit those files because they
+contain none of the corresponding native components.
 
 The runtime manifest does not control signer trust. The operator-owned Apple
 Team ID must be pinned independently in `plugins/agent-collab/signing_policy.py`;

@@ -284,11 +284,10 @@ class TestTagParsing(unittest.TestCase):
         self.assertEqual(crc.parse_tag("v1.2.3"), "1.2.3")
 
     def test_plugin_qualified(self):
-        # v-<plugin>-X.Y.Z works for any plugin name; canonical agent-collab and
-        # deprecation aliases agent-collab-plugin / gemini-collab are all valid.
+        # The unified release accepts only its canonical explicit package tag.
         self.assertEqual(crc.parse_tag("v-agent-collab-1.2.3"), "1.2.3")
-        self.assertEqual(crc.parse_tag("v-agent-collab-plugin-1.2.3"), "1.2.3")
-        self.assertEqual(crc.parse_tag("v-gemini-collab-1.2.3"), "1.2.3")
+        self.assertIsNone(crc.parse_tag("v-agent-collab-plugin-1.2.3"))
+        self.assertIsNone(crc.parse_tag("v-gemini-collab-1.2.3"))
 
     def test_two_part_rejected(self):
         self.assertIsNone(crc.parse_tag("v1.2"))
@@ -309,15 +308,13 @@ class TestTagParsingWithPlugin(unittest.TestCase):
     def test_plain_returns_none_plugin(self):
         self.assertEqual(crc.parse_tag_full("v1.2.3"), (None, "1.2.3"))
 
-    def test_named_plugin(self):
+    def test_noncanonical_named_plugins_are_rejected(self):
         self.assertEqual(
             crc.parse_tag_full("v-sample-plugin-1.0.0"),
-            ("sample-plugin", "1.0.0"))
-
-    def test_other_named_plugin(self):
+            (None, None))
         self.assertEqual(
             crc.parse_tag_full("v-other-plugin-2.0.0"),
-            ("other-plugin", "2.0.0"))
+            (None, None))
 
     def test_canonical_explicit(self):
         # `v-agent-collab-X.Y.Z` is equivalent to bare `vX.Y.Z` (both validate
@@ -327,13 +324,13 @@ class TestTagParsingWithPlugin(unittest.TestCase):
             crc.parse_tag_full("v-agent-collab-1.2.3"),
             ("agent-collab", "1.2.3"))
 
-    def test_generic_named_tags(self):
+    def test_generic_named_tags_are_rejected(self):
         self.assertEqual(
             crc.parse_tag_full("v-sample-plugin-1.2.3"),
-            ("sample-plugin", "1.2.3"))
+            (None, None))
         self.assertEqual(
             crc.parse_tag_full("v-other-plugin-1.2.3"),
-            ("other-plugin", "1.2.3"))
+            (None, None))
 
     def test_garbage_returns_none_pair(self):
         self.assertEqual(crc.parse_tag_full("garbage"), (None, None))
@@ -360,7 +357,7 @@ class TestTagParsingWithPlugin(unittest.TestCase):
     def test_parse_tag_backcompat_with_full(self):
         """`parse_tag` is the v-version-only wrapper around parse_tag_full.
         Both should agree on the version slot for every valid tag form."""
-        for tag in ("v1.2.3", "v-agent-collab-1.0.0", "v-sample-plugin-2.0.0"):
+        for tag in ("v1.2.3", "v-agent-collab-1.0.0"):
             with self.subTest(tag=tag):
                 _, full_version = crc.parse_tag_full(tag)
                 self.assertEqual(crc.parse_tag(tag), full_version)
@@ -377,15 +374,11 @@ class TestPluginJsonPath(unittest.TestCase):
             crc.plugin_json_path("agent-collab"),
             "plugins/agent-collab/.claude-plugin/plugin.json")
 
-    def test_named_plugin(self):
+    def test_named_plugin_path_helper_remains_pure(self):
         self.assertEqual(
             crc.plugin_json_path("sample-plugin"),
-            "plugins/sample-plugin/.claude-plugin/plugin.json")
-
-    def test_other_plugin(self):
-        self.assertEqual(
-            crc.plugin_json_path("other-plugin"),
-            "plugins/other-plugin/.claude-plugin/plugin.json")
+            "plugins/sample-plugin/.claude-plugin/plugin.json",
+        )
 
 
 class TestRunTagCheckPerPlugin(unittest.TestCase):
@@ -419,40 +412,36 @@ class TestRunTagCheckPerPlugin(unittest.TestCase):
         self.assertTrue(ok, msg=f"unexpected failure: {lines}")
         self.assertTrue(any("agent-collab" in line for line in lines))
 
-    def test_named_plugin_tag_passes(self):
-        # A named tag looks up that named plugin's plugin.json.
-        # This was the exact failure mode that motivated Phase 1b's release-tag
-        # follow-up (pre-fix: compared the version to agent-collab's version -> FAIL).
-        ok, lines = crc.run_tag_check(self.root, "v-sample-plugin-1.0.0")
+    def test_canonical_named_tag_passes(self):
+        ok, lines = crc.run_tag_check(self.root, "v-agent-collab-2.0.0")
         self.assertTrue(ok, msg=f"unexpected failure: {lines}")
-        self.assertTrue(any("sample-plugin" in line and "1.0.0" in line for line in lines))
+        self.assertTrue(any("agent-collab" in line and "2.0.0" in line for line in lines))
 
-    def test_other_plugin_tag_passes(self):
-        ok, lines = crc.run_tag_check(self.root, "v-other-plugin-2.0.0")
-        self.assertTrue(ok, msg=f"unexpected failure: {lines}")
-        self.assertTrue(any("other-plugin" in line for line in lines))
+    def test_noncanonical_named_plugin_tags_are_rejected(self):
+        for tag in ("v-sample-plugin-1.0.0", "v-other-plugin-2.0.0"):
+            with self.subTest(tag=tag):
+                ok, lines = crc.run_tag_check(self.root, tag)
+                self.assertFalse(ok)
+                self.assertTrue(
+                    any("not a canonical release-tag form" in line for line in lines)
+                )
 
-    def test_version_mismatch_fails_with_named_plugin(self):
-        # Tag version doesn't match the named plugin's plugin.json -> FAIL,
-        # and the failure message names the actual plugin (not the canonical
-        # default) so the operator can diagnose without re-reading the workflow.
-        ok, lines = crc.run_tag_check(self.root, "v-sample-plugin-9.9.9")
+    def test_version_mismatch_fails_with_canonical_plugin(self):
+        ok, lines = crc.run_tag_check(self.root, "v-agent-collab-9.9.9")
         self.assertFalse(ok)
-        self.assertTrue(any("sample-plugin" in line and "9.9.9" in line and "1.0.0" in line
-                            for line in lines), msg=f"expected named-plugin diagnostic, got: {lines}")
+        self.assertTrue(any("agent-collab" in line and "9.9.9" in line and "2.0.0" in line
+                            for line in lines), msg=f"expected canonical diagnostic, got: {lines}")
 
-    def test_unknown_plugin_fails_with_path_diagnostic(self):
-        # Tag names a plugin that doesn't exist in the repo -> FAIL with a
-        # diagnostic pointing at the missing plugin.json path.
+    def test_unknown_plugin_is_rejected_before_path_dispatch(self):
         ok, lines = crc.run_tag_check(self.root, "v-bogus-plugin-1.0.0")
         self.assertFalse(ok)
-        self.assertTrue(any("bogus-plugin" in line and "plugin.json" in line
-                            for line in lines), msg=f"expected path diagnostic, got: {lines}")
+        self.assertTrue(any("not a canonical release-tag form" in line
+                            for line in lines), msg=f"expected canonical-form diagnostic, got: {lines}")
 
     def test_garbage_tag_fails(self):
         ok, lines = crc.run_tag_check(self.root, "garbage")
         self.assertFalse(ok)
-        self.assertTrue(any("not a release-tag form" in line for line in lines))
+        self.assertTrue(any("not a canonical release-tag form" in line for line in lines))
 
 
 class TestPluginVersion(unittest.TestCase):
