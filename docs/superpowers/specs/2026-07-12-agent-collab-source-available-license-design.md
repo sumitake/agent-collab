@@ -70,6 +70,31 @@ Root and packaged legal files have one canonical source and an exact-byte parity
 test. Symlinks are not used because public-export and archive safety gates reject
 them.
 
+## Agent-neutral repository instructions
+
+The public repository uses root `AGENTS.md` as the sole canonical source for
+repository-wide agent instructions. This makes the development, governance,
+validation, runtime-boundary, and public-export rules directly discoverable by
+Codex and other agents that implement the agent-neutral convention.
+
+Root `CLAUDE.md` remains only as a Claude Code compatibility loader containing
+an `@AGENTS.md` import. It carries no independent policy. This preserves native
+Claude Code discovery without creating two instruction sources or allowing the
+files to drift. A symlink is not used so checkouts, release archives, and
+cross-platform clients receive an ordinary portable file.
+
+The implementation updates all active references that currently identify
+`CLAUDE.md` as authoritative, including public governance documentation,
+scaffolding guidance, compliance-script comments, and public-distribution
+contract tests. Tests require `AGENTS.md`, require the Claude compatibility
+import, and reject duplicated canonical policy in `CLAUDE.md`.
+
+This public-repository choice is independent of the private source workspace.
+Repository-scoped instruction discovery prevents cross-repository conflicts;
+the workspace may retain its own `AGENTS.md` and `CLAUDE.md` authority model.
+No private workspace document becomes a prerequisite for using or contributing
+to the public repository.
+
 ## Contribution boundary
 
 The current public history contains only John Osumi-authored commits, so the new
