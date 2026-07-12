@@ -8,9 +8,11 @@ import json
 import os
 import stat
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,23 +85,114 @@ class ReleaseEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(extracted[0]["extractedText"], (ROOT / "LICENSE").read_text())
 
-    def test_every_spdx_file_checksum_matches_archive_bytes(self) -> None:
-        import tarfile
-
+    def test_every_spdx_file_sha256_checksum_matches_archive_bytes(self) -> None:
         sbom = self._build()
-        with tarfile.open(self.archive, "r:gz") as bundle:
-            archived = {
-                member.name: bundle.extractfile(member).read()
-                for member in bundle.getmembers()
-                if member.isfile()
-            }
+        archived = self._archive_bytes()
         for item in sbom["files"]:
-            checksum = item["checksums"]
-            self.assertEqual(checksum[0]["algorithm"], "SHA256")
+            checksums = {
+                checksum["algorithm"]: checksum["checksumValue"]
+                for checksum in item["checksums"]
+            }
             self.assertEqual(
-                checksum[0]["checksumValue"],
+                checksums["SHA256"],
                 hashlib.sha256(archived[item["fileName"]]).hexdigest(),
             )
+
+    def _archive_bytes(self) -> dict[str, bytes]:
+        archived: dict[str, bytes] = {}
+        with tarfile.open(self.archive, "r:gz") as bundle:
+            for member in bundle.getmembers():
+                if not member.isfile():
+                    continue
+                stream = bundle.extractfile(member)
+                self.assertIsNotNone(stream)
+                with stream:
+                    archived[member.name] = stream.read()
+        return archived
+
+    def test_spdx_files_include_required_sha1_and_sha256_checksums(self) -> None:
+        sbom = self._build()
+        archived = self._archive_bytes()
+
+        for item in sbom["files"]:
+            data = archived[item["fileName"]]
+            checksums = {
+                checksum["algorithm"]: checksum["checksumValue"]
+                for checksum in item["checksums"]
+            }
+            expected_sha1 = hashlib.sha1(
+                data, usedforsecurity=False
+            ).hexdigest()
+            self.assertEqual(checksums["SHA1"], expected_sha1)
+            self.assertEqual(
+                checksums["SHA256"], hashlib.sha256(data).hexdigest()
+            )
+
+    def test_spdx_file_metadata_does_not_claim_an_unscanned_header(
+        self,
+    ) -> None:
+        sbom = self._build()
+        self.assertTrue(sbom["files"])
+        for item in sbom["files"]:
+            self.assertEqual(item["licenseInfoInFiles"], ["NOASSERTION"])
+            self.assertEqual(item["copyrightText"], "NOASSERTION")
+
+    def test_spdx_package_verification_code_matches_file_sha1_inventory(
+        self,
+    ) -> None:
+        sbom = self._build()
+        archived = self._archive_bytes()
+        file_sha1s = [
+            hashlib.sha1(
+                archived[item["fileName"]], usedforsecurity=False
+            ).hexdigest()
+            for item in sbom["files"]
+        ]
+
+        expected_verification_code = hashlib.sha1(
+            "".join(sorted(file_sha1s)).encode("ascii"),
+            usedforsecurity=False,
+        ).hexdigest()
+        package = sbom["packages"][0]
+        self.assertEqual(
+            package["packageVerificationCode"],
+            {"packageVerificationCodeValue": expected_verification_code},
+        )
+
+    def test_archive_reader_closes_every_extracted_stream(self) -> None:
+        archive_builder = _load("agent_collab_archive_stream_close", ARCHIVE_SCRIPT)
+        evidence_builder = _load("agent_collab_evidence_stream_close", EVIDENCE_SCRIPT)
+        archive_builder.build_archive(
+            ROOT, plugin="agent-collab", output=self.archive
+        )
+        streams = []
+        original_extractfile = tarfile.TarFile.extractfile
+
+        def tracked_extractfile(bundle, member):
+            stream = original_extractfile(bundle, member)
+            if stream is not None:
+                streams.append(stream)
+            return stream
+
+        with patch.object(tarfile.TarFile, "extractfile", tracked_extractfile):
+            evidence_builder._archive_files(self.archive)
+
+        self.assertTrue(streams)
+        self.assertTrue(all(stream.closed for stream in streams))
+
+    def test_failed_exclusive_write_removes_its_partial_output(self) -> None:
+        evidence_builder = _load(
+            "agent_collab_evidence_partial_cleanup", EVIDENCE_SCRIPT
+        )
+        with patch.object(
+            evidence_builder.os,
+            "fsync",
+            side_effect=OSError("simulated fsync failure"),
+        ):
+            with self.assertRaisesRegex(OSError, "simulated fsync failure"):
+                evidence_builder._write_exclusive(self.sbom, b"partial")
+
+        self.assertFalse(self.sbom.exists())
 
     def test_checksum_sidecar_names_and_hashes_archive(self) -> None:
         self._build()

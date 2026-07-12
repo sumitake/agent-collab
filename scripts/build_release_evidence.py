@@ -90,16 +90,38 @@ def _write_exclusive(path: Path, data: bytes) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags, 0o600)
+    descriptor = -1
+    created_identity: tuple[int, int] | None = None
     try:
+        descriptor = os.open(path, flags, 0o600)
+        created = os.fstat(descriptor)
+        created_identity = (created.st_dev, created.st_ino)
         with os.fdopen(descriptor, "wb") as stream:
             descriptor = -1
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-    finally:
+    except BaseException:
         if descriptor != -1:
-            os.close(descriptor)
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if created_identity is not None:
+            try:
+                current = path.lstat()
+            except OSError:
+                current = None
+            if (
+                current is not None
+                and stat.S_ISREG(current.st_mode)
+                and (current.st_dev, current.st_ino) == created_identity
+            ):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+        raise
 
 
 def _archive_files(archive: Path) -> dict[str, bytes]:
@@ -140,7 +162,8 @@ def _archive_files(archive: Path) -> dict[str, bytes]:
             stream = bundle.extractfile(member)
             if stream is None:
                 raise ValueError("release archive member cannot be read")
-            data = stream.read(MAX_MEMBER_BYTES + 1)
+            with stream:
+                data = stream.read(MAX_MEMBER_BYTES + 1)
             if len(data) != member.size:
                 raise ValueError("release archive member size is inconsistent")
             files[member.name] = data
@@ -216,18 +239,25 @@ def build_evidence(
             "relatedSpdxElement": "SPDXRef-Package-agent-collab",
         }
     ]
+    file_sha1s: list[str] = []
     for index, (name, data) in enumerate(sorted(files.items()), 1):
         spdx_id = f"SPDXRef-File-{index:04d}"
+        # SPDX 2.3 sections 7.9 and 8.4 require SHA-1 for the package
+        # verification code and each analyzed file. It is metadata
+        # compatibility, not a security primitive; SHA-256 remains alongside it.
+        file_sha1 = hashlib.sha1(data, usedforsecurity=False).hexdigest()
+        file_sha1s.append(file_sha1)
         spdx_files.append(
             {
                 "SPDXID": spdx_id,
                 "fileName": name,
                 "checksums": [
+                    {"algorithm": "SHA1", "checksumValue": file_sha1},
                     {"algorithm": "SHA256", "checksumValue": _sha256_bytes(data)}
                 ],
                 "licenseConcluded": SPDX_LICENSE,
-                "licenseInfoInFiles": [SPDX_LICENSE],
-                "copyrightText": COPYRIGHT_TEXT,
+                "licenseInfoInFiles": ["NOASSERTION"],
+                "copyrightText": "NOASSERTION",
             }
         )
         relationships.append(
@@ -237,6 +267,11 @@ def build_evidence(
                 "relatedSpdxElement": spdx_id,
             }
         )
+
+    package_verification_code = hashlib.sha1(
+        "".join(sorted(file_sha1s)).encode("ascii"),
+        usedforsecurity=False,
+    ).hexdigest()
 
     sbom = {
         "SPDXID": "SPDXRef-DOCUMENT",
@@ -260,6 +295,9 @@ def build_evidence(
                 "packageFileName": archive.name,
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": True,
+                "packageVerificationCode": {
+                    "packageVerificationCodeValue": package_verification_code
+                },
                 "checksums": [
                     {"algorithm": "SHA256", "checksumValue": archive_digest}
                 ],
