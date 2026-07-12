@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run repository tests
+        run: python3 -m unittest discover -s tests -t . -v
+      - name: Run script tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+  contracts:
+    name: Repository Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Verify generated sources and release metadata
+        run: |
+          python3 scripts/build_skills.py --check
+          python3 scripts/build_marketplace.py --check
+          python3 scripts/build-changelog.py --dry-run >/dev/null
+          python3 scripts/check_release_consistency.py
+      - name: Rehearse policy archive and release evidence
+        run: |
+          set -euo pipefail
+          TMPDIR_RELEASE="$(mktemp -d)"
+          VERSION="$(python3 -c 'import json; print(json.load(open("plugins/agent-collab/.claude-plugin/plugin.json"))["version"])')"
+          ARCHIVE="$TMPDIR_RELEASE/agent-collab v${VERSION}.plugin"
+          python3 scripts/build_plugin_archive.py --output "$ARCHIVE"
+          python3 scripts/build_release_evidence.py \
+            --archive "$ARCHIVE" \
+            --version "$VERSION" \
+            --created 2026-07-12T00:00:00Z \
+            --sbom "$TMPDIR_RELEASE/agent-collab-v${VERSION}.spdx.json" \
+            --checksum "$ARCHIVE.sha256"
+          (cd "$TMPDIR_RELEASE" && shasum -a 256 -c "agent-collab v${VERSION}.plugin.sha256")
+          python3 -m json.tool \
+            "$TMPDIR_RELEASE/agent-collab-v${VERSION}.spdx.json" >/dev/null
+      - name: Validate repository JSON
+        run: |
+          find . -path './.git' -prune -o -type f -name '*.json' -print0 |
+            while IFS= read -r -d '' file; do
+              python3 -m json.tool "$file" >/dev/null
+            done
+      - name: Verify public source and secrets
+        run: |
+          python3 scripts/check-public-export-safety.py --active-tree
+          python3 scripts/secret_scan.py
+      - name: Lint GitHub Actions workflows
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"
+      - name: Check whitespace
+        run: git diff --check
+
+  result:
+    name: CI
+    needs: [python, contracts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI leg
+        run: |
+          test "${{ needs.python.result }}" = success
+          test "${{ needs.contracts.result }}" = success

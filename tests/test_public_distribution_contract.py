@@ -10,6 +10,43 @@ PUBLIC_REPO = "https://github.com/sumitake/agent-collab"
 
 
 class PublicDistributionContractTests(unittest.TestCase):
+    def test_agent_neutral_guidance_is_canonical(self) -> None:
+        agents_path = ROOT / "AGENTS.md"
+        self.assertTrue(agents_path.is_file(), "AGENTS.md must be canonical")
+        agents = agents_path.read_text(encoding="utf-8")
+        claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+        self.assertIn("# agent-collab development guide", agents)
+        self.assertIn("## Source boundaries", agents)
+        self.assertEqual(claude, "# Claude Code compatibility\n\n@AGENTS.md\n")
+        self.assertNotIn("## Source boundaries", claude)
+
+    def test_public_licensing_identifies_owner_and_approval_boundary(self) -> None:
+        self.assertTrue((ROOT / "NOTICE").is_file(), "NOTICE must exist")
+        self.assertTrue(
+            (ROOT / "COMMERCIAL-LICENSING.md").is_file(),
+            "COMMERCIAL-LICENSING.md must exist",
+        )
+        notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
+        commercial = (ROOT / "COMMERCIAL-LICENSING.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(
+            notice,
+            "Copyright (c) 2026 John Osumi. All rights reserved except as "
+            "expressly granted.\nCommercial licensing is administered by "
+            "Osumi Consulting LLC.\n",
+        )
+        for phrase in (
+            "explicit written approval",
+            "Repository access",
+            "installation",
+            "GitHub interaction",
+            "acceptance of a contribution",
+        ):
+            self.assertIn(phrase, commercial)
+
     def test_every_canonical_repository_pointer_targets_public_distribution(self) -> None:
         marketplace = json.loads(
             (ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
@@ -43,10 +80,17 @@ class PublicDistributionContractTests(unittest.TestCase):
         )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(claude["version"], "3.0.1")
-        self.assertEqual(codex["version"], "3.0.1")
-        self.assertIn("**agent-collab** (v3.0.1)", readme)
-        self.assertIn("## What's new - v3.0.1", readme)
+        self.assertEqual(claude["version"], "3.1.0")
+        self.assertEqual(codex["version"], "3.1.0")
+        self.assertIn("**agent-collab** (v3.1.0)", readme)
+        self.assertIn("## What's new - v3.1.0", readme)
+
+        generated_skills = sorted(
+            (ROOT / "plugins" / "agent-collab" / "skills").glob("*/SKILL.md")
+        )
+        self.assertTrue(generated_skills)
+        for path in generated_skills:
+            self.assertIn("\nversion: 3.1.0\n", path.read_text(encoding="utf-8"))
 
     def test_host_metadata_and_homelab_labels_are_not_distributed(self) -> None:
         self.assertFalse((ROOT / ".claude-session-owner").exists())
@@ -56,6 +100,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         )
         public_files = (
             ROOT / "README.md",
+            ROOT / "AGENTS.md",
             ROOT / "CLAUDE.md",
             ROOT / "CHANGELOG.md",
             ROOT / "docs" / "migration-from-legacy-packages.md",

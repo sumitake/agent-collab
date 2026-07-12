@@ -1,10 +1,11 @@
 {
   "name": "agent-collab",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. The signed runtime artifact is intentionally absent until the private build/sign integration completes.",
   "author": {
     "name": "John Osumi"
   },
+  "license": "PolyForm-Strict-1.0.0",
   "keywords": [
     "agent-collab",
     "multi-model",

@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.0.1**
+Current: **3.1.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -20,6 +20,16 @@ current-session and explicit identity is a configuration error for every
 route. Partial or unknown identity is allowed only for non-governance work and
 always carries an independence warning.
 
+## License
+
+This package uses the unmodified
+[PolyForm Strict License 1.0.0](LICENSE). Copyright is owned by John Osumi;
+commercial use requires separate, explicit written approval administered by
+Osumi Consulting LLC. Source visibility and package installation do not grant
+commercial rights. See [NOTICE](NOTICE) and
+[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
+approval boundary.
+
 ## Runtime and safe mode
 
 The package may contain a privately built signed native runtime only at the
@@ -30,7 +40,7 @@ inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
 `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
 labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.0.1 package.
+identify this same 3.1.0 package.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5

@@ -25,16 +25,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
         with:
           languages: python
           build-mode: none
           queries: security-extended
       - name: Analyze
         id: analyze
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
         with:
           category: /language:python
           # Private pre-publication repositories may not have Code Scanning
@@ -43,7 +43,7 @@ jobs:
           upload: ${{ github.event.repository.private && 'never' || 'always' }}
       - name: Retain private-repository SARIF
         if: github.event.repository.private
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: codeql-python-sarif-${{ github.sha }}
           path: ${{ steps.analyze.outputs.sarif-output }}

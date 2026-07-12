@@ -1,7 +1,7 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.0.1). It gives
-Claude, Codex, Antigravity, ZCode/OpenCode, and custom primary hosts the same
+This repository distributes one package: **agent-collab** (v3.1.0). It gives
+Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
 
@@ -23,16 +23,23 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.0.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.1.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.0.1
+## What's new - v3.1.0
 
+- Adopt the unmodified PolyForm Strict License 1.0.0. John Osumi retains
+  copyright, and commercial use requires separate explicit written approval
+  administered by Osumi Consulting LLC.
+- Make `AGENTS.md` the canonical public repository guide. `CLAUDE.md` remains
+  only as Claude Code's `@AGENTS.md` compatibility loader.
+- Require contributor-rights evidence and package exact legal documents,
+  deterministic SHA-256 evidence, and an SPDX 2.3 SBOM with every release.
 - All previous host presets and provider packages are retired and deleted. The
   marketplace, release matrix, and active package inventory contain only
   `agent-collab`.
 - Primary id, family, active model, host runtime, and session identifier are
   resolved dynamically or from explicit configuration. Model changes during a
-  ZCode/OpenCode session update provenance before the next route.
+  an OpenCode or ZCode session update provenance before the next route.
 - Governance review requires a complete, trustworthy, and internally
   consistent primary id, family, active model, host runtime, and session
   identifier. Explicit configuration may fill missing observations, but a
@@ -60,11 +67,25 @@ Migration shorthand:
 The exhaustive namespace/skill table is in
 [docs/migration-from-legacy-packages.md](docs/migration-from-legacy-packages.md).
 
+## License
+
+The public repository and distributed package use the unmodified
+[PolyForm Strict License 1.0.0](LICENSE). This is a source-available license,
+not an open-source grant: it permits the uses described in the license and does
+not permit redistribution, changes, derivative works, or commercial use.
+
+Copyright is owned by John Osumi. Commercial use requires separate, explicit
+written approval administered by Osumi Consulting LLC. Repository access,
+installation, GitHub activity, and an accepted contribution do not constitute
+approval. See [NOTICE](NOTICE) and
+[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
+approval boundary.
+
 ## System architecture
 
 ```mermaid
 flowchart LR
-    H["Claude, Codex, Antigravity, ZCode, or custom host"] --> C0["Plugin-relative public coordinator"]
+    H["Claude, Codex, Antigravity, OpenCode, ZCode, or custom host"] --> C0["Plugin-relative public coordinator"]
     C0 --> P["Immutable primary and artifact snapshots"]
     P --> G["Governance and family-independence policy"]
     G --> S["Sealed route/action preflight"]
@@ -160,7 +181,7 @@ repository Codex marketplace is generated at
 `.agents/plugins/marketplace.json`; it contains only `agent-collab`.
 
 Then invoke the `agent-collab` migration-doctor skill from a new Codex task.
-Antigravity, ZCode/OpenCode, and custom hosts must select the same single
+Antigravity, OpenCode, ZCode, and custom hosts must select the same single
 package through their compatible plugin manager; if that host has no native
 plugin surface, it cannot install this package directly and must remain
 temporarily unsupported rather than recreating a provider-specific shim.
@@ -195,7 +216,7 @@ detection relies on strong session signals
 paths such as `CODEX_HOME` or `OPENCODE_CONFIG`.
 The current OpenCode preset is `opencode/glm-5.2` only when explicitly observed
 from host/session or central configuration. A missing observation is typed
-unavailable; a strong live ZCode/OpenCode model observation cannot be overridden
+unavailable; a strong live OpenCode or ZCode model observation cannot be overridden
 by conflicting explicit family/config fields, and an Anthropic-selected
 OpenCode model is prohibited.
 
@@ -266,6 +287,34 @@ material into a public issue or pull request.
 ```text
 python3 scripts/check-public-export-safety.py --active-tree --history
 ```
+
+## CI and security
+
+Comprehensive CI runs the full repository and script suites on Python 3.10,
+3.12, and 3.14. A separate repository-contract job checks generated skills and
+marketplaces, changelog and release consistency, policy-archive construction,
+checksum/SPDX evidence, JSON, workflow syntax, public-export safety, secrets,
+and whitespace. Existing specialized governance and release gates remain
+independently visible.
+
+All pull-request code runs on GitHub-hosted runners without private build or
+signing credentials. Every third-party GitHub Action uses a full commit SHA pin;
+Dependabot proposes reviewed updates to those pins.
+
+Security scanning is layered:
+
+- CodeQL analyzes Python with the `security-extended` query suite on pull
+  requests, `main`, a weekly schedule, and manual dispatch.
+- The dependency-free local scanner fails closed on high-confidence credential
+  patterns in tracked and non-ignored untracked bytes.
+- Gitleaks scans complete repository history on pull requests, `main`, a weekly
+  schedule, and manual dispatch.
+- GitHub native secret scanning and push protection provide server-side
+  detection before and after a push.
+
+Branch protection requires current CI, CodeQL, secret-scan, and governance
+results. Sensitive workflow, security, legal, and instruction surfaces have
+explicit CODEOWNERS coverage.
 
 ## Development and release verification
 

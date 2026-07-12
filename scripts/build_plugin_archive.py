@@ -29,6 +29,9 @@ RUNTIME_FILE_MODE = 0o755
 REQUIRED_ROOTS = (
     ".claude-plugin",
     ".codex-plugin",
+    "COMMERCIAL-LICENSING.md",
+    "LICENSE",
+    "NOTICE",
     "README.md",
     "skills",
     "coordinator.py",

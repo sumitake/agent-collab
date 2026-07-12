@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
 SCRIPT = ROOT / "scripts" / "build_plugin_archive.py"
+LEGAL_FILES = ("LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md")
 
 
 def _load():
@@ -110,6 +111,13 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertIn("runtime_client.py", names)
             self.assertIn("signing_policy.py", names)
             self.assertIn("runtime-manifest.json", names)
+            for name in LEGAL_FILES:
+                self.assertIn(name, names)
+                member = bundle.getmember(name)
+                self.assertEqual(
+                    bundle.extractfile(member).read(),
+                    (ROOT / name).read_bytes(),
+                )
             self.assertFalse(any(name == "runtime" or name.startswith("runtime/") for name in names))
             policy = bundle.getmember("signing_policy.py")
             self.assertEqual(
@@ -119,6 +127,16 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertEqual(
                 bundle.extractfile(policy).read(),
                 (self.plugin / "signing_policy.py").read_bytes(),
+            )
+
+    def test_packaged_legal_files_match_repository_canonicals(self) -> None:
+        for name in LEGAL_FILES:
+            self.assertTrue((ROOT / name).is_file(), f"missing root {name}")
+            self.assertTrue((PLUGIN / name).is_file(), f"missing plugin {name}")
+            self.assertEqual(
+                (PLUGIN / name).read_bytes(),
+                (ROOT / name).read_bytes(),
+                name,
             )
 
     def test_activation_archive_has_exactly_one_runtime_with_byte_mode_parity(self) -> None:

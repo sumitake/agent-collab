@@ -153,7 +153,7 @@ def render_template(
     return f"""---
 name: {name}
 version: 0.1.0
-description: TODO — write a one-sentence description containing BOTH (a) explicit user phrases like "<trigger phrase>", "<another trigger phrase>" AND (b) at least one situational trigger clause like "or when <situation>". Both halves are mandatory per workspace CLAUDE.md project directive #1; a description with only one half won't trigger reliably across deliberate and proactive invocation paths.
+description: TODO — write a one-sentence description containing BOTH (a) explicit user phrases like "<trigger phrase>", "<another trigger phrase>" AND (b) at least one situational trigger clause like "or when <situation>". Both halves are mandatory under the agent-collab skill trigger contract; a description with only one half won't trigger reliably across deliberate and proactive invocation paths.
 ---
 
 {classification_comment}# {display_name} — TODO tagline

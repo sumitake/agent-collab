@@ -29,6 +29,7 @@ scripts/test_check_release_consistency.py, which CI runs before this script.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -38,6 +39,14 @@ from pathlib import Path
 PLUGIN = "agent-collab"
 _SEMVER = r"(\d+\.\d+\.\d+)"
 _PLUGIN_JSON = f"plugins/{PLUGIN}/.claude-plugin/plugin.json"
+MANIFEST_LICENSE = "PolyForm-Strict-1.0.0"
+MARKETPLACE_LICENSE = "LicenseRef-PolyForm-Strict-1.0.0"
+LICENSE_SHA256 = "9eb48619fbc193ab7bb327b090cfcc703000265b83e670f81f231d0b1c43c56e"
+NOTICE_TEXT = (
+    "Copyright (c) 2026 John Osumi. All rights reserved except as expressly "
+    "granted.\nCommercial licensing is administered by Osumi Consulting LLC.\n"
+)
+LEGAL_FILES = ("LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md")
 
 
 def repo_root() -> Path:
@@ -67,6 +76,114 @@ def _read(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except OSError:
         return None
+
+
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def license_contract_errors(root: Path, version: str) -> list[str]:
+    """Return deterministic licensing drift errors for one release tree."""
+    errors: list[str] = []
+    plugin_root = root / "plugins" / PLUGIN
+    for label, path in (
+        ("Claude", plugin_root / ".claude-plugin" / "plugin.json"),
+        ("Codex", plugin_root / ".codex-plugin" / "plugin.json"),
+    ):
+        text = _read(path)
+        try:
+            manifest = json.loads(text) if text is not None else {}
+        except (TypeError, ValueError):
+            manifest = {}
+        if manifest.get("version") != version:
+            errors.append(f"{label} manifest version is not {version}")
+        if manifest.get("license") != MANIFEST_LICENSE:
+            errors.append(
+                f"{label} manifest license is not {MANIFEST_LICENSE}"
+            )
+
+    marketplace_text = _read(root / ".claude-plugin" / "marketplace.json")
+    try:
+        marketplace = (
+            json.loads(marketplace_text) if marketplace_text is not None else {}
+        )
+        entries = marketplace.get("plugins", [])
+        entry = entries[0] if isinstance(entries, list) and len(entries) == 1 else {}
+    except (AttributeError, TypeError, ValueError):
+        entry = {}
+    if entry.get("license") != MARKETPLACE_LICENSE:
+        errors.append(f"marketplace license is not {MARKETPLACE_LICENSE}")
+
+    for name in LEGAL_FILES:
+        root_bytes = _read_bytes(root / name)
+        plugin_bytes = _read_bytes(plugin_root / name)
+        if root_bytes is None or plugin_bytes is None:
+            errors.append(f"{name} is missing from the root or plugin")
+        elif root_bytes != plugin_bytes:
+            errors.append(f"{name} byte parity failed")
+
+    license_bytes = _read_bytes(root / "LICENSE")
+    if (
+        license_bytes is None
+        or hashlib.sha256(license_bytes).hexdigest() != LICENSE_SHA256
+    ):
+        errors.append("LICENSE does not match the pinned PolyForm Strict text")
+    notice = _read(root / "NOTICE")
+    if notice != NOTICE_TEXT:
+        errors.append("NOTICE owner or commercial administrator drifted")
+
+    commercial = _read(root / "COMMERCIAL-LICENSING.md") or ""
+    for token in (
+        "PolyForm Strict License 1.0.0",
+        "explicit written approval",
+        "Osumi Consulting LLC",
+        "Repository access",
+        "installation",
+        "GitHub interaction",
+        "acceptance of a contribution",
+    ):
+        if token not in commercial:
+            errors.append(f"COMMERCIAL-LICENSING.md is missing {token!r}")
+
+    for label, path in (
+        ("root README", root / "README.md"),
+        ("plugin README", plugin_root / "README.md"),
+    ):
+        text = _read(path) or ""
+        for token in (
+            "PolyForm Strict License 1.0.0",
+            "Osumi Consulting LLC",
+            "](LICENSE)",
+            "[NOTICE](NOTICE)",
+            "[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)",
+        ):
+            if token not in text:
+                errors.append(f"{label} is missing {token!r}")
+        for combined in ("ZCode/OpenCode", "OpenCode/ZCode"):
+            if combined in text:
+                errors.append(f"{label} combines distinct hosts as {combined}")
+
+    changelog_parts = [_read(root / "CHANGELOG.md") or ""]
+    fragments_dir = root / "changelog.d"
+    if fragments_dir.is_dir():
+        changelog_parts.extend(
+            _read(path) or ""
+            for path in sorted(fragments_dir.glob("*.md"))
+            if path.name != "README.md"
+        )
+    changelog = "\n".join(changelog_parts)
+    for token in (
+        f"agent-collab {version}",
+        "PolyForm Strict License 1.0.0",
+        "`AGENTS.md`",
+        "Osumi Consulting LLC",
+    ):
+        if token not in changelog:
+            errors.append(f"changelog licensing entry is missing {token!r}")
+    return errors
 
 
 # --- version extractors (brittle surface -- unit-tested) ---------------------
@@ -210,6 +327,15 @@ def run_consistency(root: Path) -> tuple[bool, list[str]]:
         return False, [f"FAIL  cannot read a version from {_PLUGIN_JSON}"]
     lines = [f"source of truth: {_PLUGIN_JSON} version = {expected}"]
     ok = True
+
+    licensing_errors = license_contract_errors(root, expected)
+    if licensing_errors:
+        ok = False
+        lines.extend(f"FAIL  licensing: {error}" for error in licensing_errors)
+    else:
+        lines.append(
+            "PASS  PolyForm Strict legal files, metadata, and README notices match"
+        )
 
     codex_manifest_path = (
         root / "plugins" / PLUGIN / ".codex-plugin" / "plugin.json"

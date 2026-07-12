@@ -21,6 +21,8 @@ OUTPUT_PATH = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 CODEX_OUTPUT_PATH = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 CANONICAL_PACKAGE = "agent-collab"
+MANIFEST_LICENSE = "PolyForm-Strict-1.0.0"
+MARKETPLACE_LICENSE = "LicenseRef-PolyForm-Strict-1.0.0"
 
 def load_json(path: Path) -> dict:
     with open(path, encoding="utf-8") as fh:
@@ -104,7 +106,17 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-
+        if (
+            plugin_info.get("license") != MANIFEST_LICENSE
+            or codex_plugin_info.get("license") != MANIFEST_LICENSE
+            or fragment.get("license") != MARKETPLACE_LICENSE
+        ):
+            print(
+                "ERROR: Claude/Codex manifests and marketplace fragment must "
+                "carry the canonical PolyForm Strict license identifiers",
+                file=sys.stderr,
+            )
+            return 1
         entry = {
             "name": plugin_info.get("name", item.name),
             "description": fragment.get("description", plugin_info.get("description", "")),
@@ -112,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             "author": plugin_info.get("author", {}),
             "category": fragment.get("category", "ai-collaboration"),
             "tags": fragment.get("tags", []),
+            "license": fragment["license"],
             "source": f"./plugins/{item.name}"
         }
         plugins.append(entry)

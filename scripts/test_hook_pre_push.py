@@ -56,6 +56,7 @@ def _make_body(**overrides):
     values = {k: "yes" for k in cpc.REQUIRED_KEYS}
     values["tier"] = "2"
     values["cross_check"] = "PROCEED"
+    values["contributor_rights"] = "OWNER-AUTHORED"
     values.update(overrides)
     lines = [cpc.TRACE_START]
     lines.extend(f"{k}: {v}" for k, v in values.items())
