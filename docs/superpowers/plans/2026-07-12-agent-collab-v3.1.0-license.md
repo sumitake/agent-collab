@@ -677,17 +677,21 @@ python3 -m json.tool /tmp/agent-collab-v3.1.0.spdx.json >/dev/null
 
 Expected: archive lists `LICENSE`, `NOTICE`, and `COMMERCIAL-LICENSING.md`, contains no `runtime/`, checksum verifies, and SBOM is valid JSON.
 
-- [ ] **Step 3: Run release dry-run and verify branch state**
+- [ ] **Step 3: Verify feature-branch release inputs and branch state**
 
 Run:
 
 ```bash
-python3 scripts/cut_release.py --dry-run
+python3 scripts/build-changelog.py --dry-run >/dev/null
+python3 scripts/check_release_consistency.py
 git status --short --branch
 git log --show-signature -7 --oneline
 ```
 
-Expected: dry-run selects policy-only `3.1.0`; worktree is clean; all task commits are signed.
+Expected: changelog fragments compile, release consistency selects policy-only
+`3.1.0`, the worktree is clean, and all task commits are signed. Do not invoke
+`cut_release.py` from this feature branch: it intentionally requires clean
+published `main` and a compiled changelog.
 
 - [ ] **Step 4: Push and open the governed pull request**
 
@@ -712,17 +716,34 @@ Read back both repository `security_and_analysis` and branch-protection JSON.
 Treat an unsupported optional native setting as explicitly unavailable rather
 than reporting it enabled.
 
-- [ ] **Step 7: Create the signed release from clean merged `main`**
+- [ ] **Step 7: Merge the generated-changelog release PR**
+
+From a fresh branch based on the merged source PR, run:
+
+```bash
+python3 scripts/build-changelog.py
+git diff --check
+python3 scripts/build-changelog.py --check
+```
+
+Commit only the generated `CHANGELOG.md`, open the release PR, verify the
+normal governed checks, and merge it. Refresh clean local `main` to the release
+PR merge commit.
+
+- [ ] **Step 8: Create the signed release from clean merged `main`**
 
 From a clean current `main`, run:
 
 ```bash
+python3 scripts/cut_release.py --dry-run
 python3 scripts/cut_release.py
 ```
 
-Expected: creates and pushes signed annotated tag `v3.1.0`; release workflow builds the policy-only archive, checksum, and SPDX SBOM.
+Expected: the dry run verifies the compiled changelog and policy-only archive;
+the live command creates and pushes signed annotated tag `v3.1.0`; the release
+workflow builds the policy-only archive, checksum, and SPDX SBOM.
 
-- [ ] **Step 8: Verify the public release**
+- [ ] **Step 9: Verify the public release**
 
 Verify through GitHub that:
 
