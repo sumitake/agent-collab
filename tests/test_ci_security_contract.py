@@ -130,6 +130,11 @@ class CiSecurityContractTests(unittest.TestCase):
         ):
             self.assertIn(token, text)
 
+    def test_release_assets_use_download_stable_filenames(self) -> None:
+        text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        self.assertIn("printf 'archive_name=%s.v%s.plugin\\n'", text)
+        self.assertNotIn("printf 'archive_name=%s v%s.plugin\\n'", text)
+
     def test_public_workflows_never_select_self_hosted_runners(self) -> None:
         for name, text in self._workflow_texts().items():
             with self.subTest(workflow=name):
