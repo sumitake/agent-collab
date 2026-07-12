@@ -181,6 +181,18 @@ jobs:
             --plugin "$PLUGIN" \
             --output "/tmp/$ARCHIVE"
           ls -la "/tmp/$ARCHIVE"
+      - name: Build checksum and SPDX release evidence
+        run: |
+          set -euo pipefail
+          ARCHIVE="${{ steps.meta.outputs.archive_name }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          CREATED="$(git show -s --format=%cI HEAD)"
+          python3 scripts/build_release_evidence.py \
+            --archive "/tmp/$ARCHIVE" \
+            --version "$VERSION" \
+            --created "$CREATED" \
+            --sbom "/tmp/agent-collab-v${VERSION}.spdx.json" \
+            --checksum "/tmp/${ARCHIVE}.sha256"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,5 +204,7 @@ jobs:
           fi
           gh release create "${{ github.ref_name }}" \
             "/tmp/${{ steps.meta.outputs.archive_name }}" \
+            "/tmp/${{ steps.meta.outputs.archive_name }}.sha256" \
+            "/tmp/agent-collab-v${{ steps.meta.outputs.version }}.spdx.json" \
             --title "${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}" \
             --notes "$NOTES"
