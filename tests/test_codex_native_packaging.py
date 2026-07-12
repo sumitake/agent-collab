@@ -22,6 +22,8 @@ class CodexNativePackagingTests(unittest.TestCase):
         self.assertEqual(codex["name"], "agent-collab")
         self.assertEqual(codex["name"], claude["name"])
         self.assertEqual(codex["version"], claude["version"])
+        self.assertEqual(codex.get("license"), claude.get("license"))
+        self.assertEqual(codex.get("license"), "PolyForm-Strict-1.0.0")
         self.assertEqual(codex["skills"], "./skills/")
         self.assertEqual(codex["author"], claude["author"])
         self.assertEqual(

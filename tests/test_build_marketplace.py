@@ -48,6 +48,7 @@ class TestBuildMarketplace(unittest.TestCase):
                     "version": "3.0.0",
                     "description": "Unified plugin",
                     "author": {"name": "Test"},
+                    "license": "PolyForm-Strict-1.0.0",
                 }
             ),
             encoding="utf-8",
@@ -60,6 +61,7 @@ class TestBuildMarketplace(unittest.TestCase):
                     "version": "3.0.0",
                     "description": "Unified plugin",
                     "author": {"name": "Test"},
+                    "license": "PolyForm-Strict-1.0.0",
                     "skills": "./skills/",
                     "interface": {
                         "displayName": "Agent Collab",
@@ -80,6 +82,7 @@ class TestBuildMarketplace(unittest.TestCase):
                     "description": "Unified marketplace entry",
                     "category": "ai-collaboration",
                     "tags": ["agent-collab"],
+                    "license": "LicenseRef-PolyForm-Strict-1.0.0",
                 }
             ),
             encoding="utf-8",
@@ -104,6 +107,10 @@ class TestBuildMarketplace(unittest.TestCase):
         data = json.loads(self.output.read_text(encoding="utf-8"))
         self.assertEqual([entry["name"] for entry in data["plugins"]], ["agent-collab"])
         self.assertEqual(data["plugins"][0]["source"], "./plugins/agent-collab")
+        self.assertEqual(
+            data["plugins"][0].get("license"),
+            "LicenseRef-PolyForm-Strict-1.0.0",
+        )
         self.assertTrue(self.codex_output.is_file())
         codex = json.loads(self.codex_output.read_text(encoding="utf-8"))
         self.assertEqual([entry["name"] for entry in codex["plugins"]], ["agent-collab"])
@@ -117,6 +124,15 @@ class TestBuildMarketplace(unittest.TestCase):
         self.assertEqual(self._run([]), 1)
         self._plugin("agent-collab")
         self._plugin("provider-worker")
+        self.assertEqual(self._run([]), 1)
+
+    def test_rejects_license_identifier_drift(self) -> None:
+        self._plugin("agent-collab")
+        manifest = self.plugins / "agent-collab" / ".codex-plugin" / "plugin.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["license"] = "MIT"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+
         self.assertEqual(self._run([]), 1)
 
 
