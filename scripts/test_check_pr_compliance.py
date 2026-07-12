@@ -37,6 +37,7 @@ def _make_body(**overrides):
     defaults = {k: "yes" for k in REQUIRED_KEYS}
     defaults["tier"] = "2"
     defaults["cross_check"] = "PROCEED"
+    defaults["contributor_rights"] = "OWNER-AUTHORED"
     defaults.update(overrides)
     lines = [TRACE_START]
     for k, v in defaults.items():
@@ -55,6 +56,7 @@ def _valid_kv():
     kv = {k: "yes" for k in REQUIRED_KEYS}
     kv["tier"] = "2"
     kv["cross_check"] = "PROCEED"
+    kv["contributor_rights"] = "OWNER-AUTHORED"
     return kv
 
 
@@ -179,6 +181,36 @@ class TestParseTraceBlock(unittest.TestCase):
         self.assertTrue(any("tier" in e and "missing" in e for e in errors),
                         f"expected a missing-tier error; got {errors}")
 
+    def test_missing_contributor_rights_is_rejected(self):
+        _, errors = cpc.parse_trace_block(
+            _make_body(contributor_rights=None)
+        )
+        self.assertTrue(
+            any("contributor_rights" in error for error in errors),
+            errors,
+        )
+
+    def test_owner_authored_contributor_rights_is_valid(self):
+        _, errors = cpc.parse_trace_block(
+            _make_body(contributor_rights="OWNER-AUTHORED")
+        )
+        self.assertEqual(errors, [])
+
+    def test_unknown_contributor_rights_state_is_rejected(self):
+        _, errors = cpc.parse_trace_block(
+            _make_body(contributor_rights="DCO-SIGNED")
+        )
+        self.assertTrue(
+            any("contributor_rights" in error for error in errors),
+            errors,
+        )
+
+    def test_operator_confirmed_contributor_rights_is_valid(self):
+        _, errors = cpc.parse_trace_block(
+            _make_body(contributor_rights="OPERATOR-CONFIRMED")
+        )
+        self.assertEqual(errors, [])
+
     # --- tier-aware cross_check CONTENT (governance-gap fix 2026-06-01, #481) --
 
     def test_tier3_na_cross_check_makes_block_invalid(self):
@@ -224,6 +256,7 @@ class TestParseTraceBlock(unittest.TestCase):
                 f"cross_check: PROCEED\n"
                 f"post_condition: ci-green\n"
                 f"mcp_coverage_gap: NONE\n"
+                f"contributor_rights: OWNER-AUTHORED\n"
                 f"operator_reserved: no\n"
                 f"{cpc.TRACE_END}")
         data, errors = cpc.parse_trace_block(body)
@@ -238,6 +271,7 @@ class TestParseTraceBlock(unittest.TestCase):
                 f"cross_check: PROCEED\n"
                 f"post_condition: ci-green\n"
                 f"mcp_coverage_gap: NONE\n"
+                f"contributor_rights: OWNER-AUTHORED\n"
                 f"operator_reserved: no\n"
                 f"{cpc.TRACE_END}")
         data, errors = cpc.parse_trace_block(body)
@@ -252,6 +286,7 @@ class TestParseTraceBlock(unittest.TestCase):
                 f"cross_check: PROCEED\n"
                 f"post_condition: ci-green\n"
                 f"mcp_coverage_gap: NONE\n"
+                f"contributor_rights: OWNER-AUTHORED\n"
                 f"operator_reserved: no\n"
                 f"{cpc.TRACE_END}")
         data, errors = cpc.parse_trace_block(body)
@@ -266,6 +301,7 @@ def _block(tier: str, cross_check: str) -> str:
             f"cross_check: {cross_check}\n"
             f"post_condition: ci-green\n"
             f"mcp_coverage_gap: NONE\n"
+            f"contributor_rights: OWNER-AUTHORED\n"
             f"operator_reserved: no\n"
             f"{cpc.TRACE_END}")
 

@@ -136,6 +136,7 @@ jobs:
               "cross_check",
               "post_condition",
               "mcp_coverage_gap",
+              "contributor_rights",
               "operator_reserved",
           )
 
@@ -208,6 +209,14 @@ jobs:
                   elif not data[key]:
                       errors.append(f"required key '{key}' is empty")
 
+              contributor_rights = data.get("contributor_rights")
+              if contributor_rights and contributor_rights not in {
+                  "OWNER-AUTHORED", "OPERATOR-CONFIRMED"
+              }:
+                  errors.append(
+                      "contributor_rights must be OWNER-AUTHORED or "
+                      "OPERATOR-CONFIRMED")
+
               # --- KEEP IN SYNC -------------------------------------------
               # Tier-aware cross_check CONTENT validation. Mirrors
               # `cross_check_valid_for_tier` in scripts/check_pr_compliance.py.
@@ -258,7 +267,7 @@ jobs:
               print(f"  {TRACE_START}")
               print("  ... lines: <key>: <value> ...")
               print(f"  {TRACE_END}")
-              print("block with all 7 required keys non-empty:")
+              print("block with all 8 required keys non-empty:")
               for k in REQUIRED_KEYS:
                   print(f"  - {k}")
               print()

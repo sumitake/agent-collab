@@ -42,5 +42,6 @@ tier: <1 | 2 | 3>
 cross_check: <verdict and reviewer family, in-flight state, or reasoned N/A for Tier 1>
 post_condition: <post-merge/release verification>
 mcp_coverage_gap: <NONE | FILED: public issue URL>
+contributor_rights: <OWNER-AUTHORED | OPERATOR-CONFIRMED>
 operator_reserved: <yes | no>
 <!-- compliance-trace:end -->

@@ -75,7 +75,11 @@ REQUIRED_KEYS = (
     "cross_check",
     "post_condition",
     "mcp_coverage_gap",
+    "contributor_rights",
     "operator_reserved",
+)
+CONTRIBUTOR_RIGHTS_STATES = frozenset(
+    {"OWNER-AUTHORED", "OPERATOR-CONFIRMED"}
 )
 
 # CI conclusions that count as "not blocking a merge".
@@ -259,6 +263,16 @@ def parse_trace_block(body: str):
             errors.append(f"missing required key '{key}'")
         elif not data[key]:
             errors.append(f"required key '{key}' has an empty value")
+
+    contributor_rights = data.get("contributor_rights")
+    if (
+        contributor_rights
+        and contributor_rights not in CONTRIBUTOR_RIGHTS_STATES
+    ):
+        errors.append(
+            "contributor_rights must be OWNER-AUTHORED or "
+            "OPERATOR-CONFIRMED"
+        )
 
     # Tier-aware cross_check CONTENT validation (governance-gap fix 2026-06-01,
     # PR #481 post-mortem): a Tier-2/3 PR must record a real cross-check verdict

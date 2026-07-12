@@ -38,12 +38,21 @@ multi-round trace records the final operative verdict.
 
 Every pull request contains exactly one compliance-trace block with these
 non-empty keys: `author`, `standing_directives`, `tier`, `cross_check`,
-`post_condition`, `mcp_coverage_gap`, and `operator_reserved`.
+`post_condition`, `mcp_coverage_gap`, `contributor_rights`, and
+`operator_reserved`.
 
 `mcp_coverage_gap` remains the stable schema name. Record `NONE` when no
 external capability gap exists, or `FILED: <public issue URL>` when follow-up is
 required. Tier 2 and Tier 3 cannot use a bare `N/A` cross-check. In-flight states
 may keep a PR open, but only a converged `PROCEED` makes it merge-eligible.
+
+Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
+change. For any external contribution, use `OPERATOR-CONFIRMED` only after John
+Osumi or Osumi Consulting LLC has verified a separate written agreement that
+grants sufficient rights to use, modify, distribute, sublicense, and
+commercially relicense the contribution. A Developer Certificate of Origin is
+not a substitute. Automation verifies the field's presence and form; the
+operator verifies the actual agreement.
 
 Before merge, run:
 
