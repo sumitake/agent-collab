@@ -6,13 +6,9 @@ gh calls: parse_trace_block, cross_check_ok, cross_check_valid_for_tier,
 _parse_tier, parse_codeowners, path_is_operator_reserved, reserved_paths, and
 compute_verdict.
 
-NOTE: scripts/check_pr_compliance.py is a byte-identical MIRROR of the same file
-in `sumitake/agent-collab-workspace` (the "KEEP IN SYNC" contract — see that
-file's header comment). A few of its comments reference workspace-only sibling
-modules (scripts/classify_pr_tier.py, check_pr_phase1_extension); those are
-explanatory, NOT imports — they don't need to exist here. This is the plugin's
-local coverage of the mirrored logic; the workspace keeps its own copy at
-tests/test_check_pr_compliance.py.
+The checker and its workflow-inline parser are the two local implementations of
+the public contract in `docs/public-governance.md`; this suite prevents their
+shared parsing and decision behavior from drifting.
 
 Run: python scripts/test_check_pr_compliance.py
 """

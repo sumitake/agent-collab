@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/sumitake/agent-collab-plugin/runtime-manifest.schema.json",
+  "$id": "https://github.com/sumitake/agent-collab/runtime-manifest.schema.json",
   "title": "agent-collab signed native runtime manifest",
   "type": "object",
   "additionalProperties": false,

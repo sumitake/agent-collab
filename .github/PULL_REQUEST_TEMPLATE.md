@@ -1,92 +1,46 @@
-<!--
-This template surfaces the procedural traces required by:
-  - the global standing directive (~/.claude/CLAUDE.md "WORKFLOW LAYER" — pre-flight, branch, validation, CHANGELOG, version bump, restart), and
-  - the workspace project standing-directive additions (agent-collab-workspace/CLAUDE.md):
-      #1 Trigger-phrase verification
-      #2 Cloud Run / local-plugin functional sync (MCP coverage gap evaluation)
-      #3 .plugin archive distribution (post-merge release tag)
-
-Fill in each section. For checkbox items, prefer richness over rote ticking — state the outcome
-in a sentence. "N/A — reason" is acceptable; silent ticking is not.
-
-Anti-pattern: ticking a box without performing the check. The check is the point;
-the trace is the audit log.
--->
-
 ## Summary
 
-<!-- What changed and why, in 2–3 sentences. -->
+Describe the user-visible outcome and why it belongs in the public policy/client repository.
 
-## Cross-repo coordination
+## Boundary declaration
 
-<!-- "N/A" if standalone. Otherwise: companion PR link in agent-collab-workspace, merge order,
-and justification if the default order ("workspace first") is reversed (e.g., when the plugin
-references a workspace path that's being changed). -->
+- [ ] No provider executor source, raw provider command, credential, private absolute path, retired package tree, downloader, or post-install hook is included.
+- [ ] Native-runtime changes, if any, contain only a final signed artifact and reviewed public verification metadata; implementation and credentials remain private.
+- [ ] The change does not create a host-specific preset or provider-specific plugin.
+
+## Generated and release surfaces
+
+- [ ] Skill specs and generated `SKILL.md` files are in parity.
+- [ ] Claude and Codex marketplaces/manifests are in parity.
+- [ ] A unique `changelog.d/` fragment is present for a user-visible change; generated `CHANGELOG.md` changes only in a release/bootstrap PR.
+- [ ] Version metadata is bumped when behavior or distributed content changes.
 
 ## Verification
 
-<!-- What you ran locally, what passed, what the CI is expected to confirm. -->
+List the exact deterministic tests, schema/generation checks, secret scan, and public-export gates run for this change.
 
-## Plugin-specific procedural traces (workspace project additions)
+- [ ] `python3 scripts/build_skills.py --check`
+- [ ] `python3 scripts/build_marketplace.py --check`
+- [ ] `python3 scripts/build-changelog.py --check`
+- [ ] `python3 -m unittest discover -s tests -t . -v`
+- [ ] `python3 -m unittest discover -s scripts -p 'test_*.py' -v`
+- [ ] `python3 scripts/check_release_consistency.py`
+- [ ] `python3 scripts/secret_scan.py`
+- [ ] `python3 scripts/check-public-export-safety.py --active-tree --history`
+- [ ] `git diff --check`
 
-### Addition #1 — Trigger-phrase verification (SKILL.md description-field changes)
+## Review and post-condition
 
-State the outcome, do not leave blank:
-
-- [ ] **Description field changed** in this PR. Both explicit user-phrase triggers AND at least one situational ("or when X happens") trigger are present in the new description. Verified by re-reading the description against `agent-collab-workspace/CLAUDE.md` addition #1.
-- OR
-- [ ] **N/A** — this change does not modify any SKILL.md `description:` field. Triggers are unchanged; they continue to fire correctly.
-
-### Addition #2 — Cloud Run / local-plugin functional sync (every skill change)
-
-The directive's exact words: *"Evaluate is not optional — make a positive determination ('no gap' or 'gap filed')."*
-
-- [ ] **MCP tool coverage gap: NONE** — this change does not add, remove, or modify any MCP tool capability (no new tool, no new parameter, no new response field). No TODO needs to be filed in `agent-mcp-server`.
-- OR
-- [ ] **MCP tool coverage gap: FILED** at `<link to specific section in https://github.com/sumitake/agent-mcp-server/blob/main/TODO.md>` — describes what the parked Cloud Run server would need to implement to mirror this plugin change.
-
-### Addition #3 — `.plugin` archive distribution (post-merge release tag)
-
-- [ ] **`plugin.json` version was bumped** in this PR. The post-merge tag step is documented in the test plan below.
-- OR
-- [ ] **N/A** — `plugin.json` version was NOT bumped (e.g., repo-level meta change, or doc fix with no user-visible effect). No release tag step needed.
-
-## Global standing-directive compliance
-
-- [ ] **Pre-flight conflict check** — `gh pr list --state open` scanned in this repo AND `agent-collab-workspace`; no conflicting work
-- [ ] **Branch naming** follows `dev/<agent>/<short-topic>`
-- [ ] **Edited in working repo** (NOT the runtime cache `~/.claude/plugins/cache/`, NOT the deprecated `~/.claude/marketplaces/personal/`)
-- [ ] **Local validation** — state which (frontmatter lint, skill description rendering, trigger-phrase mental simulation, etc.)
-- [ ] **`changelog.d/` fragment** added; `plugin.json` version bumped if user-visible (generated `CHANGELOG.md` changes only in a release PR)
-- [ ] **Gemini cross-check** completed — state outcome (H/M/L confidence + plan-change yes/no), OR document why exempt (narrow exception class only)
-- [ ] **Memory file refresh** applicable? (state where, or "no — substance not memory-worthy")
-
-## Test plan
-
-- [ ] CI checks, including skill validation, deterministic tests, secret scan,
-      CodeQL, release consistency, and export safety, pass
-- [ ] Merge this PR
-- [ ] **Post-merge release tag** (only if `plugin.json` version was bumped — see addition #3):
-  ```bash
-  cd <agent-collab-plugin-checkout>
-  git checkout main && git pull origin main
-  # First prove clean reachable history and integrate every required signed
-  # native-runtime capability. The release workflow fails closed without both.
-  git tag -s v<X.Y.Z> -m "agent-collab v<X.Y.Z>"  # signed annotated tag
-  git push origin v<X.Y.Z>  # triggers the gated single-package release
-  ```
-- [ ] **Restart the active host runtime** so the marketplace clone refreshes (skill changes are not picked up mid-session)
+State the change tier from `docs/public-governance.md`, the independent-family review outcome when required, and the post-merge verification.
 
 ## Compliance trace
 
-An agent fills this block in and runs `python3 scripts/check_pr_compliance.py <pr#> --repo <owner/repo>` (the tool lives in the `agent-collab-workspace` repo) before self-merging this PR, per directive #6 ("Agent merge authority").
-
 <!-- compliance-trace:start -->
-author: <Claude | Codex | Antigravity | ZCode | custom | operator>
-standing_directives: <directives followed, comma-separated>
-tier: <1 | 2 | 3 — formal tier declaration; Tier 2/3 REQUIRE a real cross_check verdict (a bare "N/A" is valid only at Tier 1)>
-cross_check: <e.g. "2 rounds; round 2 VERDICT: PROCEED" — or, ONLY at Tier 1, "N/A — <why workflow-exempt>">
-post_condition: <result, or N/A>
-mcp_coverage_gap: <NONE | FILED: issue-link>
+author: <agent or contributor>
+standing_directives: <public boundaries and validation followed>
+tier: <1 | 2 | 3>
+cross_check: <verdict and reviewer family, in-flight state, or reasoned N/A for Tier 1>
+post_condition: <post-merge/release verification>
+mcp_coverage_gap: <NONE | FILED: public issue URL>
 operator_reserved: <yes | no>
 <!-- compliance-trace:end -->

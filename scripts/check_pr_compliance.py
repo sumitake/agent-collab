@@ -58,13 +58,10 @@ import unicodedata
 
 # --- the compliance-trace block contract ------------------------------------
 #
-# KEEP IN SYNC: an exact mirror of the next three constants is inlined into
-# `.github/workflows/compliance-trace.yml` (the TODO #10 Layer 2 CI gate) in
-# BOTH `sumitake/agent-collab-workspace` and `sumitake/agent-collab-plugin`.
-# Both implementations validate the same compliance-trace block; the format
-# spec of truth is `docs/multi-agent-coordination.md` § "PR compliance trace".
-# If you change any of these three here, mirror the change in BOTH workflow
-# files. Drift would create confusing pass-here / fail-there situations.
+# KEEP IN SYNC: the next three constants are inlined into this repository's
+# `.github/workflows/compliance-trace.yml`. The public prose contract lives in
+# `docs/public-governance.md`. Change both local implementations together so
+# CI and the pre-merge check cannot disagree.
 
 TRACE_START = "<!-- compliance-trace:start -->"
 TRACE_END = "<!-- compliance-trace:end -->"
@@ -866,7 +863,7 @@ def main(argv=None):
         description="Pre-self-merge compliance check for a PR (directive #6)")
     ap.add_argument("pr", help="pull request number")
     ap.add_argument("--repo", required=True, metavar="OWNER/REPO",
-                    help="target repository, e.g. sumitake/agent-collab-workspace")
+                    help="target repository, e.g. sumitake/agent-collab")
     args = ap.parse_args(argv)
 
     verdict, lines = run(str(args.pr), args.repo)

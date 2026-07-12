@@ -122,7 +122,7 @@ class MigrationPolicyTests(unittest.TestCase):
                         "agent-collab": {
                             "source": {
                                 "source": "github",
-                                "repo": "sumitake/agent-collab-plugin",
+                                "repo": "sumitake/agent-collab",
                             }
                         }
                     },
@@ -149,7 +149,7 @@ class MigrationPolicyTests(unittest.TestCase):
                         "agent-collab": {
                             "source": {
                                 "source": "github",
-                                "repo": "sumitake/agent-collab-plugin",
+                                "repo": "sumitake/agent-collab",
                             }
                         }
                     },

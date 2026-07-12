@@ -1,7 +1,7 @@
 ---
 name: autonomy-readiness
 version: {{ skill_version }}
-description: Evaluate whether an autonomous, always-on, scheduled, headless, or self-evolving workflow is ready to run safely. Use when the user says "autonomy readiness," "activation gate review," "is this workflow ready to run autonomously," "go/no-go autonomy," "always-on readiness," "headless operation review," or "/{{ package_name }}:autonomy-readiness." Also offer this proactively before enabling background agents, recurring automations, auto-merge/self-evolution, external actions, LabMac-style headless runs, or any workflow that can continue without a human watching.
+description: Evaluate whether an autonomous, always-on, scheduled, headless, or self-evolving workflow is ready to run safely. Use when the user says "autonomy readiness," "activation gate review," "is this workflow ready to run autonomously," "go/no-go autonomy," "always-on readiness," "headless operation review," or "/{{ package_name }}:autonomy-readiness." Also offer this proactively before enabling background agents, recurring automations, auto-merge/self-evolution, external actions, unattended host runs, or any workflow that can continue without a human watching.
 ---
 
 # Autonomy readiness - go/no-go review

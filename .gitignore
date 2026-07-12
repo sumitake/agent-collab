@@ -23,8 +23,11 @@ build/
 *.log
 chain-logs/
 
-# Python — the agy-backed mcp-server (transition Phase 1)
+# Python
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+
+# Host-session metadata; never publish local ownership state.
+.claude-session-owner
