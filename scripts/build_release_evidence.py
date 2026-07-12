@@ -74,8 +74,22 @@ def _safe_regular_file(path: Path, *, label: str) -> os.stat_result:
     return info
 
 
+def _resolved_path(path: Path, *, label: str) -> Path:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{label} cannot be resolved: {path}") from exc
+
+
 def _validate_output_path(path: Path, *, archive: Path) -> None:
-    if path == archive or path.exists() or path.is_symlink():
+    if path.exists() or path.is_symlink():
+        raise ValueError(
+            f"output path already exists or aliases the archive: {path}"
+        )
+    if _resolved_path(path, label="output path") == _resolved_path(
+        archive,
+        label="release archive",
+    ):
         raise ValueError(f"output path already exists or aliases the archive: {path}")
     try:
         parent = path.parent.resolve(strict=True)
@@ -197,7 +211,10 @@ def build_evidence(
     if not isinstance(version, str) or SEMVER_RE.fullmatch(version) is None:
         raise ValueError("version must be an exact X.Y.Z semantic version")
     normalized_created = _normalize_created(created)
-    if sbom_output == checksum_output:
+    if _resolved_path(sbom_output, label="SBOM output") == _resolved_path(
+        checksum_output,
+        label="checksum output",
+    ):
         raise ValueError("SBOM and checksum outputs must be different paths")
     _validate_output_path(sbom_output, archive=archive)
     _validate_output_path(checksum_output, archive=archive)

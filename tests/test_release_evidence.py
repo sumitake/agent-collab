@@ -228,6 +228,45 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertFalse(self.sbom.exists())
         self.assertFalse(self.checksum.exists())
 
+    def test_output_path_rejects_an_unresolved_archive_alias(self) -> None:
+        evidence_builder = _load(
+            "agent_collab_evidence_archive_alias", EVIDENCE_SCRIPT
+        )
+        missing_archive = self.root / "missing.plugin"
+        relative_alias = Path(os.path.relpath(missing_archive, Path.cwd()))
+
+        with self.assertRaisesRegex(ValueError, "aliases the archive"):
+            evidence_builder._validate_output_path(
+                relative_alias,
+                archive=missing_archive,
+            )
+
+    def test_rejects_canonically_identical_output_paths_before_writing(
+        self,
+    ) -> None:
+        archive_builder = _load(
+            "agent_collab_archive_output_alias", ARCHIVE_SCRIPT
+        )
+        evidence_builder = _load(
+            "agent_collab_evidence_output_alias", EVIDENCE_SCRIPT
+        )
+        archive_builder.build_archive(
+            ROOT, plugin="agent-collab", output=self.archive
+        )
+        relative_sbom = Path(os.path.relpath(self.sbom, Path.cwd()))
+
+        with self.assertRaisesRegex(ValueError, "different paths"):
+            evidence_builder.build_evidence(
+                self.archive,
+                version="3.1.0",
+                created="2026-07-12T00:00:00Z",
+                sbom_output=relative_sbom,
+                checksum_output=self.sbom,
+                repo_root=ROOT,
+            )
+
+        self.assertFalse(self.sbom.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
