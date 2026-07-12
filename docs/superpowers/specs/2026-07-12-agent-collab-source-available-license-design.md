@@ -95,6 +95,50 @@ the workspace may retain its own `AGENTS.md` and `CLAUDE.md` authority model.
 No private workspace document becomes a prerequisite for using or contributing
 to the public repository.
 
+## Public CI and security controls
+
+The v3.1.0 repository uses defense in depth tailored to its Python and Markdown
+surface rather than copying unrelated Node or packaging jobs from another
+project. Existing specialized skill, governance, changelog, release, and
+runtime-policy workflows remain active. A comprehensive CI workflow adds a
+Python 3.10, 3.12, and 3.14 compatibility matrix plus a repository-contract job
+covering generators, marketplaces, release consistency, archive/evidence
+rehearsal, public-export safety, whitespace, JSON, and GitHub Actions syntax.
+
+Every third-party GitHub Action reference is pinned to a full commit SHA.
+Dependabot continues to propose GitHub Actions updates so pins remain current.
+All pull-request jobs use GitHub-hosted runners; public code never executes on
+a persistent private runner.
+
+CodeQL analyzes the Python surface with the `security-extended` query suite on
+pull requests, pushes to `main`, a weekly schedule, and manual dispatch. It uses
+least-privilege permissions and a full-SHA-pinned CodeQL action.
+
+Secret detection has three independent layers:
+
+1. the repository's dependency-free, fail-closed scanner covers tracked and
+   non-ignored untracked bytes with reviewed exact-finding exceptions only;
+2. a full-SHA-pinned Gitleaks action scans complete reachable history on pull
+   requests, `main`, a weekly schedule, and manual dispatch; and
+3. GitHub native secret scanning and push protection remain enabled, with
+   non-provider patterns and validity checks enabled where the repository API
+   supports them.
+
+After the new checks have produced live contexts, branch protection requires
+strict up-to-date CI, CodeQL, Gitleaks, repository secret-scan, and governance
+checks. External contributions require the sole CODEOWNER's review, stale and
+last-push approvals are enforced, and the administrator/operator retains a
+bypass for owner-authored releases. Linear history remains required; force
+pushes and branch deletion remain disabled. Explicit CODEOWNERS entries cover
+workflows, security policy, legal files, repository instruction files, and the
+CODEOWNERS file itself.
+
+The README documents the CI and security lifecycle. It names `OpenCode` and
+`ZCode` separately everywhere: they are distinct hosts and are never rendered
+as `ZCode/OpenCode` or `OpenCode/ZCode`. The repository does not add Node CI or
+`pip-audit`, because it has no Node project and no third-party runtime Python
+dependency set to audit.
+
 ## Contribution boundary
 
 The current public history contains only John Osumi-authored commits, so the new
@@ -135,6 +179,7 @@ python3 -m unittest discover -s scripts -p 'test_*.py' -v
 python3 scripts/check_release_consistency.py
 python3 scripts/check-public-export-safety.py --active-tree --history
 python3 scripts/secret_scan.py
+python3 -m unittest tests.test_ci_security_contract -v
 git diff --check
 ```
 
