@@ -140,8 +140,12 @@ class ProviderPluginRetirementTests(unittest.TestCase):
         secret_scan = (
             ROOT / ".github" / "workflows" / "secret-scan.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("github/codeql-action/init@v4", codeql)
-        self.assertIn("github/codeql-action/analyze@v4", codeql)
+        self.assertRegex(
+            codeql, r"github/codeql-action/init@[0-9a-f]{40} # v4"
+        )
+        self.assertRegex(
+            codeql, r"github/codeql-action/analyze@[0-9a-f]{40} # v4"
+        )
         self.assertRegex(codeql, r"(?m)^  actions: read$")
         self.assertIn("id: analyze", codeql)
         self.assertIn(
@@ -149,7 +153,9 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             codeql,
         )
         self.assertIn("if: github.event.repository.private", codeql)
-        self.assertIn("actions/upload-artifact@v4", codeql)
+        self.assertRegex(
+            codeql, r"actions/upload-artifact@[0-9a-f]{40} # v4"
+        )
         self.assertIn("path: ${{ steps.analyze.outputs.sarif-output }}", codeql)
         self.assertIn("scripts/secret_scan.py", secret_scan)
 

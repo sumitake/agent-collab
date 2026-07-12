@@ -288,6 +288,34 @@ material into a public issue or pull request.
 python3 scripts/check-public-export-safety.py --active-tree --history
 ```
 
+## CI and security
+
+Comprehensive CI runs the full repository and script suites on Python 3.10,
+3.12, and 3.14. A separate repository-contract job checks generated skills and
+marketplaces, changelog and release consistency, policy-archive construction,
+checksum/SPDX evidence, JSON, workflow syntax, public-export safety, secrets,
+and whitespace. Existing specialized governance and release gates remain
+independently visible.
+
+All pull-request code runs on GitHub-hosted runners without private build or
+signing credentials. Every third-party GitHub Action uses a full commit SHA pin;
+Dependabot proposes reviewed updates to those pins.
+
+Security scanning is layered:
+
+- CodeQL analyzes Python with the `security-extended` query suite on pull
+  requests, `main`, a weekly schedule, and manual dispatch.
+- The dependency-free local scanner fails closed on high-confidence credential
+  patterns in tracked and non-ignored untracked bytes.
+- Gitleaks scans complete repository history on pull requests, `main`, a weekly
+  schedule, and manual dispatch.
+- GitHub native secret scanning and push protection provide server-side
+  detection before and after a push.
+
+Branch protection requires current CI, CodeQL, secret-scan, and governance
+results. Sensitive workflow, security, legal, and instruction surfaces have
+explicit CODEOWNERS coverage.
+
 ## Development and release verification
 
 Run the deterministic gates before a release candidate:
