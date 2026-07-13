@@ -101,6 +101,18 @@ class RuntimeClientTests(unittest.TestCase):
         env = client._scrubbed_env(tmpdir=self.root)
         self.assertNotIn("HOME", env)
 
+    def test_runtime_resolution_without_posix_uid_is_typed_unsupported(self) -> None:
+        client = _load_client_without_pwd()
+        with mock.patch.object(client.os, "getuid", None), mock.patch.object(
+            client, "PLUGIN_ROOT", self.root,
+        ):
+            result = client.resolve_runtime()
+            identity = client._safe_file_identity(CLIENT, executable=False)
+
+        self.assertEqual(result.status, client.RuntimeStatus.PLATFORM_UNSUPPORTED)
+        self.assertIsNone(identity)
+        self.assertIsNone(client._operator_home())
+
     def _fixture(
         self,
         *,

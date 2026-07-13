@@ -196,7 +196,21 @@ def _exact_int(value: object, expected: int | None = None) -> bool:
     return type(value) is int and (expected is None or value == expected)
 
 
+def _operator_uid() -> int | None:
+    getuid = getattr(os, "getuid", None)
+    if not callable(getuid):
+        return None
+    try:
+        value = getuid()
+    except (OSError, TypeError, ValueError):
+        return None
+    return value if _exact_int(value) and value >= 0 else None
+
+
 def _safe_file_identity(path: Path, *, executable: bool) -> FileIdentity | None:
+    operator_uid = _operator_uid()
+    if operator_uid is None:
+        return None
     try:
         info = path.lstat()
     except OSError:
@@ -205,7 +219,7 @@ def _safe_file_identity(path: Path, *, executable: bool) -> FileIdentity | None:
     if (
         not stat.S_ISREG(mode)
         or stat.S_ISLNK(mode)
-        or info.st_uid != os.getuid()
+        or info.st_uid != operator_uid
         or info.st_nlink != 1
         or mode & (stat.S_IWGRP | stat.S_IWOTH | stat.S_ISUID | stat.S_ISGID)
         or (executable and not (mode & stat.S_IXUSR))
@@ -501,6 +515,11 @@ def _sha256_regular(path: Path, expected: FileIdentity) -> str | None:
 
 
 def resolve_runtime() -> RuntimeResolution:
+    if _operator_uid() is None:
+        return RuntimeResolution(
+            RuntimeStatus.PLATFORM_UNSUPPORTED,
+            error="this release requires a POSIX user identity",
+        )
     try:
         root = PLUGIN_ROOT.resolve(strict=True)
     except OSError:
@@ -579,8 +598,11 @@ def classify_host_context() -> str:
 def _operator_home() -> str | None:
     if _pwd is None:
         return None
+    operator_uid = _operator_uid()
+    if operator_uid is None:
+        return None
     try:
-        value = _pwd.getpwuid(os.getuid()).pw_dir
+        value = _pwd.getpwuid(operator_uid).pw_dir
     except (KeyError, OSError):
         return None
     if (
@@ -611,6 +633,9 @@ class _RuntimeTempCleanupError(RuntimeError):
 def _isolated_runtime_tmpdir() -> Iterator[Path]:
     """Create a fresh 0700 temp root without consulting caller-controlled TMPDIR."""
 
+    operator_uid = _operator_uid()
+    if operator_uid is None:
+        raise OSError("operator identity is unavailable")
     path = Path(
         tempfile.mkdtemp(
             prefix="agent-collab-runtime-",
@@ -623,7 +648,7 @@ def _isolated_runtime_tmpdir() -> Iterator[Path]:
         if (
             not stat.S_ISDIR(info.st_mode)
             or stat.S_ISLNK(info.st_mode)
-            or info.st_uid != os.getuid()
+            or info.st_uid != operator_uid
             or stat.S_IMODE(info.st_mode) != 0o700
         ):
             raise OSError("isolated runtime temp directory is unsafe")
