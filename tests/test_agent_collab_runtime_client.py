@@ -453,6 +453,14 @@ print(json.dumps({{
         left, right = socket.socketpair()
         self.addCleanup(left.close)
         self.addCleanup(right.close)
+        raw = b'{"value":1e309}'
+        right.sendall(struct.pack(">Q", len(raw)) + raw)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
         raw = b'{"value":1,"value":2}'
         right.sendall(struct.pack(">Q", len(raw)) + raw)
         with self.assertRaises(ValueError):

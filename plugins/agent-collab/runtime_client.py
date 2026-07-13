@@ -17,6 +17,7 @@ from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import platform
 import plistlib
@@ -855,6 +856,13 @@ def _unique_broker_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return document
 
 
+def _finite_broker_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite provider broker JSON number")
+    return parsed
+
+
 def _read_broker_frame(
     peer: socket.socket, *, max_bytes: int, deadline: float
 ) -> dict[str, Any]:
@@ -871,6 +879,7 @@ def _read_broker_frame(
         document = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_unique_broker_json_object,
+            parse_float=_finite_broker_json_float,
             parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
         )
     except (UnicodeError, ValueError, RecursionError) as exc:
