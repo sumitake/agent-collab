@@ -66,7 +66,7 @@ BROKER_FRAME_KEYS = frozenset(
         "request",
     }
 )
-BROKERED_ROUTES = frozenset({"opencode", "gemini"})
+BROKERED_ROUTES = frozenset({"opencode", "gemini", "grok", "composer"})
 BROKER_MAX_REQUEST_BYTES = MAX_REQUEST_BYTES
 BROKER_MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES
 BROKER_STATE_MAX_BYTES = 64 * 1024
@@ -149,6 +149,8 @@ KNOWN_NATIVE_FAILURES = frozenset(
         "auth_error",
         "quota_error",
         "containment_error",
+        "cancelled",
+        "input_limit",
         "timeout",
         "output_limit",
         "teardown_error",
@@ -174,6 +176,8 @@ class RuntimeStatus(str, Enum):
     AUTH_ERROR = "auth_error"
     QUOTA_ERROR = "quota_error"
     CONTAINMENT_ERROR = "containment_error"
+    CANCELLED = "cancelled"
+    INPUT_LIMIT = "input_limit"
     TEARDOWN_ERROR = "teardown_error"
     PROVIDER_ERROR = "provider_error"
 
@@ -1751,6 +1755,8 @@ def _failure_response_result(response: Mapping[str, Any]) -> RuntimeResult | Non
         "auth_error": RuntimeStatus.AUTH_ERROR,
         "quota_error": RuntimeStatus.QUOTA_ERROR,
         "containment_error": RuntimeStatus.CONTAINMENT_ERROR,
+        "cancelled": RuntimeStatus.CANCELLED,
+        "input_limit": RuntimeStatus.INPUT_LIMIT,
         "timeout": RuntimeStatus.TIMEOUT,
         "output_limit": RuntimeStatus.OUTPUT_LIMIT,
         "teardown_error": RuntimeStatus.TEARDOWN_ERROR,
@@ -1815,6 +1821,8 @@ def _parse_response(out: bytes, envelope: object, returncode: int) -> RuntimeRes
             "auth_error": RuntimeStatus.AUTH_ERROR,
             "quota_error": RuntimeStatus.QUOTA_ERROR,
             "containment_error": RuntimeStatus.CONTAINMENT_ERROR,
+            "cancelled": RuntimeStatus.CANCELLED,
+            "input_limit": RuntimeStatus.INPUT_LIMIT,
             "timeout": RuntimeStatus.TIMEOUT,
             "output_limit": RuntimeStatus.OUTPUT_LIMIT,
             "teardown_error": RuntimeStatus.TEARDOWN_ERROR,

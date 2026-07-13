@@ -466,9 +466,14 @@ print(json.dumps({{
         with self.assertRaises(ValueError):
             self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
 
-    def test_opencode_and_gemini_use_broker_without_direct_fallback(self) -> None:
+    def test_all_broker_only_routes_use_broker_without_direct_fallback(self) -> None:
         self._fixture()
-        for route, action in (("opencode", "plan"), ("gemini", "advisory")):
+        for route, action in (
+            ("opencode", "plan"),
+            ("gemini", "advisory"),
+            ("grok", "architecture"),
+            ("composer", "codegen"),
+        ):
             with self.subTest(route=route):
                 envelope = self._envelope(route=route, action=action)
                 expected = self.client.RuntimeResult(
@@ -489,8 +494,6 @@ print(json.dumps({{
         self._fixture()
         for route, action in (
             ("codex", "advisory"),
-            ("grok", "architecture"),
-            ("composer", "codegen"),
         ):
             with self.subTest(route=route):
                 envelope = self._envelope(route=route, action=action)
@@ -1508,6 +1511,8 @@ print(json.dumps({{
             "auth_error": self.client.RuntimeStatus.AUTH_ERROR,
             "quota_error": self.client.RuntimeStatus.QUOTA_ERROR,
             "containment_error": self.client.RuntimeStatus.CONTAINMENT_ERROR,
+            "cancelled": self.client.RuntimeStatus.CANCELLED,
+            "input_limit": self.client.RuntimeStatus.INPUT_LIMIT,
             "timeout": self.client.RuntimeStatus.TIMEOUT,
             "output_limit": self.client.RuntimeStatus.OUTPUT_LIMIT,
             "teardown_error": self.client.RuntimeStatus.TEARDOWN_ERROR,

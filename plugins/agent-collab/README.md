@@ -48,13 +48,19 @@ labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
 identify this same 3.2.0 package.
 
-Gemini and OpenCode are broker-only contracts. Their sealed requests cross a
+Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
 signed runtime for one request, and the broker exits after its single bounded
 response. The plist has no keepalive, run-at-load, polling, interval, calendar,
 or resident-process trigger. A missing or stale broker is a typed failure—these
-routes never fall back to the direct artifact path. Codex, Grok, Composer, and
-runtime management retain fixed direct exact-artifact execution.
+routes never fall back to the direct artifact path. Codex and runtime
+management retain fixed direct exact-artifact execution.
+The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
+socket activation does not inherit that client sandbox, so every brokered Grok
+and Composer attempt independently validates its own nested read-only sandbox.
+Provider children receive closed backend-specific environment allowlists and
+fresh private call roots. Broker transport cannot invoke local `status`,
+`prepare`, or `grok_login` management authority.
 The current Gemini facade remains typed `containment_error` before Google
 provider setup until a separately reviewed completion-only transport exists;
 the broker does not treat an agentic CLI mode as a read-only guarantee.
@@ -138,6 +144,22 @@ mutation-capable authority never promote or demote into one another.
 | `target=grok` governance review | Read-only | Grok 4.5 `governance` action |
 | `target=grok` large-corpus extraction | Read-only | Grok 4.5 huge-context ingestion |
 | `target=composer` constrained patch/code generation | Output-only | Composer output-only code/patch generation; trusted primary applies and verifies |
+
+Grok prose succeeds only on an explicit `EndTurn` terminal. Exact `Cancelled`
+is a typed non-success with no retained assistant text; the managed broker may
+retry it once only when more than ten seconds remain under the original
+deadline. Grok and Composer enforce an inclusive 1,048,576-byte final UTF-8
+input ceiling before authentication or spawn and return typed `input_limit`
+above it.
+
+Non-trivial Composer work starts from a comprehensive architectural coding
+packet: scope, invariants, authority boundaries, exact files and symbols, error
+taxonomy, lifecycle, tests, and acceptance criteria. The primary architect owns
+that packet, an eligible distinct-family synchronous frontier architect is the
+adversarial complement, and Composer is implementation-only. Claude and Codex
+frontier primaries are the strongest default architecture seats; Grok 4.5 is
+the qualified near-peer architecture/governance complement. Async inbox review
+is fallback-only when no eligible synchronous complement is available.
 
 ## Skills
 

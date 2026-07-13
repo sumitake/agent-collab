@@ -27,13 +27,17 @@ Contributors need no access to the private build/sign system. See
 
 ## What's new - v3.2.0
 
-- Add explicit zero-idle launchd socket activation for managed Gemini and
-  OpenCode routes, with digest-bound state and no direct fallback.
+- Add explicit zero-idle launchd socket activation for managed Gemini,
+  OpenCode, Grok, and Composer routes, with digest-bound state and no direct
+  fallback.
 - Add closed install, status, rollback, and uninstall broker lifecycle commands
   with transactional prior-version restoration and immutable version retention.
 - Resolve OpenCode models per request from live session observation, explicit
   central configuration, or the fixed GLM preset; ignore ambient and row-level
   model selection.
+- Require closed Grok terminal-state parsing, expose exact `cancelled` and
+  `input_limit` results, and permit only one same-route cancellation retry when
+  more than ten seconds remain under the original deadline.
 
 The v3.1.0 licensing and distribution changes remain in force:
 
@@ -108,8 +112,8 @@ flowchart LR
     S --> N["Observed non-model seam<br/>host async-inbox readiness only"]
     S --> C["Verified plugin-relative native runtime client"]
     C --> B["Per-user launchd socket<br/>zero idle process"]
-    B --> X1["Managed Gemini and OpenCode"]
-    C --> X2["Managed Codex, Grok 4.5,<br/>and Composer"]
+    B --> X1["Managed Gemini, OpenCode,<br/>Grok 4.5, and Composer"]
+    C --> X2["Managed Codex and<br/>runtime management"]
     W["Private build/sign system"] -. "signed and notarized artifact" .-> C
     W -. "same exact digest" .-> B
 ```
@@ -124,18 +128,31 @@ the client rejects unadvertised rows, mismatched route/authority combinations,
 and author-family provenance drift. Missing, blocked, unsigned, mismatched, or
 unsupported artifacts fail closed with typed status.
 
-Gemini and OpenCode use a digest-bound, per-user launchd Unix socket. Launchd
+Gemini, OpenCode, Grok, and Composer use a digest-bound, per-user launchd Unix socket. Launchd
 owns the mode-`0600` socket and starts the exact signed runtime only when a
 request arrives. The broker accepts one bounded request, runs it through the
 managed backend, returns one bounded response, and exits; there is no
 `KeepAlive`, `RunAtLoad`, polling loop, interval, calendar trigger, or resident
-agent process. Codex, Grok, Composer, and runtime-management calls retain the
-fixed direct exact-artifact path. Missing, stale, or mismatched broker state is
-a typed failure and never falls back to direct Gemini or OpenCode execution.
+agent process. Codex and runtime-management calls retain the fixed direct
+exact-artifact path. Missing, stale, or mismatched broker state is a typed
+failure and never falls back to direct execution for any broker-only route.
+The broker removes the Codex Desktop outer-Seatbelt marker before backend
+dispatch because socket activation does not inherit the client's Seatbelt.
+Every brokered Grok and Composer attempt must therefore build and validate its
+own nested read-only sandbox. Provider children receive closed,
+backend-specific environment allowlists rooted in fresh private call
+directories rather than the broker's ambient environment. Broker frames cannot
+invoke local runtime-management actions.
 The current signed facade still returns typed `containment_error` for Gemini
 before Google provider setup because no completion-only Google transport is
 proven; socket activation establishes the safe transport boundary but does not
 silently activate an agentic CLI.
+
+The broker rejects cross-UID, stale/replayed, substituted-artifact, and
+connecting-process mismatches. It does not claim to protect provider
+credentials from arbitrary malicious code already running as the same operator
+UID, which can already read that user's auth state. The exact immutable runtime
+path and digest are revalidated for each request.
 
 The expected Apple Developer ID Team ID is pinned in the public
 `plugins/agent-collab/signing_policy.py` policy source, independently of the
@@ -185,7 +202,7 @@ until the signed runtime exposes the complete matrix, including Composer.
 7. Hosts update one package, run the migration doctor, restart, and verify the
    resolved profile plus eligible routes. Activation hosts run the co-packaged
    `runtime_setup.py status` and `prepare` commands, then explicitly run
-   `install-broker` before enabling Gemini or OpenCode. Managed Grok device
+   `install-broker` before enabling Gemini, OpenCode, Grok, or Composer. Managed Grok device
    login is exposed only as `runtime_setup.py login-grok`.
 8. Broker updates copy the verified artifact and manifest into an immutable
    digest directory, atomically replace the closed launchd plist/state, verify
@@ -335,6 +352,12 @@ architecture, governance, and huge-context actions; `target=composer` is
 constrained output-only code generation. Composer has no file, shell, test,
 worktree, PR, or merge authority. Both remain deterministically temporarily
 unavailable until the signed runtime advertises their exact route/action contracts.
+Grok/Composer requests are broker-only and never fall back to direct runtime
+execution. Grok prose accepts only an explicit `EndTurn` terminal; exact
+`Cancelled` is a named non-success with no retained assistant text and may be
+retried once only when more than ten seconds remain under the original
+deadline. Final UTF-8 input above the inclusive 1,048,576-byte managed ceiling
+returns `input_limit` before provider authentication or spawn.
 Grok 4.5 is reachable only through sealed `architecture`, `governance`, or
 `huge_context` actions; generic advisory, brainstorm, debate, QA, and fallback
 requests cannot select it. OpenCode build is a distinct mutation-capable
@@ -344,6 +367,16 @@ exact immutable artifact snapshot; its author model is resolved independently
 and that family is excluded from selection alongside the active primary family. An
 unknown artifact-author family emits an independence warning for
 non-governance work and fails governance closed.
+
+For non-trivial code generation, Composer must receive a comprehensive coding
+packet produced by the primary architect and reviewed by an eligible
+distinct-family synchronous architecture complement. The packet defines scope,
+invariants, authority boundaries, exact files and symbols, error taxonomy,
+lifecycle, tests, and acceptance criteria. Claude and Codex frontier primaries
+are the strongest default architecture seats; Grok 4.5 is the qualified
+near-peer/adversarial architecture complement. Composer implements the
+converged packet; it never plans the architecture. Asynchronous inbox review is
+a fallback only when no eligible synchronous complement is available.
 
 ## Clean public repository invariant
 
