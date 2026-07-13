@@ -17,6 +17,15 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_VERSION = json.loads(
+    (
+        ROOT
+        / "plugins"
+        / "agent-collab"
+        / ".claude-plugin"
+        / "plugin.json"
+    ).read_text(encoding="utf-8")
+)["version"]
 ARCHIVE_SCRIPT = ROOT / "scripts" / "build_plugin_archive.py"
 EVIDENCE_SCRIPT = ROOT / "scripts" / "build_release_evidence.py"
 LEGAL_FILES = {"LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md"}
@@ -49,9 +58,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.archive = self.root / "agent-collab v3.1.0.plugin"
-        self.sbom = self.root / "agent-collab-v3.1.0.spdx.json"
-        self.checksum = self.root / "agent-collab v3.1.0.plugin.sha256"
+        self.archive = self.root / f"agent-collab v{PACKAGE_VERSION}.plugin"
+        self.sbom = self.root / f"agent-collab-v{PACKAGE_VERSION}.spdx.json"
+        self.checksum = self.root / f"agent-collab v{PACKAGE_VERSION}.plugin.sha256"
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -69,7 +78,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(mode, "policy-only")
         evidence_builder.build_evidence(
             self.archive,
-            version="3.1.0",
+            version=PACKAGE_VERSION,
             created="2026-07-12T00:00:00Z",
             sbom_output=self.sbom,
             checksum_output=self.checksum,
@@ -141,7 +150,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(mode, "activation")
         evidence_builder.build_evidence(
             self.archive,
-            version="3.1.0",
+            version=PACKAGE_VERSION,
             created="2026-07-12T00:00:00Z",
             sbom_output=self.sbom,
             checksum_output=self.checksum,
@@ -156,7 +165,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(sbom["dataLicense"], "CC0-1.0")
         self.assertEqual(sbom["creationInfo"]["created"], "2026-07-12T00:00:00Z")
         package = sbom["packages"][0]
-        self.assertEqual(package["versionInfo"], "3.1.0")
+        self.assertEqual(package["versionInfo"], PACKAGE_VERSION)
         self.assertEqual(
             package["licenseDeclared"],
             "LicenseRef-PolyForm-Strict-1.0.0",
@@ -433,7 +442,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different paths"):
             evidence_builder.build_evidence(
                 self.archive,
-                version="3.1.0",
+                version=PACKAGE_VERSION,
                 created="2026-07-12T00:00:00Z",
                 sbom_output=relative_sbom,
                 checksum_output=self.sbom,
