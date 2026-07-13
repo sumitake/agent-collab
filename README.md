@@ -216,7 +216,8 @@ until the signed runtime exposes the complete matrix, including Composer.
    restore the complete prior verified state, including its rollback target,
    or report that no active version is proven. Same-version reactivation keeps
    its existing rollback target; an unverified current version is never
-   advertised as rollback-safe.
+   advertised as rollback-safe. Bounded `launchctl` timeout/output failures
+   remain typed lifecycle errors rather than escaping as host tracebacks.
 
 Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
 active host runtime environment and restart that host; all model-execution

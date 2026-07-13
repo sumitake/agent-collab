@@ -1554,7 +1554,7 @@ def install_broker() -> RuntimeResult:
             ),
             restore_state=proven_current,
         )
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installation preflight failed")
 
 
@@ -1593,7 +1593,7 @@ def broker_status() -> RuntimeResult:
             },
             error="" if status is RuntimeStatus.OK else "provider broker is installed but inactive",
         )
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker status could not be proven")
 
 
@@ -1623,7 +1623,7 @@ def rollback_broker() -> RuntimeResult:
             next_previous=proven_current,
             restore_state=proven_current,
         )
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker rollback preflight failed")
 
 
@@ -1664,7 +1664,7 @@ def uninstall_broker() -> RuntimeResult:
             RuntimeStatus.OK,
             result={"installed": False, "versions_retained": True},
         )
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker uninstall preflight failed")
 
 

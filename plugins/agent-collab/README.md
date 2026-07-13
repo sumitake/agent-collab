@@ -227,7 +227,8 @@ atomically activates a closed plist, proves the job/socket and one-request
 process exit, and retains one verified prior record. Failed updates restore the
 complete prior state; same-version reactivation preserves its rollback target,
 and an unverified version is never recorded as rollback-safe. `broker-status`
-is read-only and emits no prompt, credential, provider output, or private path.
+is read-only and emits no prompt, credential, provider output, or private path;
+bounded `launchctl` collection failures return a typed lifecycle error.
 
 Use the closed rollback/removal actions only when needed:
 

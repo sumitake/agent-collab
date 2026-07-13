@@ -23,4 +23,5 @@
 - Align OpenCode preflight with issuance model resolution; key immutable broker
   versions by both artifact and manifest digests; preserve complete rollback
   state across failures and no-op reactivation; reject unverified rollback
-  targets; and treat a never-installed root as typed uninstalled/unavailable.
+  targets; treat a never-installed root as typed uninstalled/unavailable; and
+  map bounded `launchctl` failures to closed lifecycle results.

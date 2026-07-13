@@ -893,6 +893,35 @@ print(json.dumps({{
             {"HOME", "PATH", "LANG", "LC_ALL"},
         )
 
+    def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+
+            with mock.patch.object(
+                self.client, "_broker_job_loaded", side_effect=RuntimeError("timeout")
+            ):
+                status = self.client.broker_status()
+            with mock.patch.object(
+                self.client, "_activate_broker_record", side_effect=RuntimeError("timeout")
+            ):
+                installed = self.client.install_broker()
+                rolled_back = self.client.rollback_broker()
+            with mock.patch.object(
+                self.client, "_bootout_broker", side_effect=RuntimeError("timeout")
+            ):
+                uninstalled = self.client.uninstall_broker()
+
+        for result in (status, installed, rolled_back, uninstalled):
+            with self.subTest(status=result.status):
+                self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
     def test_broker_idle_requires_no_live_pid_and_an_explicit_stopped_state(self) -> None:
         cases = (
             ("state = not running\n", True),
