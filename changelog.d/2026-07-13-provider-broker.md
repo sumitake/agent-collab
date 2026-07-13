@@ -14,3 +14,9 @@
 - Strip the Codex Desktop Seatbelt marker from broker-dispatched work so every
   Grok/Composer attempt validates its own nested read-only sandbox, preserve
   closed provider-child environments, and keep runtime management direct-only.
+- Propagate client disconnect through managed OpenCode, Grok, and Composer
+  calls, reap provider child groups, discard partial output, prohibit retry of
+  disconnect cancellation, and fail with typed `timeout` before setup when the
+  managed-boundary deadline reserve is exhausted.
+- Harden repository configuration with full-SHA Action pin enforcement while
+  retaining squash-only, signed, linear, review-thread-resolved releases.

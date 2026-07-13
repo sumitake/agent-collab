@@ -143,6 +143,11 @@ own nested read-only sandbox. Provider children receive closed,
 backend-specific environment allowlists rooted in fresh private call
 directories rather than the broker's ambient environment. Broker frames cannot
 invoke local runtime-management actions.
+If the client disconnects, the broker propagates cancellation through managed
+OpenCode, Grok, and Composer execution/readiness, reaps provider child groups,
+and discards partial output. Disconnect-driven cancellation is never retried;
+when too little deadline remains to establish the managed boundary, the route
+returns typed `timeout` before provider setup.
 The current signed facade still returns typed `containment_error` for Gemini
 before Google provider setup because no completion-only Google transport is
 proven; socket activation establishes the safe transport boundary but does not
@@ -426,7 +431,10 @@ Security scanning is layered:
 
 Branch protection requires current CI, CodeQL, secret-scan, and governance
 results. Sensitive workflow, security, legal, and instruction surfaces have
-explicit CODEOWNERS coverage.
+explicit CODEOWNERS coverage. Repository settings allow squash merges only,
+delete merged branches, require signed commits and linear history, keep the
+default workflow token read-only, and require third-party Actions to be pinned
+to full commit SHAs.
 
 ## Development and release verification
 

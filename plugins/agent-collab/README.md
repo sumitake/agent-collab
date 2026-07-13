@@ -61,6 +61,10 @@ and Composer attempt independently validates its own nested read-only sandbox.
 Provider children receive closed backend-specific environment allowlists and
 fresh private call roots. Broker transport cannot invoke local `status`,
 `prepare`, or `grok_login` management authority.
+Client disconnect propagates cancellation through managed OpenCode, Grok, and
+Composer execution/readiness, reaps provider child groups, and discards partial
+output. Disconnect cancellation is never retried; a deadline below the managed
+setup reserve returns typed `timeout` before provider setup.
 The current Gemini facade remains typed `containment_error` before Google
 provider setup until a separately reviewed completion-only transport exists;
 the broker does not treat an agentic CLI mode as a read-only guarantee.
