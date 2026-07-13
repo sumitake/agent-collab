@@ -210,10 +210,13 @@ until the signed runtime exposes the complete matrix, including Composer.
    `install-broker` before enabling Gemini, OpenCode, Grok, or Composer. Managed Grok device
    login is exposed only as `runtime_setup.py login-grok`.
 8. Broker updates copy the verified artifact and manifest into an immutable
-   digest directory, atomically replace the closed launchd plist/state, verify
-   the exact job and socket, activate one protocol-only request, and prove the
-   broker process exits. Failed updates restore the prior verified digest or
-   report that no active version is proven.
+   artifact-plus-manifest digest directory, atomically replace the closed
+   launchd plist/state, verify the exact job and socket, activate one
+   protocol-only request, and prove the broker process exits. Failed updates
+   restore the complete prior verified state, including its rollback target,
+   or report that no active version is proven. Same-version reactivation keeps
+   its existing rollback target; an unverified current version is never
+   advertised as rollback-safe.
 
 Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
 active host runtime environment and restart that host; all model-execution

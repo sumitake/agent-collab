@@ -615,8 +615,12 @@ print(json.dumps({{
             "schema_version": 1,
             "artifact_sha256": "a" * 64,
             "manifest_sha256": "b" * 64,
-            "runtime_path": str(root / "versions" / ("a" * 64) / "agent-collab-runtime"),
-            "manifest_path": str(root / "versions" / ("a" * 64) / "runtime-manifest.json"),
+            "runtime_path": str(
+                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "agent-collab-runtime"
+            ),
+            "manifest_path": str(
+                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "runtime-manifest.json"
+            ),
             "plist_sha256": "c" * 64,
             "socket_path": str(socket_path),
             "label": self.client.BROKER_LABEL,
@@ -714,7 +718,7 @@ print(json.dumps({{
         self.assertEqual(state["artifact_sha256"], expected_artifact)
         self.assertIsNone(state["previous"])
         self.assertEqual(stat.S_IMODE((root / "broker.plist").stat().st_mode), 0o600)
-        version = root / "versions" / expected_artifact
+        version = Path(state["runtime_path"]).parent
         self.assertEqual(stat.S_IMODE(version.stat().st_mode), 0o500)
         self.assertEqual(
             hashlib.sha256((version / "agent-collab-runtime").read_bytes()).hexdigest(),
@@ -724,6 +728,19 @@ print(json.dumps({{
         self.assertEqual(plist["Label"], self.client.BROKER_LABEL)
         self.assertNotIn("KeepAlive", plist)
         self.assertNotIn("RunAtLoad", plist)
+
+    def test_missing_broker_root_is_uninstalled_not_an_integrity_failure(self) -> None:
+        root = self.root / "never-installed"
+        with mock.patch.object(self.client, "_broker_root", return_value=root):
+            rolled_back = self.client.rollback_broker()
+            uninstalled = self.client.uninstall_broker()
+
+        self.assertEqual(rolled_back.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual(uninstalled.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(
+            uninstalled.result,
+            {"installed": False, "versions_retained": True},
+        )
 
     def test_broker_update_records_one_verified_rollback_and_rollback_switches(self) -> None:
         first = self._fixture(body="#!/bin/sh\nexit 0\n")
@@ -747,15 +764,18 @@ print(json.dumps({{
         self.assertEqual(state["artifact_sha256"], first_digest)
         self.assertEqual(state["previous"]["artifact_sha256"], second_digest)
 
-    def test_failed_broker_update_restores_the_prior_exact_state(self) -> None:
+    def test_failed_broker_update_restores_the_full_prior_rollback_state(self) -> None:
         first = self._fixture(body="#!/bin/sh\nexit 0\n")
-        first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
         root = self.root / "broker-state"
         patches = self._broker_lifecycle_patches(root)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
             self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            self.assertIsNotNone(prior["previous"])
             self._fixture(body="#!/bin/sh\nexit 9\n")
             with mock.patch.object(
                 self.client, "_bootstrap_broker", side_effect=[False, True]
@@ -764,7 +784,65 @@ print(json.dumps({{
         self.assertEqual(failed.status, self.client.RuntimeStatus.PROVIDER_ERROR)
         self.assertTrue(failed.result["restored_previous"])
         state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(state["artifact_sha256"], first_digest)
+        self.assertEqual(state, prior)
+
+    def test_noop_broker_install_preserves_existing_rollback_target(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            self.assertIsNotNone(prior["previous"])
+            repeated = self.client.install_broker()
+
+        self.assertEqual(repeated.status, self.client.RuntimeStatus.OK, repeated.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state, prior)
+
+    def test_same_artifact_with_new_manifest_gets_a_distinct_immutable_version(self) -> None:
+        binary = self._fixture()
+        artifact_digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            first = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            manifest_path = self.root / "runtime-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            updated = self.client.install_broker()
+
+        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
+        second = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(second["artifact_sha256"], artifact_digest)
+        self.assertNotEqual(second["manifest_sha256"], first["manifest_sha256"])
+        self.assertNotEqual(second["runtime_path"], first["runtime_path"])
+        self.assertEqual(second["previous"]["manifest_sha256"], first["manifest_sha256"])
+        self.assertEqual(len(tuple((root / "versions").iterdir())), 2)
+
+    def test_unverified_current_version_is_not_recorded_as_rollback(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            current = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            Path(current["manifest_path"]).chmod(0o600)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            updated = self.client.install_broker()
+
+        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertIsNone(state["previous"])
 
     def test_uninstall_removes_mutable_state_but_retains_versions(self) -> None:
         self._fixture()

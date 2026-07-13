@@ -707,8 +707,11 @@ def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) 
         or document.get("label") != BROKER_LABEL
     ):
         return False
-    digest = document["artifact_sha256"]
-    expected_version = root / "versions" / digest
+    expected_version = _broker_version_path(
+        root,
+        artifact_digest=document["artifact_sha256"],
+        manifest_digest=document["manifest_sha256"],
+    )
     expected_paths = {
         "runtime_path": expected_version / "agent-collab-runtime",
         "manifest_path": expected_version / MANIFEST_NAME,
@@ -1101,10 +1104,27 @@ def _copy_regular_nofollow(source: Path, target: Path, *, limit: int, mode: int)
         os.close(descriptor)
 
 
+def _broker_version_path(
+    root: Path, *, artifact_digest: str, manifest_digest: str
+) -> Path:
+    if (
+        not isinstance(artifact_digest, str)
+        or not _SHA256_RE.fullmatch(artifact_digest)
+        or not isinstance(manifest_digest, str)
+        or not _SHA256_RE.fullmatch(manifest_digest)
+    ):
+        raise ValueError("provider broker version identity is invalid")
+    return root / "versions" / f"{artifact_digest}-{manifest_digest}"
+
+
 def _verify_published_version(
     root: Path, *, artifact_digest: str, manifest_digest: str
 ) -> tuple[Path, Path]:
-    version = root / "versions" / artifact_digest
+    version = _broker_version_path(
+        root,
+        artifact_digest=artifact_digest,
+        manifest_digest=manifest_digest,
+    )
     runtime = version / "agent-collab-runtime"
     manifest = version / MANIFEST_NAME
     if _exact_mode(version, expected_type=stat.S_IFDIR, mode=0o500) is None:
@@ -1142,7 +1162,11 @@ def _publish_broker_version(
         raise ValueError("verified provider runtime is unavailable")
     if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
         raise ValueError("verified provider runtime identity changed")
-    version = root / "versions" / resolution.artifact_digest
+    version = _broker_version_path(
+        root,
+        artifact_digest=resolution.artifact_digest,
+        manifest_digest=resolution.manifest_digest,
+    )
     if version.exists():
         return _verify_published_version(
             root,
@@ -1203,6 +1227,10 @@ def _state_bytes(document: Mapping[str, Any]) -> bytes:
 
 
 def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        return None
     if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
         raise ValueError("provider broker root identity is unsafe")
     state_path = root / "state.json"
@@ -1335,7 +1363,11 @@ def _record_for(
     plist_digest: str,
     previous: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    version = root / "versions" / artifact_digest
+    version = _broker_version_path(
+        root,
+        artifact_digest=artifact_digest,
+        manifest_digest=manifest_digest,
+    )
     return {
         "schema_version": 1,
         "artifact_sha256": artifact_digest,
@@ -1375,7 +1407,9 @@ def _activate_broker_record(
     *,
     target_artifact: str,
     target_manifest: str,
-    previous: Mapping[str, Any] | None,
+    current_state: Mapping[str, Any] | None,
+    next_previous: Mapping[str, Any] | None,
+    restore_state: Mapping[str, Any] | None,
 ) -> RuntimeResult:
     runtime, _manifest = _verify_published_version(
         root,
@@ -1398,10 +1432,11 @@ def _activate_broker_record(
         artifact_digest=target_artifact,
         manifest_digest=target_manifest,
         plist_digest=hashlib.sha256(plist_raw).hexdigest(),
-        previous=previous,
+        previous=next_previous,
     )
     plist_path = root / "broker.plist"
-    old_record = None if previous is None else _without_previous(previous)
+    old_record = None if current_state is None else dict(current_state)
+    restore_record = None if restore_state is None else dict(restore_state)
     try:
         if old_record is not None and not _bootout_broker(plist_path):
             raise RuntimeError("existing provider broker could not be stopped")
@@ -1439,11 +1474,11 @@ def _activate_broker_record(
         restored = False
         try:
             _bootout_broker(plist_path)
-            if old_record is not None:
+            if restore_record is not None:
                 prior_runtime, _prior_manifest = _verify_published_version(
                     root,
-                    artifact_digest=old_record["artifact_sha256"],
-                    manifest_digest=old_record["manifest_sha256"],
+                    artifact_digest=restore_record["artifact_sha256"],
+                    manifest_digest=restore_record["manifest_sha256"],
                 )
                 prior_document = _broker_plist_document(
                     runtime_path=prior_runtime,
@@ -1453,13 +1488,13 @@ def _activate_broker_record(
                     uid=os.getuid(),
                 )
                 prior_raw = _plist_bytes(prior_document)
-                if hashlib.sha256(prior_raw).hexdigest() != old_record["plist_sha256"]:
+                if hashlib.sha256(prior_raw).hexdigest() != restore_record["plist_sha256"]:
                     raise ValueError("prior provider broker plist digest mismatch")
                 _write_private_atomic(plist_path, prior_raw, mode=0o600)
                 if not _bootstrap_broker(plist_path) or not _broker_job_loaded():
                     raise RuntimeError("prior provider broker could not be restored")
                 _write_private_atomic(
-                    root / "state.json", _state_bytes(old_record), mode=0o600
+                    root / "state.json", _state_bytes(restore_record), mode=0o600
                 )
                 restored = True
             else:
@@ -1488,14 +1523,36 @@ def install_broker() -> RuntimeResult:
     try:
         root = _ensure_broker_layout()
         current = _read_current_broker_state(root)
+        proven_current = None
         if current is not None:
             _verify_plist_against_state(root, current)
+            try:
+                _verify_published_version(
+                    root,
+                    artifact_digest=current["artifact_sha256"],
+                    manifest_digest=current["manifest_sha256"],
+                )
+            except ValueError:
+                proven_current = None
+            else:
+                proven_current = current
         _publish_broker_version(root, resolution=resolution)
+        same_version = bool(
+            current is not None
+            and current["artifact_sha256"] == resolution.artifact_digest
+            and current["manifest_sha256"] == resolution.manifest_digest
+        )
         return _activate_broker_record(
             root,
             target_artifact=resolution.artifact_digest,
             target_manifest=resolution.manifest_digest,
-            previous=current,
+            current_state=current,
+            next_previous=(
+                current.get("previous")
+                if same_version and proven_current is not None
+                else proven_current
+            ),
+            restore_state=proven_current,
         )
     except (OSError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installation preflight failed")
@@ -1547,12 +1604,24 @@ def rollback_broker() -> RuntimeResult:
         if state is None or state["previous"] is None:
             return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker rollback is unavailable")
         _verify_plist_against_state(root, state)
+        try:
+            _verify_published_version(
+                root,
+                artifact_digest=state["artifact_sha256"],
+                manifest_digest=state["manifest_sha256"],
+            )
+        except ValueError:
+            proven_current = None
+        else:
+            proven_current = state
         previous = dict(state["previous"])
         return _activate_broker_record(
             root,
             target_artifact=previous["artifact_sha256"],
             target_manifest=previous["manifest_sha256"],
-            previous=_without_previous(state),
+            current_state=state,
+            next_previous=proven_current,
+            restore_state=proven_current,
         )
     except (OSError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker rollback preflight failed")

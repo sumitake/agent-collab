@@ -222,10 +222,12 @@ install and authenticate those through their vendor-supported interfaces.
 Policy-only releases return typed `unavailable` for runtime-dependent commands.
 Broker installation is explicit; import, readiness, and invocation never
 install or mutate launchd state. `install-broker` publishes the verified
-artifact/manifest into an immutable digest directory, atomically activates a
-closed plist, proves the job/socket and one-request process exit, and retains
-one verified prior digest. `broker-status` is read-only and emits no prompt,
-credential, provider output, or private path.
+artifact/manifest into an immutable artifact-plus-manifest digest directory,
+atomically activates a closed plist, proves the job/socket and one-request
+process exit, and retains one verified prior record. Failed updates restore the
+complete prior state; same-version reactivation preserves its rollback target,
+and an unverified version is never recorded as rollback-safe. `broker-status`
+is read-only and emits no prompt, credential, provider output, or private path.
 
 Use the closed rollback/removal actions only when needed:
 
@@ -236,8 +238,10 @@ python3 "<plugin-root>/runtime_setup.py" uninstall-broker
 
 Rollback switches to the one complete prior verified record. Uninstall removes
 the exact job, socket, plist, and mutable state while retaining immutable
-version directories. No lifecycle command accepts a caller-selected path,
-label, socket, environment, provider, model, or raw argument.
+version directories. On a machine where the broker was never installed,
+uninstall is an idempotent success and rollback is typed unavailable. No
+lifecycle command accepts a caller-selected path, label, socket, environment,
+provider, model, or raw argument.
 
 ## Standalone invocation and local threat limit
 

@@ -941,13 +941,37 @@ enabled = true
                 "active_model": "openai/gpt-5",
                 "host_runtime": "custom",
                 "session_identifier": "custom-1",
+                "opencode_model": "anthropic/claude-sonnet",
             },
             active_legacy_packages=(),
             native_capabilities=NATIVE_CAPABILITIES,
             safe_mode=False,
-            route_models={"opencode": "anthropic/claude-sonnet"},
         )
         self.assertNotIn("opencode", outcome.eligible_routes)
+
+    def test_opencode_preflight_matches_issuance_default_and_ignores_ambient_rows(self) -> None:
+        with mock.patch.dict(
+            "os.environ",
+            {"AGENT_COLLAB_OPENCODE_MODEL": "anthropic/claude-ambient"},
+            clear=True,
+        ):
+            outcome = self._preflight(
+                governance=False,
+                explicit_config={
+                    "primary_id": "custom",
+                    "primary_family": "openai",
+                    "active_model": "openai/gpt-5",
+                    "host_runtime": "custom",
+                    "session_identifier": "custom-default-1",
+                },
+                active_legacy_packages=(),
+                native_capabilities=NATIVE_CAPABILITIES,
+                safe_mode=False,
+                route_models={"opencode": "anthropic/claude-row"},
+            )
+
+        self.assertIn("opencode", outcome.eligible_routes)
+        self.assertNotIn("OpenCode model is not currently observed", outcome.warning)
 
     def test_explicit_model_family_conflicts_are_never_governance_trusted(self) -> None:
         cases = {

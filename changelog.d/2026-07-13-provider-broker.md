@@ -20,3 +20,7 @@
   managed-boundary deadline reserve is exhausted.
 - Harden repository configuration with full-SHA Action pin enforcement while
   retaining squash-only, signed, linear, review-thread-resolved releases.
+- Align OpenCode preflight with issuance model resolution; key immutable broker
+  versions by both artifact and manifest digests; preserve complete rollback
+  state across failures and no-op reactivation; reject unverified rollback
+  targets; and treat a never-installed root as typed uninstalled/unavailable.
