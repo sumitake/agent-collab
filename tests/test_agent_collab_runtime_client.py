@@ -715,6 +715,10 @@ print(json.dumps({{
         self.assertIsNone(state["previous"])
         self.assertEqual(stat.S_IMODE((root / "broker.plist").stat().st_mode), 0o600)
         version = Path(state["runtime_path"]).parent
+        self.assertEqual(
+            version.name,
+            f"{expected_artifact}-{state['manifest_sha256']}",
+        )
         self.assertEqual(stat.S_IMODE(version.stat().st_mode), 0o500)
         self.assertEqual(
             hashlib.sha256((version / "agent-collab-runtime").read_bytes()).hexdigest(),
