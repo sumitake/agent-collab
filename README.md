@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.1.0). It gives
+This repository distributes one package: **agent-collab** (v3.2.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -23,9 +23,19 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.1.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.2.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.1.0
+## What's new - v3.2.0
+
+- Add explicit zero-idle launchd socket activation for managed Gemini and
+  OpenCode routes, with digest-bound state and no direct fallback.
+- Add closed install, status, rollback, and uninstall broker lifecycle commands
+  with transactional prior-version restoration and immutable version retention.
+- Resolve OpenCode models per request from live session observation, explicit
+  central configuration, or the fixed GLM preset; ignore ambient and row-level
+  model selection.
+
+The v3.1.0 licensing and distribution changes remain in force:
 
 - Adopt the unmodified PolyForm Strict License 1.0.0. John Osumi retains
   copyright, and commercial use requires separate explicit written approval
@@ -96,9 +106,12 @@ flowchart LR
     P --> G["Governance and family-independence policy"]
     G --> S["Sealed route/action preflight"]
     S --> N["Observed non-model seam<br/>host async-inbox readiness only"]
-    S --> C["Verified plugin-relative native runtime"]
-    C --> X["Managed Gemini, Codex, OpenCode,<br/>Grok 4.5, and Composer roles"]
+    S --> C["Verified plugin-relative native runtime client"]
+    C --> B["Per-user launchd socket<br/>zero idle process"]
+    B --> X1["Managed Gemini and OpenCode"]
+    C --> X2["Managed Codex, Grok 4.5,<br/>and Composer"]
     W["Private build/sign system"] -. "signed and notarized artifact" .-> C
+    W -. "same exact digest" .-> B
 ```
 
 The plugin runtime client accepts no binary override. It selects only the
@@ -110,6 +123,19 @@ a scrubbed environment. Every artifact advertises its exact route/action contrac
 the client rejects unadvertised rows, mismatched route/authority combinations,
 and author-family provenance drift. Missing, blocked, unsigned, mismatched, or
 unsupported artifacts fail closed with typed status.
+
+Gemini and OpenCode use a digest-bound, per-user launchd Unix socket. Launchd
+owns the mode-`0600` socket and starts the exact signed runtime only when a
+request arrives. The broker accepts one bounded request, runs it through the
+managed backend, returns one bounded response, and exits; there is no
+`KeepAlive`, `RunAtLoad`, polling loop, interval, calendar trigger, or resident
+agent process. Codex, Grok, Composer, and runtime-management calls retain the
+fixed direct exact-artifact path. Missing, stale, or mismatched broker state is
+a typed failure and never falls back to direct Gemini or OpenCode execution.
+The current signed facade still returns typed `containment_error` for Gemini
+before Google provider setup because no completion-only Google transport is
+proven; socket activation establishes the safe transport boundary but does not
+silently activate an agentic CLI.
 
 The expected Apple Developer ID Team ID is pinned in the public
 `plugins/agent-collab/signing_policy.py` policy source, independently of the
@@ -157,9 +183,15 @@ until the signed runtime exposes the complete matrix, including Composer.
    evidence distinguishes project-owned PolyForm material from the embedded
    CPython, Nuitka, and incorporated third-party components.
 7. Hosts update one package, run the migration doctor, restart, and verify the
-   resolved profile plus eligible routes. Activation hosts then run the
-   co-packaged `runtime_setup.py status` and `prepare` commands; managed Grok
-   device login is exposed only as `runtime_setup.py login-grok`.
+   resolved profile plus eligible routes. Activation hosts run the co-packaged
+   `runtime_setup.py status` and `prepare` commands, then explicitly run
+   `install-broker` before enabling Gemini or OpenCode. Managed Grok device
+   login is exposed only as `runtime_setup.py login-grok`.
+8. Broker updates copy the verified artifact and manifest into an immutable
+   digest directory, atomically replace the closed launchd plist/state, verify
+   the exact job and socket, activate one protocol-only request, and prove the
+   broker process exits. Failed updates restore the prior verified digest or
+   report that no active version is proven.
 
 Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
 active host runtime environment and restart that host; all model-execution
@@ -203,6 +235,8 @@ the coordinator. Resolve the installed plugin root and run only:
 ```text
 python3 "<plugin-root>/runtime_setup.py" status
 python3 "<plugin-root>/runtime_setup.py" prepare
+python3 "<plugin-root>/runtime_setup.py" install-broker
+python3 "<plugin-root>/runtime_setup.py" broker-status
 python3 "<plugin-root>/runtime_setup.py" login-grok
 ```
 
@@ -214,6 +248,21 @@ the OS login identity. Exact supported Codex, OpenCode, and Grok CLIs remain
 external prerequisites and must be installed and authenticated through their
 vendor-supported interfaces. No workspace checkout or provider-specific plugin
 is required. Policy-only releases report the management surface unavailable.
+
+Broker lifecycle is always explicit—import, readiness, and route invocation do
+not install or modify launchd state. To switch to the one retained prior digest
+or to remove the job while keeping immutable rollback artifacts, run:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" rollback-broker
+python3 "<plugin-root>/runtime_setup.py" uninstall-broker
+```
+
+`broker-status` is read-only and value-free: it reports only installation,
+job/socket state, artifact/manifest digests, rollback availability, and the
+fact that no persistent process is configured. Lifecycle commands accept no
+caller-selected path, label, socket, environment, provider, model, or raw
+argument.
 
 Remove every old package reported by the doctor, then run the doctor again.
 The doctor reads filesystem/registry state and Codex
@@ -243,11 +292,12 @@ detection relies on strong session signals
 (`CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`/entrypoint,
 `ANTIGRAVITY_SESSION_ID`, or `ZCODE_SESSION_ID`), never ambient installation
 paths such as `CODEX_HOME` or `OPENCODE_CONFIG`.
-The current OpenCode preset is `opencode/glm-5.2` only when explicitly observed
-from host/session or central configuration. A missing observation is typed
-unavailable; a strong live OpenCode or ZCode model observation cannot be overridden
-by conflicting explicit family/config fields, and an Anthropic-selected
-OpenCode model is prohibited.
+The OpenCode model is selected on every request in this order: a strong live
+OpenCode or ZCode active-model observation, explicit central
+`primary.opencode_model` configuration, then the fixed current preset
+`opencode/glm-5.2`. Ambient environment values and row-level model fields are
+not selection fallbacks. A live session switch therefore changes provenance on
+the next request; an Anthropic or unknown selected model is prohibited.
 
 `AGENT_COLLAB_ASYNC_INBOX=available` (or request field
 `primary.async_inbox="available"`) is an availability observation, not a send

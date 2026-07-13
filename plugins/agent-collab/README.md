@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.1.0**
+Current: **3.2.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -46,7 +46,18 @@ inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
 `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
 labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.1.0 package.
+identify this same 3.2.0 package.
+
+Gemini and OpenCode are broker-only contracts. Their sealed requests cross a
+mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
+signed runtime for one request, and the broker exits after its single bounded
+response. The plist has no keepalive, run-at-load, polling, interval, calendar,
+or resident-process trigger. A missing or stale broker is a typed failure—these
+routes never fall back to the direct artifact path. Codex, Grok, Composer, and
+runtime management retain fixed direct exact-artifact execution.
+The current Gemini facade remains typed `containment_error` before Google
+provider setup until a separately reviewed completion-only transport exists;
+the broker does not treat an agentic CLI mode as a read-only guarantee.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
@@ -169,6 +180,8 @@ use the closed management client only:
 ```text
 python3 "<plugin-root>/runtime_setup.py" status
 python3 "<plugin-root>/runtime_setup.py" prepare
+python3 "<plugin-root>/runtime_setup.py" install-broker
+python3 "<plugin-root>/runtime_setup.py" broker-status
 python3 "<plugin-root>/runtime_setup.py" login-grok
 ```
 
@@ -180,7 +193,25 @@ keeps the child environment scrubbed, reports only a closed host-context enum,
 and never exposes private provider recipes. Codex and OpenCode still require
 their exact supported external CLIs and standard authenticated host state;
 install and authenticate those through their vendor-supported interfaces.
-Policy-only releases return typed `unavailable` for all three commands.
+Policy-only releases return typed `unavailable` for runtime-dependent commands.
+Broker installation is explicit; import, readiness, and invocation never
+install or mutate launchd state. `install-broker` publishes the verified
+artifact/manifest into an immutable digest directory, atomically activates a
+closed plist, proves the job/socket and one-request process exit, and retains
+one verified prior digest. `broker-status` is read-only and emits no prompt,
+credential, provider output, or private path.
+
+Use the closed rollback/removal actions only when needed:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" rollback-broker
+python3 "<plugin-root>/runtime_setup.py" uninstall-broker
+```
+
+Rollback switches to the one complete prior verified record. Uninstall removes
+the exact job, socket, plist, and mutable state while retaining immutable
+version directories. No lifecycle command accepts a caller-selected path,
+label, socket, environment, provider, model, or raw argument.
 
 ## Standalone invocation and local threat limit
 
@@ -262,6 +293,14 @@ Exact row contracts are:
 | `grok/huge_context` | `{"documents":[{"label":"...","content":"..."}]}` |
 | `composer/codegen` | `{}` |
 | `inbox/async` | `{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`; readiness-only, non-governance, observed host transport |
+
+For OpenCode, a `model` field in the row is compatibility input only and never
+selects a backend. Selection is recomputed for every request from the strong
+live OpenCode or ZCode active-model observation, then explicit central
+`primary.opencode_model`, then the fixed `opencode/glm-5.2` preset. Ambient
+environment and row values are not fallbacks. The selected model must resolve
+to a known non-Anthropic family, and its family supplies artifact provenance
+and independence exclusion.
 
 The inbox row is exact: `target_id=claude` requires
 `target_family=anthropic`, while `target_id=antigravity` requires
