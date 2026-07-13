@@ -196,6 +196,128 @@ def _manifest(files: dict[str, bytes], path: str) -> dict[str, object]:
     return parsed
 
 
+def _file_license(name: str, *, mode: str) -> str:
+    if mode == "activation" and (
+        name == archive_builder.RUNTIME_REL.as_posix()
+        or name == archive_builder.THIRD_PARTY_NOTICE_REL.as_posix()
+        or name.startswith(
+            archive_builder.THIRD_PARTY_LICENSE_ROOT_REL.as_posix() + "/"
+        )
+    ):
+        return "NOASSERTION"
+    return SPDX_LICENSE
+
+
+def _activation_component_packages() -> list[dict[str, object]]:
+    return [
+        {
+            "SPDXID": "SPDXRef-Package-CPython",
+            "name": "CPython",
+            "versionInfo": "3.13.14",
+            "downloadLocation": (
+                "https://www.python.org/ftp/python/3.13.14/Python-3.13.14.tgz"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "Python-2.0",
+            "licenseDeclared": "Python-2.0",
+            "copyrightText": "NOASSERTION",
+            "supplier": "Organization: Python Software Foundation",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-Nuitka",
+            "name": "Nuitka",
+            "versionInfo": "4.1.3",
+            "downloadLocation": "https://github.com/Nuitka/Nuitka/tree/4.1.3",
+            "filesAnalyzed": False,
+            "licenseConcluded": "NOASSERTION",
+            "licenseDeclared": "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "supplier": "Person: Kay Hayen",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-expat",
+            "name": "expat",
+            "versionInfo": "2.8.1",
+            "downloadLocation": (
+                "https://github.com/libexpat/libexpat/releases/download/"
+                "R_2_8_1/expat-2.8.1.tar.gz"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "MIT",
+            "licenseDeclared": "MIT",
+            "copyrightText": "NOASSERTION",
+            "supplier": "NOASSERTION",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-hacl-star",
+            "name": "hacl-star",
+            "versionInfo": "bb3d0dc8d9d15a5cd51094d5b69e70aa09005ff0",
+            "downloadLocation": (
+                "https://github.com/hacl-star/hacl-star/archive/"
+                "bb3d0dc8d9d15a5cd51094d5b69e70aa09005ff0.zip"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "MIT AND Apache-2.0",
+            "licenseDeclared": "MIT AND Apache-2.0",
+            "copyrightText": "NOASSERTION",
+            "supplier": "NOASSERTION",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-libb2",
+            "name": "libb2",
+            "versionInfo": "0.98.1",
+            "downloadLocation": (
+                "https://github.com/BLAKE2/libb2/releases/download/"
+                "v0.98.1/libb2-0.98.1.tar.gz"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "CC0-1.0",
+            "licenseDeclared": "CC0-1.0",
+            "copyrightText": "NOASSERTION",
+            "supplier": "NOASSERTION",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-mpdecimal",
+            "name": "mpdecimal",
+            "versionInfo": "2.5.1",
+            "downloadLocation": (
+                "https://www.bytereef.org/software/mpdecimal/releases/"
+                "mpdecimal-2.5.1.tar.gz"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "BSD-2-Clause",
+            "licenseDeclared": "BSD-2-Clause",
+            "copyrightText": "NOASSERTION",
+            "supplier": "Person: Stefan Krah",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-mimalloc",
+            "name": "mimalloc",
+            "versionInfo": "2.1.2",
+            "downloadLocation": (
+                "https://github.com/microsoft/mimalloc/archive/refs/tags/"
+                "v2.1.2.tar.gz"
+            ),
+            "filesAnalyzed": False,
+            "licenseConcluded": "MIT",
+            "licenseDeclared": "MIT",
+            "copyrightText": "NOASSERTION",
+            "supplier": "Organization: Microsoft Corporation",
+        },
+        {
+            "SPDXID": "SPDXRef-Package-Hedley",
+            "name": "Hedley",
+            "versionInfo": "14",
+            "downloadLocation": "https://github.com/nemequ/hedley",
+            "filesAnalyzed": False,
+            "licenseConcluded": "CC0-1.0",
+            "licenseDeclared": "CC0-1.0",
+            "copyrightText": "NOASSERTION",
+            "supplier": "Person: Evan Nemerson",
+        },
+    ]
+
+
 def build_evidence(
     archive: Path,
     *,
@@ -274,7 +396,7 @@ def build_evidence(
                     {"algorithm": "SHA1", "checksumValue": file_sha1},
                     {"algorithm": "SHA256", "checksumValue": _sha256_bytes(data)}
                 ],
-                "licenseConcluded": SPDX_LICENSE,
+                "licenseConcluded": _file_license(name, mode=mode),
                 "licenseInfoInFiles": ["NOASSERTION"],
                 "copyrightText": "NOASSERTION",
             }
@@ -285,6 +407,15 @@ def build_evidence(
                 "relationshipType": "CONTAINS",
                 "relatedSpdxElement": spdx_id,
             }
+        )
+    if mode == "activation":
+        relationships.extend(
+            {
+                "spdxElementId": "SPDXRef-Package-agent-collab",
+                "relationshipType": "CONTAINS",
+                "relatedSpdxElement": component["SPDXID"],
+            }
+            for component in _activation_component_packages()
         )
 
     package_verification_code = hashlib.sha1(
@@ -320,11 +451,14 @@ def build_evidence(
                 "checksums": [
                     {"algorithm": "SHA256", "checksumValue": archive_digest}
                 ],
-                "licenseConcluded": SPDX_LICENSE,
+                "licenseConcluded": (
+                    SPDX_LICENSE if mode == "policy-only" else "NOASSERTION"
+                ),
                 "licenseDeclared": SPDX_LICENSE,
                 "copyrightText": COPYRIGHT_TEXT,
                 "supplier": "Person: John Osumi",
-            }
+            },
+            *(_activation_component_packages() if mode == "activation" else []),
         ],
         "files": spdx_files,
         "relationships": relationships,

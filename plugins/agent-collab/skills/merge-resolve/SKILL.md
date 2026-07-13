@@ -1,14 +1,14 @@
 ---
-name: ai-merge-resolve
+name: merge-resolve
 version: 3.1.0
 defaults:
   tier: Advanced
   effort: high
 
-description: Resolve a git merge conflict (or apply a conflicting patch) using a cross-family read on both sides' intent + commit context; propose a unified resolution as a diff; **NEVER auto-apply without operator confirm by default**. Use when the user says "resolve this merge conflict," "ai-merge," "merge with the reviewer," "have the reviewer help merge," "AI-resolve this conflict," "use the reviewer to merge this," or when a `git merge` / `git rebase` exits with conflict markers and the user asks anything about next steps. Also offer this proactively when worktree-fanout flows (parallel-agent parallelism) need to integrate back to a base branch, or when a chain step produces a diff destined for a file the user is currently editing.
+description: Use when a user asks to resolve a git merge conflict or conflicting patch, says "ai-merge" or "AI-resolve," when merge or rebase exits with conflict markers and next steps are requested, when parallel worktrees need integration, or when a chain diff targets a file being edited.
 ---
 
-# AI-merge-resolve — cross-family merge-conflict resolution, operator-gated by default
+# Merge resolve — cross-family merge-conflict resolution, operator-gated by default
 
 This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a cross-family read on the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
 
@@ -138,7 +138,7 @@ These are runtime-enforced by the skill. They are not stylistic suggestions; the
 
 - **`auto_apply=true` preconditions (ALL four required, no exceptions)**:
 
-  1. **An operator-pre-approved validator-policy file is present** at `.claude/ai-merge-policy.yaml` (project-scoped) OR `~/.claude/ai-merge-policy.yaml` (user-scoped). The policy file's *presence* is the operator's signed acknowledgment of the auto-apply opt-in; the skill refuses auto-apply if the policy file is missing.
+  1. **An operator-pre-approved validator-policy file is present** at `.claude/merge-resolve-policy.yaml` (project-scoped) OR `~/.claude/merge-resolve-policy.yaml` (user-scoped). The policy file's *presence* is the operator's signed acknowledgment of the auto-apply opt-in; the skill refuses auto-apply if the policy file is missing.
 
      **Caveat — presence-checked, not substance-checked**: the skill verifies the calling chain step's `gates:` block contains each `required_gates:` entry from the policy (by kind + check). It does NOT verify the gate's substance is meaningful — an operator could configure `bash_exit_code: { command: "true" }` to satisfy the letter of the policy while bypassing the actual test suite. Substance is the operator's responsibility.
 
@@ -211,7 +211,7 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 Whether the operator chose `apply`, `reject`, `apply-and-amend`, or `revise`, surface a final summary:
 
 ```
-ai-merge-resolve summary:
+merge-resolve summary:
   file: <path>
   hunks resolved: <N> of <M>
   verifier CONFIDENCE: H | M | L

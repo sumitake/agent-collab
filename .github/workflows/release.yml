@@ -76,7 +76,7 @@ jobs:
   verify-runtime-macos:
     needs: [verify-release-ref, classify-release]
     if: needs.classify-release.outputs.mode == 'activation'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -138,18 +138,14 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           # Supported forms are v-agent-collab-X.Y.Z and vX.Y.Z. Both resolve
           # to the only releaseable package.
-          if [[ "$TAG" =~ ^v-([a-z0-9-]+)-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            PLUGIN="${BASH_REMATCH[1]}"
-            VER="${BASH_REMATCH[2]}"
+          if [[ "$TAG" =~ ^v-agent-collab-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            PLUGIN="agent-collab"
+            VER="${BASH_REMATCH[1]}"
           elif [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             VER="${BASH_REMATCH[1]}"
             PLUGIN="agent-collab"
           else
-            echo "ERROR: tag format must be v-<plugin>-<X.Y.Z> or v<X.Y.Z>"
-            exit 1
-          fi
-          if [ "$PLUGIN" != "agent-collab" ]; then
-            echo "ERROR: agent-collab is the only releaseable package"
+            echo "ERROR: tag format must be v-agent-collab-X.Y.Z or vX.Y.Z"
             exit 1
           fi
           {

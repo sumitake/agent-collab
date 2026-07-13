@@ -18,6 +18,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
 SCRIPT = ROOT / "scripts" / "build_plugin_archive.py"
 LEGAL_FILES = ("LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md")
+THIRD_PARTY_NOTICE = "THIRD-PARTY-NOTICES.txt"
+THIRD_PARTY_LICENSE_FILES = (
+    "CPython-3.13.14-LICENSE.txt",
+    "CPython-3.13.14-NOTICES.txt",
+    "Expat-COPYING.txt",
+    "HACL-LICENSE.txt",
+    "Hedley-CC0-1.0.txt",
+    "libb2-CC0-1.0.txt",
+    "Nuitka-4.1.3-LICENSE-RUNTIME.txt",
+    "Nuitka-4.1.3-LICENSE.txt",
+    "Nuitka-4.1.3-NOTICE.txt",
+    "mimalloc-LICENSE.txt",
+    "mpdecimal-NOTICE.txt",
+)
 
 
 def _load():
@@ -48,7 +62,14 @@ class PluginArchiveTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def _install_third_party_notices(self) -> None:
+        self.assertTrue((self.plugin / THIRD_PARTY_NOTICE).is_file())
+        licenses = self.plugin / "third-party-licenses"
+        for name in THIRD_PARTY_LICENSE_FILES:
+            self.assertTrue((licenses / name).is_file())
+
     def _activate(self) -> Path:
+        self._install_third_party_notices()
         runtime = (
             self.plugin
             / "runtime"
@@ -99,6 +120,7 @@ class PluginArchiveTests(unittest.TestCase):
         return runtime
 
     def test_policy_only_archive_includes_policy_and_omits_runtime(self) -> None:
+        self._install_third_party_notices()
         mode = self.builder.build_archive(
             self.root, plugin="agent-collab", output=self.archive
         )
@@ -109,6 +131,7 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertIn(".claude-plugin/plugin.json", names)
             self.assertIn(".codex-plugin/plugin.json", names)
             self.assertIn("runtime_client.py", names)
+            self.assertIn("runtime_setup.py", names)
             self.assertIn("signing_policy.py", names)
             self.assertIn("runtime-manifest.json", names)
             for name in LEGAL_FILES:
@@ -119,6 +142,14 @@ class PluginArchiveTests(unittest.TestCase):
                     (ROOT / name).read_bytes(),
                 )
             self.assertFalse(any(name == "runtime" or name.startswith("runtime/") for name in names))
+            self.assertNotIn(THIRD_PARTY_NOTICE, names)
+            self.assertFalse(
+                any(
+                    name == "third-party-licenses"
+                    or name.startswith("third-party-licenses/")
+                    for name in names
+                )
+            )
             policy = bundle.getmember("signing_policy.py")
             self.assertEqual(
                 stat.S_IMODE(policy.mode),
@@ -170,6 +201,91 @@ class PluginArchiveTests(unittest.TestCase):
                     stat.S_IMODE(source.stat().st_mode),
                 )
 
+    def test_activation_archive_includes_canonical_third_party_notice_tree(self) -> None:
+        self._activate()
+        mode = self.builder.build_archive(
+            self.root, plugin="agent-collab", output=self.archive
+        )
+        self.assertEqual(mode, "activation")
+
+        with tarfile.open(self.archive, "r:gz") as bundle:
+            names = bundle.getnames()
+            expected = [
+                THIRD_PARTY_NOTICE,
+                "third-party-licenses",
+                *(
+                    f"third-party-licenses/{name}"
+                    for name in THIRD_PARTY_LICENSE_FILES
+                ),
+            ]
+            self.assertEqual(
+                [
+                    name
+                    for name in names
+                    if name == THIRD_PARTY_NOTICE
+                    or name == "third-party-licenses"
+                    or name.startswith("third-party-licenses/")
+                ],
+                sorted(expected),
+            )
+            for name in expected:
+                member = bundle.getmember(name)
+                source = self.plugin / name
+                self.assertEqual(member.isfile(), source.is_file())
+                self.assertEqual(member.isdir(), source.is_dir())
+                if member.isfile():
+                    self.assertEqual(bundle.extractfile(member).read(), source.read_bytes())
+
+    def test_activation_rejects_missing_third_party_notice_member(self) -> None:
+        self._activate()
+        (self.plugin / "third-party-licenses" / THIRD_PARTY_LICENSE_FILES[0]).unlink()
+
+        with self.assertRaisesRegex(ValueError, "third-party notice tree"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+
+    def test_activation_rejects_missing_top_level_third_party_notice(self) -> None:
+        self._activate()
+        (self.plugin / THIRD_PARTY_NOTICE).unlink()
+
+        with self.assertRaisesRegex(ValueError, "third-party notice tree"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+
+    def test_activation_rejects_unexpected_third_party_notice_member(self) -> None:
+        self._activate()
+        (self.plugin / "third-party-licenses" / "unexpected.txt").write_text(
+            "unexpected\n", encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(ValueError, "third-party notice tree"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+
+    def test_activation_rejects_third_party_notice_content_drift(self) -> None:
+        self._activate()
+        source = self.plugin / "third-party-licenses" / THIRD_PARTY_LICENSE_FILES[0]
+        source.write_text("tampered legal text\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "content digest"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+
+    def test_activation_rejects_symlinked_third_party_notice_member(self) -> None:
+        self._activate()
+        link = self.plugin / "third-party-licenses" / THIRD_PARTY_LICENSE_FILES[0]
+        link.unlink()
+        link.symlink_to(THIRD_PARTY_LICENSE_FILES[1])
+
+        with self.assertRaisesRegex(ValueError, "unsafe|third-party notice tree"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+
     def test_policy_only_rejects_unadvertised_runtime_and_missing_policy(self) -> None:
         runtime = (
             self.plugin
@@ -204,6 +320,16 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertEqual(self.builder.MAX_ARTIFACT_BYTES, 64 * 1024 * 1024)
         self.assertEqual(self.builder.RUNTIME_FILE_MODE, 0o755)
         self.assertIn("signing_policy.py", self.builder.REQUIRED_ROOTS)
+        self.assertIn("runtime_setup.py", self.builder.REQUIRED_ROOTS)
+
+    def test_archive_fails_closed_when_runtime_setup_entrypoint_is_missing(self) -> None:
+        (self.plugin / "runtime_setup.py").unlink()
+        with self.assertRaisesRegex(
+            ValueError, "required archive member is missing: runtime_setup.py"
+        ):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
 
     def test_archive_rejects_unexpected_manifest_and_skill_members(self) -> None:
         extra_manifest = self.plugin / ".claude-plugin" / "extra.dat"

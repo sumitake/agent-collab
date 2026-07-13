@@ -26,6 +26,65 @@ PLUGIN_NAME = "agent-collab"
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 RUNTIME_REL = Path("runtime/darwin-arm64/agent-collab-runtime")
 RUNTIME_FILE_MODE = 0o755
+THIRD_PARTY_NOTICE_REL = Path("THIRD-PARTY-NOTICES.txt")
+THIRD_PARTY_LICENSE_ROOT_REL = Path("third-party-licenses")
+THIRD_PARTY_LICENSE_FILES = (
+    "CPython-3.13.14-LICENSE.txt",
+    "CPython-3.13.14-NOTICES.txt",
+    "Expat-COPYING.txt",
+    "HACL-LICENSE.txt",
+    "Hedley-CC0-1.0.txt",
+    "libb2-CC0-1.0.txt",
+    "Nuitka-4.1.3-LICENSE-RUNTIME.txt",
+    "Nuitka-4.1.3-LICENSE.txt",
+    "Nuitka-4.1.3-NOTICE.txt",
+    "mimalloc-LICENSE.txt",
+    "mpdecimal-NOTICE.txt",
+)
+ACTIVATION_THIRD_PARTY_MEMBERS = (
+    THIRD_PARTY_NOTICE_REL,
+    THIRD_PARTY_LICENSE_ROOT_REL,
+    *(
+        THIRD_PARTY_LICENSE_ROOT_REL / name
+        for name in THIRD_PARTY_LICENSE_FILES
+    ),
+)
+ACTIVATION_THIRD_PARTY_SHA256 = {
+    THIRD_PARTY_NOTICE_REL: "a80219a110e7e510724e41c781cc6f40c3b36378ff409ef1dc822e70bf38ed45",
+    THIRD_PARTY_LICENSE_ROOT_REL / "CPython-3.13.14-LICENSE.txt": (
+        "78b12c3a81360b357002334f0e70ea0e92eebf7a9b358805c03c48484945f3bb"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "CPython-3.13.14-NOTICES.txt": (
+        "62f2c9c2c75d511170eb464ad5f83b78cc1f37eb2eb49c2846c9aa6c4557ee99"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "Expat-COPYING.txt": (
+        "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "HACL-LICENSE.txt": (
+        "2e04f9bb6a71ee97c24dba3c1cba0931cdfd4f95805f6c3fdf25ea82cad2c21c"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "Hedley-CC0-1.0.txt": (
+        "a77ea9231d94a8c8764ad6f41822f6b40a9c19f96dd7e36cda0c99070f9bd194"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "libb2-CC0-1.0.txt": (
+        "8b94ead716c73ba84f9f90cae9a6c8ff0505457a8c5586226947ee4e070df9b4"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "Nuitka-4.1.3-LICENSE-RUNTIME.txt": (
+        "20ff0ae581adf436a7b06e50e67a6c8913aec1ea4e60dba138d0a0bee7ee520c"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "Nuitka-4.1.3-LICENSE.txt": (
+        "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "Nuitka-4.1.3-NOTICE.txt": (
+        "b6ba5212864ec9f98842220e01b2485a2ebeb8eafa192b016b36032355c8a98d"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "mimalloc-LICENSE.txt": (
+        "19c99805e7a44a34b297a75d1edea9985e300066dfc024d5c99d4236d4573b5d"
+    ),
+    THIRD_PARTY_LICENSE_ROOT_REL / "mpdecimal-NOTICE.txt": (
+        "e0ec71a76cdfcfc6d74f5ec78915a7f932f5c42d9b3b4f3d292b7eda5107edae"
+    ),
+}
 REQUIRED_ROOTS = (
     ".claude-plugin",
     ".codex-plugin",
@@ -36,6 +95,7 @@ REQUIRED_ROOTS = (
     "skills",
     "coordinator.py",
     "runtime_client.py",
+    "runtime_setup.py",
     "host_policy.py",
     "migration_doctor.py",
     "signing_policy.py",
@@ -227,6 +287,49 @@ def _require_exact_manifest_trees(plugin_path: Path) -> None:
             raise ValueError("manifest tree is not canonical")
 
 
+def _require_exact_third_party_notice_tree(plugin_path: Path) -> None:
+    try:
+        notice_info = _safe_source(plugin_path / THIRD_PARTY_NOTICE_REL)
+        root = plugin_path / THIRD_PARTY_LICENSE_ROOT_REL
+        root_info = _safe_source(root)
+    except ValueError as exc:
+        raise ValueError(
+            "activation third-party notice tree is missing or unsafe"
+        ) from exc
+    if (
+        not stat.S_ISREG(notice_info.st_mode)
+        or notice_info.st_nlink != 1
+        or not stat.S_ISDIR(root_info.st_mode)
+    ):
+        raise ValueError("activation third-party notice tree is not canonical")
+    if _sha256(plugin_path / THIRD_PARTY_NOTICE_REL) != ACTIVATION_THIRD_PARTY_SHA256[
+        THIRD_PARTY_NOTICE_REL
+    ]:
+        raise ValueError("activation third-party notice content digest is invalid")
+
+    expected = {Path(name) for name in THIRD_PARTY_LICENSE_FILES}
+    try:
+        observed = {path.relative_to(root) for path in root.rglob("*")}
+    except OSError as exc:
+        raise ValueError("activation third-party notice tree is unreadable") from exc
+    if observed != expected:
+        raise ValueError("activation third-party notice tree is not canonical")
+    for relative in sorted(expected):
+        try:
+            info = _safe_source(root / relative)
+        except ValueError as exc:
+            raise ValueError(
+                "activation third-party notice tree contains an unsafe member"
+            ) from exc
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError(
+                "activation third-party notice tree contains an unsafe member"
+            )
+        member = THIRD_PARTY_LICENSE_ROOT_REL / relative
+        if _sha256(root / relative) != ACTIVATION_THIRD_PARTY_SHA256.get(member):
+            raise ValueError("activation third-party notice content digest is invalid")
+
+
 def _member_paths(plugin_path: Path, *, mode: str) -> list[Path]:
     if mode not in {"policy-only", "activation"}:
         raise ValueError("unknown archive mode")
@@ -241,7 +344,15 @@ def _member_paths(plugin_path: Path, *, mode: str) -> list[Path]:
         *(Path("skills") / relative for relative in expected_skill_relpaths(SPECS_DIR)),
     ]
     if mode == "activation":
-        relatives.extend((Path("runtime"), Path("runtime/darwin-arm64"), RUNTIME_REL))
+        _require_exact_third_party_notice_tree(plugin_path)
+        relatives.extend(
+            (
+                Path("runtime"),
+                Path("runtime/darwin-arm64"),
+                RUNTIME_REL,
+                *ACTIVATION_THIRD_PARTY_MEMBERS,
+            )
+        )
     members: dict[str, Path] = {}
     for relative in relatives:
         source = plugin_path / relative

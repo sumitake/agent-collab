@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import sys
 import tarfile
@@ -19,6 +20,20 @@ ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE_SCRIPT = ROOT / "scripts" / "build_plugin_archive.py"
 EVIDENCE_SCRIPT = ROOT / "scripts" / "build_release_evidence.py"
 LEGAL_FILES = {"LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md"}
+THIRD_PARTY_NOTICE = "THIRD-PARTY-NOTICES.txt"
+THIRD_PARTY_LICENSE_FILES = (
+    "CPython-3.13.14-LICENSE.txt",
+    "CPython-3.13.14-NOTICES.txt",
+    "Expat-COPYING.txt",
+    "HACL-LICENSE.txt",
+    "Hedley-CC0-1.0.txt",
+    "libb2-CC0-1.0.txt",
+    "Nuitka-4.1.3-LICENSE-RUNTIME.txt",
+    "Nuitka-4.1.3-LICENSE.txt",
+    "Nuitka-4.1.3-NOTICE.txt",
+    "mimalloc-LICENSE.txt",
+    "mpdecimal-NOTICE.txt",
+)
 
 
 def _load(name: str, path: Path):
@@ -62,6 +77,78 @@ class ReleaseEvidenceTests(unittest.TestCase):
         )
         return json.loads(self.sbom.read_text(encoding="utf-8"))
 
+    def _build_activation(self):
+        archive_builder = _load(
+            "agent_collab_archive_activation_evidence", ARCHIVE_SCRIPT
+        )
+        evidence_builder = _load(
+            "agent_collab_release_activation_evidence", EVIDENCE_SCRIPT
+        )
+        repo = self.root / "repo"
+        plugin = repo / "plugins" / "agent-collab"
+        shutil.copytree(
+            ROOT / "plugins" / "agent-collab",
+            plugin,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "runtime"),
+        )
+        for name in LEGAL_FILES:
+            shutil.copy2(ROOT / name, repo / name)
+        runtime = plugin / "runtime" / "darwin-arm64" / "agent-collab-runtime"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_bytes(b"signed-runtime-fixture")
+        runtime.chmod(0o755)
+        contracts = (
+            ("gemini", "advisory"),
+            ("gemini", "long_context"),
+            ("codex", "advisory"),
+            ("opencode", "plan"),
+            ("opencode", "build"),
+            ("grok", "architecture"),
+            ("grok", "governance"),
+            ("grok", "huge_context"),
+            ("composer", "codegen"),
+        )
+        manifest = {
+            "schema_version": 1,
+            "protocol_version": 1,
+            "contract_version": 1,
+            "artifacts": [
+                {
+                    "platform": "darwin",
+                    "arch": "arm64",
+                    "minimum_macos": "14.0",
+                    "path": "runtime/darwin-arm64/agent-collab-runtime",
+                    "size": runtime.stat().st_size,
+                    "sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                    "signing": {
+                        "team_id": "TESTTEAM01",
+                        "require_notarization": True,
+                        "hardened_runtime": True,
+                    },
+                    "contracts": [
+                        {"route": route, "action": action}
+                        for route, action in contracts
+                    ],
+                }
+            ],
+        }
+        (plugin / "runtime-manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        mode = archive_builder.build_archive(
+            repo, plugin="agent-collab", output=self.archive
+        )
+        self.assertEqual(mode, "activation")
+        evidence_builder.build_evidence(
+            self.archive,
+            version="3.1.0",
+            created="2026-07-12T00:00:00Z",
+            sbom_output=self.sbom,
+            checksum_output=self.checksum,
+            repo_root=repo,
+        )
+        return json.loads(self.sbom.read_text(encoding="utf-8"))
+
     def test_spdx_inventory_contains_exact_legal_files_and_license(self) -> None:
         sbom = self._build()
 
@@ -84,6 +171,94 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "LicenseRef-PolyForm-Strict-1.0.0",
         )
         self.assertEqual(extracted[0]["extractedText"], (ROOT / "LICENSE").read_text())
+
+    def test_policy_only_spdx_output_preserves_project_only_license_contract(self) -> None:
+        sbom = self._build()
+
+        self.assertEqual(
+            [package["name"] for package in sbom["packages"]],
+            ["agent-collab"],
+        )
+        self.assertTrue(sbom["files"])
+        self.assertTrue(
+            all(
+                item["licenseConcluded"]
+                == "LicenseRef-PolyForm-Strict-1.0.0"
+                for item in sbom["files"]
+            )
+        )
+
+    def test_activation_spdx_identifies_runtime_components_and_file_licenses(self) -> None:
+        sbom = self._build_activation()
+
+        packages = {package["name"]: package for package in sbom["packages"]}
+        self.assertEqual(
+            set(packages),
+            {
+                "agent-collab",
+                "CPython",
+                "Nuitka",
+                "expat",
+                "hacl-star",
+                "libb2",
+                "mpdecimal",
+                "mimalloc",
+                "Hedley",
+            },
+        )
+        self.assertEqual(packages["CPython"]["versionInfo"], "3.13.14")
+        self.assertEqual(packages["CPython"]["licenseDeclared"], "Python-2.0")
+        self.assertEqual(packages["Nuitka"]["versionInfo"], "4.1.3")
+        self.assertEqual(packages["Nuitka"]["licenseDeclared"], "NOASSERTION")
+        self.assertEqual(packages["expat"]["licenseDeclared"], "MIT")
+        self.assertEqual(
+            packages["hacl-star"]["licenseDeclared"], "MIT AND Apache-2.0"
+        )
+        self.assertEqual(packages["libb2"]["licenseDeclared"], "CC0-1.0")
+        self.assertEqual(packages["mpdecimal"]["licenseDeclared"], "BSD-2-Clause")
+        self.assertEqual(packages["mimalloc"]["licenseDeclared"], "MIT")
+        self.assertEqual(packages["Hedley"]["licenseDeclared"], "CC0-1.0")
+
+        files = {item["fileName"]: item for item in sbom["files"]}
+        self.assertEqual(
+            files["README.md"]["licenseConcluded"],
+            "LicenseRef-PolyForm-Strict-1.0.0",
+        )
+        self.assertEqual(
+            files["runtime/darwin-arm64/agent-collab-runtime"]["licenseConcluded"],
+            "NOASSERTION",
+        )
+        self.assertEqual(files[THIRD_PARTY_NOTICE]["licenseConcluded"], "NOASSERTION")
+        for name in THIRD_PARTY_LICENSE_FILES:
+            self.assertEqual(
+                files[f"third-party-licenses/{name}"]["licenseConcluded"],
+                "NOASSERTION",
+            )
+
+        relationships = {
+            (
+                relationship["spdxElementId"],
+                relationship["relationshipType"],
+                relationship["relatedSpdxElement"],
+            )
+            for relationship in sbom["relationships"]
+        }
+        self.assertIn(
+            (
+                "SPDXRef-Package-agent-collab",
+                "CONTAINS",
+                "SPDXRef-Package-CPython",
+            ),
+            relationships,
+        )
+        self.assertIn(
+            (
+                "SPDXRef-Package-agent-collab",
+                "CONTAINS",
+                "SPDXRef-Package-Nuitka",
+            ),
+            relationships,
+        )
 
     def test_every_spdx_file_sha256_checksum_matches_archive_bytes(self) -> None:
         sbom = self._build()

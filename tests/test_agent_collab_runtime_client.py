@@ -8,6 +8,7 @@ import hmac
 import importlib.util
 import json
 import os
+import pwd
 import signal
 import stat
 import subprocess
@@ -30,6 +31,27 @@ def _load_client():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    return module
+
+
+def _load_client_without_pwd():
+    """Load the public client as on a platform without the POSIX pwd module."""
+
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_runtime_client_without_pwd", CLIENT
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    original_import = __import__
+
+    def blocked_pwd_import(name, *args, **kwargs):
+        if name == "pwd":
+            raise ImportError("pwd is unavailable")
+        return original_import(name, *args, **kwargs)
+
+    with mock.patch("builtins.__import__", side_effect=blocked_pwd_import):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -73,6 +95,24 @@ class RuntimeClientTests(unittest.TestCase):
             result = self.client.resolve_runtime()
         self.assertEqual(result.status, self.client.RuntimeStatus.MANIFEST_INVALID)
 
+    def test_module_loads_without_posix_pwd_and_omits_home(self) -> None:
+        client = _load_client_without_pwd()
+        self.assertIsNone(client._operator_home())
+        env = client._scrubbed_env(tmpdir=self.root)
+        self.assertNotIn("HOME", env)
+
+    def test_runtime_resolution_without_posix_uid_is_typed_unsupported(self) -> None:
+        client = _load_client_without_pwd()
+        with mock.patch.object(client.os, "getuid", None), mock.patch.object(
+            client, "PLUGIN_ROOT", self.root,
+        ):
+            result = client.resolve_runtime()
+            identity = client._safe_file_identity(CLIENT, executable=False)
+
+        self.assertEqual(result.status, client.RuntimeStatus.PLATFORM_UNSUPPORTED)
+        self.assertIsNone(identity)
+        self.assertIsNone(client._operator_home())
+
     def _fixture(
         self,
         *,
@@ -105,6 +145,8 @@ print(json.dumps({
         "secret_present": "LEAK_ME" in os.environ,
         "tmpdir": os.environ.get("TMPDIR", ""),
         "tmpdir_mode": oct(os.stat(os.environ["TMPDIR"]).st_mode & 0o777),
+        "home": os.environ.get("HOME", ""),
+        "host_context": request.get("host_context", ""),
     },
     "provenance": {
         "route": request["route"],
@@ -154,6 +196,33 @@ print(json.dumps({
             json.dumps(manifest), encoding="utf-8"
         )
         return binary
+
+    def _management_fixture(self) -> None:
+        tuple_keys = [
+            "CODEX_SANDBOX",
+            "__CFBundleIdentifier",
+            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+            "CODEX_CI",
+        ]
+        self._fixture(
+            body=f"""#!/usr/bin/env python3
+import json, os, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({{
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {{
+        "argv": sys.argv[1:],
+        "management_action": request["management_action"],
+        "host_context": request["host_context"],
+        "secret_present": "LEAK_ME" in os.environ,
+        "tuple_present": any(key in os.environ for key in {tuple_keys!r}),
+        "home": os.environ.get("HOME", ""),
+    }},
+}}))
+"""
+        )
 
     def _envelope(
         self,
@@ -282,12 +351,152 @@ print(json.dumps({
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
         self.assertFalse(result.result["secret_present"])
+        self.assertEqual(result.result["home"], pwd.getpwuid(os.getuid()).pw_dir)
+        self.assertEqual(result.result["host_context"], "generic")
         self.assertEqual(result.provenance["author_family"], "openai")
         child_tmpdir = Path(result.result["tmpdir"])
         self.assertNotEqual(child_tmpdir, caller_tmpdir)
         self.assertFalse(str(child_tmpdir).startswith(str(self.root) + os.sep))
         self.assertEqual(result.result["tmpdir_mode"], "0o700")
         self.assertFalse(child_tmpdir.exists())
+
+    def test_host_context_requires_the_exact_complete_codex_desktop_tuple(self) -> None:
+        keys = self.client.CODEX_DESKTOP_TUPLE
+        exact = dict(self.client.CODEX_DESKTOP_TUPLE.items())
+        cases = (
+            ({}, "generic"),
+            ({next(iter(keys)): next(iter(exact.values()))}, "generic"),
+            (exact, "codex_desktop"),
+            ({**exact, "CODEX_CI": "0"}, "generic"),
+        )
+        for environment, expected in cases:
+            with self.subTest(environment=environment):
+                with mock.patch.dict(os.environ, environment, clear=True):
+                    self.assertEqual(self.client.classify_host_context(), expected)
+
+    def test_hostile_environment_is_not_forwarded_to_native_runtime(self) -> None:
+        self._fixture()
+        envelope = self._envelope(request_id="hostile-environment")
+        hostile = {
+            "HOME": str(self.root / "attacker-home"),
+            "LEAK_ME": "secret",
+            "AGENT_COLLAB_GROK_RUNTIME_ROOT": str(self.root / "grok-root"),
+            "AGENT_COLLAB_CODEX_RUNTIME_ROOT": str(self.root / "codex-root"),
+            "AGENT_COLLAB_OPENCODE_RUNTIME_ROOT": str(self.root / "opencode-root"),
+            **self.client.CODEX_DESKTOP_TUPLE,
+        }
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.dict(os.environ, hostile, clear=True), mock.patch.object(
+            self.client, "PLUGIN_ROOT", self.root
+        ):
+            result = self.client.invoke(envelope=envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result["home"], pwd.getpwuid(os.getuid()).pw_dir)
+        self.assertEqual(result.result["host_context"], "codex_desktop")
+        self.assertFalse(result.result["secret_present"])
+
+    def test_management_uses_fixed_signed_runtime_argv_and_scrubbed_env(self) -> None:
+        self._management_fixture()
+        hostile = {
+            "HOME": str(self.root / "attacker-home"),
+            "LEAK_ME": "secret",
+            **self.client.CODEX_DESKTOP_TUPLE,
+        }
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.dict(os.environ, hostile, clear=True), mock.patch.object(
+            self.client, "PLUGIN_ROOT", self.root
+        ):
+            result = self.client.manage_runtime(
+                action="status",
+                request_id="management-status",
+                timeout_ms=30_000,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
+        self.assertEqual(result.result["management_action"], "status")
+        self.assertEqual(result.result["host_context"], "codex_desktop")
+        self.assertFalse(result.result["secret_present"])
+        self.assertFalse(result.result["tuple_present"])
+        self.assertEqual(result.result["home"], pwd.getpwuid(os.getuid()).pw_dir)
+
+    def test_management_rejects_unknown_action_before_runtime_resolution(self) -> None:
+        with mock.patch.object(self.client, "resolve_runtime") as resolve:
+            result = self.client.manage_runtime(
+                action="execute",
+                request_id="management-rejected",
+                timeout_ms=30_000,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.CONFIG_ERROR)
+        resolve.assert_not_called()
+
+    def test_management_malformed_response_is_protocol_error(self) -> None:
+        self._fixture(
+            body="#!/usr/bin/env python3\nimport sys\nsys.stdout.write('not-json\\n')\n"
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.manage_runtime(
+                action="status",
+                request_id="management-bad-json",
+                timeout_ms=30_000,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+    def test_management_login_inherits_stderr_but_parses_stdout(self) -> None:
+        self._fixture(
+            body="""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+sys.stderr.write("device-login-prompt\\n")
+sys.stderr.flush()
+print(json.dumps({
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {"authenticated": True},
+}))
+"""
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.manage_runtime(
+                action="grok_login",
+                request_id="management-login",
+                timeout_ms=30_000,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertTrue(result.result["authenticated"])
+
+    def test_management_login_relay_remains_output_bounded(self) -> None:
+        self._fixture(
+            body="""#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+sys.stderr.write("x" * 256)
+sys.stderr.flush()
+print(json.dumps({
+    "protocol_version": 1,
+    "request_id": request["request_id"],
+    "status": "ok",
+    "result": {"authenticated": True},
+}))
+"""
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "MAX_RESPONSE_BYTES", 64
+        ):
+            result = self.client.manage_runtime(
+                action="grok_login",
+                request_id="management-login-limit",
+                timeout_ms=30_000,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.OUTPUT_LIMIT)
 
     def test_each_invocation_gets_a_fresh_isolated_tmpdir(self) -> None:
         self._fixture()
@@ -1043,6 +1252,7 @@ time.sleep(10)
             "action",
             "authority",
             "timeout_ms",
+            "host_context",
             "prompt",
         }
         for contract, row_fields in expected_row_fields.items():

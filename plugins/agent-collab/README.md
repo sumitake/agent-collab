@@ -30,6 +30,12 @@ commercial rights. See [NOTICE](NOTICE) and
 [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
 approval boundary.
 
+When the signed native runtime is activated, the archive also includes
+`THIRD-PARTY-NOTICES.txt` and `third-party-licenses/` for CPython 3.13.14,
+Nuitka 4.1.3 runtime material, and incorporated dependencies. Those exact files
+are digest-pinned by the archive builder and remain outside policy-only
+archives, which contain none of the corresponding runtime components.
+
 ## Runtime and safe mode
 
 The package may contain a privately built signed native runtime only at the
@@ -53,6 +59,8 @@ only rather than a send primitive.
 This package may still be distributed as a policy-only release: its manifest
 has no artifact rows, its archive has no runtime executable, and invocation
 continues to return typed unavailable until an activation release is verified.
+An activation archive must add the complete digest-pinned third-party legal
+tree and component-aware SPDX evidence alongside the signed runtime.
 Reinstalling a retired plugin is never a rollback.
 
 To enter rollback mode, set `AGENT_COLLAB_SAFE_MODE=1` in the active host
@@ -135,7 +143,7 @@ time; a listed skill does not imply that its native route is currently active.
 | Delegation and implementation | `delegate`, `dev-delegate`, `worker` |
 | Large-context and knowledge work | `knowledge-compile`, `long-context` |
 | Reproducible workflows | `chain`, `chain-configurator`, `orchestrate` |
-| Integration and conflict handling | `ai-merge-resolve` |
+| Integration and conflict handling | `merge-resolve` |
 | Visual guidance | `ui-to-code`, `visual-review` |
 
 `visual-review` and `ui-to-code` currently provide primary-only guidance because
@@ -152,6 +160,27 @@ source host for each observation; resolves the current host profile; checks the
 runtime manifest; blocks routing while any retired package remains installed or
 active; and prints exact manager-specific install, verify, and uninstall
 actions.
+
+## Signed runtime setup
+
+After installing an activation release, resolve this installed plugin root and
+use the closed management client only:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" status
+python3 "<plugin-root>/runtime_setup.py" prepare
+python3 "<plugin-root>/runtime_setup.py" login-grok
+```
+
+`status` is read-only, `prepare` creates only signed-runtime-managed state, and
+`login-grok` starts the bounded interactive device flow. The client accepts no
+provider, model, path, environment, binary, tool, or arbitrary argument
+options. It verifies the same co-packaged signed artifact as normal routing,
+keeps the child environment scrubbed, reports only a closed host-context enum,
+and never exposes private provider recipes. Codex and OpenCode still require
+their exact supported external CLIs and standard authenticated host state;
+install and authenticate those through their vendor-supported interfaces.
+Policy-only releases return typed `unavailable` for all three commands.
 
 ## Standalone invocation and local threat limit
 
