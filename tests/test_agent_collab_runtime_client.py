@@ -8,12 +8,16 @@ import hmac
 import importlib.util
 import json
 import os
+import plistlib
 import pwd
 import signal
+import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from dataclasses import replace
@@ -235,6 +239,7 @@ print(json.dumps({{
         governance: bool = False,
         artifact_model: str = "",
         timeout_ms: int = 30_000,
+        opencode_model: str = "",
     ):
         defaults: dict[tuple[str, str], dict[str, object]] = {
             ("gemini", "advisory"): {"model": "google/gemini-test", "effort": "high"},
@@ -269,6 +274,14 @@ print(json.dumps({{
                 with mock.patch.object(
                     self.client, "_verify_macos_signature", return_value=(True, "")
                 ):
+                    explicit = {
+                        "primary_id": "claude",
+                        "active_model": "anthropic/claude-opus",
+                        "host_runtime": "claude-code",
+                        "session_identifier": "c-1",
+                    }
+                    if opencode_model:
+                        explicit["opencode_model"] = opencode_model
                     decision = policy.issue_policy_envelope(
                         request_id=request_id,
                         route=route,
@@ -278,16 +291,21 @@ print(json.dumps({{
                         timeout_ms=timeout_ms,
                         artifact_author_model=artifact_model,
                         artifact_content="artifact" if artifact_model else "",
-                        explicit_config={
-                            "primary_id": "claude",
-                            "active_model": "anthropic/claude-opus",
-                            "host_runtime": "claude-code",
-                            "session_identifier": "c-1",
-                        },
+                        explicit_config=explicit,
                         row_config=row if row is not None else defaults[(route, action)],
                     )
         self.assertIsNotNone(decision.envelope, decision.warning)
         return decision.envelope
+
+    def _fixture_broker(self, **kwargs):
+        """Exercise native response parsing while substituting the test broker transport."""
+
+        return self.client._launch_runtime(
+            resolution=kwargs["resolution"],
+            payload=kwargs["payload"],
+            timeout_ms=kwargs["timeout_ms"],
+            envelope=kwargs["envelope"],
+        )
 
     def test_source_manifest_never_contains_unsigned_placeholder(self) -> None:
         plugin_root = ROOT / "plugins" / "agent-collab"
@@ -359,6 +377,566 @@ print(json.dumps({{
         self.assertFalse(str(child_tmpdir).startswith(str(self.root) + os.sep))
         self.assertEqual(result.result["tmpdir_mode"], "0o700")
         self.assertFalse(child_tmpdir.exists())
+
+    def test_resolution_carries_the_verified_artifact_digest(self) -> None:
+        binary = self._fixture()
+        expected = hashlib.sha256(binary.read_bytes()).hexdigest()
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.artifact_digest, expected)
+
+    def test_broker_frame_is_exact_digest_bound_and_uses_canonical_nonce(self) -> None:
+        request = {
+            "protocol_version": 1,
+            "request_id": "broker-frame-1",
+            "operation": "execute",
+        }
+        now = 1_234.5
+        nonce = bytes(range(32))
+        with mock.patch.object(self.client.time, "monotonic", return_value=now), mock.patch.object(
+            self.client.os, "urandom", return_value=nonce
+        ):
+            frame = self.client._broker_request_frame(
+                request=request,
+                artifact_digest="a" * 64,
+                manifest_digest="b" * 64,
+                timeout_ms=30_000,
+            )
+        self.assertEqual(set(frame), self.client.BROKER_FRAME_KEYS)
+        self.assertEqual(frame["broker_protocol_version"], 1)
+        self.assertEqual(frame["runtime_protocol_version"], 1)
+        self.assertEqual(frame["artifact_sha256"], "a" * 64)
+        self.assertEqual(frame["manifest_sha256"], "b" * 64)
+        self.assertEqual(frame["client_pid"], os.getpid())
+        self.assertEqual(frame["deadline_monotonic_ms"], 1_264_500)
+        self.assertEqual(
+            frame["nonce"],
+            base64.urlsafe_b64encode(nonce).decode("ascii").rstrip("="),
+        )
+        self.assertEqual(frame["request"], request)
+
+    def test_broker_frame_codec_rejects_nan_bool_and_oversize(self) -> None:
+        with self.assertRaises(ValueError):
+            self.client._encode_broker_frame({"bad": float("nan")}, max_bytes=1024)
+        with self.assertRaises(ValueError):
+            self.client._encode_broker_frame({"bad": True}, max_bytes=True)
+        with self.assertRaises(OverflowError):
+            self.client._encode_broker_frame({"large": "x" * 50}, max_bytes=8)
+
+    def test_broker_frame_reader_rejects_truncated_and_oversize_payloads(self) -> None:
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        right.sendall(struct.pack(">Q", 20) + b"{}")
+        right.close()
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        right.sendall(struct.pack(">Q", 1025))
+        with self.assertRaises(OverflowError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        raw = b'{"value":NaN}'
+        right.sendall(struct.pack(">Q", len(raw)) + raw)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        raw = b'{"value":1e309}'
+        right.sendall(struct.pack(">Q", len(raw)) + raw)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        raw = b'{"value":1,"value":2}'
+        right.sendall(struct.pack(">Q", len(raw)) + raw)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
+    def test_all_broker_only_routes_use_broker_without_direct_fallback(self) -> None:
+        self._fixture()
+        for route, action in (
+            ("opencode", "plan"),
+            ("gemini", "advisory"),
+            ("grok", "architecture"),
+            ("composer", "codegen"),
+        ):
+            with self.subTest(route=route):
+                envelope = self._envelope(route=route, action=action)
+                expected = self.client.RuntimeResult(
+                    self.client.RuntimeStatus.UNAVAILABLE,
+                    error="provider broker is unavailable",
+                )
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_broker", return_value=expected
+                ) as broker, mock.patch.object(self.client, "_launch_runtime") as direct:
+                    result = self.client.invoke(envelope=envelope)
+                self.assertIs(result, expected)
+                broker.assert_called_once()
+                direct.assert_not_called()
+
+    def test_other_routes_retain_direct_runtime_path(self) -> None:
+        self._fixture()
+        for route, action in (
+            ("codex", "advisory"),
+        ):
+            with self.subTest(route=route):
+                envelope = self._envelope(route=route, action=action)
+                expected = self.client.RuntimeResult(
+                    self.client.RuntimeStatus.PROVIDER_ERROR,
+                    error="fixture direct result",
+                )
+                with mock.patch.object(
+                    self.client, "_verify_macos_signature", return_value=(True, "")
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_runtime", return_value=expected
+                ) as direct, mock.patch.object(self.client, "_launch_broker") as broker:
+                    result = self.client.invoke(envelope=envelope)
+                self.assertIs(result, expected)
+                direct.assert_called_once()
+                broker.assert_not_called()
+
+    def test_broker_exchange_roundtrips_a_sealed_gemini_response(self) -> None:
+        self._fixture()
+        socket_path = self.root / "exchange.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        socket_path.chmod(0o600)
+        self.addCleanup(listener.close)
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="broker-exchange-1"
+        )
+        payload = self.client._native_document(envelope)
+        observed: dict[str, object] = {}
+
+        def server() -> None:
+            peer, _address = listener.accept()
+            with peer:
+                frame = self.client._read_broker_frame(
+                    peer,
+                    max_bytes=self.client.BROKER_MAX_REQUEST_BYTES,
+                    deadline=time.monotonic() + 2,
+                )
+                observed.update(frame)
+                response = {
+                    "protocol_version": 1,
+                    "request_id": envelope.request_id,
+                    "status": "ok",
+                    "result": {"review": "ok"},
+                    "provenance": {
+                        "route": envelope.route,
+                        "action": envelope.action,
+                        "authority": envelope.authority,
+                        "author_model": "google/gemini-test",
+                        "author_family": "google",
+                        "host_runtime": "fixture-broker",
+                        "session_identifier": "fixture-broker-session",
+                        "observation_sequence": 1,
+                    },
+                }
+                peer.sendall(
+                    self.client._encode_broker_frame(
+                        response, max_bytes=self.client.BROKER_MAX_RESPONSE_BYTES
+                    )
+                )
+
+        thread = threading.Thread(target=server)
+        thread.start()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="b" * 64,
+            artifact_digest="a" * 64,
+        )
+        state = {"socket_path": str(socket_path)}
+        with mock.patch.object(
+            self.client, "_load_broker_state", return_value=(state, None)
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertEqual(set(observed), self.client.BROKER_FRAME_KEYS)
+        self.assertEqual(observed["artifact_sha256"], "a" * 64)
+        self.assertEqual(observed["manifest_sha256"], "b" * 64)
+        self.assertEqual(observed["request"]["request_id"], envelope.request_id)
+
+    def test_broker_local_failures_remain_typed_without_internal_detail(self) -> None:
+        self._fixture()
+        envelope = self._envelope(route="opencode", action="plan")
+        expected = {
+            "config_error": self.client.RuntimeStatus.CONFIG_ERROR,
+            "integrity_error": self.client.RuntimeStatus.INTEGRITY_ERROR,
+            "peer_error": self.client.RuntimeStatus.INTEGRITY_ERROR,
+            "replay_error": self.client.RuntimeStatus.INTEGRITY_ERROR,
+            "protocol_error": self.client.RuntimeStatus.PROTOCOL_ERROR,
+        }
+        for status, runtime_status in expected.items():
+            with self.subTest(status=status):
+                result = self.client._parse_broker_response(
+                    {
+                        "protocol_version": 1,
+                        "request_id": envelope.request_id,
+                        "status": status,
+                        "error": "provider broker request was rejected",
+                    },
+                    envelope,
+                )
+                self.assertEqual(result.status, runtime_status)
+                self.assertNotIn("/", result.error)
+
+    def test_broker_state_and_socket_are_exact_and_fail_closed(self) -> None:
+        root = self.root / "provider-broker"
+        root.mkdir(mode=0o700)
+        state = root / "state.json"
+        socket_path = root / "provider.sock"
+        document = {
+            "schema_version": 1,
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "runtime_path": str(
+                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "agent-collab-runtime"
+            ),
+            "manifest_path": str(
+                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "runtime-manifest.json"
+            ),
+            "plist_sha256": "c" * 64,
+            "socket_path": str(socket_path),
+            "label": self.client.BROKER_LABEL,
+            "previous": None,
+        }
+        state.write_text(json.dumps(document), encoding="utf-8")
+        state.chmod(0o600)
+        with mock.patch.object(self.client, "_broker_root", return_value=root), mock.patch.object(
+            self.client, "_verify_published_version"
+        ), mock.patch.object(self.client, "_verify_plist_against_state"):
+            result, error = self.client._load_broker_state(
+                artifact_digest="a" * 64,
+                manifest_digest="b" * 64,
+                require_socket=False,
+            )
+        self.assertEqual(result, document)
+        self.assertIsNone(error)
+
+        state.chmod(0o644)
+        with mock.patch.object(self.client, "_broker_root", return_value=root), mock.patch.object(
+            self.client, "_verify_published_version"
+        ), mock.patch.object(self.client, "_verify_plist_against_state"):
+            result, error = self.client._load_broker_state(
+                artifact_digest="a" * 64,
+                manifest_digest="b" * 64,
+                require_socket=False,
+            )
+        self.assertIsNone(result)
+        self.assertEqual(error.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
+    def test_closed_plist_has_socket_activation_and_no_persistence_keys(self) -> None:
+        runtime = self.root / "versions" / ("a" * 64) / "agent-collab-runtime"
+        socket_path = self.root / "provider.sock"
+        tmpdir = self.root / "tmp"
+        document = self.client._broker_plist_document(
+            runtime_path=runtime,
+            socket_path=socket_path,
+            tmpdir=tmpdir,
+            home=Path(pwd.getpwuid(os.getuid()).pw_dir),
+            uid=os.getuid(),
+        )
+        self.assertEqual(
+            set(document),
+            {
+                "Label",
+                "Program",
+                "ProgramArguments",
+                "EnvironmentVariables",
+                "ProcessType",
+                "ThrottleInterval",
+                "Sockets",
+            },
+        )
+        self.assertEqual(document["ProgramArguments"], [str(runtime), "broker", "--protocol", "1"])
+        self.assertEqual(document["ThrottleInterval"], 0)
+        self.assertNotIn("KeepAlive", document)
+        self.assertNotIn("RunAtLoad", document)
+        self.assertEqual(
+            document["Sockets"]["ProviderBroker"]["SockPathMode"], 384
+        )
+
+    def _broker_lifecycle_patches(self, root: Path):
+        socket_path = root / "provider.sock"
+
+        def bootstrap(_plist):
+            if not socket_path.exists():
+                peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                try:
+                    peer.bind(str(socket_path))
+                finally:
+                    peer.close()
+                socket_path.chmod(0o600)
+            return True
+
+        return (
+            mock.patch.object(self.client, "_broker_root", return_value=root),
+            mock.patch.object(self.client, "_bootout_broker", return_value=True),
+            mock.patch.object(self.client, "_bootstrap_broker", side_effect=bootstrap),
+            mock.patch.object(self.client, "_broker_job_loaded", return_value=True),
+            mock.patch.object(self.client, "_broker_ping", return_value=True),
+        )
+
+    def test_install_broker_publishes_exact_version_and_socket_activated_state(self) -> None:
+        binary = self._fixture()
+        root = self.root / "broker-state"
+        expected_artifact = hashlib.sha256(binary.read_bytes()).hexdigest()
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            result = self.client.install_broker()
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertFalse(result.result["persistent_process"])
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["artifact_sha256"], expected_artifact)
+        self.assertIsNone(state["previous"])
+        self.assertEqual(stat.S_IMODE((root / "broker.plist").stat().st_mode), 0o600)
+        version = Path(state["runtime_path"]).parent
+        self.assertEqual(stat.S_IMODE(version.stat().st_mode), 0o500)
+        self.assertEqual(
+            hashlib.sha256((version / "agent-collab-runtime").read_bytes()).hexdigest(),
+            expected_artifact,
+        )
+        plist = plistlib.loads((root / "broker.plist").read_bytes())
+        self.assertEqual(plist["Label"], self.client.BROKER_LABEL)
+        self.assertNotIn("KeepAlive", plist)
+        self.assertNotIn("RunAtLoad", plist)
+
+    def test_missing_broker_root_is_uninstalled_not_an_integrity_failure(self) -> None:
+        root = self.root / "never-installed"
+        with mock.patch.object(self.client, "_broker_root", return_value=root):
+            rolled_back = self.client.rollback_broker()
+            uninstalled = self.client.uninstall_broker()
+
+        self.assertEqual(rolled_back.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual(uninstalled.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(
+            uninstalled.result,
+            {"installed": False, "versions_retained": True},
+        )
+
+    def test_broker_update_records_one_verified_rollback_and_rollback_switches(self) -> None:
+        first = self._fixture(body="#!/bin/sh\nexit 0\n")
+        first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            second = self._fixture(body="#!/bin/sh\nexit 7\n")
+            second_digest = hashlib.sha256(second.read_bytes()).hexdigest()
+            updated = self.client.install_broker()
+            self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
+            state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["artifact_sha256"], second_digest)
+            self.assertEqual(state["previous"]["artifact_sha256"], first_digest)
+            rolled_back = self.client.rollback_broker()
+        self.assertEqual(rolled_back.status, self.client.RuntimeStatus.OK, rolled_back.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["artifact_sha256"], first_digest)
+        self.assertEqual(state["previous"]["artifact_sha256"], second_digest)
+
+    def test_failed_broker_update_restores_the_full_prior_rollback_state(self) -> None:
+        first = self._fixture(body="#!/bin/sh\nexit 0\n")
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            self.assertIsNotNone(prior["previous"])
+            self._fixture(body="#!/bin/sh\nexit 9\n")
+            with mock.patch.object(
+                self.client, "_bootstrap_broker", side_effect=[False, True]
+            ):
+                failed = self.client.install_broker()
+        self.assertEqual(failed.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(failed.result["restored_previous"])
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state, prior)
+
+    def test_noop_broker_install_preserves_existing_rollback_target(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            self.assertIsNotNone(prior["previous"])
+            repeated = self.client.install_broker()
+
+        self.assertEqual(repeated.status, self.client.RuntimeStatus.OK, repeated.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state, prior)
+
+    def test_same_artifact_with_new_manifest_gets_a_distinct_immutable_version(self) -> None:
+        binary = self._fixture()
+        artifact_digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            first = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            manifest_path = self.root / "runtime-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            updated = self.client.install_broker()
+
+        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
+        second = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(second["artifact_sha256"], artifact_digest)
+        self.assertNotEqual(second["manifest_sha256"], first["manifest_sha256"])
+        self.assertNotEqual(second["runtime_path"], first["runtime_path"])
+        self.assertEqual(second["previous"]["manifest_sha256"], first["manifest_sha256"])
+        self.assertEqual(len(tuple((root / "versions").iterdir())), 2)
+
+    def test_unverified_current_version_is_not_recorded_as_rollback(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            current = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            Path(current["manifest_path"]).chmod(0o600)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            updated = self.client.install_broker()
+
+        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertIsNone(state["previous"])
+
+    def test_uninstall_removes_mutable_state_but_retains_versions(self) -> None:
+        self._fixture()
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            result = self.client.uninstall_broker()
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertTrue(result.result["versions_retained"])
+        self.assertTrue(any((root / "versions").iterdir()))
+        self.assertFalse((root / "state.json").exists())
+        self.assertFalse((root / "broker.plist").exists())
+        self.assertFalse((root / "provider.sock").exists())
+
+    def test_foreign_or_malformed_broker_plist_blocks_update(self) -> None:
+        self._fixture()
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            (root / "broker.plist").chmod(0o644)
+            result = self.client.install_broker()
+        self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
+    def test_launchctl_wrapper_uses_exact_binary_domain_and_scrubbed_environment(self) -> None:
+        process = mock.Mock(returncode=0)
+        with mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.client, "_collect_bounded_output", return_value=(b"state = not running\n", b"", None)
+        ):
+            result = self.client._launchctl(
+                ["print", f"gui/{os.getuid()}/{self.client.BROKER_LABEL}"]
+            )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(popen.call_args.args[0][0], "/bin/launchctl")
+        self.assertEqual(
+            popen.call_args.args[0][1:],
+            ["print", f"gui/{os.getuid()}/{self.client.BROKER_LABEL}"],
+        )
+        self.assertEqual(
+            set(popen.call_args.kwargs["env"]),
+            {"HOME", "PATH", "LANG", "LC_ALL"},
+        )
+
+    def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
+        root = self.root / "broker-state"
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            self._fixture(body="#!/bin/sh\nexit 0\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+
+            with mock.patch.object(
+                self.client, "_broker_job_loaded", side_effect=RuntimeError("timeout")
+            ):
+                status = self.client.broker_status()
+            with mock.patch.object(
+                self.client, "_activate_broker_record", side_effect=RuntimeError("timeout")
+            ):
+                installed = self.client.install_broker()
+                rolled_back = self.client.rollback_broker()
+            with mock.patch.object(
+                self.client, "_bootout_broker", side_effect=RuntimeError("timeout")
+            ):
+                uninstalled = self.client.uninstall_broker()
+
+        for result in (status, installed, rolled_back, uninstalled):
+            with self.subTest(status=result.status):
+                self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
+    def test_broker_idle_requires_no_live_pid_and_an_explicit_stopped_state(self) -> None:
+        cases = (
+            ("state = not running\n", True),
+            ("state = exited\n", True),
+            ("state = running\npid = 123\n", False),
+            ("pid = 123\n", False),
+            ("", False),
+        )
+        for output, expected in cases:
+            with self.subTest(output=output), mock.patch.object(
+                self.client,
+                "_launchctl",
+                return_value=subprocess.CompletedProcess([], 0, output, ""),
+            ):
+                self.assertEqual(self.client._broker_process_idle(), expected)
 
     def test_host_context_requires_the_exact_complete_codex_desktop_tuple(self) -> None:
         keys = self.client.CODEX_DESKTOP_TUPLE
@@ -820,7 +1398,9 @@ print(json.dumps({
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ):
-            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                self.client, "_launch_broker", side_effect=self._fixture_broker
+            ):
                 result = self.client.invoke(envelope=envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(result.provenance["author_family"], "google")
@@ -886,7 +1466,9 @@ print(json.dumps({{
                 envelope = self._envelope(route="opencode", action="plan")
                 with mock.patch.object(
                     self.client, "_verify_macos_signature", return_value=(True, "")
-                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_broker", side_effect=self._fixture_broker
+                ):
                     result = self.client.invoke(envelope=envelope)
                 self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
 
@@ -923,10 +1505,13 @@ print(json.dumps({{
                     route="opencode",
                     action="plan",
                     row={"model": model, "cwd": str(self.root)},
+                    opencode_model=model,
                 )
                 with mock.patch.object(
                     self.client, "_verify_macos_signature", return_value=(True, "")
-                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_broker", side_effect=self._fixture_broker
+                ):
                     result = self.client.invoke(envelope=envelope)
                 self.assertEqual(result.status, self.client.RuntimeStatus.OK)
                 self.assertEqual(result.provenance["author_family"], family)
@@ -971,7 +1556,9 @@ print(json.dumps({{
                 envelope = self._envelope(route=route, action=action, row=row)
                 with mock.patch.object(
                     self.client, "_verify_macos_signature", return_value=(True, "")
-                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_broker", side_effect=self._fixture_broker
+                ):
                     result = self.client.invoke(envelope=envelope)
                 self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
 
@@ -1031,6 +1618,8 @@ print(json.dumps({{
             "auth_error": self.client.RuntimeStatus.AUTH_ERROR,
             "quota_error": self.client.RuntimeStatus.QUOTA_ERROR,
             "containment_error": self.client.RuntimeStatus.CONTAINMENT_ERROR,
+            "cancelled": self.client.RuntimeStatus.CANCELLED,
+            "input_limit": self.client.RuntimeStatus.INPUT_LIMIT,
             "timeout": self.client.RuntimeStatus.TIMEOUT,
             "output_limit": self.client.RuntimeStatus.OUTPUT_LIMIT,
             "teardown_error": self.client.RuntimeStatus.TEARDOWN_ERROR,
@@ -1343,7 +1932,7 @@ time.sleep(10)
         with self.assertRaisesRegex(ValueError, "artifact hash"):
             self.client._native_document(tampered)
 
-    def test_row_escape_fields_and_anthropic_opencode_fail_before_runtime(self) -> None:
+    def test_row_escape_fields_fail_and_row_model_cannot_select_anthropic(self) -> None:
         policy = self.client._load_host_policy()
         with mock.patch.object(
             policy,
@@ -1361,7 +1950,6 @@ time.sleep(10)
                     "cwd": "/tmp/project",
                     "tools": ["shell"],
                 },
-                {"model": "anthropic/claude-sonnet", "cwd": "/tmp/project"},
             ):
                 with self.subTest(row=row):
                     decision = policy.issue_policy_envelope(
@@ -1380,6 +1968,28 @@ time.sleep(10)
                         row_config=row,
                     )
                     self.assertIsNone(decision.envelope)
+
+            decision = policy.issue_policy_envelope(
+                request_id="ignore-row-model",
+                route="opencode",
+                action="plan",
+                governance=False,
+                prompt="plan",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "custom",
+                    "active_model": "custom/unknown",
+                    "host_runtime": "custom",
+                    "session_identifier": "s-1",
+                },
+                row_config={"model": "anthropic/claude-sonnet", "cwd": "/tmp/project"},
+            )
+            self.assertIsNotNone(decision.envelope)
+            assert decision.envelope is not None
+            self.assertEqual(
+                json.loads(decision.envelope.row_json)["model"],
+                policy.DEFAULT_OPENCODE_MODEL,
+            )
 
 
 if __name__ == "__main__":

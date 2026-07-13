@@ -80,17 +80,17 @@ class PublicDistributionContractTests(unittest.TestCase):
         )
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(claude["version"], "3.1.0")
-        self.assertEqual(codex["version"], "3.1.0")
-        self.assertIn("**agent-collab** (v3.1.0)", readme)
-        self.assertIn("## What's new - v3.1.0", readme)
+        version = claude["version"]
+        self.assertEqual(codex["version"], version)
+        self.assertIn(f"**agent-collab** (v{version})", readme)
+        self.assertIn(f"## What's new - v{version}", readme)
 
         generated_skills = sorted(
             (ROOT / "plugins" / "agent-collab" / "skills").glob("*/SKILL.md")
         )
         self.assertTrue(generated_skills)
         for path in generated_skills:
-            self.assertIn("\nversion: 3.1.0\n", path.read_text(encoding="utf-8"))
+            self.assertIn(f"\nversion: {version}\n", path.read_text(encoding="utf-8"))
 
     def test_host_metadata_and_homelab_labels_are_not_distributed(self) -> None:
         self.assertFalse((ROOT / ".claude-session-owner").exists())

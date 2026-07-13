@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.1.0**
+Current: **3.2.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -46,7 +46,28 @@ inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
 `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
 labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.1.0 package.
+identify this same 3.2.0 package.
+
+Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
+mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
+signed runtime for one request, and the broker exits after its single bounded
+response. The plist has no keepalive, run-at-load, polling, interval, calendar,
+or resident-process trigger. A missing or stale broker is a typed failure—these
+routes never fall back to the direct artifact path. Codex and runtime
+management retain fixed direct exact-artifact execution.
+The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
+socket activation does not inherit that client sandbox, so every brokered Grok
+and Composer attempt independently validates its own nested read-only sandbox.
+Provider children receive closed backend-specific environment allowlists and
+fresh private call roots. Broker transport cannot invoke local `status`,
+`prepare`, or `grok_login` management authority.
+Client disconnect propagates cancellation through managed OpenCode, Grok, and
+Composer execution/readiness, reaps provider child groups, and discards partial
+output. Disconnect cancellation is never retried; a deadline below the managed
+setup reserve returns typed `timeout` before provider setup.
+The current Gemini facade remains typed `containment_error` before Google
+provider setup until a separately reviewed completion-only transport exists;
+the broker does not treat an agentic CLI mode as a read-only guarantee.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
@@ -128,6 +149,22 @@ mutation-capable authority never promote or demote into one another.
 | `target=grok` large-corpus extraction | Read-only | Grok 4.5 huge-context ingestion |
 | `target=composer` constrained patch/code generation | Output-only | Composer output-only code/patch generation; trusted primary applies and verifies |
 
+Grok prose succeeds only on an explicit `EndTurn` terminal. Exact `Cancelled`
+is a typed non-success with no retained assistant text; the managed broker may
+retry it once only when more than ten seconds remain under the original
+deadline. Grok and Composer enforce an inclusive 1,048,576-byte final UTF-8
+input ceiling before authentication or spawn and return typed `input_limit`
+above it.
+
+Non-trivial Composer work starts from a comprehensive architectural coding
+packet: scope, invariants, authority boundaries, exact files and symbols, error
+taxonomy, lifecycle, tests, and acceptance criteria. The primary architect owns
+that packet, an eligible distinct-family synchronous frontier architect is the
+adversarial complement, and Composer is implementation-only. Claude and Codex
+frontier primaries are the strongest default architecture seats; Grok 4.5 is
+the qualified near-peer architecture/governance complement. Async inbox review
+is fallback-only when no eligible synchronous complement is available.
+
 ## Skills
 
 All skills share the same coordinator, family-exclusion policy, sealed authority
@@ -169,6 +206,8 @@ use the closed management client only:
 ```text
 python3 "<plugin-root>/runtime_setup.py" status
 python3 "<plugin-root>/runtime_setup.py" prepare
+python3 "<plugin-root>/runtime_setup.py" install-broker
+python3 "<plugin-root>/runtime_setup.py" broker-status
 python3 "<plugin-root>/runtime_setup.py" login-grok
 ```
 
@@ -180,7 +219,30 @@ keeps the child environment scrubbed, reports only a closed host-context enum,
 and never exposes private provider recipes. Codex and OpenCode still require
 their exact supported external CLIs and standard authenticated host state;
 install and authenticate those through their vendor-supported interfaces.
-Policy-only releases return typed `unavailable` for all three commands.
+Policy-only releases return typed `unavailable` for runtime-dependent commands.
+Broker installation is explicit; import, readiness, and invocation never
+install or mutate launchd state. `install-broker` publishes the verified
+artifact/manifest into an immutable artifact-plus-manifest digest directory,
+atomically activates a closed plist, proves the job/socket and one-request
+process exit, and retains one verified prior record. Failed updates restore the
+complete prior state; same-version reactivation preserves its rollback target,
+and an unverified version is never recorded as rollback-safe. `broker-status`
+is read-only and emits no prompt, credential, provider output, or private path;
+bounded `launchctl` collection failures return a typed lifecycle error.
+
+Use the closed rollback/removal actions only when needed:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" rollback-broker
+python3 "<plugin-root>/runtime_setup.py" uninstall-broker
+```
+
+Rollback switches to the one complete prior verified record. Uninstall removes
+the exact job, socket, plist, and mutable state while retaining immutable
+version directories. On a machine where the broker was never installed,
+uninstall is an idempotent success and rollback is typed unavailable. No
+lifecycle command accepts a caller-selected path, label, socket, environment,
+provider, model, or raw argument.
 
 ## Standalone invocation and local threat limit
 
@@ -262,6 +324,14 @@ Exact row contracts are:
 | `grok/huge_context` | `{"documents":[{"label":"...","content":"..."}]}` |
 | `composer/codegen` | `{}` |
 | `inbox/async` | `{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`; readiness-only, non-governance, observed host transport |
+
+For OpenCode, a `model` field in the row is compatibility input only and never
+selects a backend. Selection is recomputed for every request from the strong
+live OpenCode or ZCode active-model observation, then explicit central
+`primary.opencode_model`, then the fixed `opencode/glm-5.2` preset. Ambient
+environment and row values are not fallbacks. The selected model must resolve
+to a known non-Anthropic family, and its family supplies artifact provenance
+and independence exclusion.
 
 The inbox row is exact: `target_id=claude` requires
 `target_family=anthropic`, while `target_id=antigravity` requires
