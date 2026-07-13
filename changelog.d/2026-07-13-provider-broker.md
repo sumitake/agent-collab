@@ -7,3 +7,4 @@
 - Resolve the OpenCode model per request from live OpenCode/ZCode observation,
   explicit central configuration, or the fixed `opencode/glm-5.2` preset while
   ignoring ambient and row-level model fallbacks.
+- Reject duplicate/non-finite broker responses and state before typed parsing.

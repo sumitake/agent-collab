@@ -748,7 +748,11 @@ def _load_broker_state(
     if raw is None or opened_identity is None:
         return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker state cannot be read safely")
     try:
-        document = json.loads(raw.decode("utf-8"))
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
     except (UnicodeError, ValueError, RecursionError):
         return None, RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="provider broker state is malformed")
     if not _broker_record_valid(document, root, allow_previous=True):
@@ -842,6 +846,15 @@ def _recv_broker_exact(peer: socket.socket, count: int, deadline: float) -> byte
     return b"".join(chunks)
 
 
+def _unique_broker_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    document: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("duplicate provider broker JSON key")
+        document[key] = value
+    return document
+
+
 def _read_broker_frame(
     peer: socket.socket, *, max_bytes: int, deadline: float
 ) -> dict[str, Any]:
@@ -857,6 +870,7 @@ def _read_broker_frame(
     try:
         document = json.loads(
             raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
             parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
         )
     except (UnicodeError, ValueError, RecursionError) as exc:
@@ -1187,7 +1201,11 @@ def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
     if raw is None:
         raise ValueError("provider broker state cannot be read safely")
     try:
-        document = json.loads(raw.decode("utf-8"))
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("provider broker state is malformed") from exc
     if not _broker_record_valid(document, root, allow_previous=True):

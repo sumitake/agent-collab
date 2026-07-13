@@ -450,6 +450,14 @@ print(json.dumps({{
         with self.assertRaises(ValueError):
             self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
 
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        raw = b'{"value":1,"value":2}'
+        right.sendall(struct.pack(">Q", len(raw)) + raw)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_frame(left, max_bytes=1024, deadline=time.monotonic() + 1)
+
     def test_opencode_and_gemini_use_broker_without_direct_fallback(self) -> None:
         self._fixture()
         for route, action in (("opencode", "plan"), ("gemini", "advisory")):
