@@ -1229,7 +1229,7 @@ enabled = true
         self.assertFalse(outcome.envelope.explicit_target)
         self.assertTrue(self.policy.verify_policy_envelope(outcome.envelope))
 
-    def test_opencode_target_has_no_implicit_glm_default(self) -> None:
+    def test_opencode_target_uses_the_fixed_glm_preset_by_default(self) -> None:
         with mock.patch.object(
             self.policy,
             "_runtime_contracts",
@@ -1250,8 +1250,44 @@ enabled = true
                 },
                 row_config={"cwd": "/tmp/project"},
             )
-        self.assertEqual(outcome.status, self.policy.PreflightStatus.UNKNOWN_BLOCKED)
-        self.assertIn("OpenCode model", outcome.warning)
+        self.assertEqual(outcome.status, self.policy.PreflightStatus.OK)
+        self.assertIsNotNone(outcome.envelope)
+        assert outcome.envelope is not None
+        row = json.loads(outcome.envelope.row_json)
+        self.assertEqual(row["model"], self.policy.DEFAULT_OPENCODE_MODEL)
+        self.assertEqual(outcome.envelope.target_author_family, "zhipu")
+
+    def test_opencode_ignores_ambient_and_row_model_fallbacks(self) -> None:
+        with mock.patch.object(
+            self.policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ), mock.patch.dict(
+            "os.environ",
+            {"AGENT_COLLAB_OPENCODE_MODEL": "google/gemini-ambient"},
+            clear=True,
+        ):
+            outcome = self.policy.issue_policy_envelope(
+                request_id="opencode-closed-precedence",
+                route="opencode",
+                action="plan",
+                governance=False,
+                prompt="plan",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "claude",
+                    "active_model": "anthropic/claude-opus",
+                    "host_runtime": "claude-code",
+                    "session_identifier": "c-1",
+                },
+                row_config={"model": "openai/row-model", "cwd": "/tmp/project"},
+            )
+        self.assertEqual(outcome.status, self.policy.PreflightStatus.OK)
+        assert outcome.envelope is not None
+        self.assertEqual(
+            json.loads(outcome.envelope.row_json)["model"],
+            self.policy.DEFAULT_OPENCODE_MODEL,
+        )
 
     def test_opencode_worker_reobserves_explicit_selected_model_on_each_call(self) -> None:
         cases = {

@@ -15,6 +15,12 @@ _COMMANDS = {
     "prepare": ("prepare", 60_000),
     "login-grok": ("grok_login", 600_000),
 }
+_LIFECYCLE_COMMANDS = {
+    "install-broker": "install_broker",
+    "broker-status": "broker_status",
+    "rollback-broker": "rollback_broker",
+    "uninstall-broker": "uninstall_broker",
+}
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -26,20 +32,26 @@ def _emit(payload: dict[str, object]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 1 or args[0] not in _COMMANDS:
+    if len(args) != 1 or args[0] not in {*_COMMANDS, *_LIFECYCLE_COMMANDS}:
         _emit(
             {
                 "status": runtime_client.RuntimeStatus.CONFIG_ERROR.value,
-                "error": "expected exactly one of: status, prepare, login-grok",
+                "error": (
+                    "expected exactly one of: status, prepare, login-grok, "
+                    "install-broker, broker-status, rollback-broker, uninstall-broker"
+                ),
             }
         )
         return 2
-    action, timeout_ms = _COMMANDS[args[0]]
-    result = runtime_client.manage_runtime(
-        action=action,
-        request_id=f"setup-{uuid.uuid4().hex}",
-        timeout_ms=timeout_ms,
-    )
+    if args[0] in _LIFECYCLE_COMMANDS:
+        result = getattr(runtime_client, _LIFECYCLE_COMMANDS[args[0]])()
+    else:
+        action, timeout_ms = _COMMANDS[args[0]]
+        result = runtime_client.manage_runtime(
+            action=action,
+            request_id=f"setup-{uuid.uuid4().hex}",
+            timeout_ms=timeout_ms,
+        )
     payload: dict[str, object] = {"status": result.status.value}
     if result.result is not None:
         payload["result"] = dict(result.result)

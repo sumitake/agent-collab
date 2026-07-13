@@ -31,6 +31,7 @@ from typing import Any, Mapping, Sequence
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 KNOWN_FAMILIES = frozenset({"anthropic", "google", "openai", "xai", "zhipu"})
+DEFAULT_OPENCODE_MODEL = "opencode/glm-5.2"
 ROUTE_ACTIONS = frozenset(
     {
         ("gemini", "advisory"),
@@ -503,10 +504,7 @@ def _resolve_opencode_model(
     configured = str(values.get("opencode_model", "")).strip()
     if configured:
         return configured
-    environment = os.environ.get("AGENT_COLLAB_OPENCODE_MODEL", "").strip()
-    if environment:
-        return environment
-    return str(row.get("model", "")).strip()
+    return DEFAULT_OPENCODE_MODEL
 
 
 def _validate_row(

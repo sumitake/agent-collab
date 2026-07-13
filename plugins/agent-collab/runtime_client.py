@@ -19,11 +19,14 @@ import importlib.util
 import json
 import os
 import platform
+import plistlib
 import re
 import selectors
 import shutil
 import signal
+import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -47,6 +50,41 @@ MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
+BROKER_PROTOCOL_VERSION = 1
+BROKER_LABEL = "com.agent-collab.provider-broker"
+BROKER_SOCKET_NAME = "ProviderBroker"
+BROKER_FRAME_KEYS = frozenset(
+    {
+        "broker_protocol_version",
+        "runtime_protocol_version",
+        "artifact_sha256",
+        "manifest_sha256",
+        "client_pid",
+        "nonce",
+        "deadline_monotonic_ms",
+        "request",
+    }
+)
+BROKERED_ROUTES = frozenset({"opencode", "gemini"})
+BROKER_MAX_REQUEST_BYTES = MAX_REQUEST_BYTES
+BROKER_MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES
+BROKER_STATE_MAX_BYTES = 64 * 1024
+BROKER_SUN_PATH_MAX_BYTES = 103
+BROKER_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+BROKER_STATE_KEYS = frozenset(
+    {
+        "schema_version",
+        "artifact_sha256",
+        "manifest_sha256",
+        "runtime_path",
+        "manifest_path",
+        "plist_sha256",
+        "socket_path",
+        "label",
+        "previous",
+    }
+)
+_BROKER_HEADER = struct.Struct(">Q")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.IGNORECASE)
@@ -156,6 +194,7 @@ class RuntimeResolution:
     path: Path | None = None
     contracts: frozenset[tuple[str, str]] = frozenset()
     manifest_digest: str = ""
+    artifact_digest: str = ""
     identity: FileIdentity | None = None
     error: str = ""
 
@@ -578,6 +617,7 @@ def resolve_runtime() -> RuntimeResolution:
         path=path,
         contracts=entry["_contracts"],
         manifest_digest=manifest_digest,
+        artifact_digest=digest,
         identity=identity,
     )
 
@@ -623,6 +663,909 @@ def _scrubbed_env(*, tmpdir: Path) -> dict[str, str]:
         env["HOME"] = value
     env["TMPDIR"] = str(tmpdir)
     return env
+
+
+def _broker_root() -> Path:
+    value = _operator_home()
+    if value is None:
+        raise ValueError("operator home is unavailable")
+    return Path(value) / ".agent-collab" / "provider-broker"
+
+
+def _exact_mode(path: Path, *, expected_type: int, mode: int) -> os.stat_result | None:
+    try:
+        info = path.lstat()
+    except OSError:
+        return None
+    if (
+        stat.S_IFMT(info.st_mode) != expected_type
+        or stat.S_ISLNK(info.st_mode)
+        or info.st_uid != os.getuid()
+        or (expected_type != stat.S_IFDIR and info.st_nlink != 1)
+        or stat.S_IMODE(info.st_mode) != mode
+    ):
+        return None
+    return info
+
+
+def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) -> bool:
+    if not isinstance(document, dict) or set(document) != BROKER_STATE_KEYS:
+        return False
+    if (
+        not _exact_int(document.get("schema_version"), 1)
+        or not isinstance(document.get("artifact_sha256"), str)
+        or not _SHA256_RE.fullmatch(document["artifact_sha256"])
+        or not isinstance(document.get("manifest_sha256"), str)
+        or not _SHA256_RE.fullmatch(document["manifest_sha256"])
+        or not isinstance(document.get("plist_sha256"), str)
+        or not _SHA256_RE.fullmatch(document["plist_sha256"])
+        or document.get("label") != BROKER_LABEL
+    ):
+        return False
+    digest = document["artifact_sha256"]
+    expected_version = root / "versions" / digest
+    expected_paths = {
+        "runtime_path": expected_version / "agent-collab-runtime",
+        "manifest_path": expected_version / MANIFEST_NAME,
+        "socket_path": root / "provider.sock",
+    }
+    for key, expected in expected_paths.items():
+        if not isinstance(document.get(key), str) or document[key] != str(expected):
+            return False
+    previous = document.get("previous")
+    if previous is not None and (
+        not allow_previous or not _broker_record_valid(previous, root, allow_previous=False)
+    ):
+        return False
+    return True
+
+
+def _load_broker_state(
+    *,
+    artifact_digest: str,
+    manifest_digest: str,
+    require_socket: bool,
+) -> tuple[dict[str, Any] | None, RuntimeResult | None]:
+    try:
+        root = _broker_root()
+    except ValueError:
+        return None, RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="provider broker configuration is unavailable")
+    state_path = root / "state.json"
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        return None, RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker is not installed")
+    if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
+        return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker root identity is unsafe")
+    try:
+        state_path.lstat()
+    except FileNotFoundError:
+        return None, RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker is not installed")
+    state_identity = _exact_mode(state_path, expected_type=stat.S_IFREG, mode=0o600)
+    if state_identity is None or state_identity.st_size > BROKER_STATE_MAX_BYTES:
+        return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker state identity is unsafe")
+    raw, opened_identity = _read_regular_nofollow(state_path, limit=BROKER_STATE_MAX_BYTES)
+    if raw is None or opened_identity is None:
+        return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker state cannot be read safely")
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError):
+        return None, RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="provider broker state is malformed")
+    if not _broker_record_valid(document, root, allow_previous=True):
+        return None, RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="provider broker state contract mismatch")
+    if (
+        document["artifact_sha256"] != artifact_digest
+        or document["manifest_sha256"] != manifest_digest
+    ):
+        return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker digest does not match the verified runtime")
+    try:
+        _verify_published_version(
+            root,
+            artifact_digest=artifact_digest,
+            manifest_digest=manifest_digest,
+        )
+        _verify_plist_against_state(root, document)
+    except (OSError, ValueError):
+        return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installed identity could not be proven")
+    if require_socket:
+        socket_path = Path(document["socket_path"])
+        if len(os.fsencode(socket_path)) > BROKER_SUN_PATH_MAX_BYTES:
+            return None, RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="provider broker socket path is too long")
+        if _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
+            return None, RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker socket is unavailable")
+    return dict(document), None
+
+
+def _broker_request_frame(
+    *,
+    request: Mapping[str, Any],
+    artifact_digest: str,
+    manifest_digest: str,
+    timeout_ms: int,
+) -> dict[str, Any]:
+    if (
+        not isinstance(request, dict)
+        or not _SHA256_RE.fullmatch(artifact_digest)
+        or not _SHA256_RE.fullmatch(manifest_digest)
+        or not _exact_int(timeout_ms)
+        or not 1 <= timeout_ms <= MAX_TIMEOUT_MS
+        or os.getpid() <= 1
+    ):
+        raise ValueError("invalid provider broker request")
+    nonce = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii").rstrip("=")
+    return {
+        "broker_protocol_version": BROKER_PROTOCOL_VERSION,
+        "runtime_protocol_version": PROTOCOL_VERSION,
+        "artifact_sha256": artifact_digest,
+        "manifest_sha256": manifest_digest,
+        "client_pid": os.getpid(),
+        "nonce": nonce,
+        "deadline_monotonic_ms": int(time.monotonic() * 1000) + timeout_ms,
+        "request": dict(request),
+    }
+
+
+def _encode_broker_frame(document: object, *, max_bytes: int) -> bytes:
+    if not isinstance(document, dict) or not _exact_int(max_bytes) or max_bytes <= 0:
+        raise ValueError("invalid broker frame")
+    try:
+        payload = json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError("invalid broker frame") from exc
+    if len(payload) > max_bytes:
+        raise OverflowError("broker frame exceeds limit")
+    return _BROKER_HEADER.pack(len(payload)) + payload
+
+
+def _recv_broker_exact(peer: socket.socket, count: int, deadline: float) -> bytes:
+    chunks: list[bytes] = []
+    remaining = count
+    while remaining:
+        budget = deadline - time.monotonic()
+        if budget <= 0:
+            raise TimeoutError("provider broker deadline expired")
+        peer.settimeout(budget)
+        try:
+            chunk = peer.recv(remaining)
+        except socket.timeout as exc:
+            raise TimeoutError("provider broker deadline expired") from exc
+        if not chunk:
+            raise ValueError("truncated broker frame")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _read_broker_frame(
+    peer: socket.socket, *, max_bytes: int, deadline: float
+) -> dict[str, Any]:
+    if not _exact_int(max_bytes) or max_bytes <= 0 or not isinstance(deadline, (int, float)):
+        raise ValueError("invalid broker frame reader")
+    header = _recv_broker_exact(peer, _BROKER_HEADER.size, deadline)
+    size = _BROKER_HEADER.unpack(header)[0]
+    if size == 0:
+        raise ValueError("empty broker frame")
+    if size > max_bytes:
+        raise OverflowError("broker frame exceeds limit")
+    raw = _recv_broker_exact(peer, size, deadline)
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("invalid broker response") from exc
+    if not isinstance(document, dict):
+        raise ValueError("invalid broker response")
+    return document
+
+
+def _parse_broker_response(document: dict[str, Any], envelope: object) -> RuntimeResult:
+    status = document.get("status")
+    local_mapping = {
+        "config_error": RuntimeStatus.CONFIG_ERROR,
+        "integrity_error": RuntimeStatus.INTEGRITY_ERROR,
+        "peer_error": RuntimeStatus.INTEGRITY_ERROR,
+        "replay_error": RuntimeStatus.INTEGRITY_ERROR,
+        "protocol_error": RuntimeStatus.PROTOCOL_ERROR,
+    }
+    if status in local_mapping:
+        if (
+            set(document) != {"protocol_version", "request_id", "status", "error"}
+            or not _exact_int(document.get("protocol_version"), PROTOCOL_VERSION)
+            or document.get("request_id") != envelope.request_id
+            or not isinstance(document.get("error"), str)
+            or len(document["error"].encode("utf-8")) > 4096
+        ):
+            return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="provider broker failure contract mismatch")
+        return RuntimeResult(local_mapping[status], error=document["error"])
+    encoded = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return _parse_response(encoded, envelope, 0)
+
+
+def _launch_broker(
+    *,
+    resolution: RuntimeResolution,
+    payload: bytes,
+    timeout_ms: int,
+    envelope: object,
+) -> RuntimeResult:
+    if not resolution.artifact_digest or not resolution.manifest_digest:
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="verified runtime digests are unavailable")
+    try:
+        request = json.loads(payload.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError):
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="sealed broker request is invalid")
+    state, error = _load_broker_state(
+        artifact_digest=resolution.artifact_digest,
+        manifest_digest=resolution.manifest_digest,
+        require_socket=True,
+    )
+    if error is not None or state is None:
+        return error or RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable")
+    try:
+        frame = _broker_request_frame(
+            request=request,
+            artifact_digest=resolution.artifact_digest,
+            manifest_digest=resolution.manifest_digest,
+            timeout_ms=timeout_ms,
+        )
+        encoded = _encode_broker_frame(frame, max_bytes=BROKER_MAX_REQUEST_BYTES)
+        deadline = time.monotonic() + timeout_ms / 1000
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+            peer.settimeout(timeout_ms / 1000)
+            peer.connect(state["socket_path"])
+            peer.sendall(encoded)
+            response = _read_broker_frame(
+                peer,
+                max_bytes=BROKER_MAX_RESPONSE_BYTES,
+                deadline=deadline,
+            )
+        return _parse_broker_response(response, envelope)
+    except TimeoutError:
+        return RuntimeResult(RuntimeStatus.TIMEOUT, error="provider broker deadline expired")
+    except OverflowError:
+        return RuntimeResult(RuntimeStatus.OUTPUT_LIMIT, error="provider broker frame exceeded the fixed limit")
+    except PermissionError:
+        return RuntimeResult(RuntimeStatus.HOST_BLOCKED, error="host blocked provider broker connection")
+    except (ConnectionRefusedError, FileNotFoundError):
+        return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable")
+    except (OSError, TypeError, ValueError):
+        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="provider broker exchange failed")
+
+
+def _broker_plist_document(
+    *, runtime_path: Path, socket_path: Path, tmpdir: Path, home: Path, uid: int
+) -> dict[str, Any]:
+    if (
+        not all(path.is_absolute() for path in (runtime_path, socket_path, tmpdir, home))
+        or not _exact_int(uid)
+        or uid < 0
+        or len(os.fsencode(socket_path)) > BROKER_SUN_PATH_MAX_BYTES
+    ):
+        raise ValueError("invalid provider broker plist input")
+    runtime = str(runtime_path)
+    return {
+        "Label": BROKER_LABEL,
+        "Program": runtime,
+        "ProgramArguments": [runtime, "broker", "--protocol", str(BROKER_PROTOCOL_VERSION)],
+        "EnvironmentVariables": {
+            "HOME": str(home),
+            "TMPDIR": str(tmpdir),
+            "PATH": BROKER_SYSTEM_PATH,
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        },
+        "ProcessType": "Background",
+        "ThrottleInterval": 0,
+        "Sockets": {
+            BROKER_SOCKET_NAME: {
+                "SockFamily": "Unix",
+                "SockType": "stream",
+                "SockPathName": str(socket_path),
+                "SockPathOwner": uid,
+                "SockPathMode": 0o600,
+            }
+        },
+    }
+
+
+def _ensure_private_directory(path: Path, *, mode: int) -> None:
+    try:
+        path.mkdir(mode=mode)
+    except FileExistsError:
+        pass
+    if _exact_mode(path, expected_type=stat.S_IFDIR, mode=mode) is None:
+        raise ValueError("unsafe provider broker directory")
+
+
+def _ensure_broker_layout() -> Path:
+    root = _broker_root()
+    if len(os.fsencode(root / "provider.sock")) > BROKER_SUN_PATH_MAX_BYTES:
+        raise ValueError("provider broker socket path is too long")
+    parent = root.parent
+    if not parent.exists():
+        parent.mkdir(mode=0o700)
+    parent_info = parent.lstat()
+    if (
+        not stat.S_ISDIR(parent_info.st_mode)
+        or stat.S_ISLNK(parent_info.st_mode)
+        or parent_info.st_uid != os.getuid()
+        or stat.S_IMODE(parent_info.st_mode) & 0o022
+    ):
+        raise ValueError("unsafe provider broker parent")
+    _ensure_private_directory(root, mode=0o700)
+    for name in ("versions", "tmp", "replay"):
+        _ensure_private_directory(root / name, mode=0o700)
+    return root
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_private_atomic(path: Path, content: bytes, *, mode: int) -> None:
+    if path.parent != _broker_root() or path.name not in {"broker.plist", "state.json"}:
+        raise ValueError("unsafe provider broker write target")
+    temporary = path.parent / "tmp" / f".{path.name}.{os.urandom(16).hex()}"
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            mode,
+        )
+        try:
+            view = memoryview(content)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("provider broker write made no progress")
+                view = view[written:]
+            os.fsync(descriptor)
+            os.fchmod(descriptor, mode)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, path)
+        os.chmod(path, mode, follow_symlinks=False)
+        _fsync_directory(path.parent)
+    except BaseException:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _copy_regular_nofollow(source: Path, target: Path, *, limit: int, mode: int) -> None:
+    raw, identity = _read_regular_nofollow(source, limit=limit)
+    if raw is None or identity is None:
+        raise ValueError("verified provider runtime source became unsafe")
+    descriptor = os.open(
+        target,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        mode,
+    )
+    try:
+        view = memoryview(raw)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("provider broker copy made no progress")
+            view = view[written:]
+        os.fsync(descriptor)
+        os.fchmod(descriptor, mode)
+    finally:
+        os.close(descriptor)
+
+
+def _verify_published_version(
+    root: Path, *, artifact_digest: str, manifest_digest: str
+) -> tuple[Path, Path]:
+    version = root / "versions" / artifact_digest
+    runtime = version / "agent-collab-runtime"
+    manifest = version / MANIFEST_NAME
+    if _exact_mode(version, expected_type=stat.S_IFDIR, mode=0o500) is None:
+        raise ValueError("provider broker version directory is unsafe")
+    runtime_identity = _exact_mode(runtime, expected_type=stat.S_IFREG, mode=0o500)
+    manifest_identity = _exact_mode(manifest, expected_type=stat.S_IFREG, mode=0o400)
+    if runtime_identity is None or manifest_identity is None:
+        raise ValueError("provider broker version files are unsafe")
+    observed_runtime = _sha256_regular(
+        runtime,
+        FileIdentity(
+            device=runtime_identity.st_dev,
+            inode=runtime_identity.st_ino,
+            size=runtime_identity.st_size,
+            mtime_ns=runtime_identity.st_mtime_ns,
+            mode=runtime_identity.st_mode,
+            uid=runtime_identity.st_uid,
+            links=runtime_identity.st_nlink,
+        ),
+    )
+    raw_manifest, _identity = _read_regular_nofollow(manifest, limit=1024 * 1024)
+    if (
+        observed_runtime != artifact_digest
+        or raw_manifest is None
+        or hashlib.sha256(raw_manifest).hexdigest() != manifest_digest
+    ):
+        raise ValueError("provider broker version digest mismatch")
+    return runtime, manifest
+
+
+def _publish_broker_version(
+    root: Path, *, resolution: RuntimeResolution
+) -> tuple[Path, Path]:
+    if resolution.path is None or resolution.identity is None:
+        raise ValueError("verified provider runtime is unavailable")
+    if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
+        raise ValueError("verified provider runtime identity changed")
+    version = root / "versions" / resolution.artifact_digest
+    if version.exists():
+        return _verify_published_version(
+            root,
+            artifact_digest=resolution.artifact_digest,
+            manifest_digest=resolution.manifest_digest,
+        )
+    staging = root / "tmp" / f"version-{resolution.artifact_digest}-{os.urandom(8).hex()}"
+    staging.mkdir(mode=0o700)
+    try:
+        _copy_regular_nofollow(
+            resolution.path,
+            staging / "agent-collab-runtime",
+            limit=MAX_ARTIFACT_BYTES,
+            mode=0o500,
+        )
+        _copy_regular_nofollow(
+            PLUGIN_ROOT / MANIFEST_NAME,
+            staging / MANIFEST_NAME,
+            limit=1024 * 1024,
+            mode=0o400,
+        )
+        _fsync_directory(staging)
+        os.rename(staging, version)
+        os.chmod(version, 0o500)
+        _fsync_directory(root / "versions")
+    except BaseException:
+        if staging.exists():
+            os.chmod(staging, 0o700)
+            for child in staging.iterdir():
+                child.unlink()
+            staging.rmdir()
+        raise
+    return _verify_published_version(
+        root,
+        artifact_digest=resolution.artifact_digest,
+        manifest_digest=resolution.manifest_digest,
+    )
+
+
+def _plist_bytes(document: Mapping[str, Any]) -> bytes:
+    raw = plistlib.dumps(dict(document), fmt=plistlib.FMT_XML, sort_keys=True)
+    if plistlib.loads(raw) != dict(document):
+        raise ValueError("provider broker plist roundtrip failed")
+    return raw
+
+
+def _state_bytes(document: Mapping[str, Any]) -> bytes:
+    return (
+        json.dumps(
+            dict(document),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
+    if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
+        raise ValueError("provider broker root identity is unsafe")
+    state_path = root / "state.json"
+    if not state_path.exists():
+        return None
+    if _exact_mode(state_path, expected_type=stat.S_IFREG, mode=0o600) is None:
+        raise ValueError("provider broker state identity is unsafe")
+    raw, _identity = _read_regular_nofollow(state_path, limit=BROKER_STATE_MAX_BYTES)
+    if raw is None:
+        raise ValueError("provider broker state cannot be read safely")
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("provider broker state is malformed") from exc
+    if not _broker_record_valid(document, root, allow_previous=True):
+        raise ValueError("provider broker state contract mismatch")
+    return dict(document)
+
+
+def _without_previous(document: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(document)
+    result["previous"] = None
+    return result
+
+
+def _launchctl(arguments: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
+    home = _operator_home()
+    if home is None:
+        raise ValueError("operator home is unavailable")
+    command = ["/bin/launchctl", *arguments]
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd="/",
+        env={
+            "HOME": home,
+            "PATH": BROKER_SYSTEM_PATH,
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        },
+        start_new_session=True,
+        close_fds=True,
+    )
+    out, err, collection_error = _collect_bounded_output(
+        process, timeout_ms=timeout * 1000
+    )
+    if collection_error is not None:
+        raise RuntimeError(collection_error.error)
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode if process.returncode is not None else -1,
+        out.decode("utf-8", errors="replace"),
+        err.decode("utf-8", errors="replace"),
+    )
+
+
+def _bootout_broker(plist_path: Path) -> bool:
+    result = _launchctl(["bootout", f"gui/{os.getuid()}", str(plist_path)])
+    if result.returncode == 0:
+        return True
+    detail = (result.stdout + result.stderr).casefold()
+    return any(
+        marker in detail
+        for marker in ("could not find service", "no such process", "not found")
+    )
+
+
+def _bootstrap_broker(plist_path: Path) -> bool:
+    return _launchctl(
+        ["bootstrap", f"gui/{os.getuid()}", str(plist_path)]
+    ).returncode == 0
+
+
+def _broker_job_loaded() -> bool:
+    return _launchctl(
+        ["print", f"gui/{os.getuid()}/{BROKER_LABEL}"]
+    ).returncode == 0
+
+
+def _broker_ping(socket_path: Path) -> bool:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+            peer.settimeout(5.0)
+            peer.connect(str(socket_path))
+        return _wait_for_broker_exit()
+    except OSError:
+        return False
+
+
+def _broker_process_idle() -> bool:
+    result = _launchctl(["print", f"gui/{os.getuid()}/{BROKER_LABEL}"])
+    if result.returncode != 0:
+        return False
+    states = [
+        line.split("=", 1)[1].strip().casefold()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("state =")
+    ]
+    has_live_pid = any(
+        line.strip().startswith("pid =")
+        and line.split("=", 1)[1].strip().isdigit()
+        and int(line.split("=", 1)[1].strip()) > 0
+        for line in result.stdout.splitlines()
+    )
+    return bool(states) and not has_live_pid and all(
+        state in {"not running", "exited"} for state in states
+    )
+
+
+def _wait_for_broker_exit() -> bool:
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if _broker_process_idle():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _record_for(
+    *,
+    root: Path,
+    artifact_digest: str,
+    manifest_digest: str,
+    plist_digest: str,
+    previous: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    version = root / "versions" / artifact_digest
+    return {
+        "schema_version": 1,
+        "artifact_sha256": artifact_digest,
+        "manifest_sha256": manifest_digest,
+        "runtime_path": str(version / "agent-collab-runtime"),
+        "manifest_path": str(version / MANIFEST_NAME),
+        "plist_sha256": plist_digest,
+        "socket_path": str(root / "provider.sock"),
+        "label": BROKER_LABEL,
+        "previous": None if previous is None else _without_previous(previous),
+    }
+
+
+def _verify_plist_against_state(root: Path, state: Mapping[str, Any]) -> None:
+    plist_path = root / "broker.plist"
+    identity = _exact_mode(plist_path, expected_type=stat.S_IFREG, mode=0o600)
+    raw, _opened = _read_regular_nofollow(plist_path, limit=1024 * 1024)
+    if identity is None or raw is None or hashlib.sha256(raw).hexdigest() != state["plist_sha256"]:
+        raise ValueError("provider broker plist identity mismatch")
+    try:
+        document = plistlib.loads(raw)
+    except (plistlib.InvalidFileException, ValueError) as exc:
+        raise ValueError("provider broker plist is malformed") from exc
+    expected = _broker_plist_document(
+        runtime_path=Path(state["runtime_path"]),
+        socket_path=root / "provider.sock",
+        tmpdir=root / "tmp",
+        home=Path(_operator_home() or ""),
+        uid=os.getuid(),
+    )
+    if document != expected:
+        raise ValueError("provider broker plist contract mismatch")
+
+
+def _activate_broker_record(
+    root: Path,
+    *,
+    target_artifact: str,
+    target_manifest: str,
+    previous: Mapping[str, Any] | None,
+) -> RuntimeResult:
+    runtime, _manifest = _verify_published_version(
+        root,
+        artifact_digest=target_artifact,
+        manifest_digest=target_manifest,
+    )
+    home = _operator_home()
+    if home is None:
+        return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="operator home is unavailable")
+    plist_document = _broker_plist_document(
+        runtime_path=runtime,
+        socket_path=root / "provider.sock",
+        tmpdir=root / "tmp",
+        home=Path(home),
+        uid=os.getuid(),
+    )
+    plist_raw = _plist_bytes(plist_document)
+    record = _record_for(
+        root=root,
+        artifact_digest=target_artifact,
+        manifest_digest=target_manifest,
+        plist_digest=hashlib.sha256(plist_raw).hexdigest(),
+        previous=previous,
+    )
+    plist_path = root / "broker.plist"
+    old_record = None if previous is None else _without_previous(previous)
+    try:
+        if old_record is not None and not _bootout_broker(plist_path):
+            raise RuntimeError("existing provider broker could not be stopped")
+        if old_record is None and plist_path.exists():
+            raise RuntimeError("untracked provider broker plist exists")
+        _write_private_atomic(plist_path, plist_raw, mode=0o600)
+        _write_private_atomic(root / "state.json", _state_bytes(record), mode=0o600)
+        if not _bootstrap_broker(plist_path):
+            raise RuntimeError("provider broker could not be bootstrapped")
+        if not _broker_job_loaded():
+            raise RuntimeError("provider broker launchd identity was not observed")
+        socket_path = root / "provider.sock"
+        if _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
+            raise RuntimeError("provider broker socket identity was not observed")
+        if not _broker_ping(socket_path):
+            raise RuntimeError("provider broker activation ping failed")
+        observed_state, observed_error = _load_broker_state(
+            artifact_digest=target_artifact,
+            manifest_digest=target_manifest,
+            require_socket=True,
+        )
+        if observed_error is not None or observed_state != record:
+            raise RuntimeError("provider broker activation state could not be read back")
+        return RuntimeResult(
+            RuntimeStatus.OK,
+            result={
+                "installed": True,
+                "artifact_sha256": target_artifact,
+                "manifest_sha256": target_manifest,
+                "socket_activated": True,
+                "persistent_process": False,
+            },
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+        restored = False
+        try:
+            _bootout_broker(plist_path)
+            if old_record is not None:
+                prior_runtime, _prior_manifest = _verify_published_version(
+                    root,
+                    artifact_digest=old_record["artifact_sha256"],
+                    manifest_digest=old_record["manifest_sha256"],
+                )
+                prior_document = _broker_plist_document(
+                    runtime_path=prior_runtime,
+                    socket_path=root / "provider.sock",
+                    tmpdir=root / "tmp",
+                    home=Path(home),
+                    uid=os.getuid(),
+                )
+                prior_raw = _plist_bytes(prior_document)
+                if hashlib.sha256(prior_raw).hexdigest() != old_record["plist_sha256"]:
+                    raise ValueError("prior provider broker plist digest mismatch")
+                _write_private_atomic(plist_path, prior_raw, mode=0o600)
+                if not _bootstrap_broker(plist_path) or not _broker_job_loaded():
+                    raise RuntimeError("prior provider broker could not be restored")
+                _write_private_atomic(
+                    root / "state.json", _state_bytes(old_record), mode=0o600
+                )
+                restored = True
+            else:
+                for candidate in (root / "state.json", plist_path, root / "provider.sock"):
+                    try:
+                        candidate.unlink()
+                    except FileNotFoundError:
+                        pass
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            restored = False
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider broker update failed; previous version restored"
+                if restored
+                else "provider broker update failed; no active version is proven"
+            ),
+        )
+
+
+def install_broker() -> RuntimeResult:
+    resolution = resolve_runtime()
+    if resolution.status is not RuntimeStatus.OK:
+        return RuntimeResult(resolution.status, error=resolution.error)
+    try:
+        root = _ensure_broker_layout()
+        current = _read_current_broker_state(root)
+        if current is not None:
+            _verify_plist_against_state(root, current)
+        _publish_broker_version(root, resolution=resolution)
+        return _activate_broker_record(
+            root,
+            target_artifact=resolution.artifact_digest,
+            target_manifest=resolution.manifest_digest,
+            previous=current,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installation preflight failed")
+
+
+def broker_status() -> RuntimeResult:
+    try:
+        root = _broker_root()
+        if not root.exists():
+            return RuntimeResult(RuntimeStatus.UNAVAILABLE, result={"installed": False}, error="provider broker is not installed")
+        if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
+            raise ValueError("unsafe provider broker root")
+        state = _read_current_broker_state(root)
+        if state is None:
+            return RuntimeResult(RuntimeStatus.UNAVAILABLE, result={"installed": False}, error="provider broker is not installed")
+        _verify_published_version(
+            root,
+            artifact_digest=state["artifact_sha256"],
+            manifest_digest=state["manifest_sha256"],
+        )
+        _verify_plist_against_state(root, state)
+        socket_valid = _exact_mode(
+            root / "provider.sock", expected_type=stat.S_IFSOCK, mode=0o600
+        ) is not None
+        loaded = _broker_job_loaded()
+        status = RuntimeStatus.OK if loaded and socket_valid else RuntimeStatus.UNAVAILABLE
+        return RuntimeResult(
+            status,
+            result={
+                "installed": True,
+                "active": loaded and socket_valid,
+                "launchd_job": loaded,
+                "socket": socket_valid,
+                "artifact_sha256": state["artifact_sha256"],
+                "manifest_sha256": state["manifest_sha256"],
+                "rollback_available": state["previous"] is not None,
+                "persistent_process": False,
+            },
+            error="" if status is RuntimeStatus.OK else "provider broker is installed but inactive",
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker status could not be proven")
+
+
+def rollback_broker() -> RuntimeResult:
+    try:
+        root = _broker_root()
+        state = _read_current_broker_state(root)
+        if state is None or state["previous"] is None:
+            return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker rollback is unavailable")
+        _verify_plist_against_state(root, state)
+        previous = dict(state["previous"])
+        return _activate_broker_record(
+            root,
+            target_artifact=previous["artifact_sha256"],
+            target_manifest=previous["manifest_sha256"],
+            previous=_without_previous(state),
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker rollback preflight failed")
+
+
+def uninstall_broker() -> RuntimeResult:
+    try:
+        root = _broker_root()
+        state = _read_current_broker_state(root)
+        if state is None:
+            return RuntimeResult(RuntimeStatus.OK, result={"installed": False, "versions_retained": True})
+        _verify_plist_against_state(root, state)
+        plist_path = root / "broker.plist"
+        if not _bootout_broker(plist_path):
+            return RuntimeResult(RuntimeStatus.PROVIDER_ERROR, error="provider broker could not be stopped")
+        socket_path = root / "provider.sock"
+        try:
+            socket_path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if _exact_mode(
+                socket_path, expected_type=stat.S_IFSOCK, mode=0o600
+            ) is None:
+                raise ValueError("unsafe provider broker socket")
+        for candidate, expected_type, mode in (
+            (socket_path, stat.S_IFSOCK, 0o600),
+            (root / "state.json", stat.S_IFREG, 0o600),
+            (plist_path, stat.S_IFREG, 0o600),
+        ):
+            try:
+                candidate.lstat()
+            except FileNotFoundError:
+                continue
+            else:
+                if _exact_mode(candidate, expected_type=expected_type, mode=mode) is None:
+                    raise ValueError("unsafe provider broker mutable state")
+                candidate.unlink()
+        return RuntimeResult(
+            RuntimeStatus.OK,
+            result={"installed": False, "versions_retained": True},
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker uninstall preflight failed")
 
 
 class _RuntimeTempCleanupError(RuntimeError):
@@ -1127,6 +2070,13 @@ def invoke(*, envelope: object) -> RuntimeResult:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime manifest changed after policy selection")
     if (envelope.route, envelope.action) not in resolution.contracts:
         return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime does not advertise the sealed route/action")
+    if envelope.route in BROKERED_ROUTES:
+        return _launch_broker(
+            resolution=resolution,
+            payload=payload,
+            timeout_ms=envelope.timeout_ms,
+            envelope=envelope,
+        )
     return _launch_runtime(
         resolution=resolution,
         payload=payload,

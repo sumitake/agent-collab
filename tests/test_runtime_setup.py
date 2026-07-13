@@ -62,6 +62,33 @@ class RuntimeSetupTests(unittest.TestCase):
                     r"^setup-[0-9a-f]{32}$",
                 )
 
+    def test_each_broker_command_maps_to_one_closed_lifecycle_action(self) -> None:
+        mapping = {
+            "install-broker": "install_broker",
+            "broker-status": "broker_status",
+            "rollback-broker": "rollback_broker",
+            "uninstall-broker": "uninstall_broker",
+        }
+        for command, function_name in mapping.items():
+            with self.subTest(command=command):
+                result = self.client.RuntimeResult(
+                    self.client.RuntimeStatus.OK,
+                    result={"operation": command},
+                )
+                output = io.StringIO()
+                with mock.patch.object(
+                    self.setup.runtime_client,
+                    function_name,
+                    return_value=result,
+                ) as lifecycle, mock.patch.object(
+                    self.setup.runtime_client, "manage_runtime"
+                ) as managed, contextlib.redirect_stdout(output):
+                    exit_code = self.setup.main([command])
+                self.assertEqual(exit_code, 0)
+                self.assertEqual(json.loads(output.getvalue())["status"], "ok")
+                lifecycle.assert_called_once_with()
+                managed.assert_not_called()
+
     def test_cli_rejects_raw_provider_model_path_and_option_surfaces(self) -> None:
         invalid = (
             [],
@@ -71,17 +98,22 @@ class RuntimeSetupTests(unittest.TestCase):
             ["--path", "/tmp/runtime"],
             ["--env", "KEY=VALUE"],
             ["login"],
+            ["install-broker", "--path", "/tmp/runtime"],
+            ["broker-status", "--socket", "/tmp/provider.sock"],
         )
         for argv in invalid:
             with self.subTest(argv=argv):
                 output = io.StringIO()
                 with mock.patch.object(
                     self.setup.runtime_client, "manage_runtime"
-                ) as managed, contextlib.redirect_stdout(output):
+                ) as managed, mock.patch.object(
+                    self.setup.runtime_client, "install_broker"
+                ) as install, contextlib.redirect_stdout(output):
                     exit_code = self.setup.main(list(argv))
                 self.assertEqual(exit_code, 2)
                 self.assertEqual(json.loads(output.getvalue())["status"], "config_error")
                 managed.assert_not_called()
+                install.assert_not_called()
 
     def test_typed_management_failure_returns_nonzero_without_extra_fields(self) -> None:
         result = self.client.RuntimeResult(
