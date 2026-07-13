@@ -25,6 +25,7 @@ MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 REQUIRED_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("opencode", "plan"),
@@ -180,7 +181,7 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
         or set(data) != {"schema_version", "protocol_version", "contract_version", "artifacts"}
         or not _exact_int(data.get("schema_version"), 1)
         or not _exact_int(data.get("protocol_version"), 1)
-        or not _exact_int(data.get("contract_version"), 1)
+        or not _exact_int(data.get("contract_version"), 2)
         or not isinstance(data.get("artifacts"), list)
     ):
         errors.append("runtime manifest root or version is invalid")

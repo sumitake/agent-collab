@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 from contextlib import contextmanager
 import hashlib
+import hmac
 import importlib.util
 import json
 import math
@@ -46,7 +47,7 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
 PROTOCOL_VERSION = 1
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
@@ -66,7 +67,7 @@ BROKER_FRAME_KEYS = frozenset(
         "request",
     }
 )
-BROKERED_ROUTES = frozenset({"opencode", "gemini", "grok", "composer"})
+BROKERED_ROUTES = frozenset({"codex", "opencode", "gemini", "grok", "composer"})
 BROKER_MAX_REQUEST_BYTES = MAX_REQUEST_BYTES
 BROKER_MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES
 BROKER_STATE_MAX_BYTES = 64 * 1024
@@ -126,6 +127,7 @@ except (AttributeError, OSError, RuntimeError, ValueError):
 SUPPORTED_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("opencode", "plan"),
@@ -140,6 +142,40 @@ FIXED_AUTHOR_MODELS = {
     "grok": "xai/grok-4.5",
     "composer": "xai/grok-composer-2.5-fast",
 }
+GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
+GEMINI_GOVERNANCE_DISPLAY = "Gemini 3.1 Pro (High)"
+GEMINI_GOVERNANCE_RUNTIME_VERSION = "1.2.0"
+GEMINI_GOVERNANCE_CONTAINMENT = "write_contained_shared_home"
+GEMINI_GOVERNANCE_PROOF_KEYS = frozenset(
+    {
+        "version",
+        "request_id",
+        "action",
+        "authority",
+        "transport",
+        "backend",
+        "runtime_version",
+        "contract_version",
+        "artifact_sha256",
+        "artifact_author_model",
+        "artifact_author_family",
+        "reviewer_model",
+        "reviewer_family",
+        "selected_display",
+        "effective_effort",
+        "containment_level",
+        "tools_disabled",
+        "pty_used",
+        "lock_acquired",
+        "cleanup_confirmed",
+        "provider_process_started",
+        "returncode",
+        "model_source",
+        "failed_over",
+        "response_sha256",
+        "proof_sha256",
+    }
+)
 TEMPORARILY_UNAVAILABLE_CONTRACTS = {
     ("codex", "build"): "Codex build is unavailable until a hardened mutation backend exists"
 }
@@ -1867,6 +1903,174 @@ def _parse_management_response(
     return RuntimeResult(RuntimeStatus.OK, result=response["result"])
 
 
+def _gemini_governance_readiness_result_valid(
+    result: Mapping[str, Any], envelope: object
+) -> bool:
+    expected_keys = {
+        "ready",
+        "containment_level",
+        "tools_disabled",
+        "pty_used",
+        "lock_acquired",
+        "cleanup_confirmed",
+        "selected_display",
+        "governance_ready",
+        "artifact_sha256",
+        "artifact_author_model",
+        "artifact_author_family",
+    }
+    return (
+        set(result) == expected_keys
+        and result.get("ready") is True
+        and result.get("containment_level") == GEMINI_GOVERNANCE_CONTAINMENT
+        and result.get("tools_disabled") is False
+        and result.get("pty_used") is True
+        and result.get("lock_acquired") is True
+        and result.get("cleanup_confirmed") is True
+        and result.get("selected_display") == GEMINI_GOVERNANCE_DISPLAY
+        and result.get("governance_ready") is True
+        and result.get("artifact_sha256") == envelope.artifact_sha256
+        and result.get("artifact_author_model") == envelope.artifact_author_model
+        and result.get("artifact_author_family") == envelope.artifact_author_family
+    )
+
+
+def _gemini_governance_execute_result_valid(
+    result: Mapping[str, Any], envelope: object, provenance: Mapping[str, Any]
+) -> bool:
+    expected_result_keys = {
+        "text",
+        "containment_level",
+        "tools_disabled",
+        "pty_used",
+        "lock_acquired",
+        "cleanup_confirmed",
+        "selected_display",
+        "governance_evidence",
+        "artifact_sha256",
+        "artifact_author_model",
+        "artifact_author_family",
+        "governance_proof",
+    }
+    text = result.get("text")
+    proof = result.get("governance_proof")
+    if (
+        set(result) != expected_result_keys
+        or type(text) is not str
+        or len(text.encode("utf-8")) > MAX_RESPONSE_BYTES
+        or result.get("containment_level") != GEMINI_GOVERNANCE_CONTAINMENT
+        or result.get("tools_disabled") is not False
+        or result.get("pty_used") is not True
+        or result.get("lock_acquired") is not True
+        or result.get("cleanup_confirmed") is not True
+        or result.get("selected_display") != GEMINI_GOVERNANCE_DISPLAY
+        or result.get("governance_evidence") is not True
+        or result.get("artifact_sha256") != envelope.artifact_sha256
+        or result.get("artifact_author_model") != envelope.artifact_author_model
+        or result.get("artifact_author_family") != envelope.artifact_author_family
+        or type(proof) is not dict
+        or set(proof) != GEMINI_GOVERNANCE_PROOF_KEYS
+    ):
+        return False
+
+    expected_scalars = {
+        "version": 1,
+        "request_id": envelope.request_id,
+        "action": "governance",
+        "authority": "read_only",
+        "transport": "broker",
+        "backend": "agy",
+        "runtime_version": GEMINI_GOVERNANCE_RUNTIME_VERSION,
+        "contract_version": CONTRACT_VERSION,
+        "artifact_sha256": envelope.artifact_sha256,
+        "artifact_author_model": envelope.artifact_author_model,
+        "artifact_author_family": envelope.artifact_author_family,
+        "reviewer_model": GEMINI_GOVERNANCE_MODEL,
+        "reviewer_family": "google",
+        "selected_display": GEMINI_GOVERNANCE_DISPLAY,
+        "effective_effort": "high",
+        "containment_level": GEMINI_GOVERNANCE_CONTAINMENT,
+        "tools_disabled": False,
+        "pty_used": True,
+        "lock_acquired": True,
+        "cleanup_confirmed": True,
+        "provider_process_started": True,
+        "returncode": 0,
+        "model_source": "agy-selected",
+        "failed_over": False,
+        "response_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    }
+    if any(
+        type(proof.get(key)) is not type(expected) or proof.get(key) != expected
+        for key, expected in expected_scalars.items()
+    ):
+        return False
+    if (
+        provenance.get("author_model") != proof.get("reviewer_model")
+        or provenance.get("author_family") != proof.get("reviewer_family")
+        or type(proof.get("proof_sha256")) is not str
+        or _SHA256_RE.fullmatch(proof["proof_sha256"]) is None
+    ):
+        return False
+    unsigned = dict(proof)
+    supplied_digest = unsigned.pop("proof_sha256")
+    try:
+        encoded = json.dumps(
+            unsigned,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeError):
+        return False
+    return hmac.compare_digest(hashlib.sha256(encoded).hexdigest(), supplied_digest)
+
+
+def _gemini_result_valid(
+    result: Mapping[str, Any], envelope: object, provenance: Mapping[str, Any]
+) -> bool:
+    if envelope.route != "gemini":
+        return True
+    if envelope.action == "governance":
+        if (
+            envelope.governance is not True
+            or envelope.authority != "read_only"
+            or envelope.target_author_family != "google"
+            or envelope.primary_family == "google"
+            or envelope.artifact_present is not True
+            or envelope.artifact_author_family in {"google", "unknown"}
+        ):
+            return False
+        policy = _load_host_policy()
+        if (
+            policy.resolve_model_family(envelope.artifact_author_model)
+            != envelope.artifact_author_family
+        ):
+            return False
+        if envelope.operation == "readiness":
+            return _gemini_governance_readiness_result_valid(result, envelope)
+        if envelope.operation == "execute":
+            return _gemini_governance_execute_result_valid(
+                result, envelope, provenance
+            )
+        return False
+
+    forbidden = {
+        "governance_proof",
+        "artifact_sha256",
+        "artifact_author_model",
+        "artifact_author_family",
+    }
+    if forbidden.intersection(result):
+        return False
+    if envelope.operation == "readiness":
+        return result.get("governance_ready") is False
+    if envelope.operation == "execute":
+        return result.get("governance_evidence") is False
+    return False
+
+
 def _parse_response(out: bytes, envelope: object, returncode: int) -> RuntimeResult:
     try:
         response = json.loads(out.decode("utf-8"))
@@ -1958,6 +2162,11 @@ def _parse_response(out: bytes, envelope: object, returncode: int) -> RuntimeRes
         or provenance["observation_sequence"] < 0
     ):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime provenance contract mismatch")
+    if not _gemini_result_valid(response["result"], envelope, provenance):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="runtime Gemini result contract mismatch",
+        )
     return RuntimeResult(RuntimeStatus.OK, result=response["result"], provenance=provenance)
 
 

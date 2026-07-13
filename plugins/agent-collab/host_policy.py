@@ -32,9 +32,12 @@ from typing import Any, Mapping, Sequence
 PLUGIN_ROOT = Path(__file__).resolve().parent
 KNOWN_FAMILIES = frozenset({"anthropic", "google", "openai", "xai", "zhipu"})
 DEFAULT_OPENCODE_MODEL = "opencode/glm-5.2"
+GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
+GEMINI_GOVERNANCE_EFFORTS = frozenset({"high", "xhigh"})
 ROUTE_ACTIONS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("opencode", "plan"),
@@ -70,6 +73,7 @@ _PRIMARY_ID_RUNTIMES = {
 }
 AUTHORITIES = {
     ("gemini", "advisory"): "read_only",
+    ("gemini", "governance"): "read_only",
     ("gemini", "long_context"): "read_only",
     ("codex", "advisory"): "read_only",
     ("opencode", "plan"): "read_only",
@@ -80,7 +84,7 @@ AUTHORITIES = {
     ("composer", "codegen"): "output_only",
 }
 GOVERNANCE_CONTRACTS = frozenset(
-    {("gemini", "advisory"), ("codex", "advisory"), ("grok", "governance")}
+    {("gemini", "governance"), ("codex", "advisory"), ("grok", "governance")}
 )
 MAX_TIMEOUT_MS = 600_000
 MAX_PROMPT_BYTES = 1024 * 1024
@@ -531,6 +535,16 @@ def _validate_row(
             or (action == "long_context" and not _validate_documents(row["documents"]))
         ):
             return None, "unknown", "Gemini row values are invalid"
+    elif contract == ("gemini", "governance"):
+        if set(row) != {"model", "effort"}:
+            return None, "unknown", "Gemini governance row fields are invalid"
+        if (
+            type(row["model"]) is not str
+            or row["model"] != GEMINI_GOVERNANCE_MODEL
+            or type(row["effort"]) is not str
+            or row["effort"] not in GEMINI_GOVERNANCE_EFFORTS
+        ):
+            return None, "unknown", "Gemini governance row values are invalid"
     elif contract == ("codex", "advisory"):
         allowed = {"model", "effort", "mode", "cwd"}
         required = {"model", "effort", "mode"}
@@ -848,7 +862,7 @@ def issue_policy_envelope(
             None,
             "governance authority permits advisory reviewer routes only",
         )
-    if not governance and (route, action) == ("grok", "governance"):
+    if not governance and action == "governance":
         return PolicyIssueOutcome(
             PreflightStatus.CONFIG_ERROR,
             profile,

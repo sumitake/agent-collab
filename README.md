@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.2.0). It gives
+This repository distributes one package: **agent-collab** (v3.3.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -23,9 +23,25 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.2.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.3.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.2.0
+## What's new - v3.3.0
+
+- Add a distinct broker-only `gemini/governance` contract using exact Gemini
+  3.1 Pro/high selection and complete artifact-bound proof validation. Gemini
+  advisory and long-context remain ordinary read-only actions and cannot emit
+  governance evidence.
+- Advance the signed-runtime contract to v2 and bind the public coordinator,
+  manifest schema, release gates, generated skills, and response parser to the
+  same route matrix.
+- Adopt canonical passwd HOME as the managed-provider reliability policy while
+  retaining closed environments, family exclusion, route authority, provider
+  state serialization, bounded lifecycle, and no raw CLI fallback.
+- Move Codex advisory behind the same broker, guardian, acknowledged gate, and
+  cancellation lifecycle as every other provider route; only local runtime
+  management remains a direct exact-artifact operation.
+
+The v3.2.0 provider-broker changes remain in force:
 
 - Add explicit zero-idle launchd socket activation for managed Gemini,
   OpenCode, Grok, and Composer routes, with digest-bound state and no direct
@@ -112,8 +128,9 @@ flowchart LR
     S --> N["Observed non-model seam<br/>host async-inbox readiness only"]
     S --> C["Verified plugin-relative native runtime client"]
     C --> B["Per-user launchd socket<br/>zero idle process"]
-    B --> X1["Managed Gemini, OpenCode,<br/>Grok 4.5, and Composer"]
-    C --> X2["Managed Codex and<br/>runtime management"]
+    B --> Q["Signed guardian + acknowledged gate"]
+    Q --> X1["Managed Codex, Gemini, OpenCode,<br/>Grok 4.5, and Composer"]
+    C --> X2["Local runtime management"]
     W["Private build/sign system"] -. "signed and notarized artifact" .-> C
     W -. "same exact digest" .-> B
 ```
@@ -128,30 +145,34 @@ the client rejects unadvertised rows, mismatched route/authority combinations,
 and author-family provenance drift. Missing, blocked, unsigned, mismatched, or
 unsupported artifacts fail closed with typed status.
 
-Gemini, OpenCode, Grok, and Composer use a digest-bound, per-user launchd Unix socket. Launchd
+Codex, Gemini, OpenCode, Grok, and Composer use a digest-bound, per-user launchd Unix socket. Launchd
 owns the mode-`0600` socket and starts the exact signed runtime only when a
 request arrives. The broker accepts one bounded request, runs it through the
 managed backend, returns one bounded response, and exits; there is no
 `KeepAlive`, `RunAtLoad`, polling loop, interval, calendar trigger, or resident
-agent process. Codex and runtime-management calls retain the fixed direct
+agent process. Only local runtime-management calls retain the fixed direct
 exact-artifact path. Missing, stale, or mismatched broker state is a typed
 failure and never falls back to direct execution for any broker-only route.
 The broker removes the Codex Desktop outer-Seatbelt marker before backend
 dispatch because socket activation does not inherit the client's Seatbelt.
 Every brokered Grok and Composer attempt must therefore build and validate its
-own nested read-only sandbox. Provider children receive closed,
-backend-specific environment allowlists rooted in fresh private call
-directories rather than the broker's ambient environment. Broker frames cannot
+own nested read-only sandbox. Provider children receive closed backend-specific
+environment allowlists with canonical passwd HOME for reliable authenticated
+state plus fresh private temporary/cwd roots rather than the broker's ambient
+environment. Grok uses real serialized `~/.grok`; OpenCode keeps private XDG
+roots and selected-provider auth; Codex keeps a sealed per-call `CODEX_HOME`,
+SQLite, and XDG overlay. Provider-specific policy overlays may narrow
+credentials or tools without replacing process HOME. Broker frames cannot
 invoke local runtime-management actions.
-If the client disconnects, the broker propagates cancellation through managed
-OpenCode, Grok, and Composer execution/readiness, reaps provider child groups,
+If the client disconnects, the broker propagates cancellation through every
+managed provider route, reaps provider child groups,
 and discards partial output. Disconnect-driven cancellation is never retried;
 when too little deadline remains to establish the managed boundary, the route
 returns typed `timeout` before provider setup.
-The current signed facade still returns typed `containment_error` for Gemini
-before Google provider setup because no completion-only Google transport is
-proven; socket activation establishes the safe transport boundary but does not
-silently activate an agentic CLI.
+Gemini uses the managed agy backend with canonical passwd HOME, mandatory PTY,
+serialized state, and write containment. `gemini/governance` is distinct from
+advisory/long-context and emits complete artifact-bound broker proof; ordinary
+Gemini output cannot be presented as governance evidence.
 
 The broker rejects cross-UID, stale/replayed, substituted-artifact, and
 connecting-process mismatches. It does not claim to protect provider
@@ -207,7 +228,7 @@ until the signed runtime exposes the complete matrix, including Composer.
 7. Hosts update one package, run the migration doctor, restart, and verify the
    resolved profile plus eligible routes. Activation hosts run the co-packaged
    `runtime_setup.py status` and `prepare` commands, then explicitly run
-   `install-broker` before enabling Gemini, OpenCode, Grok, or Composer. Managed Grok device
+   `install-broker` before enabling Codex, Gemini, OpenCode, Grok, or Composer. Managed Grok device
    login is exposed only as `runtime_setup.py login-grok`.
 8. Broker updates copy the verified artifact and manifest into an immutable
    artifact-plus-manifest digest directory, atomically replace the closed
@@ -350,8 +371,8 @@ report managed independent visual review unavailable; they never invent a
 path-based attachment or raw-provider fallback.
 
 Explicit `target=gemini`, `target=codex`, and `target=opencode` requests are
-fail-closed and never silently substituted. Gemini is read-only
-advisory/long-context; Codex advisory and OpenCode plan/workspace-write authority are
+fail-closed and never silently substituted. Gemini has separate read-only
+advisory, governance, and long-context actions; Codex advisory and OpenCode plan/workspace-write authority are
 sealed separately and never promote or demote into one another. Codex build is
 a resolvable mutation-capable request but returns typed unavailable until a
 hardened mutation backend exists; it never widens advisory.
@@ -361,7 +382,7 @@ architecture, governance, and huge-context actions; `target=composer` is
 constrained output-only code generation. Composer has no file, shell, test,
 worktree, PR, or merge authority. Both remain deterministically temporarily
 unavailable until the signed runtime advertises their exact route/action contracts.
-Grok/Composer requests are broker-only and never fall back to direct runtime
+Codex, Gemini, OpenCode, Grok, and Composer requests are broker-only and never fall back to direct runtime
 execution. Grok prose accepts only an explicit `EndTurn` terminal; exact
 `Cancelled` is a named non-success with no retained assistant text and may be
 retried once only when more than ten seconds remain under the original

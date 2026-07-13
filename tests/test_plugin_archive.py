@@ -81,6 +81,7 @@ class PluginArchiveTests(unittest.TestCase):
         runtime.chmod(0o755)
         contracts = (
             ("gemini", "advisory"),
+            ("gemini", "governance"),
             ("gemini", "long_context"),
             ("codex", "advisory"),
             ("opencode", "plan"),
@@ -93,7 +94,7 @@ class PluginArchiveTests(unittest.TestCase):
         manifest = {
             "schema_version": 1,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 2,
             "artifacts": [
                 {
                     "platform": "darwin",

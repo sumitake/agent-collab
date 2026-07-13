@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 3.2.0
+version: 3.3.0
 defaults:
   tier: Fast
   effort: low
@@ -27,7 +27,7 @@ skill; no external repository is required.
 2. Resolve the current primary/model/session from host evidence or explicit
    configuration. Do not infer the primary from installed CLIs.
 3. Submit a bounded `readiness` request for each exact matrix row:
-   Gemini `advisory|long_context`; Codex `advisory`; OpenCode `plan|build`;
+   Gemini `advisory|governance|long_context`; Codex `advisory`; OpenCode `plan|build`;
    Grok `architecture|governance|huge_context`; Composer `codegen`.
 4. Preserve typed results such as `unavailable`, `auth_error`, `quota_error`,
    `containment_error`, `timeout`, and `output_limit`. Do not flatten them into
@@ -50,6 +50,7 @@ agent-collab runtime:
 - async inbox: <observed ready | typed unavailable; readiness only>
 - native artifact: <verified | typed unavailable | invalid status>
 - gemini/advisory: <status>
+- gemini/governance: <status + artifact-bound proof readiness>
 - gemini/long_context: <status>
 - codex/advisory: <status>
 - opencode/plan: <status + observed author family>

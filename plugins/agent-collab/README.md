@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.2.0**
+Current: **3.3.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -46,31 +46,36 @@ inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
 `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
 labels. It uses a fixed JSON protocol and scrubbed environment. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.2.0 package.
+identify this same 3.3.0 package.
 
-Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
+Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
 signed runtime for one request, and the broker exits after its single bounded
 response. The plist has no keepalive, run-at-load, polling, interval, calendar,
 or resident-process trigger. A missing or stale broker is a typed failure—these
-routes never fall back to the direct artifact path. Codex and runtime
-management retain fixed direct exact-artifact execution.
+routes never fall back to the direct artifact path. Only local runtime
+management retains fixed direct exact-artifact execution.
 The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
 socket activation does not inherit that client sandbox, so every brokered Grok
 and Composer attempt independently validates its own nested read-only sandbox.
-Provider children receive closed backend-specific environment allowlists and
-fresh private call roots. Broker transport cannot invoke local `status`,
+Provider children receive closed backend-specific environment allowlists,
+canonical passwd HOME for reliable authenticated state, and fresh private
+temporary/cwd roots. Grok uses real serialized `~/.grok`; OpenCode keeps
+private XDG roots and selected-provider auth; Codex keeps a sealed per-call
+`CODEX_HOME`, SQLite, and XDG overlay. A provider-specific policy overlay may
+narrow credentials or tools without replacing process HOME. Broker transport cannot invoke local `status`,
 `prepare`, or `grok_login` management authority.
-Client disconnect propagates cancellation through managed OpenCode, Grok, and
-Composer execution/readiness, reaps provider child groups, and discards partial
+Client disconnect propagates cancellation through every managed provider
+route, reaps provider child groups, and discards partial
 output. Disconnect cancellation is never retried; a deadline below the managed
 setup reserve returns typed `timeout` before provider setup.
-The current Gemini facade remains typed `containment_error` before Google
-provider setup until a separately reviewed completion-only transport exists;
-the broker does not treat an agentic CLI mode as a read-only guarantee.
+Gemini uses the managed agy backend with canonical passwd HOME, a mandatory
+controlling PTY, serialized shared state, and write containment. Its separate
+`governance` action emits complete artifact-bound broker proof; advisory and
+long-context results are explicitly non-governance evidence.
 
 No signed artifact is present in this source tree yet. Native **Gemini
-advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
+advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
 read-only architecture consultation, governance review, and huge-context
 ingestion**, and **Composer output-only code/patch generation**
 roles are therefore **temporarily unavailable**. Policy-only safe mode keeps
@@ -128,8 +133,9 @@ primary's family is blocked in either direction.
 Explicit `target=gemini`, `target=codex`, `target=opencode`, `target=grok`, and
 `target=composer` requests are fail-closed. A target is never silently
 replaced. Automatic general **advisory** routing may try only eligible
-Gemini/Codex routes. Automatic architecture and governance actions may also
-try the corresponding sealed Grok action, preserving read-only authority and
+Gemini/Codex routes. Automatic architecture may also try the corresponding
+sealed Grok action. Automatic governance maps Gemini and Grok to their explicit
+`governance` actions while Codex retains its sealed advisory action, preserving read-only authority and
 attempting each target once. Automatic worker routing is temporarily unavailable; worker
 requests require an explicit managed target. Read-only, output-only, and
 mutation-capable authority never promote or demote into one another.
@@ -139,6 +145,7 @@ mutation-capable authority never promote or demote into one another.
 | Request | Authority | Managed route |
 |---|---|---|
 | `target=gemini` review or advisory | Read-only | Gemini advisory |
+| `target=gemini` governance review | Read-only | Gemini `governance` with artifact-bound broker proof |
 | `target=gemini` large-corpus extraction | Read-only | Gemini long-context |
 | `target=codex` second opinion, high-stakes advice, or tiebreaker | Read-only | Codex advisory |
 | `target=codex` bounded implementation | Mutation-capable worker | Typed unavailable pending hardened mutation backend; no advisory fallback |
@@ -267,7 +274,7 @@ Every request contains exactly `protocol_version`, `request_id`, `operation`,
 `timeout_ms` is an integer from 1 through 600000. An `execute` request also has
 `prompt`. A governance request has `prompt` plus `artifact`, exactly
 `{"content":"...","author_model":"..."}`; both values must be nonblank. It may
-use only a read-only governance-review contract: `gemini/advisory`,
+use only a read-only governance-review contract: `gemini/governance`,
 `codex/advisory`, or `grok/governance`.
 An execute request for `opencode/build`, `composer/codegen`, `codex/build`,
 `auto/worker`, `auto/advisory`, `auto/architecture`, `auto/governance`, or an
@@ -315,6 +322,7 @@ Exact row contracts are:
 | Contract | Exact `row` shape |
 |---|---|
 | `gemini/advisory` | `{"model":"google/...","effort":"low|medium|high|xhigh"}` |
+| `gemini/governance` | `{"model":"google/gemini-3.1-pro","effort":"high|xhigh"}`; requires `governance=true`, a non-Google artifact snapshot, and broker proof |
 | `gemini/long_context` | Gemini advisory fields plus `"documents":[{"label":"...","content":"..."}]` |
 | `codex/advisory` | `{"model":"openai/...","effort":"low|medium|high|xhigh","mode":"prompt-only"}` or `mode=repo-review` plus absolute `cwd` |
 | `opencode/plan` | Absolute `cwd`; optional explicitly observed `model` and `variant` |
@@ -343,8 +351,9 @@ sends an inbox message and never invokes Claude headlessly.
 Automatic general advisory routing uses `route=auto`, `action=advisory`; its
 `row` has exactly `gemini` and `codex` keys. Automatic architecture uses
 `action=architecture` and automatic governance uses `action=governance`; those
-rows have exact `gemini`, `codex`, and `grok` keys. The coordinator maps only
-the Grok leg to its sealed architecture/governance action. Generic advisory,
+rows have exact `gemini`, `codex`, and `grok` keys. For architecture the
+coordinator maps only Grok to `architecture`; for governance it maps Gemini and
+Grok to `governance` while Codex remains advisory. Generic advisory,
 brainstorm, debate, QA, and fallback calls cannot select Grok. Explicit targets
 never fall back.
 

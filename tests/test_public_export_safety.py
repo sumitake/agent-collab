@@ -451,7 +451,7 @@ class PublicExportSafetyTests(unittest.TestCase):
         manifest = {
             "schema_version": 1,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 2,
             "artifacts": [
                 {
                     "platform": "darwin",

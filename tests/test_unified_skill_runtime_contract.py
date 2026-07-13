@@ -63,6 +63,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn(f"`{field}`", text)
         for contract in (
             "gemini/advisory",
+            "gemini/governance",
             "gemini/long_context",
             "codex/advisory",
             "opencode/plan",

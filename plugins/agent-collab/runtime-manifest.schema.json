@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": {"const": 1},
     "protocol_version": {"const": 1},
-    "contract_version": {"const": 1},
+    "contract_version": {"const": 2},
     "artifacts": {
       "type": "array",
       "maxItems": 1,
@@ -31,6 +31,7 @@
             "items": {
               "oneOf": [
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "advisory"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "governance"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "long_context"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "advisory"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "plan"}}},

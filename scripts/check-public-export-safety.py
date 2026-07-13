@@ -128,6 +128,7 @@ _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 REQUIRED_RUNTIME_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("opencode", "plan"),
@@ -563,7 +564,7 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         or type(manifest.get("protocol_version")) is not int
         or manifest["protocol_version"] != 1
         or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 1
+        or manifest["contract_version"] != 2
         or not isinstance(manifest.get("artifacts"), list)
         or len(manifest["artifacts"]) != 1
         or not isinstance(manifest["artifacts"][0], dict)

@@ -111,6 +111,7 @@ EXACT_MANIFEST_MEMBERS = (
 REQUIRED_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("opencode", "plan"),
@@ -177,7 +178,7 @@ def _load_manifest(plugin_path: Path) -> dict[str, object]:
         or type(manifest.get("protocol_version")) is not int
         or manifest["protocol_version"] != 1
         or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 1
+        or manifest["contract_version"] != 2
         or not isinstance(manifest.get("artifacts"), list)
     ):
         raise ValueError("runtime manifest root or version is invalid")

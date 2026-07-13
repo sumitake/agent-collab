@@ -151,6 +151,7 @@ print(json.dumps({
         "tmpdir_mode": oct(os.stat(os.environ["TMPDIR"]).st_mode & 0o777),
         "home": os.environ.get("HOME", ""),
         "host_context": request.get("host_context", ""),
+        "governance_evidence": False,
     },
     "provenance": {
         "route": request["route"],
@@ -171,7 +172,7 @@ print(json.dumps({
         manifest = {
             "schema_version": 1,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 2,
             "artifacts": [
                 {
                     "platform": system,
@@ -243,6 +244,10 @@ print(json.dumps({{
     ):
         defaults: dict[tuple[str, str], dict[str, object]] = {
             ("gemini", "advisory"): {"model": "google/gemini-test", "effort": "high"},
+            ("gemini", "governance"): {
+                "model": "google/gemini-3.1-pro",
+                "effort": "high",
+            },
             ("gemini", "long_context"): {
                 "model": "google/gemini-test",
                 "effort": "high",
@@ -331,7 +336,7 @@ print(json.dumps({{
         manifest = {
             "schema_version": 1,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 2,
             "artifacts": [],
         }
         (self.root / "runtime-manifest.json").write_text(
@@ -364,7 +369,9 @@ print(json.dumps({{
                 {"LEAK_ME": "secret", "TMPDIR": str(caller_tmpdir)},
                 clear=False,
             ):
-                with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                    self.client, "_launch_broker", side_effect=self._fixture_broker
+                ):
                     result = self.client.invoke(envelope=envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
@@ -469,6 +476,7 @@ print(json.dumps({{
     def test_all_broker_only_routes_use_broker_without_direct_fallback(self) -> None:
         self._fixture()
         for route, action in (
+            ("codex", "advisory"),
             ("opencode", "plan"),
             ("gemini", "advisory"),
             ("grok", "architecture"),
@@ -490,26 +498,11 @@ print(json.dumps({{
                 broker.assert_called_once()
                 direct.assert_not_called()
 
-    def test_other_routes_retain_direct_runtime_path(self) -> None:
-        self._fixture()
-        for route, action in (
-            ("codex", "advisory"),
-        ):
-            with self.subTest(route=route):
-                envelope = self._envelope(route=route, action=action)
-                expected = self.client.RuntimeResult(
-                    self.client.RuntimeStatus.PROVIDER_ERROR,
-                    error="fixture direct result",
-                )
-                with mock.patch.object(
-                    self.client, "_verify_macos_signature", return_value=(True, "")
-                ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
-                    self.client, "_launch_runtime", return_value=expected
-                ) as direct, mock.patch.object(self.client, "_launch_broker") as broker:
-                    result = self.client.invoke(envelope=envelope)
-                self.assertIs(result, expected)
-                direct.assert_called_once()
-                broker.assert_not_called()
+    def test_every_provider_route_is_broker_only(self) -> None:
+        self.assertEqual(
+            self.client.BROKERED_ROUTES,
+            frozenset({"codex", "opencode", "gemini", "grok", "composer"}),
+        )
 
     def test_broker_exchange_roundtrips_a_sealed_gemini_response(self) -> None:
         self._fixture()
@@ -538,7 +531,10 @@ print(json.dumps({{
                     "protocol_version": 1,
                     "request_id": envelope.request_id,
                     "status": "ok",
-                    "result": {"review": "ok"},
+                    "result": {
+                        "review": "ok",
+                        "governance_evidence": False,
+                    },
                     "provenance": {
                         "route": envelope.route,
                         "action": envelope.action,
@@ -967,6 +963,8 @@ print(json.dumps({{
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.dict(os.environ, hostile, clear=True), mock.patch.object(
             self.client, "PLUGIN_ROOT", self.root
+        ), mock.patch.object(
+            self.client, "_launch_broker", side_effect=self._fixture_broker
         ):
             result = self.client.invoke(envelope=envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
@@ -1085,7 +1083,9 @@ print(json.dumps({
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.dict(
             os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_launch_broker", side_effect=self._fixture_broker
+        ):
             for request_id in ("fresh-1", "fresh-2"):
                 result = self.client.invoke(
                     envelope=self._envelope(request_id=request_id)
@@ -1647,7 +1647,9 @@ raise SystemExit(7)
                 with mock.patch.object(
                     self.client, "_verify_macos_signature", return_value=(True, "")
                 ):
-                    with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                    with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                        self.client, "_launch_broker", side_effect=self._fixture_broker
+                    ):
                         result = self.client.invoke(envelope=envelope)
                 self.assertEqual(result.status, expected)
 
@@ -1678,6 +1680,8 @@ pathlib.Path({str(marker)!r}).write_text("survived")
                     self.client, "MAX_RESPONSE_BYTES", 1024
                 ), mock.patch.dict(
                     os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
+                ), mock.patch.object(
+                    self.client, "_launch_broker", side_effect=self._fixture_broker
                 ):
                     result = self.client.invoke(envelope=envelope)
                 self.assertEqual(result.status, self.client.RuntimeStatus.OUTPUT_LIMIT)
@@ -1704,6 +1708,8 @@ time.sleep(10)
             self.client, "PLUGIN_ROOT", self.root
         ), mock.patch.dict(
             os.environ, {"TMPDIR": str(caller_tmpdir)}, clear=False
+        ), mock.patch.object(
+            self.client, "_launch_broker", side_effect=self._fixture_broker
         ):
             result = self.client.invoke(envelope=envelope)
 
@@ -1731,6 +1737,8 @@ time.sleep(10)
             self.client.tempfile, "mkdtemp", side_effect=recording_mkdtemp
         ), mock.patch.object(
             self.client.subprocess, "Popen", side_effect=OSError("spawn failed")
+        ), mock.patch.object(
+            self.client, "_launch_broker", side_effect=self._fixture_broker
         ):
             result = self.client.invoke(envelope=envelope)
 
