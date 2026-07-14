@@ -325,6 +325,29 @@ def _validate_inspection(value: Any, record: Mapping[str, Any]) -> None:
             _raise("runtime bundle member inspection changed")
 
 
+def _bundle_root_mode_ok(mode: int) -> bool:
+    """Cache-stable bundle-root directory predicate.
+
+    Host plugin managers re-extract the installed bundle and normalize its directory
+    mode (0o755) on install AND on every autoUpdate/restart, so the build-store's exact
+    0o500 can never be preserved on the loaded copy. The real tamper guarantee is the
+    whole-bundle + per-member digest and signature verified below — NOT the root dir
+    mode — so the root predicate requires only owner read+execute, NO group/other write,
+    and NO setuid/setgid/sticky, accepting both 0o500 (build store) and host-normalized
+    0o755 while still rejecting 0o775 / 0o757 / 0o777 and special-bit modes. Accepted
+    residual (truthful): a same-UID owner CAN chmod/mutate the tree; that mutation is
+    detected at resolution by the digest/signature, and exact 0o500 was never a same-UID
+    TOCTOU boundary either (the owner could always chmod it). This matches the
+    operator-approved same-UID reliability posture.
+    """
+    perms = stat.S_IMODE(mode)
+    return (
+        (perms & 0o500) == 0o500  # owner read + execute present
+        and (perms & 0o022) == 0  # no group/other WRITE
+        and (perms & 0o7000) == 0  # no setuid / setgid / sticky
+    )
+
+
 def verify_bundle_tree(
     root: Path,
     records: Any,
@@ -356,7 +379,7 @@ def verify_bundle_tree(
             or stat.S_ISLNK(lexical_root.st_mode)
             or _stat_identity(root_before) != _stat_identity(lexical_root)
             or root_before.st_uid != os.geteuid()
-            or stat.S_IMODE(root_before.st_mode) != INSTALL_MODE
+            or not _bundle_root_mode_ok(root_before.st_mode)
         ):
             _raise("runtime bundle root is unsafe")
         try:
