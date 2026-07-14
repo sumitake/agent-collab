@@ -250,7 +250,9 @@ class RuntimeBundleTreeTests(unittest.TestCase):
             root = Path(temporary) / "agent-collab-runtime.bundle"
             root.mkdir()
             records = self._create_bundle(root)
-            root.chmod(0o700)
+            # A group-writable root is a genuinely unsafe mode and must still fail closed
+            # (0o700 / host-normalized 0o755 are now ACCEPTED by the cache-stable predicate).
+            root.chmod(0o775)
             with self.assertRaises(rb.BundleContractError):
                 rb.verify_bundle_tree(root, records, inspector=self._inspector)
             root.chmod(0o500)
