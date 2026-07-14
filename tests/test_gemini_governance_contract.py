@@ -46,8 +46,8 @@ class GeminiGovernancePolicyTests(unittest.TestCase):
             governance_ready=True,
         )
 
-    def test_route_is_a_distinct_contract_v2_governance_action(self) -> None:
-        self.assertEqual(self.runtime.CONTRACT_VERSION, 2)
+    def test_route_is_a_distinct_contract_v3_governance_action(self) -> None:
+        self.assertEqual(self.runtime.CONTRACT_VERSION, 3)
         self.assertIn(("gemini", "governance"), self.runtime.SUPPORTED_CONTRACTS)
         self.assertIn(("gemini", "governance"), self.policy.ROUTE_ACTIONS)
         self.assertIn(("gemini", "governance"), self.policy.GOVERNANCE_CONTRACTS)
@@ -246,7 +246,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "transport": "broker",
             "backend": "agy",
             "runtime_version": "1.2.0",
-            "contract_version": 2,
+            "contract_version": 3,
             "artifact_sha256": envelope.artifact_sha256,
             "artifact_author_model": envelope.artifact_author_model,
             "artifact_author_family": envelope.artifact_author_family,

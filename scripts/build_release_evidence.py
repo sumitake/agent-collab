@@ -198,7 +198,7 @@ def _manifest(files: dict[str, bytes], path: str) -> dict[str, object]:
 
 def _file_license(name: str, *, mode: str) -> str:
     if mode == "activation" and (
-        name == archive_builder.RUNTIME_REL.as_posix()
+        name.startswith(archive_builder.RUNTIME_BUNDLE_REL.as_posix() + "/")
         or name == archive_builder.THIRD_PARTY_NOTICE_REL.as_posix()
         or name.startswith(
             archive_builder.THIRD_PARTY_LICENSE_ROOT_REL.as_posix() + "/"

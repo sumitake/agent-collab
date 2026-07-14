@@ -114,6 +114,7 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             python_files,
             {
                 "coordinator.py",
+                "runtime_bundle.py",
                 "runtime_client.py",
                 "runtime_setup.py",
                 "host_policy.py",

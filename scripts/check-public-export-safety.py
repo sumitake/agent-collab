@@ -7,6 +7,7 @@ import argparse
 import ast
 import gzip
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -75,6 +76,24 @@ MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_ARCHIVE_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_DEPTH = 3
+RUNTIME_BUNDLE_REL = Path(
+    "plugins/agent-collab/runtime/darwin-arm64/agent-collab-runtime.bundle"
+)
+
+
+def _load_runtime_bundle_contract():
+    path = REPO_ROOT / "plugins" / "agent-collab" / "runtime_bundle.py"
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_export_runtime_bundle", path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("runtime bundle contract cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+runtime_bundle = _load_runtime_bundle_contract()
 HARMLESS_AUDIT_LITERALS: dict[Path, frozenset[str | bytes]] = {
     Path("scripts/check-public-export-safety.py"): frozenset(
         EXECUTOR_SOURCES
@@ -527,9 +546,14 @@ def _archive_violations(
 
 
 def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Violation | None:
-    expected = Path("plugins/agent-collab/runtime/darwin-arm64/agent-collab-runtime")
-    if relative != expected:
+    runtime_root = Path("plugins/agent-collab/runtime")
+    try:
+        relative.relative_to(runtime_root)
+    except ValueError:
         return None
+    if relative.parent != RUNTIME_BUNDLE_REL:
+        return Violation("unmanifested_runtime", str(relative))
+
     manifest_path = root / "plugins" / "agent-collab" / "runtime-manifest.json"
     signing_policy_path = root / "plugins" / "agent-collab" / "signing_policy.py"
     try:
@@ -551,20 +575,27 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
     except (OSError, SyntaxError, ValueError):
         pinned_values = []
     pinned_team = pinned_values[0] if len(pinned_values) == 1 else ""
+
     if (
         not isinstance(manifest, dict)
-        or set(manifest) != {
+        or set(manifest)
+        != {
             "schema_version",
             "protocol_version",
             "contract_version",
+            "broker_protocol_version",
+            "channel",
             "artifacts",
         }
         or type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 1
+        or manifest["schema_version"] != 2
         or type(manifest.get("protocol_version")) is not int
         or manifest["protocol_version"] != 1
         or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 2
+        or manifest["contract_version"] != 3
+        or type(manifest.get("broker_protocol_version")) is not int
+        or manifest["broker_protocol_version"] != 2
+        or manifest.get("channel") != "production"
         or not isinstance(manifest.get("artifacts"), list)
         or len(manifest["artifacts"]) != 1
         or not isinstance(manifest["artifacts"][0], dict)
@@ -584,39 +615,98 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
                 contract_rows = []
                 break
             contract_rows.append((route, action))
+    try:
+        records = runtime_bundle.validate_file_records(item.get("files"))
+        bundle_identity = runtime_bundle.compute_bundle_identity(records)
+    except runtime_bundle.BundleContractError:
+        return Violation("unmanifested_runtime", str(relative))
+    identity = signing.get("identity") if isinstance(signing, dict) else None
+    identity_match = (
+        re.fullmatch(
+            r"Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)",
+            identity,
+        )
+        if isinstance(identity, str)
+        else None
+    )
     if (
-        set(item) != {
+        set(item)
+        != {
             "platform",
             "arch",
+            "kind",
             "minimum_macos",
             "path",
+            "entrypoint",
             "size",
             "sha256",
             "signing",
+            "files",
             "contracts",
         }
         or item.get("platform") != "darwin"
         or item.get("arch") != "arm64"
+        or item.get("kind") != "standalone_bundle"
         or item.get("minimum_macos") != "14.0"
-        or item.get("path") != "runtime/darwin-arm64/agent-collab-runtime"
+        or item.get("path")
+        != "runtime/darwin-arm64/agent-collab-runtime.bundle"
+        or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
         or type(item.get("size")) is not int
-        or item["size"] != len(data)
-        or item.get("sha256") != hashlib.sha256(data).hexdigest()
+        or item["size"] != sum(record["size"] for record in records)
+        or item.get("sha256") != bundle_identity
         or not isinstance(signing, dict)
-        or set(signing) != {"team_id", "require_notarization", "hardened_runtime"}
+        or set(signing)
+        != {
+            "mode",
+            "identity",
+            "team_id",
+            "require_notarization",
+            "hardened_runtime",
+            "secure_timestamp",
+        }
+        or signing.get("mode") != "developer_id"
+        or identity_match is None
         or not isinstance(signing.get("team_id"), str)
         or not _TEAM_ID_RE.fullmatch(signing["team_id"])
+        or identity_match.group(1) != signing["team_id"]
         or not _TEAM_ID_RE.fullmatch(pinned_team)
         or signing["team_id"] != pinned_team
         or signing.get("require_notarization") is not True
         or signing.get("hardened_runtime") is not True
+        or signing.get("secure_timestamp") is not True
+        or any(
+            record["signing_profile"] != "production_developer_id"
+            for record in records
+        )
         or frozenset(contract_rows) != REQUIRED_RUNTIME_CONTRACTS
         or len(contract_rows) != len(REQUIRED_RUNTIME_CONTRACTS)
     ):
         return Violation("unmanifested_runtime", str(relative))
+
+    bundle = root / RUNTIME_BUNDLE_REL
+    by_name = {record["path"]: record for record in records}
+    record = by_name.get(relative.name)
+    try:
+        bundle_info = bundle.lstat()
+        observed_names = sorted(path.name for path in bundle.iterdir())
+        member_info = (root / relative).lstat()
+    except OSError:
+        return Violation("unmanifested_runtime", str(relative))
+    if (
+        record is None
+        or observed_names != [item["path"] for item in records]
+        or not stat.S_ISDIR(bundle_info.st_mode)
+        or stat.S_ISLNK(bundle_info.st_mode)
+        or stat.S_IMODE(bundle_info.st_mode) != runtime_bundle.INSTALL_MODE
+        or not stat.S_ISREG(member_info.st_mode)
+        or stat.S_ISLNK(member_info.st_mode)
+        or member_info.st_nlink != 1
+        or stat.S_IMODE(member_info.st_mode) != record["install_mode"]
+        or record["size"] != len(data)
+        or record["sha256"] != hashlib.sha256(data).hexdigest()
+    ):
+        return Violation("unmanifested_runtime", str(relative))
     return None
-
-
 def scan_active_tree(root: Path) -> list[Violation]:
     root = root.resolve()
     violations: list[Violation] = []
@@ -671,7 +761,7 @@ def scan_active_tree(root: Path) -> list[Violation]:
                 data,
                 str(relative),
                 renamed_candidate=relative.suffix not in {".py", ".md", ".json", ".yaml", ".yml"}
-                and relative != Path("plugins/agent-collab/runtime/darwin-arm64/agent-collab-runtime"),
+                and relative.parent != RUNTIME_BUNDLE_REL,
                 mask_path=relative,
             )
         )
@@ -893,10 +983,7 @@ def scan_history(root: Path) -> list[Violation]:
                     path
                     for path in scan_paths
                     if path.suffix not in {".py", ".md", ".json", ".yaml", ".yml"}
-                    and path
-                    != Path(
-                        "plugins/agent-collab/runtime/darwin-arm64/agent-collab-runtime"
-                    )
+                    and path.parent != RUNTIME_BUNDLE_REL
                 ]
                 evidence_path = renamed_paths[0] if renamed_paths else scan_paths[0]
                 size = sizes.get(object_id)

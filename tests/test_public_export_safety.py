@@ -444,45 +444,74 @@ class PublicExportSafetyTests(unittest.TestCase):
             / "agent-collab"
             / "runtime"
             / "darwin-arm64"
+            / "agent-collab-runtime.bundle"
             / "agent-collab-runtime"
         )
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b"compiled-binary")
+        binary.chmod(0o500)
+        binary.parent.chmod(0o500)
+        records = [
+            {
+                "path": "agent-collab-runtime",
+                "role": "entrypoint",
+                "install_mode": 0o500,
+                "size": len(b"compiled-binary"),
+                "sha256": hashlib.sha256(b"compiled-binary").hexdigest(),
+                "macho_type": "executable",
+                "architecture": "arm64",
+                "minimum_macos": "14.0",
+                "signing_profile": "production_developer_id",
+            }
+        ]
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 2,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [
                 {
                     "platform": "darwin",
                     "arch": "arm64",
+                    "kind": "standalone_bundle",
                     "minimum_macos": "14.0",
-                    "path": "runtime/darwin-arm64/agent-collab-runtime",
+                    "path": "runtime/darwin-arm64/agent-collab-runtime.bundle",
+                    "entrypoint": "agent-collab-runtime",
                     "size": len(b"compiled-binary"),
-                    "sha256": hashlib.sha256(b"compiled-binary").hexdigest(),
+                    "sha256": self.audit.runtime_bundle.compute_bundle_identity(records),
                     "signing": {
                         "require_notarization": True,
                         "hardened_runtime": True,
                     },
+                    "files": records,
                     "contracts": [{"route": "composer", "action": "codegen"}],
                 }
             ],
         }
-        (binary.parents[2] / "runtime-manifest.json").write_text(
+        plugin_root = binary.parents[3]
+        (plugin_root / "runtime-manifest.json").write_text(
             json.dumps(manifest), encoding="utf-8"
         )
         violations = self.audit.scan_active_tree(self.root)
         self.assertTrue(any(item.kind == "unmanifested_runtime" for item in violations))
 
-        manifest["artifacts"][0]["signing"]["team_id"] = "ABCDEFGHIJ"
+        manifest["artifacts"][0]["signing"].update(
+            {
+                "mode": "developer_id",
+                "identity": "Developer ID Application: Test Operator (ABCDEFGHIJ)",
+                "team_id": "ABCDEFGHIJ",
+                "secure_timestamp": True,
+            }
+        )
         manifest["artifacts"][0]["contracts"] = [
             {"route": route, "action": action}
             for route, action in sorted(self.audit.REQUIRED_RUNTIME_CONTRACTS)
         ]
-        (binary.parents[2] / "signing_policy.py").write_text(
+        (plugin_root / "signing_policy.py").write_text(
             'EXPECTED_DEVELOPER_ID_TEAM = "ABCDEFGHIJ"\n', encoding="utf-8"
         )
-        (binary.parents[2] / "runtime-manifest.json").write_text(
+        (plugin_root / "runtime-manifest.json").write_text(
             json.dumps(manifest), encoding="utf-8"
         )
         violations = self.audit.scan_active_tree(self.root)

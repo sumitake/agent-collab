@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -24,8 +25,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = REPO_ROOT / "skill-specs"
 PLUGIN_NAME = "agent-collab"
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
-RUNTIME_REL = Path("runtime/darwin-arm64/agent-collab-runtime")
-RUNTIME_FILE_MODE = 0o755
+RUNTIME_BUNDLE_REL = Path("runtime/darwin-arm64/agent-collab-runtime.bundle")
+RUNTIME_REL = RUNTIME_BUNDLE_REL / "agent-collab-runtime"
+RUNTIME_FILE_MODE = 0o500
 THIRD_PARTY_NOTICE_REL = Path("THIRD-PARTY-NOTICES.txt")
 THIRD_PARTY_LICENSE_ROOT_REL = Path("third-party-licenses")
 THIRD_PARTY_LICENSE_FILES = (
@@ -95,6 +97,7 @@ REQUIRED_ROOTS = (
     "skills",
     "coordinator.py",
     "runtime_client.py",
+    "runtime_bundle.py",
     "runtime_setup.py",
     "host_policy.py",
     "migration_doctor.py",
@@ -126,6 +129,21 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _EXCLUDED_PARTS = frozenset({".venv", "__pycache__"})
 _EXCLUDED_NAMES = frozenset({".DS_Store"})
+
+
+def _load_runtime_bundle_contract():
+    path = REPO_ROOT / "plugins" / PLUGIN_NAME / "runtime_bundle.py"
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_archive_runtime_bundle", path
+    )
+    if spec is None or spec.loader is None:
+        raise ValueError("runtime bundle contract cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+runtime_bundle = _load_runtime_bundle_contract()
 
 
 def _sha256(path: Path) -> str:
@@ -171,14 +189,19 @@ def _load_manifest(plugin_path: Path) -> dict[str, object]:
             "schema_version",
             "protocol_version",
             "contract_version",
+            "broker_protocol_version",
+            "channel",
             "artifacts",
         }
         or type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 1
+        or manifest["schema_version"] != 2
         or type(manifest.get("protocol_version")) is not int
         or manifest["protocol_version"] != 1
         or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 2
+        or manifest["contract_version"] != 3
+        or type(manifest.get("broker_protocol_version")) is not int
+        or manifest["broker_protocol_version"] != 2
+        or manifest.get("channel") != "production"
         or not isinstance(manifest.get("artifacts"), list)
     ):
         raise ValueError("runtime manifest root or version is invalid")
@@ -189,11 +212,14 @@ def _validate_activation(plugin_path: Path, item: object) -> None:
     fields = {
         "platform",
         "arch",
+        "kind",
         "minimum_macos",
         "path",
+        "entrypoint",
         "size",
         "sha256",
         "signing",
+        "files",
         "contracts",
     }
     if not isinstance(item, dict) or set(item) != fields:
@@ -208,21 +234,56 @@ def _validate_activation(plugin_path: Path, item: object) -> None:
         )
     except (KeyError, TypeError):
         contracts = frozenset()
+    try:
+        records = runtime_bundle.validate_file_records(item.get("files"))
+        bundle_digest = runtime_bundle.compute_bundle_identity(records)
+    except runtime_bundle.BundleContractError:
+        records = ()
+        bundle_digest = ""
+    identity = signing.get("identity") if isinstance(signing, dict) else None
+    identity_match = (
+        re.fullmatch(
+            r"Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)",
+            identity,
+        )
+        if isinstance(identity, str)
+        else None
+    )
     if (
         item.get("platform") != "darwin"
         or item.get("arch") != "arm64"
+        or item.get("kind") != "standalone_bundle"
         or item.get("minimum_macos") != "14.0"
-        or item.get("path") != RUNTIME_REL.as_posix()
+        or item.get("path") != RUNTIME_BUNDLE_REL.as_posix()
+        or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
         or type(item.get("size")) is not int
         or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
+        or item["size"] != sum(record["size"] for record in records)
         or not isinstance(item.get("sha256"), str)
         or _SHA256_RE.fullmatch(item["sha256"]) is None
+        or item["sha256"] != bundle_digest
         or not isinstance(signing, dict)
-        or set(signing) != {"team_id", "require_notarization", "hardened_runtime"}
+        or set(signing)
+        != {
+            "mode",
+            "identity",
+            "team_id",
+            "require_notarization",
+            "hardened_runtime",
+            "secure_timestamp",
+        }
+        or signing.get("mode") != "developer_id"
+        or identity_match is None
         or not isinstance(signing.get("team_id"), str)
         or _TEAM_ID_RE.fullmatch(signing["team_id"]) is None
+        or identity_match.group(1) != signing["team_id"]
         or signing.get("require_notarization") is not True
         or signing.get("hardened_runtime") is not True
+        or signing.get("secure_timestamp") is not True
+        or any(
+            record["signing_profile"] != "production_developer_id"
+            for record in records
+        )
         or not isinstance(contracts_value, list)
         or contracts != REQUIRED_CONTRACTS
         or len(contracts_value) != len(contracts)
@@ -233,23 +294,33 @@ def _validate_activation(plugin_path: Path, item: object) -> None:
     allowed = {
         Path("runtime"),
         Path("runtime/darwin-arm64"),
-        RUNTIME_REL,
+        RUNTIME_BUNDLE_REL,
+        *(RUNTIME_BUNDLE_REL / record["path"] for record in records),
     }
     observed = {path.relative_to(plugin_path) for path in runtime_root.rglob("*")}
     observed.add(Path("runtime"))
     if observed != allowed:
-        raise ValueError("activation package must contain exactly one runtime executable")
-    binary = plugin_path / RUNTIME_REL
-    info = _safe_source(binary)
+        raise ValueError("activation package runtime bundle membership is not exact")
+    bundle = plugin_path / RUNTIME_BUNDLE_REL
+    bundle_info = _safe_source(bundle)
     if (
-        not stat.S_ISREG(info.st_mode)
-        or info.st_uid != os.getuid()
-        or info.st_nlink != 1
-        or stat.S_IMODE(info.st_mode) != RUNTIME_FILE_MODE
-        or info.st_size != item["size"]
-        or _sha256(binary) != item["sha256"]
+        not stat.S_ISDIR(bundle_info.st_mode)
+        or bundle_info.st_uid != os.getuid()
+        or stat.S_IMODE(bundle_info.st_mode) != runtime_bundle.INSTALL_MODE
     ):
-        raise ValueError("activation runtime byte, size, ownership, or 0755 mode is invalid")
+        raise ValueError("activation runtime bundle root identity is invalid")
+    for record in records:
+        member = bundle / record["path"]
+        info = _safe_source(member)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != record["install_mode"]
+            or info.st_size != record["size"]
+            or _sha256(member) != record["sha256"]
+        ):
+            raise ValueError("activation runtime bundle member identity is invalid")
 
 
 def classify_package(plugin_path: Path) -> str:
@@ -346,11 +417,16 @@ def _member_paths(plugin_path: Path, *, mode: str) -> list[Path]:
     ]
     if mode == "activation":
         _require_exact_third_party_notice_tree(plugin_path)
+        manifest = _load_manifest(plugin_path)
+        records = runtime_bundle.validate_file_records(
+            manifest["artifacts"][0]["files"]
+        )
         relatives.extend(
             (
                 Path("runtime"),
                 Path("runtime/darwin-arm64"),
-                RUNTIME_REL,
+                RUNTIME_BUNDLE_REL,
+                *(RUNTIME_BUNDLE_REL / record["path"] for record in records),
                 *ACTIVATION_THIRD_PARTY_MEMBERS,
             )
         )
@@ -405,7 +481,16 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
             for member in members
             if member.isfile() and member.name.startswith("runtime/")
         ]
-        expected_runtime = [RUNTIME_REL.as_posix()] if mode == "activation" else []
+        expected_runtime = (
+            [
+                (RUNTIME_BUNDLE_REL / record["path"]).as_posix()
+                for record in runtime_bundle.validate_file_records(
+                    _load_manifest(plugin_path)["artifacts"][0]["files"]
+                )
+            ]
+            if mode == "activation"
+            else []
+        )
         if runtime_files != expected_runtime:
             raise ValueError("archive runtime membership does not match release mode")
 

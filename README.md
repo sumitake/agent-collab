@@ -10,7 +10,8 @@ skills, migration tooling, fail-closed client, contribution governance, and
 release-safety checks. Provider runtime implementation, build credentials, and
 signing infrastructure remain in a separate private build/sign system. A
 policy-only release contains no native runtime; an activation release may import
-only the final signed and notarized artifact plus verification metadata. No
+only the final signed and notarized standalone bundle plus its closed manifest
+and verification metadata. No
 downloader, post-install hook, runtime cache, raw provider recipe, or executable
 source copy is shipped here.
 
@@ -31,9 +32,10 @@ Contributors need no access to the private build/sign system. See
   3.1 Pro/high selection and complete artifact-bound proof validation. Gemini
   advisory and long-context remain ordinary read-only actions and cannot emit
   governance evidence.
-- Advance the signed-runtime contract to v2 and bind the public coordinator,
-  manifest schema, release gates, generated skills, and response parser to the
-  same route matrix.
+- Advance the native runtime to manifest schema 2, contract 3, and broker
+  transport 2. Bind the public coordinator, closed standalone-bundle identity,
+  lifecycle state, release gates, generated skills, and response parser to the
+  same route matrix while the provider protocol remains version 1.
 - Adopt canonical passwd HOME as the managed-provider reliability policy while
   retaining closed environments, family exclusion, route authority, provider
   state serialization, bounded lifecycle, and no raw CLI fallback.
@@ -131,16 +133,19 @@ flowchart LR
     B --> Q["Signed guardian + acknowledged gate"]
     Q --> X1["Managed Codex, Gemini, OpenCode,<br/>Grok 4.5, and Composer"]
     C --> X2["Local runtime management"]
-    W["Private build/sign system"] -. "signed and notarized artifact" .-> C
+    W["Private build/sign system"] -. "signed and notarized bundle" .-> C
     W -. "same exact digest" .-> B
 ```
 
-The plugin runtime client accepts no binary override. It selects only the
-platform/architecture entry in `runtime-manifest.json`, requires the fixed
-plugin-relative path, rejects symlinks and parent traversal, verifies exact
-size and SHA-256, and on macOS verifies the declared signing team plus
-notarization assessment. It then launches a fixed versioned JSON protocol with
-a scrubbed environment. Every artifact advertises its exact route/action contracts;
+The plugin runtime client accepts no binary or member override. It selects only
+the Darwin-arm64 standalone-bundle entry in `runtime-manifest.json`, requires
+the fixed plugin-relative bundle and entrypoint, rejects links, path aliases,
+unknown members, writable modes, and parent traversal, then verifies every
+member's size, SHA-256, Mach-O type, architecture, minimum macOS, signing
+profile, and the domain-separated whole-bundle identity. Production also
+requires the pinned Developer ID team and notarization assessment. It then uses
+the fixed broker/provider protocols with a scrubbed environment. Every artifact
+advertises its exact route/action contracts;
 the client rejects unadvertised rows, mismatched route/authority combinations,
 and author-family provenance drift. Missing, blocked, unsigned, mismatched, or
 unsupported artifacts fail closed with typed status.
@@ -150,8 +155,11 @@ owns the mode-`0600` socket and starts the exact signed runtime only when a
 request arrives. The broker accepts one bounded request, runs it through the
 managed backend, returns one bounded response, and exits; there is no
 `KeepAlive`, `RunAtLoad`, polling loop, interval, calendar trigger, or resident
-agent process. Only local runtime-management calls retain the fixed direct
-exact-artifact path. Missing, stale, or mismatched broker state is a typed
+agent process. At idle, launchd retains only the job registration and one
+mode-`0600` Unix listening socket; the installed immutable bundle consumes disk
+but no provider process, polling CPU, provider memory, or network traffic. Only
+local runtime-management calls retain the fixed direct exact-entrypoint path.
+Missing, stale, or mismatched broker state is a typed
 failure and never falls back to direct execution for any broker-only route.
 The broker removes the Codex Desktop outer-Seatbelt marker before backend
 dispatch because socket activation does not inherit the client's Seatbelt.
@@ -177,8 +185,9 @@ Gemini output cannot be presented as governance evidence.
 The broker rejects cross-UID, stale/replayed, substituted-artifact, and
 connecting-process mismatches. It does not claim to protect provider
 credentials from arbitrary malicious code already running as the same operator
-UID, which can already read that user's auth state. The exact immutable runtime
-path and digest are revalidated for each request.
+UID, which can already read that user's auth state. The exact immutable bundle,
+entrypoint path, member inventory, and identity are revalidated for each
+request.
 
 The expected Apple Developer ID Team ID is pinned in the public
 `plugins/agent-collab/signing_policy.py` policy source, independently of the
@@ -194,11 +203,11 @@ client decodes and verifies the representation before launch; neither the
 coordinator nor the native runtime may reconstruct the artifact from a prompt
 copy.
 
-The repository intentionally contains no native runtime artifact yet. Native
+The repository intentionally contains no native runtime bundle yet. Native
 Gemini, Codex, OpenCode, Grok 4.5, and Composer routes remain unavailable until
-the private build/sign integration supplies the real artifact, manifest digest,
+the private build/sign integration supplies the real bundle, manifest digest,
 and complete contract declaration. Deterministic tests use temporary fixture
-executables only. The release gate requires every platform artifact to expose
+bundles only. The release gate requires every platform artifact to expose
 the complete required contract matrix. Retirement and a policy-only release may
 land before native parity, but an activation release cannot launch any provider
 until the signed runtime exposes the complete matrix, including Composer.
@@ -209,20 +218,22 @@ until the signed runtime exposes the complete matrix, including Composer.
    repository; private runtime changes remain inside the build/sign system.
 2. The private producer runs its containment, provenance, and
    authority-boundary tests without exporting implementation source.
-3. The private producer builds the Darwin-arm64 binary, signs it with hardened
-   runtime, notarizes it, and records size/hash/team metadata.
+3. The private producer builds one Darwin-arm64 standalone bundle, signs every
+   nested Mach-O before the entrypoint with hardened runtime, notarizes the
+   closed bundle, and records whole-bundle plus per-member evidence.
 4. A policy-only plugin release omits the runtime and keeps every native route
-   typed unavailable. An activation release imports only the final binary and
-   manifest metadata plus the exact third-party notice/license tree; no private
-   source implementation crosses the boundary.
+   typed unavailable. An activation release imports only the final bundle,
+   closed manifest metadata, and exact third-party notice/license tree; no
+   private source implementation crosses the boundary.
 5. Plugin CI validates both Claude and Codex manifests/marketplaces, schemas,
    skills, migration behavior, runtime fixtures, the dependency-free secret
    scan, CodeQL security analysis, release consistency, and public-export
    safety.
 6. A policy-only signed-tag release proves the runtime manifest is empty and
    the archive contains no runtime. For activation, a macOS verification job
-   binds codesign, notarization, manifest, artifact digest, and commit SHA into
-   release evidence before the publish job may include the binary. SPDX 2.3
+   binds every member's codesign/Mach-O evidence, entrypoint notarization,
+   manifest digest, whole-bundle identity, and commit SHA before the publish job
+   may include the bundle. SPDX 2.3
    evidence distinguishes project-owned PolyForm material from the embedded
    CPython, Nuitka, and incorporated third-party components.
 7. Hosts update one package, run the migration doctor, restart, and verify the
@@ -230,8 +241,9 @@ until the signed runtime exposes the complete matrix, including Composer.
    `runtime_setup.py status` and `prepare` commands, then explicitly run
    `install-broker` before enabling Codex, Gemini, OpenCode, Grok, or Composer. Managed Grok device
    login is exposed only as `runtime_setup.py login-grok`.
-8. Broker updates copy the verified artifact and manifest into an immutable
-   artifact-plus-manifest digest directory, atomically replace the closed
+8. Broker updates copy only the manifest-listed regular bundle members and
+   manifest into an immutable artifact-plus-manifest digest directory,
+   atomically replace the closed
    launchd plist/state, verify the exact job and socket, activate one
    protocol-only request, and prove the broker process exits. Failed updates
    restore the complete prior verified state, including its rollback target,

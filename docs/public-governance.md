@@ -71,8 +71,10 @@ credentials, retired package trees, and unreviewed native artifacts. PR CI uses
 GitHub-hosted runners and receives no private build/sign credentials.
 
 Policy-only releases contain an empty runtime manifest. An activation release
-may import only a final signed and notarized runtime plus the public verification
-metadata. Public contributors never build or inspect the private implementation.
+may import only a final signed and notarized standalone bundle, its closed
+schema-2/contract-3 manifest, per-member verification metadata, and required
+third-party license evidence. Public contributors never build or inspect the
+private implementation.
 
 Run the gates in `README.md`, including:
 

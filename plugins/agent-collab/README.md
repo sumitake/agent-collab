@@ -38,13 +38,17 @@ archives, which contain none of the corresponding runtime components.
 
 ## Runtime and safe mode
 
-The package may contain a privately built signed native runtime only at the
-platform path declared by `runtime-manifest.json`. `runtime_client.py` rejects
-overrides, symlinks, parent traversal, wrong platform/architecture, wrong
-size/hash, and on macOS the wrong signing team or failed notarization. It
-inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
-`LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
-labels. It uses a fixed JSON protocol and scrubbed environment. The package
+The package may contain a privately built signed native standalone bundle only
+at the platform path declared by `runtime-manifest.json`. Native manifest schema
+2 and contract 3 close the bundle path, entrypoint, sorted member list,
+per-member role/mode/size/hash/Mach-O facts, signing profile, and
+domain-separated whole-bundle identity. `runtime_client.py` rejects overrides,
+links, aliases, extra members, parent traversal, writable modes, wrong
+platform/architecture, wrong size/hash, the wrong signing team, or failed
+notarization. It inspects every member as thin arm64 Mach-O and requires exactly
+one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
+manifest labels. The broker transport is version 2 while the provider protocol
+remains version 1. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
 identify this same 3.3.0 package.
 
@@ -52,9 +56,12 @@ Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sea
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
 signed runtime for one request, and the broker exits after its single bounded
 response. The plist has no keepalive, run-at-load, polling, interval, calendar,
-or resident-process trigger. A missing or stale broker is a typed failure—these
-routes never fall back to the direct artifact path. Only local runtime
-management retains fixed direct exact-artifact execution.
+or resident-process trigger. At idle, launchd retains only its job registration
+and one mode-`0600` Unix listening socket; the immutable bundle consumes disk,
+but there is no provider process, polling CPU, provider memory, or network
+traffic. A missing or stale broker is a typed failure—these routes never fall
+back to the direct entrypoint path. Only local runtime management retains fixed
+direct exact-entrypoint execution.
 The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
 socket activation does not inherit that client sandbox, so every brokered Grok
 and Composer attempt independently validates its own nested read-only sandbox.
@@ -83,7 +90,7 @@ all native model routes unavailable. A host inbox is eligible only after a
 current availability observation, and the public coordinator exposes readiness
 only rather than a send primitive.
 This package may still be distributed as a policy-only release: its manifest
-has no artifact rows, its archive has no runtime executable, and invocation
+has no artifact rows, its archive has no runtime bundle, and invocation
 continues to return typed unavailable until an activation release is verified.
 An activation archive must add the complete digest-pinned third-party legal
 tree and component-aware SPDX evidence alongside the signed runtime.
@@ -228,8 +235,9 @@ their exact supported external CLIs and standard authenticated host state;
 install and authenticate those through their vendor-supported interfaces.
 Policy-only releases return typed `unavailable` for runtime-dependent commands.
 Broker installation is explicit; import, readiness, and invocation never
-install or mutate launchd state. `install-broker` publishes the verified
-artifact/manifest into an immutable artifact-plus-manifest digest directory,
+install or mutate launchd state. `install-broker` publishes only the verified
+manifest-listed bundle members and manifest into an immutable
+artifact-plus-manifest digest directory,
 atomically activates a closed plist, proves the job/socket and one-request
 process exit, and retains one verified prior record. Failed updates restore the
 complete prior state; same-version reactivation preserves its rollback target,
@@ -390,9 +398,10 @@ fall back or promote into an advisory route. Example:
 No private repository, downloader, provider CLI recipe, or backend source is
 needed on a plugin-only machine. The coordinator accepts closed policy fields;
 the native client accepts only its sealed envelope. The first release target is
-Darwin arm64 and requires exact integer protocol versions, safe ownership/mode/
-link state, digest, Developer ID team, the actual numeric hardened-runtime
-code-signing flag, and notarization. Runtime stdout and stderr are bounded
+Darwin arm64 and requires exact integer protocol versions, exact bundle
+membership and identity, safe ownership/mode/link state, per-member digests and
+Mach-O facts, Developer ID team, the actual numeric hardened-runtime
+code-signing flag, and entrypoint notarization. Runtime stdout and stderr are bounded
 during execution; an output-limit violation terminates and reaps the runtime
 process group before returning typed `output_limit`. Unexpected selector or
 pipe-read failures follow the same terminate-and-reap rule before returning a
@@ -401,8 +410,9 @@ typed lifecycle error.
 This protects distribution integrity and narrows path substitution, but it does
 not claim isolation from a malicious process already running as the same UID.
 macOS has no descriptor-only Mach-O execution path here; the client rechecks
-file identity immediately before its fixed-path spawn, while treating the
-operator account and selected plugin cache as trusted.
+the complete bundle and entrypoint identity immediately before its fixed-path
+spawn, while treating the operator account and selected plugin cache as
+trusted.
 
 The manifest cannot choose its own signer. `signing_policy.py` pins the
 operator-owned Developer ID Team ID in reviewed policy source, and runtime plus

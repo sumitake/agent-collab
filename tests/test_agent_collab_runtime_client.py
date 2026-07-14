@@ -81,8 +81,35 @@ class RuntimeClientTests(unittest.TestCase):
         )
         self.platform_patch.start()
         self.arch_patch.start()
+        def fixture_inspector(path, record, *, signing):
+            valid, error = self.client._verify_macos_signature(
+                path,
+                team_id=signing["team_id"],
+                identity=signing["identity"],
+                secure_timestamp=signing["secure_timestamp"],
+                require_notarization=(
+                    record["role"] == "entrypoint"
+                    and signing["require_notarization"]
+                ),
+            )
+            if not valid:
+                raise self.client._RuntimeSignatureError(error)
+            return {
+                "macho_type": record["macho_type"],
+                "architecture": record["architecture"],
+                "minimum_macos": record["minimum_macos"],
+                "signing_profile": record["signing_profile"],
+            }
+
+        self.inspector_patch = mock.patch.object(
+            self.client,
+            "_inspect_runtime_member",
+            side_effect=fixture_inspector,
+        )
+        self.inspector_patch.start()
 
     def tearDown(self) -> None:
+        self.inspector_patch.stop()
         self.arch_patch.stop()
         self.platform_patch.stop()
         self.team_patch.stop()
@@ -125,8 +152,17 @@ class RuntimeClientTests(unittest.TestCase):
     ) -> Path:
         system = "darwin"
         arch = "arm64"
-        binary = self.root / "runtime" / f"{system}-{arch}" / "agent-collab-runtime"
-        binary.parent.mkdir(parents=True, exist_ok=True)
+        bundle = (
+            self.root
+            / "runtime"
+            / f"{system}-{arch}"
+            / "agent-collab-runtime.bundle"
+        )
+        bundle.mkdir(parents=True, exist_ok=True)
+        binary = bundle / "agent-collab-runtime"
+        bundle.chmod(0o700)
+        if binary.exists():
+            binary.chmod(0o700)
         binary.write_text(
             body
             or """#!/usr/bin/env python3
@@ -167,25 +203,47 @@ print(json.dumps({
 """,
             encoding="utf-8",
         )
-        binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+        binary.chmod(0o500)
         content = binary.read_bytes()
+        records = [
+            {
+                "path": "agent-collab-runtime",
+                "role": "entrypoint",
+                "install_mode": 0o500,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "macho_type": "executable",
+                "architecture": "arm64",
+                "minimum_macos": "14.0",
+                "signing_profile": "production_developer_id",
+            }
+        ]
+        bundle.chmod(0o500)
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 2,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [
                 {
                     "platform": system,
                     "arch": arch,
+                    "kind": "standalone_bundle",
                     "minimum_macos": "14.0",
-                    "path": str(binary.relative_to(self.root)),
+                    "path": str(bundle.relative_to(self.root)),
+                    "entrypoint": "agent-collab-runtime",
                     "size": len(content),
-                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "sha256": self.client.runtime_bundle.compute_bundle_identity(records),
                     "signing": {
+                        "mode": "developer_id",
+                        "identity": "Developer ID Application: Test Operator (TESTTEAM01)",
                         "team_id": "TESTTEAM01",
                         "require_notarization": True,
                         "hardened_runtime": True,
+                        "secure_timestamp": True,
                     },
+                    "files": records,
                     "contracts": [
                         {"route": route, "action": action}
                         for route, action in (
@@ -320,11 +378,15 @@ print(json.dumps({{
         if manifest["artifacts"]:
             for artifact in manifest["artifacts"]:
                 path = plugin_root / artifact["path"]
-                self.assertTrue(path.is_file())
+                self.assertTrue(path.is_dir())
                 self.assertFalse(path.is_symlink())
-                self.assertEqual(path.stat().st_size, artifact["size"])
                 self.assertEqual(
-                    hashlib.sha256(path.read_bytes()).hexdigest(), artifact["sha256"]
+                    sum((path / item["path"]).stat().st_size for item in artifact["files"]),
+                    artifact["size"],
+                )
+                self.assertEqual(
+                    self.client.runtime_bundle.compute_bundle_identity(artifact["files"]),
+                    artifact["sha256"],
                 )
         else:
             self.assertFalse((plugin_root / "runtime").exists())
@@ -334,9 +396,11 @@ print(json.dumps({{
 
     def test_empty_manifest_is_unavailable_before_platform_rejection(self) -> None:
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 2,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [],
         }
         (self.root / "runtime-manifest.json").write_text(
@@ -386,8 +450,10 @@ print(json.dumps({{
         self.assertFalse(child_tmpdir.exists())
 
     def test_resolution_carries_the_verified_artifact_digest(self) -> None:
-        binary = self._fixture()
-        expected = hashlib.sha256(binary.read_bytes()).hexdigest()
+        self._fixture()
+        expected = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["artifacts"][0]["sha256"]
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
@@ -413,7 +479,7 @@ print(json.dumps({{
                 timeout_ms=30_000,
             )
         self.assertEqual(set(frame), self.client.BROKER_FRAME_KEYS)
-        self.assertEqual(frame["broker_protocol_version"], 1)
+        self.assertEqual(frame["broker_protocol_version"], 2)
         self.assertEqual(frame["runtime_protocol_version"], 1)
         self.assertEqual(frame["artifact_sha256"], "a" * 64)
         self.assertEqual(frame["manifest_sha256"], "b" * 64)
@@ -606,22 +672,14 @@ print(json.dumps({{
         root = self.root / "provider-broker"
         root.mkdir(mode=0o700)
         state = root / "state.json"
-        socket_path = root / "provider.sock"
-        document = {
-            "schema_version": 1,
-            "artifact_sha256": "a" * 64,
-            "manifest_sha256": "b" * 64,
-            "runtime_path": str(
-                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "agent-collab-runtime"
-            ),
-            "manifest_path": str(
-                root / "versions" / f"{'a' * 64}-{'b' * 64}" / "runtime-manifest.json"
-            ),
-            "plist_sha256": "c" * 64,
-            "socket_path": str(socket_path),
-            "label": self.client.BROKER_LABEL,
-            "previous": None,
-        }
+        socket_path = root / self.client.BROKER_SOCKET_FILENAME
+        document = self.client._record_for(
+            root=root,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            plist_digest="c" * 64,
+            previous=None,
+        )
         state.write_text(json.dumps(document), encoding="utf-8")
         state.chmod(0o600)
         with mock.patch.object(self.client, "_broker_root", return_value=root), mock.patch.object(
@@ -670,7 +728,7 @@ print(json.dumps({{
                 "Sockets",
             },
         )
-        self.assertEqual(document["ProgramArguments"], [str(runtime), "broker", "--protocol", "1"])
+        self.assertEqual(document["ProgramArguments"], [str(runtime), "broker", "--protocol", "2"])
         self.assertEqual(document["ThrottleInterval"], 0)
         self.assertNotIn("KeepAlive", document)
         self.assertNotIn("RunAtLoad", document)
@@ -679,7 +737,7 @@ print(json.dumps({{
         )
 
     def _broker_lifecycle_patches(self, root: Path):
-        socket_path = root / "provider.sock"
+        socket_path = root / self.client.BROKER_SOCKET_FILENAME
 
         def bootstrap(_plist):
             if not socket_path.exists():
@@ -700,9 +758,11 @@ print(json.dumps({{
         )
 
     def test_install_broker_publishes_exact_version_and_socket_activated_state(self) -> None:
-        binary = self._fixture()
+        self._fixture()
         root = self.root / "broker-state"
-        expected_artifact = hashlib.sha256(binary.read_bytes()).hexdigest()
+        expected_artifact = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["artifacts"][0]["sha256"]
         patches = self._broker_lifecycle_patches(root)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
@@ -714,14 +774,16 @@ print(json.dumps({{
         self.assertEqual(state["artifact_sha256"], expected_artifact)
         self.assertIsNone(state["previous"])
         self.assertEqual(stat.S_IMODE((root / "broker.plist").stat().st_mode), 0o600)
-        version = Path(state["runtime_path"]).parent
+        version = Path(state["bundle_path"]).parent
         self.assertEqual(
             version.name,
             f"{expected_artifact}-{state['manifest_sha256']}",
         )
         self.assertEqual(stat.S_IMODE(version.stat().st_mode), 0o500)
         self.assertEqual(
-            hashlib.sha256((version / "agent-collab-runtime").read_bytes()).hexdigest(),
+            self.client.runtime_bundle.compute_bundle_identity(
+                json.loads((version / "runtime-manifest.json").read_text())["artifacts"][0]["files"]
+            ),
             expected_artifact,
         )
         plist = plistlib.loads((root / "broker.plist").read_bytes())
@@ -743,16 +805,20 @@ print(json.dumps({{
         )
 
     def test_broker_update_records_one_verified_rollback_and_rollback_switches(self) -> None:
-        first = self._fixture(body="#!/bin/sh\nexit 0\n")
-        first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+        self._fixture(body="#!/bin/sh\nexit 0\n")
+        first_digest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["artifacts"][0]["sha256"]
         root = self.root / "broker-state"
         patches = self._broker_lifecycle_patches(root)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
             self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            second = self._fixture(body="#!/bin/sh\nexit 7\n")
-            second_digest = hashlib.sha256(second.read_bytes()).hexdigest()
+            self._fixture(body="#!/bin/sh\nexit 7\n")
+            second_digest = json.loads(
+                (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+            )["artifacts"][0]["sha256"]
             updated = self.client.install_broker()
             self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
             state = json.loads((root / "state.json").read_text(encoding="utf-8"))
@@ -805,8 +871,10 @@ print(json.dumps({{
         self.assertEqual(state, prior)
 
     def test_same_artifact_with_new_manifest_gets_a_distinct_immutable_version(self) -> None:
-        binary = self._fixture()
-        artifact_digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+        self._fixture()
+        artifact_digest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["artifacts"][0]["sha256"]
         root = self.root / "broker-state"
         patches = self._broker_lifecycle_patches(root)
         with mock.patch.object(
@@ -823,7 +891,7 @@ print(json.dumps({{
         second = json.loads((root / "state.json").read_text(encoding="utf-8"))
         self.assertEqual(second["artifact_sha256"], artifact_digest)
         self.assertNotEqual(second["manifest_sha256"], first["manifest_sha256"])
-        self.assertNotEqual(second["runtime_path"], first["runtime_path"])
+        self.assertNotEqual(second["bundle_path"], first["bundle_path"])
         self.assertEqual(second["previous"]["manifest_sha256"], first["manifest_sha256"])
         self.assertEqual(len(tuple((root / "versions").iterdir())), 2)
 
@@ -858,7 +926,7 @@ print(json.dumps({{
         self.assertTrue(any((root / "versions").iterdir()))
         self.assertFalse((root / "state.json").exists())
         self.assertFalse((root / "broker.plist").exists())
-        self.assertFalse((root / "provider.sock").exists())
+        self.assertFalse((root / self.client.BROKER_SOCKET_FILENAME).exists())
 
     def test_foreign_or_malformed_broker_plist_blocks_update(self) -> None:
         self._fixture()
@@ -1122,9 +1190,11 @@ print(json.dumps({
 
     def test_symlink_and_parent_escape_are_rejected(self) -> None:
         binary = self._fixture()
+        binary.parent.chmod(0o700)
         real = binary.with_name("real-runtime")
         binary.rename(real)
         binary.symlink_to(real.name)
+        binary.parent.chmod(0o500)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ):
@@ -1143,7 +1213,11 @@ print(json.dumps({
 
     def test_size_hash_and_signature_fail_closed(self) -> None:
         binary = self._fixture()
+        binary.parent.chmod(0o700)
+        binary.chmod(0o700)
         binary.write_text(binary.read_text() + "# changed\n")
+        binary.chmod(0o500)
+        binary.parent.chmod(0o500)
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
             resolution = self.client.resolve_runtime()
         self.assertEqual(resolution.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
@@ -1814,20 +1888,18 @@ time.sleep(10)
 
     def test_hardlinked_or_group_writable_runtime_is_rejected(self) -> None:
         binary = self._fixture()
+        binary.parent.chmod(0o700)
         hardlink = binary.with_name("hardlink")
         os.link(binary, hardlink)
+        binary.parent.chmod(0o500)
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
             result = self.client.resolve_runtime()
         self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
+        binary.parent.chmod(0o700)
         hardlink.unlink()
+        binary.parent.chmod(0o500)
 
         binary.chmod(0o775)
-        content = binary.read_bytes()
-        manifest_path = self.root / "runtime-manifest.json"
-        manifest = json.loads(manifest_path.read_text())
-        manifest["artifacts"][0]["size"] = len(content)
-        manifest["artifacts"][0]["sha256"] = hashlib.sha256(content).hexdigest()
-        manifest_path.write_text(json.dumps(manifest))
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
             result = self.client.resolve_runtime()
         self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)

@@ -47,14 +47,15 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
 PROTOCOL_VERSION = 1
-CONTRACT_VERSION = 2
+CONTRACT_VERSION = 3
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
-BROKER_PROTOCOL_VERSION = 1
+BROKER_PROTOCOL_VERSION = 2
 BROKER_LABEL = "com.agent-collab.provider-broker"
 BROKER_SOCKET_NAME = "ProviderBroker"
+BROKER_SOCKET_FILENAME = "provider-broker.sock"
 BROKER_FRAME_KEYS = frozenset(
     {
         "broker_protocol_version",
@@ -76,9 +77,13 @@ BROKER_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 BROKER_STATE_KEYS = frozenset(
     {
         "schema_version",
+        "contract_version",
+        "broker_protocol_version",
+        "runtime_protocol_version",
         "artifact_sha256",
         "manifest_sha256",
-        "runtime_path",
+        "bundle_path",
+        "entrypoint_path",
         "manifest_path",
         "plist_sha256",
         "socket_path",
@@ -89,6 +94,9 @@ BROKER_STATE_KEYS = frozenset(
 _BROKER_HEADER = struct.Struct(">Q")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
+_DEVELOPER_ID_RE = re.compile(
+    r"^Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)$"
+)
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.IGNORECASE)
 _CODESIGN_TIMESTAMP_RE = re.compile(r"(?m)^Timestamp=(.+)$")
 _CODESIGN_TEAM_RE = re.compile(r"(?m)^TeamIdentifier=([A-Z0-9]{10})(?=\s|$)")
@@ -103,6 +111,21 @@ CODEX_DESKTOP_TUPLE = {
     "CODEX_CI": "1",
 }
 MANAGEMENT_ACTIONS = frozenset({"status", "prepare", "grok_login"})
+
+
+def _load_runtime_bundle():
+    name = "agent_collab_runtime_bundle"
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    path = PLUGIN_ROOT / "runtime_bundle.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("runtime bundle verifier cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_signing_policy():
@@ -124,6 +147,7 @@ try:
     EXPECTED_DEVELOPER_ID_TEAM = _load_signing_policy().EXPECTED_DEVELOPER_ID_TEAM
 except (AttributeError, OSError, RuntimeError, ValueError):
     EXPECTED_DEVELOPER_ID_TEAM = ""
+runtime_bundle = _load_runtime_bundle()
 SUPPORTED_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
@@ -233,6 +257,8 @@ class FileIdentity:
 class RuntimeResolution:
     status: RuntimeStatus
     path: Path | None = None
+    bundle_path: Path | None = None
+    files: tuple[Mapping[str, Any], ...] = ()
     contracts: frozenset[tuple[str, str]] = frozenset()
     manifest_digest: str = ""
     artifact_digest: str = ""
@@ -367,13 +393,17 @@ def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
         "schema_version",
         "protocol_version",
         "contract_version",
+        "broker_protocol_version",
+        "channel",
         "artifacts",
     }:
         return None, "manifest root shape is invalid"
     if (
-        not _exact_int(data["schema_version"], 1)
+        not _exact_int(data["schema_version"], 2)
         or not _exact_int(data["protocol_version"], PROTOCOL_VERSION)
         or not _exact_int(data["contract_version"], CONTRACT_VERSION)
+        or not _exact_int(data["broker_protocol_version"], BROKER_PROTOCOL_VERSION)
+        or data["channel"] != "production"
     ):
         return None, "manifest or protocol version is unsupported"
     artifacts = data["artifacts"]
@@ -385,34 +415,68 @@ def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
         if not isinstance(item, dict) or set(item) != {
             "platform",
             "arch",
+            "kind",
             "minimum_macos",
             "path",
+            "entrypoint",
             "size",
             "sha256",
             "signing",
+            "files",
             "contracts",
         }:
             return None, "artifact shape is invalid"
         signing = item.get("signing")
         contracts = _contracts(item.get("contracts"))
-        expected_path = "runtime/darwin-arm64/agent-collab-runtime"
+        expected_path = "runtime/darwin-arm64/agent-collab-runtime.bundle"
+        try:
+            records = runtime_bundle.validate_file_records(item.get("files"))
+            bundle_digest = runtime_bundle.compute_bundle_identity(records)
+        except runtime_bundle.BundleContractError:
+            return None, "artifact file records are invalid"
+        identity_value = signing.get("identity") if isinstance(signing, dict) else None
+        identity_match = (
+            _DEVELOPER_ID_RE.fullmatch(identity_value)
+            if isinstance(identity_value, str)
+            else None
+        )
         if (
             item.get("platform") != "darwin"
             or item.get("arch") != "arm64"
-            or item.get("minimum_macos") != "14.0"
+            or item.get("kind") != "standalone_bundle"
+            or item.get("minimum_macos") != EXPECTED_MINIMUM_MACOS
             or item.get("path") != expected_path
+            or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
             or type(item.get("size")) is not int
             or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
+            or item["size"] != sum(record["size"] for record in records)
             or not isinstance(item.get("sha256"), str)
             or not _SHA256_RE.fullmatch(item["sha256"])
+            or bundle_digest != item["sha256"]
             or not isinstance(signing, dict)
-            or set(signing) != {"team_id", "require_notarization", "hardened_runtime"}
+            or set(signing)
+            != {
+                "mode",
+                "identity",
+                "team_id",
+                "require_notarization",
+                "hardened_runtime",
+                "secure_timestamp",
+            }
+            or signing.get("mode") != "developer_id"
+            or identity_match is None
             or not isinstance(signing.get("team_id"), str)
             or not _TEAM_ID_RE.fullmatch(signing["team_id"])
+            or identity_match.group(1) != signing["team_id"]
             or not _TEAM_ID_RE.fullmatch(EXPECTED_DEVELOPER_ID_TEAM)
             or signing["team_id"] != EXPECTED_DEVELOPER_ID_TEAM
             or signing.get("require_notarization") is not True
             or signing.get("hardened_runtime") is not True
+            or signing.get("secure_timestamp") is not True
+            or any(
+                record["signing_profile"] != "production_developer_id"
+                for record in records
+            )
             or contracts is None
         ):
             return None, "artifact fields are invalid"
@@ -421,7 +485,9 @@ def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
             return None, "manifest contains duplicate host artifacts"
         seen_hosts.add(host_key)
         if host_key == ("darwin", "arm64"):
-            selected.append({**item, "_contracts": contracts})
+            selected.append(
+                {**item, "_contracts": contracts, "_files": records}
+            )
     if not selected:
         return {}, "runtime artifact is not packaged for this host"
     if len(selected) != 1:
@@ -431,7 +497,9 @@ def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
 
 def _path_beneath_root(root: Path, rel: str) -> Path | None:
     pure = PurePosixPath(rel)
-    expected = PurePosixPath("runtime", "darwin-arm64", "agent-collab-runtime")
+    expected = PurePosixPath(
+        "runtime", "darwin-arm64", "agent-collab-runtime.bundle"
+    )
     if pure != expected or pure.is_absolute() or ".." in pure.parts:
         return None
     try:
@@ -455,7 +523,12 @@ def _path_beneath_root(root: Path, rel: str) -> Path | None:
 
 
 def _verify_macos_signature(
-    path: Path, *, team_id: str, require_notarization: bool
+    path: Path,
+    *,
+    team_id: str,
+    require_notarization: bool,
+    identity: str = "",
+    secure_timestamp: bool = True,
 ) -> tuple[bool, str]:
     if (
         not _TEAM_ID_RE.fullmatch(EXPECTED_DEVELOPER_ID_TEAM)
@@ -481,6 +554,9 @@ def _verify_macos_signature(
     team_ids = _CODESIGN_TEAM_RE.findall(detail_output)
     if team_ids != [team_id]:
         return False, "macOS signing identity does not match"
+    authorities = re.findall(r"(?m)^Authority=(.+)$", detail_output)
+    if identity and (not authorities or authorities[0] != identity):
+        return False, "macOS Developer ID identity does not match"
     hardened = any(
         int(match.group(1), 16) & 0x10000
         for match in _CODESIGN_FLAGS_RE.finditer(detail_output)
@@ -488,12 +564,11 @@ def _verify_macos_signature(
     if not hardened:
         return False, "macOS hardened runtime flag is missing"
     timestamp_match = _CODESIGN_TIMESTAMP_RE.search(detail_output)
-    if timestamp_match is None or timestamp_match.group(1).strip().casefold() in {
-        "",
-        "none",
-        "not set",
-        "unsigned",
-    }:
+    if secure_timestamp and (
+        timestamp_match is None
+        or timestamp_match.group(1).strip().casefold()
+        in {"", "none", "not set", "unsigned"}
+    ):
         return False, "macOS code signature is missing a secure Timestamp"
     if require_notarization:
         result = subprocess.run(
@@ -510,6 +585,103 @@ def _verify_macos_signature(
         }:
             return False, "macOS notarization source is not Notarized Developer ID"
     return True, ""
+
+
+class _RuntimeSignatureError(runtime_bundle.BundleContractError):
+    """Preserve signature failures through the closed bundle verifier."""
+
+
+def _encoded_macos_version(value: int) -> str:
+    if not _exact_int(value) or value < 0:
+        raise ValueError("runtime Mach-O minimum version is invalid")
+    major = (value >> 16) & 0xFFFF
+    minor = (value >> 8) & 0xFF
+    patch = value & 0xFF
+    return f"{major}.{minor}" if patch == 0 else f"{major}.{minor}.{patch}"
+
+
+def _inspect_runtime_member(
+    path: Path,
+    record: Mapping[str, Any],
+    *,
+    signing: Mapping[str, Any],
+) -> dict[str, str]:
+    """Inspect one exact thin-arm64 Mach-O member and its production signature."""
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        header_raw = os.read(descriptor, 32)
+        if len(header_raw) != 32:
+            raise ValueError("runtime Mach-O header is truncated")
+        (
+            magic,
+            cpu_type,
+            _subtype,
+            file_type,
+            command_count,
+            command_bytes,
+            _flags,
+            _reserved,
+        ) = struct.unpack("<IiiIIIII", header_raw)
+        if (
+            magic != 0xFEEDFACF
+            or cpu_type != 0x0100000C
+            or not 0 < command_count <= 4096
+            or not 0 < command_bytes <= min(4 * 1024 * 1024, info.st_size - 32)
+        ):
+            raise ValueError("runtime Mach-O header is unsupported")
+        commands = bytearray()
+        while len(commands) < command_bytes:
+            block = os.read(descriptor, min(1024 * 1024, command_bytes - len(commands)))
+            if not block:
+                raise ValueError("runtime Mach-O commands are truncated")
+            commands.extend(block)
+    finally:
+        os.close(descriptor)
+
+    offset = 0
+    minimum_versions: list[str] = []
+    for _index in range(command_count):
+        if offset + 8 > len(commands):
+            raise ValueError("runtime Mach-O command is truncated")
+        command, size = struct.unpack_from("<II", commands, offset)
+        if size < 8 or offset + size > len(commands):
+            raise ValueError("runtime Mach-O command is invalid")
+        if command == 0x32:
+            if size < 24:
+                raise ValueError("runtime build-version command is truncated")
+            _cmd, _size, platform_id, minimum, _sdk, tool_count = struct.unpack_from(
+                "<IIIIII", commands, offset
+            )
+            if platform_id != 1 or size != 24 + tool_count * 8:
+                raise ValueError("runtime build-version command is invalid")
+            minimum_versions.append(_encoded_macos_version(minimum))
+        offset += size
+    if offset != len(commands) or len(minimum_versions) != 1:
+        raise ValueError("runtime Mach-O command table is ambiguous")
+    macho_type = {2: "executable", 6: "dylib", 8: "bundle"}.get(file_type)
+    observed = {
+        "macho_type": macho_type,
+        "architecture": "arm64",
+        "minimum_macos": minimum_versions[0],
+        "signing_profile": record.get("signing_profile"),
+    }
+    if any(type(record.get(key)) is not str or record[key] != value for key, value in observed.items()):
+        raise ValueError("runtime Mach-O identity does not match the manifest")
+    valid, error = _verify_macos_signature(
+        path,
+        team_id=signing["team_id"],
+        identity=signing["identity"],
+        secure_timestamp=signing["secure_timestamp"],
+        require_notarization=(
+            record["role"] == "entrypoint" and signing["require_notarization"]
+        ),
+    )
+    if not valid:
+        raise _RuntimeSignatureError(error)
+    return observed
 
 
 def _normalized_version(value: str) -> tuple[int, ...] | None:
@@ -612,8 +784,8 @@ def resolve_runtime() -> RuntimeResolution:
         return RuntimeResolution(RuntimeStatus.PATH_INVALID, error="runtime manifest is unsafe")
     manifest_digest = hashlib.sha256(raw).hexdigest()
     try:
-        data = json.loads(raw.decode("utf-8"))
-    except (UnicodeError, ValueError, RecursionError):
+        data = runtime_bundle.load_closed_json_object(raw)
+    except runtime_bundle.BundleContractError:
         return RuntimeResolution(RuntimeStatus.MANIFEST_INVALID, error="runtime manifest unreadable")
     entry, error = _manifest_entry(data)
     if entry is None:
@@ -626,36 +798,41 @@ def resolve_runtime() -> RuntimeResolution:
             manifest_digest=manifest_digest,
             error="this release supports Darwin arm64 only",
         )
-    path = _path_beneath_root(root, entry["path"])
-    if path is None:
+    bundle_path = _path_beneath_root(root, entry["path"])
+    if bundle_path is None:
         return RuntimeResolution(RuntimeStatus.PATH_INVALID, manifest_digest=manifest_digest, error="runtime path is unsafe")
-    identity = _safe_file_identity(path, executable=True)
+    entrypoint = bundle_path / entry["entrypoint"]
+    identity = _safe_file_identity(entrypoint, executable=True)
     if identity is None:
-        if not path.exists():
+        if not entrypoint.exists() or not bundle_path.exists():
             return RuntimeResolution(RuntimeStatus.UNAVAILABLE, manifest_digest=manifest_digest, error="runtime artifact absent")
         return RuntimeResolution(RuntimeStatus.PATH_INVALID, manifest_digest=manifest_digest, error="runtime ownership, mode, or link count is unsafe")
-    if identity.size != entry["size"]:
-        return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime size mismatch")
-    digest = _sha256_regular(path, identity)
-    if digest is None or digest != entry["sha256"]:
-        return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime digest mismatch")
     try:
-        valid, detail = _verify_macos_signature(
-            path,
-            team_id=entry["signing"]["team_id"],
-            require_notarization=entry["signing"]["require_notarization"],
+        by_name = {record["path"]: record for record in entry["_files"]}
+        digest = runtime_bundle.verify_bundle_tree(
+            bundle_path,
+            entry["_files"],
+            inspector=lambda member: _inspect_runtime_member(
+                member,
+                by_name[member.name],
+                signing=entry["signing"],
+            ),
         )
-    except (OSError, subprocess.SubprocessError):
-        return RuntimeResolution(RuntimeStatus.HOST_BLOCKED, manifest_digest=manifest_digest, error="signature tools unavailable")
-    if not valid:
-        return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=detail)
+    except _RuntimeSignatureError as exc:
+        return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=str(exc))
+    except runtime_bundle.BundleContractError as exc:
+        return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error=str(exc))
+    if digest != entry["sha256"]:
+        return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime bundle identity mismatch")
     # Close the verification-to-exec window as far as path-based macOS exec
     # permits by recording the exact identity that invoke() must recheck.
-    if _safe_file_identity(path, executable=True) != identity:
+    if _safe_file_identity(entrypoint, executable=True) != identity:
         return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime identity changed during verification")
     return RuntimeResolution(
         RuntimeStatus.OK,
-        path=path,
+        path=entrypoint,
+        bundle_path=bundle_path,
+        files=entry["_files"],
         contracts=entry["_contracts"],
         manifest_digest=manifest_digest,
         artifact_digest=digest,
@@ -733,7 +910,14 @@ def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) 
     if not isinstance(document, dict) or set(document) != BROKER_STATE_KEYS:
         return False
     if (
-        not _exact_int(document.get("schema_version"), 1)
+        not _exact_int(document.get("schema_version"), 2)
+        or not _exact_int(document.get("contract_version"), CONTRACT_VERSION)
+        or not _exact_int(
+            document.get("broker_protocol_version"), BROKER_PROTOCOL_VERSION
+        )
+        or not _exact_int(
+            document.get("runtime_protocol_version"), PROTOCOL_VERSION
+        )
         or not isinstance(document.get("artifact_sha256"), str)
         or not _SHA256_RE.fullmatch(document["artifact_sha256"])
         or not isinstance(document.get("manifest_sha256"), str)
@@ -749,9 +933,12 @@ def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) 
         manifest_digest=document["manifest_sha256"],
     )
     expected_paths = {
-        "runtime_path": expected_version / "agent-collab-runtime",
+        "bundle_path": expected_version / "agent-collab-runtime.bundle",
+        "entrypoint_path": expected_version
+        / "agent-collab-runtime.bundle"
+        / runtime_bundle.ENTRYPOINT_NAME,
         "manifest_path": expected_version / MANIFEST_NAME,
-        "socket_path": root / "provider.sock",
+        "socket_path": root / BROKER_SOCKET_FILENAME,
     }
     for key, expected in expected_paths.items():
         if not isinstance(document.get(key), str) or document[key] != str(expected):
@@ -1059,7 +1246,7 @@ def _ensure_private_directory(path: Path, *, mode: int) -> None:
 
 def _ensure_broker_layout() -> Path:
     root = _broker_root()
-    if len(os.fsencode(root / "provider.sock")) > BROKER_SUN_PATH_MAX_BYTES:
+    if len(os.fsencode(root / BROKER_SOCKET_FILENAME)) > BROKER_SUN_PATH_MAX_BYTES:
         raise ValueError("provider broker socket path is too long")
     parent = root.parent
     if not parent.exists():
@@ -1155,46 +1342,63 @@ def _broker_version_path(
 
 def _verify_published_version(
     root: Path, *, artifact_digest: str, manifest_digest: str
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     version = _broker_version_path(
         root,
         artifact_digest=artifact_digest,
         manifest_digest=manifest_digest,
     )
-    runtime = version / "agent-collab-runtime"
+    bundle = version / "agent-collab-runtime.bundle"
+    entrypoint = bundle / runtime_bundle.ENTRYPOINT_NAME
     manifest = version / MANIFEST_NAME
     if _exact_mode(version, expected_type=stat.S_IFDIR, mode=0o500) is None:
         raise ValueError("provider broker version directory is unsafe")
-    runtime_identity = _exact_mode(runtime, expected_type=stat.S_IFREG, mode=0o500)
     manifest_identity = _exact_mode(manifest, expected_type=stat.S_IFREG, mode=0o400)
-    if runtime_identity is None or manifest_identity is None:
+    if manifest_identity is None:
         raise ValueError("provider broker version files are unsafe")
-    observed_runtime = _sha256_regular(
-        runtime,
-        FileIdentity(
-            device=runtime_identity.st_dev,
-            inode=runtime_identity.st_ino,
-            size=runtime_identity.st_size,
-            mtime_ns=runtime_identity.st_mtime_ns,
-            mode=runtime_identity.st_mode,
-            uid=runtime_identity.st_uid,
-            links=runtime_identity.st_nlink,
-        ),
-    )
     raw_manifest, _identity = _read_regular_nofollow(manifest, limit=1024 * 1024)
-    if (
-        observed_runtime != artifact_digest
-        or raw_manifest is None
-        or hashlib.sha256(raw_manifest).hexdigest() != manifest_digest
-    ):
+    if raw_manifest is None or hashlib.sha256(raw_manifest).hexdigest() != manifest_digest:
         raise ValueError("provider broker version digest mismatch")
-    return runtime, manifest
+    try:
+        document = runtime_bundle.load_closed_json_object(raw_manifest)
+        entry, error = _manifest_entry(document)
+    except runtime_bundle.BundleContractError as exc:
+        raise ValueError("provider broker manifest is invalid") from exc
+    if entry is None or entry == {} or entry["sha256"] != artifact_digest:
+        raise ValueError(error or "provider broker manifest identity mismatch")
+    try:
+        members = sorted(item.name for item in version.iterdir())
+    except OSError as exc:
+        raise ValueError("provider broker version cannot be enumerated") from exc
+    if members != ["agent-collab-runtime.bundle", MANIFEST_NAME]:
+        raise ValueError("provider broker version membership changed")
+    by_name = {record["path"]: record for record in entry["_files"]}
+    try:
+        observed = runtime_bundle.verify_bundle_tree(
+            bundle,
+            entry["_files"],
+            inspector=lambda member: _inspect_runtime_member(
+                member,
+                by_name[member.name],
+                signing=entry["signing"],
+            ),
+        )
+    except runtime_bundle.BundleContractError as exc:
+        raise ValueError("provider broker bundle identity mismatch") from exc
+    if observed != artifact_digest or _safe_file_identity(entrypoint, executable=True) is None:
+        raise ValueError("provider broker bundle identity mismatch")
+    return bundle, entrypoint, manifest
 
 
 def _publish_broker_version(
     root: Path, *, resolution: RuntimeResolution
-) -> tuple[Path, Path]:
-    if resolution.path is None or resolution.identity is None:
+) -> tuple[Path, Path, Path]:
+    if (
+        resolution.path is None
+        or resolution.bundle_path is None
+        or resolution.identity is None
+        or not resolution.files
+    ):
         raise ValueError("verified provider runtime is unavailable")
     if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
         raise ValueError("verified provider runtime identity changed")
@@ -1212,12 +1416,17 @@ def _publish_broker_version(
     staging = root / "tmp" / f"version-{resolution.artifact_digest}-{os.urandom(8).hex()}"
     staging.mkdir(mode=0o700)
     try:
-        _copy_regular_nofollow(
-            resolution.path,
-            staging / "agent-collab-runtime",
-            limit=MAX_ARTIFACT_BYTES,
-            mode=0o500,
-        )
+        staged_bundle = staging / "agent-collab-runtime.bundle"
+        staged_bundle.mkdir(mode=0o700)
+        for record in resolution.files:
+            _copy_regular_nofollow(
+                resolution.bundle_path / record["path"],
+                staged_bundle / record["path"],
+                limit=MAX_ARTIFACT_BYTES,
+                mode=runtime_bundle.INSTALL_MODE,
+            )
+        _fsync_directory(staged_bundle)
+        os.chmod(staged_bundle, runtime_bundle.INSTALL_MODE)
         _copy_regular_nofollow(
             PLUGIN_ROOT / MANIFEST_NAME,
             staging / MANIFEST_NAME,
@@ -1232,7 +1441,13 @@ def _publish_broker_version(
         if staging.exists():
             os.chmod(staging, 0o700)
             for child in staging.iterdir():
-                child.unlink()
+                if child.is_dir() and not child.is_symlink():
+                    child.chmod(0o700)
+                    for member in child.iterdir():
+                        member.unlink()
+                    child.rmdir()
+                else:
+                    child.unlink()
             staging.rmdir()
         raise
     return _verify_published_version(
@@ -1405,13 +1620,19 @@ def _record_for(
         manifest_digest=manifest_digest,
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "contract_version": CONTRACT_VERSION,
+        "broker_protocol_version": BROKER_PROTOCOL_VERSION,
+        "runtime_protocol_version": PROTOCOL_VERSION,
         "artifact_sha256": artifact_digest,
         "manifest_sha256": manifest_digest,
-        "runtime_path": str(version / "agent-collab-runtime"),
+        "bundle_path": str(version / "agent-collab-runtime.bundle"),
+        "entrypoint_path": str(
+            version / "agent-collab-runtime.bundle" / runtime_bundle.ENTRYPOINT_NAME
+        ),
         "manifest_path": str(version / MANIFEST_NAME),
         "plist_sha256": plist_digest,
-        "socket_path": str(root / "provider.sock"),
+        "socket_path": str(root / BROKER_SOCKET_FILENAME),
         "label": BROKER_LABEL,
         "previous": None if previous is None else _without_previous(previous),
     }
@@ -1428,8 +1649,8 @@ def _verify_plist_against_state(root: Path, state: Mapping[str, Any]) -> None:
     except (plistlib.InvalidFileException, ValueError) as exc:
         raise ValueError("provider broker plist is malformed") from exc
     expected = _broker_plist_document(
-        runtime_path=Path(state["runtime_path"]),
-        socket_path=root / "provider.sock",
+        runtime_path=Path(state["entrypoint_path"]),
+        socket_path=root / BROKER_SOCKET_FILENAME,
         tmpdir=root / "tmp",
         home=Path(_operator_home() or ""),
         uid=os.getuid(),
@@ -1447,7 +1668,7 @@ def _activate_broker_record(
     next_previous: Mapping[str, Any] | None,
     restore_state: Mapping[str, Any] | None,
 ) -> RuntimeResult:
-    runtime, _manifest = _verify_published_version(
+    _bundle, runtime, _manifest = _verify_published_version(
         root,
         artifact_digest=target_artifact,
         manifest_digest=target_manifest,
@@ -1457,7 +1678,7 @@ def _activate_broker_record(
         return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="operator home is unavailable")
     plist_document = _broker_plist_document(
         runtime_path=runtime,
-        socket_path=root / "provider.sock",
+        socket_path=root / BROKER_SOCKET_FILENAME,
         tmpdir=root / "tmp",
         home=Path(home),
         uid=os.getuid(),
@@ -1484,7 +1705,7 @@ def _activate_broker_record(
             raise RuntimeError("provider broker could not be bootstrapped")
         if not _broker_job_loaded():
             raise RuntimeError("provider broker launchd identity was not observed")
-        socket_path = root / "provider.sock"
+        socket_path = root / BROKER_SOCKET_FILENAME
         if _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
             raise RuntimeError("provider broker socket identity was not observed")
         if not _broker_ping(socket_path):
@@ -1511,14 +1732,14 @@ def _activate_broker_record(
         try:
             _bootout_broker(plist_path)
             if restore_record is not None:
-                prior_runtime, _prior_manifest = _verify_published_version(
+                _prior_bundle, prior_runtime, _prior_manifest = _verify_published_version(
                     root,
                     artifact_digest=restore_record["artifact_sha256"],
                     manifest_digest=restore_record["manifest_sha256"],
                 )
                 prior_document = _broker_plist_document(
                     runtime_path=prior_runtime,
-                    socket_path=root / "provider.sock",
+                    socket_path=root / BROKER_SOCKET_FILENAME,
                     tmpdir=root / "tmp",
                     home=Path(home),
                     uid=os.getuid(),
@@ -1534,7 +1755,11 @@ def _activate_broker_record(
                 )
                 restored = True
             else:
-                for candidate in (root / "state.json", plist_path, root / "provider.sock"):
+                for candidate in (
+                    root / "state.json",
+                    plist_path,
+                    root / BROKER_SOCKET_FILENAME,
+                ):
                     try:
                         candidate.unlink()
                     except FileNotFoundError:
@@ -1611,7 +1836,9 @@ def broker_status() -> RuntimeResult:
         )
         _verify_plist_against_state(root, state)
         socket_valid = _exact_mode(
-            root / "provider.sock", expected_type=stat.S_IFSOCK, mode=0o600
+            root / BROKER_SOCKET_FILENAME,
+            expected_type=stat.S_IFSOCK,
+            mode=0o600,
         ) is not None
         loaded = _broker_job_loaded()
         status = RuntimeStatus.OK if loaded and socket_valid else RuntimeStatus.UNAVAILABLE
@@ -1673,7 +1900,7 @@ def uninstall_broker() -> RuntimeResult:
         plist_path = root / "broker.plist"
         if not _bootout_broker(plist_path):
             return RuntimeResult(RuntimeStatus.PROVIDER_ERROR, error="provider broker could not be stopped")
-        socket_path = root / "provider.sock"
+        socket_path = root / BROKER_SOCKET_FILENAME
         try:
             socket_path.lstat()
         except FileNotFoundError:
