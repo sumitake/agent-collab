@@ -997,6 +997,12 @@ print(json.dumps({{
             ("state = running\npid = 123\n", False),
             ("pid = 123\n", False),
             ("", False),
+            # A stopped job still lists its listening socket endpoints as
+            # `state = active`; those must not veto the terminal job state.
+            ("state = not running\nstate = active\nstate = active\n", True),
+            # A running socket-activated job reports a live pid alongside the
+            # active socket endpoints.
+            ("state = running\npid = 123\nstate = active\n", False),
         )
         for output, expected in cases:
             with self.subTest(output=output), mock.patch.object(
@@ -1005,6 +1011,39 @@ print(json.dumps({{
                 return_value=subprocess.CompletedProcess([], 0, output, ""),
             ):
                 self.assertEqual(self.client._broker_process_idle(), expected)
+
+    def test_broker_ping_half_closes_so_the_broker_observes_the_peer(self) -> None:
+        events: list[str] = []
+
+        class _FakePeer:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def settimeout(self_inner, _value):
+                pass
+
+            def connect(self_inner, _address):
+                events.append("connect")
+
+            def shutdown(self_inner, how):
+                events.append(f"shutdown:{how}")
+
+            def recv(self_inner, _count):
+                events.append("recv")
+                return b""
+
+        with mock.patch.object(self.client.socket, "socket", return_value=_FakePeer()), \
+                mock.patch.object(self.client, "_wait_for_broker_exit", return_value=True):
+            self.assertTrue(self.client._broker_ping(Path("/tmp/broker.sock")))
+        # The peer connects, half-closes the write side (so the broker's frame
+        # read hits end-of-stream), and waits for the broker to close before
+        # polling for exit.
+        self.assertEqual(
+            events, ["connect", f"shutdown:{self.client.socket.SHUT_WR}", "recv"]
+        )
 
     def test_host_context_requires_the_exact_complete_codex_desktop_tuple(self) -> None:
         keys = self.client.CODEX_DESKTOP_TUPLE
