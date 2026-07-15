@@ -1045,6 +1045,61 @@ print(json.dumps({{
             events, ["connect", f"shutdown:{self.client.socket.SHUT_WR}", "recv"]
         )
 
+    def test_broker_ping_hold_open_covers_the_runtime_cold_start(self) -> None:
+        # The activation ping's socket timeout is the hold-open window: the
+        # broker must observe a live peer before the client's recv gives up.
+        # A freshly published bundle cold-starts in 6-12s (first-exec
+        # signature validation + interpreter init on non-page-cached files),
+        # so a short hold recreates the ENOTCONN peer-gone race on every
+        # first activation after a fresh publish.
+        timeouts: list[float] = []
+
+        class _FakePeer:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def settimeout(self_inner, value):
+                timeouts.append(value)
+
+            def connect(self_inner, _address):
+                pass
+
+            def shutdown(self_inner, _how):
+                pass
+
+            def recv(self_inner, _count):
+                return b""
+
+        with mock.patch.object(self.client.socket, "socket", return_value=_FakePeer()), \
+                mock.patch.object(self.client, "_wait_for_broker_exit", return_value=True):
+            self.assertTrue(self.client._broker_ping(Path("/tmp/broker.sock")))
+        self.assertEqual(timeouts, [self.client.BROKER_COLD_START_TIMEOUT_SECONDS])
+        self.assertGreaterEqual(self.client.BROKER_COLD_START_TIMEOUT_SECONDS, 15.0)
+
+    def test_wait_for_broker_exit_outlasts_the_runtime_cold_start(self) -> None:
+        # Simulated clock: the broker only reaches a terminal launchd state
+        # 12s after the poll starts (observed real cold-start upper bound).
+        # The exit wait must outlast that, or the primary activation path
+        # spuriously fails and the restore path masks it.
+        clock = [0.0]
+
+        def _monotonic() -> float:
+            return clock[0]
+
+        def _sleep(seconds: float) -> None:
+            clock[0] += seconds
+
+        def _idle() -> bool:
+            return clock[0] >= 12.0
+
+        with mock.patch.object(self.client.time, "monotonic", side_effect=_monotonic), \
+                mock.patch.object(self.client.time, "sleep", side_effect=_sleep), \
+                mock.patch.object(self.client, "_broker_process_idle", side_effect=_idle):
+            self.assertTrue(self.client._wait_for_broker_exit())
+
     def test_host_context_requires_the_exact_complete_codex_desktop_tuple(self) -> None:
         keys = self.client.CODEX_DESKTOP_TUPLE
         exact = dict(self.client.CODEX_DESKTOP_TUPLE.items())
