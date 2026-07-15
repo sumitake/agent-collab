@@ -1567,11 +1567,34 @@ def _broker_job_loaded() -> bool:
     ).returncode == 0
 
 
+# The activation liveness knock must outlast the signed runtime's cold start.
+# A freshly published bundle (new digest directory, non-page-cached files)
+# cold-starts in 6-12s on first exec -- Gatekeeper/codesign validation plus
+# interpreter init for a ~20MB standalone bundle (unified-log evidence:
+# first-activation broker runs of 6302ms-12111ms; warm runs ~1.4s). A 5s
+# budget made the first activation after every fresh publish spuriously fail
+# ("activation ping failed") and fall through to the restore path, which
+# skips the ping and so silently masked the miscalibration.
+BROKER_COLD_START_TIMEOUT_SECONDS = 30.0
+
+
 def _broker_ping(socket_path: Path) -> bool:
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
-            peer.settimeout(5.0)
+            peer.settimeout(BROKER_COLD_START_TIMEOUT_SECONDS)
             peer.connect(str(socket_path))
+            # Hold the connection open through the broker's peer-identity
+            # observation, then half-close the write side so the broker's
+            # frame read returns end-of-stream promptly and it exits. A bare
+            # connect-and-close races socket activation: the peer can be gone
+            # before the broker reads LOCAL_PEERPID (ENOTCONN -> peer_error),
+            # and the broker would otherwise block in accept() for its full
+            # timeout instead of servicing this liveness knock.
+            peer.shutdown(socket.SHUT_WR)
+            try:
+                peer.recv(1)
+            except OSError:
+                pass
         return _wait_for_broker_exit()
     except OSError:
         return False
@@ -1581,10 +1604,15 @@ def _broker_process_idle() -> bool:
     result = _launchctl(["print", f"gui/{os.getuid()}/{BROKER_LABEL}"])
     if result.returncode != 0:
         return False
+    # launchctl prints a `state = active` line for each listening socket
+    # endpoint (always active while the job is bootstrapped). Those are not
+    # the job's lifecycle state; including them made the terminal-state check
+    # below never hold, so the activation ping never observed the broker exit.
     states = [
         line.split("=", 1)[1].strip().casefold()
         for line in result.stdout.splitlines()
         if line.strip().startswith("state =")
+        and line.split("=", 1)[1].strip().casefold() != "active"
     ]
     has_live_pid = any(
         line.strip().startswith("pid =")
@@ -1598,7 +1626,9 @@ def _broker_process_idle() -> bool:
 
 
 def _wait_for_broker_exit() -> bool:
-    deadline = time.monotonic() + 5.0
+    # Success returns as soon as the job reaches a terminal state; the
+    # cold-start budget only bounds the failure case (see the constant above).
+    deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if _broker_process_idle():
             return True
