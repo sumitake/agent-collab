@@ -64,27 +64,58 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         self.assertTrue(any("platform/signing" in error for error in errors))
 
     def _manifest(self, contracts: set[tuple[str, str]]) -> Path:
-        binary = self.plugin / "runtime" / "darwin-arm64" / "agent-collab-runtime"
-        binary.parent.mkdir(parents=True, exist_ok=True)
+        bundle = (
+            self.plugin
+            / "runtime"
+            / "darwin-arm64"
+            / "agent-collab-runtime.bundle"
+        )
+        bundle.mkdir(parents=True, exist_ok=True)
+        binary = bundle / "agent-collab-runtime"
+        bundle.chmod(0o700)
+        if binary.exists():
+            binary.chmod(0o700)
         binary.write_bytes(b"signed-runtime-fixture")
-        binary.chmod(0o700)
+        binary.chmod(0o500)
+        bundle.chmod(0o500)
+        records = [
+            {
+                "path": "agent-collab-runtime",
+                "role": "entrypoint",
+                "install_mode": 0o500,
+                "size": binary.stat().st_size,
+                "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "macho_type": "executable",
+                "architecture": "arm64",
+                "minimum_macos": "14.0",
+                "signing_profile": "production_developer_id",
+            }
+        ]
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [
                 {
                     "platform": "darwin",
                     "arch": "arm64",
+                    "kind": "standalone_bundle",
                     "minimum_macos": "14.0",
-                    "path": "runtime/darwin-arm64/agent-collab-runtime",
+                    "path": "runtime/darwin-arm64/agent-collab-runtime.bundle",
+                    "entrypoint": "agent-collab-runtime",
                     "size": binary.stat().st_size,
-                    "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                    "sha256": self.gate.runtime_bundle.compute_bundle_identity(records),
                     "signing": {
+                        "mode": "developer_id",
+                        "identity": "Developer ID Application: Test Operator (TESTTEAM01)",
                         "team_id": "TESTTEAM01",
                         "require_notarization": True,
                         "hardened_runtime": True,
+                        "secure_timestamp": True,
                     },
+                    "files": records,
                     "contracts": [
                         {"route": route, "action": action}
                         for route, action in sorted(contracts)
@@ -98,7 +129,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
 
     def test_empty_manifest_blocks_activation(self) -> None:
         (self.plugin / "runtime-manifest.json").write_text(
-            '{"schema_version":1,"protocol_version":1,"contract_version":1,"artifacts":[]}'
+            '{"schema_version":2,"protocol_version":1,"contract_version":3,"broker_protocol_version":2,"channel":"production","artifacts":[]}'
         )
         ok, _, errors = self.gate.verify_release(self.root, git_sha="abc")
         self.assertFalse(ok)
@@ -134,6 +165,12 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
             if command[0] == "/usr/bin/lipo":
                 return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
             if command[0] == "/usr/bin/otool":
+                if "-hv" in command:
+                    return mock.Mock(
+                        returncode=0,
+                        stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                        stderr="",
+                    )
                 return mock.Mock(
                     returncode=0,
                     stdout=(
@@ -149,6 +186,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     returncode=0,
                     stdout="",
                     stderr=(
+                        "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
                         "TeamIdentifier=TESTTEAM01 flags=0x10000(runtime)\n"
                         "Timestamp=Jul 12, 2026 at 12:00:00\n"
                     ),
@@ -201,6 +239,12 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
             if command[0] == "/usr/bin/lipo":
                 return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
             if command[0] == "/usr/bin/otool":
+                if "-hv" in command:
+                    return mock.Mock(
+                        returncode=0,
+                        stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                        stderr="",
+                    )
                 return mock.Mock(
                     returncode=0,
                     stdout=(
@@ -217,6 +261,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     stdout="",
                     stderr=(
                         "Executable=/tmp/agent-collab-runtime\n"
+                        "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
                         "TeamIdentifier=TESTTEAM01\n"
                         "Timestamp=Jul 12, 2026 at 12:00:00\n"
                         "CodeDirectory v=20500 flags=0x0(none)\n"
@@ -265,12 +310,19 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     if command[0] == "/usr/bin/lipo":
                         return mock.Mock(returncode=0, stdout=architectures + "\n", stderr="")
                     if command[0] == "/usr/bin/otool":
+                        if "-hv" in command:
+                            return mock.Mock(
+                                returncode=0,
+                                stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                                stderr="",
+                            )
                         return mock.Mock(returncode=0, stdout=load_commands, stderr="")
                     if command[0] == "/usr/bin/codesign" and "-dv" in command:
                         return mock.Mock(
                             returncode=0,
                             stdout="",
                             stderr=(
+                                "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
                                 "TeamIdentifier=TESTTEAM01 flags=0x10000(runtime)\n"
                                 "Timestamp=Jul 12, 2026 at 12:00:00\n"
                             ),
@@ -320,12 +372,19 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     if command[0] == "/usr/bin/lipo":
                         return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
                     if command[0] == "/usr/bin/otool":
+                        if "-hv" in command:
+                            return mock.Mock(
+                                returncode=0,
+                                stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                                stderr="",
+                            )
                         return mock.Mock(returncode=0, stdout=valid_build, stderr="")
                     if command[0] == "/usr/bin/codesign" and "-dv" in command:
                         return mock.Mock(
                             returncode=0,
                             stdout="",
                             stderr=(
+                                "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
                                 "TeamIdentifier=TESTTEAM01\n"
                                 "CodeDirectory v=20500 flags=0x10000(runtime)\n"
                                 f"{timestamp}\n"

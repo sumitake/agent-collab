@@ -80,11 +80,13 @@ eligible-route checks pass.
 
 The active package intentionally contains no unsigned runtime placeholder. Every
 model route therefore remains temporarily unavailable until the signed private
-runtime advertises the complete Gemini, Codex, OpenCode, Grok, and Composer
-route/action matrix. A policy-only release requires an empty runtime manifest
-and archive; it installs the migration and policy surface while every native
-route stays typed unavailable. An activation release requires the complete
-contracts plus commit-bound macOS signing/notarization evidence. No raw launcher
+standalone bundle advertises the complete Gemini, Codex, OpenCode, Grok, and
+Composer route/action matrix. A policy-only release requires an empty runtime
+manifest and archive; it installs the migration and policy surface while every
+native route stays typed unavailable. An activation release requires manifest
+schema 2, native contract 3, broker transport 2, provider protocol 1, the
+domain-separated whole-bundle identity, exact per-member Mach-O/signing facts,
+the complete contracts, and commit-bound notarization evidence. No raw launcher
 is a migration fallback.
 
 Activation also requires the exact digest-pinned third-party notice/license
@@ -126,6 +128,16 @@ The unified package has one Claude-compatible manifest and one Codex-native
 manifest. `.claude-plugin/marketplace.json` and
 `.agents/plugins/marketplace.json` are generated from the same package and may
 contain no legacy preset or provider package.
+
+The only native distribution shape is
+`runtime/darwin-arm64/agent-collab-runtime.bundle/` plus its sibling
+`runtime-manifest.json`. The manifest lists every regular `0500` entrypoint or
+runtime-library member in exact UTF-8 path order; unknown, linked, writable, or
+unlisted members fail closed. Installed versions are keyed by the
+whole-bundle identity and exact manifest digest. Lifecycle state also binds the
+bundle, entrypoint, manifest, plist, socket, label, protocol versions, and at
+most one complete prior record, so rollback cannot reconstruct or promote an
+old single-file or provider-specific surface.
 
 Governance plus applicable review, fallback, and worker requests bind the
 artifact separately from the prompt. The native protocol receives exact

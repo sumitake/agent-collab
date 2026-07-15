@@ -46,6 +46,7 @@ REVIEW_CONTRACTS = frozenset(
         ("auto", "architecture"),
         ("auto", "governance"),
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("codex", "advisory"),
         ("grok", "architecture"),
         ("grok", "governance"),
@@ -55,6 +56,7 @@ ARTIFACT_AWARE_CONTRACTS = WORKER_CONTRACTS | REVIEW_CONTRACTS
 DIRECT_CONTRACTS = frozenset(
     {
         ("gemini", "advisory"),
+        ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
         ("codex", "build"),
@@ -172,7 +174,7 @@ def _validate(document: object) -> tuple[dict[str, Any] | None, str, str]:
                 return None, request_label, ACTION_AUTHORITY_ERROR
         else:
             return None, request_label, "automatic action is unsupported"
-    if document["route"] == "grok" and (
+    if document["route"] in {"gemini", "grok"} and (
         (document["action"] == "governance") is not governance
         if document["action"] in {"architecture", "governance"}
         else False
@@ -276,8 +278,14 @@ def process(document: object) -> tuple[dict[str, Any], int]:
 
     def issue_for(route: str, row: dict[str, Any]):
         action = validated["action"]
-        if validated["route"] == "auto" and action in {"architecture", "governance"}:
-            action = action if route == "grok" else "advisory"
+        if validated["route"] == "auto" and action == "architecture":
+            action = "architecture" if route == "grok" else "advisory"
+        elif validated["route"] == "auto" and action == "governance":
+            action = {
+                "gemini": "governance",
+                "codex": "advisory",
+                "grok": "governance",
+            }[route]
         return policy.issue_policy_envelope(
             request_id=validated["request_id"],
             operation=validated["operation"],
@@ -344,7 +352,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             return _response(
                 validated["request_id"],
                 "unavailable",
-                "no eligible independent advisory route",
+                f"no eligible independent {validated['action']} route",
                 attempts=[],
             ), 0
         attempts: list[dict[str, str]] = []
@@ -391,7 +399,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         return _response(
             validated["request_id"],
             "unavailable",
-            "all eligible advisory routes failed",
+            f"all eligible {validated['action']} routes failed",
             attempts=attempts,
         ), 0
 

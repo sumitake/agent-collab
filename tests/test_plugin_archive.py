@@ -74,13 +74,38 @@ class PluginArchiveTests(unittest.TestCase):
             self.plugin
             / "runtime"
             / "darwin-arm64"
+            / "agent-collab-runtime.bundle"
             / "agent-collab-runtime"
         )
         runtime.parent.mkdir(parents=True)
         runtime.write_bytes(b"signed-runtime-fixture")
-        runtime.chmod(0o755)
+        library = runtime.parent / "libpython3.13.dylib"
+        library.write_bytes(b"signed-library-fixture")
+        runtime.chmod(0o500)
+        library.chmod(0o500)
+        runtime.parent.chmod(0o500)
+        records = []
+        for member, role, macho_type in (
+            (runtime, "entrypoint", "executable"),
+            (library, "runtime_library", "dylib"),
+        ):
+            records.append(
+                {
+                    "path": member.name,
+                    "role": role,
+                    "install_mode": 0o500,
+                    "size": member.stat().st_size,
+                    "sha256": hashlib.sha256(member.read_bytes()).hexdigest(),
+                    "macho_type": macho_type,
+                    "architecture": "arm64",
+                    "minimum_macos": "14.0",
+                    "signing_profile": "production_developer_id",
+                }
+            )
+        records.sort(key=lambda item: item["path"].encode("utf-8"))
         contracts = (
             ("gemini", "advisory"),
+            ("gemini", "governance"),
             ("gemini", "long_context"),
             ("codex", "advisory"),
             ("opencode", "plan"),
@@ -91,22 +116,30 @@ class PluginArchiveTests(unittest.TestCase):
             ("composer", "codegen"),
         )
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [
                 {
                     "platform": "darwin",
                     "arch": "arm64",
+                    "kind": "standalone_bundle",
                     "minimum_macos": "14.0",
-                    "path": "runtime/darwin-arm64/agent-collab-runtime",
-                    "size": runtime.stat().st_size,
-                    "sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                    "path": "runtime/darwin-arm64/agent-collab-runtime.bundle",
+                    "entrypoint": "agent-collab-runtime",
+                    "size": sum(record["size"] for record in records),
+                    "sha256": self.builder.runtime_bundle.compute_bundle_identity(records),
                     "signing": {
+                        "mode": "developer_id",
+                        "identity": "Developer ID Application: Test Operator (TESTTEAM01)",
                         "team_id": "TESTTEAM01",
                         "require_notarization": True,
                         "hardened_runtime": True,
+                        "secure_timestamp": True,
                     },
+                    "files": records,
                     "contracts": [
                         {"route": route, "action": action}
                         for route, action in contracts
@@ -185,11 +218,14 @@ class PluginArchiveTests(unittest.TestCase):
             ]
             self.assertEqual(
                 [member.name for member in runtime_files],
-                ["runtime/darwin-arm64/agent-collab-runtime"],
+                [
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle/agent-collab-runtime",
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle/libpython3.13.dylib",
+                ],
             )
             member = runtime_files[0]
             self.assertEqual(bundle.extractfile(member).read(), runtime.read_bytes())
-            self.assertEqual(stat.S_IMODE(member.mode), 0o755)
+            self.assertEqual(stat.S_IMODE(member.mode), 0o500)
 
             for archived in bundle.getmembers():
                 if not archived.isfile():
@@ -318,7 +354,8 @@ class PluginArchiveTests(unittest.TestCase):
 
     def test_archive_size_limit_and_required_policy_member_are_canonical(self) -> None:
         self.assertEqual(self.builder.MAX_ARTIFACT_BYTES, 64 * 1024 * 1024)
-        self.assertEqual(self.builder.RUNTIME_FILE_MODE, 0o755)
+        self.assertEqual(self.builder.RUNTIME_FILE_MODE, 0o500)
+        self.assertIn("runtime_bundle.py", self.builder.REQUIRED_ROOTS)
         self.assertIn("signing_policy.py", self.builder.REQUIRED_ROOTS)
         self.assertIn("runtime_setup.py", self.builder.REQUIRED_ROOTS)
 

@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
 NATIVE_CAPABILITIES = (
     "gemini_advisory",
+    "gemini_governance",
     "gemini_long_context",
     "codex_advisory",
     "opencode_plan",
@@ -58,6 +59,7 @@ class MigrationPolicyTests(unittest.TestCase):
         contracts = frozenset(
             {
                 ("gemini", "advisory"),
+                ("gemini", "governance"),
                 ("gemini", "long_context"),
                 ("codex", "advisory"),
                 ("opencode", "plan"),

@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 3.2.0
+version: 3.3.0
 defaults:
   tier: Advanced
   effort: high
@@ -22,7 +22,7 @@ Resolve the **plugin root** from this loaded file and invoke only
 `python3 "<plugin-root>/coordinator.py"` with a bounded governance-review
 request. The public policy captures the active primary/model/session and
 artifact-author model, excludes both families, and selects only an eligible
-Gemini or Codex advisory row, or a Grok 4.5 governance-review row. No reviewer
+Gemini or Grok governance row, or a Codex advisory row. No reviewer
 or escalation model is fixed in this skill. Claude is asynchronous inbox-only.
 
 ## Workflow

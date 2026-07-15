@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "native_contract_version": 3,
+  "identity_domain": "agent-collab-runtime-bundle\u0000v1\u0000",
+  "records": [
+    {
+      "path": "_ssl.so",
+      "role": "runtime_library",
+      "install_mode": 320,
+      "size": 31,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "macho_type": "bundle",
+      "architecture": "arm64",
+      "minimum_macos": "14.0",
+      "signing_profile": "development_adhoc"
+    },
+    {
+      "path": "agent-collab-runtime",
+      "role": "entrypoint",
+      "install_mode": 320,
+      "size": 17,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "macho_type": "executable",
+      "architecture": "arm64",
+      "minimum_macos": "14.0",
+      "signing_profile": "development_adhoc"
+    },
+    {
+      "path": "libpython3.13.dylib",
+      "role": "runtime_library",
+      "install_mode": 320,
+      "size": 23,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "macho_type": "dylib",
+      "architecture": "arm64",
+      "minimum_macos": "14.0",
+      "signing_profile": "development_adhoc"
+    }
+  ],
+  "encoded_hex": "6167656e742d636f6c6c61622d72756e74696d652d62756e646c650076310000000003000000075f73736c2e736f020140000000000000001f22222222222222222222222222222222222222222222222222222222222222220301000000146167656e742d636f6c6c61622d72756e74696d65010140000000000000001100000000000000000000000000000000000000000000000000000000000000000101000000136c6962707974686f6e332e31332e64796c6962020140000000000000001711111111111111111111111111111111111111111111111111111111111111110201",
+  "artifact_sha256": "a6858541cad502a568a1bc3e666aa560bc3953598012549e757a97db70e18a9c"
+}

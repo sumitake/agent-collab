@@ -1,6 +1,6 @@
 ---
 name: route
-version: 3.2.0
+version: 3.3.0
 description: Use when the operator says "ask Codex," "target=gemini," "target=grok," "target=composer," or explicitly names a managed backend. Also offer this proactively when routing needs dynamic primary-family exclusion.
 ---
 
@@ -30,7 +30,7 @@ read-only authority across attempts and attempt each target at most once.
 Automatic worker routing is temporarily unavailable; require an explicit
 managed worker target.
 
-Seal only supported native contracts: Gemini advisory/long-context is
+Seal only supported native contracts: Gemini advisory, governance, and long-context are
 read-only; Codex advisory is read-only; OpenCode plan is read-only and OpenCode
 build is mutation-capable workspace-write; Grok architecture, governance, and
 huge-context are read-only; Composer codegen is output-only. Codex build
@@ -39,6 +39,11 @@ hardened backend exists, never advisory. Safe mode makes all five model-
 execution targets unavailable. A host async inbox is eligible only after an
 availability observation and exposes readiness only; the public coordinator
 never sends.
+
+Managed provider execution uses canonical passwd HOME for reliable interactive
+authentication state. This does not relax family exclusion, route authority,
+the signed broker boundary, bounded lifecycle, or the prohibition on raw CLI
+fallbacks.
 
 Execution mechanics belong to the verified co-packaged native artifact. This
 skill contains no provider command and authorizes no direct invocation.

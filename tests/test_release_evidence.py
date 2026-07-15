@@ -102,12 +102,47 @@ class ReleaseEvidenceTests(unittest.TestCase):
         )
         for name in LEGAL_FILES:
             shutil.copy2(ROOT / name, repo / name)
-        runtime = plugin / "runtime" / "darwin-arm64" / "agent-collab-runtime"
-        runtime.parent.mkdir(parents=True)
-        runtime.write_bytes(b"signed-runtime-fixture")
-        runtime.chmod(0o755)
+        bundle = (
+            plugin
+            / "runtime"
+            / "darwin-arm64"
+            / "agent-collab-runtime.bundle"
+        )
+        bundle.mkdir(parents=True)
+        runtime_members = {
+            "agent-collab-runtime": (
+                b"signed-runtime-entrypoint-fixture",
+                "entrypoint",
+                "executable",
+            ),
+            "libpython3.13.dylib": (
+                b"signed-runtime-library-fixture",
+                "runtime_library",
+                "dylib",
+            ),
+        }
+        records = []
+        for name, (payload, role, macho_type) in runtime_members.items():
+            member = bundle / name
+            member.write_bytes(payload)
+            member.chmod(0o500)
+            records.append(
+                {
+                    "path": name,
+                    "role": role,
+                    "install_mode": 0o500,
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "macho_type": macho_type,
+                    "architecture": "arm64",
+                    "minimum_macos": "14.0",
+                    "signing_profile": "production_developer_id",
+                }
+            )
+        bundle.chmod(0o500)
         contracts = (
             ("gemini", "advisory"),
+            ("gemini", "governance"),
             ("gemini", "long_context"),
             ("codex", "advisory"),
             ("opencode", "plan"),
@@ -118,22 +153,34 @@ class ReleaseEvidenceTests(unittest.TestCase):
             ("composer", "codegen"),
         )
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "protocol_version": 1,
-            "contract_version": 1,
+            "contract_version": 3,
+            "broker_protocol_version": 2,
+            "channel": "production",
             "artifacts": [
                 {
                     "platform": "darwin",
                     "arch": "arm64",
+                    "kind": "standalone_bundle",
                     "minimum_macos": "14.0",
-                    "path": "runtime/darwin-arm64/agent-collab-runtime",
-                    "size": runtime.stat().st_size,
-                    "sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+                    "path": "runtime/darwin-arm64/agent-collab-runtime.bundle",
+                    "entrypoint": "agent-collab-runtime",
+                    "size": sum(record["size"] for record in records),
+                    "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
+                        records
+                    ),
                     "signing": {
+                        "mode": "developer_id",
+                        "identity": (
+                            "Developer ID Application: Example Corp (TESTTEAM01)"
+                        ),
                         "team_id": "TESTTEAM01",
                         "require_notarization": True,
                         "hardened_runtime": True,
+                        "secure_timestamp": True,
                     },
+                    "files": records,
                     "contracts": [
                         {"route": route, "action": action}
                         for route, action in contracts
@@ -233,10 +280,16 @@ class ReleaseEvidenceTests(unittest.TestCase):
             files["README.md"]["licenseConcluded"],
             "LicenseRef-PolyForm-Strict-1.0.0",
         )
-        self.assertEqual(
-            files["runtime/darwin-arm64/agent-collab-runtime"]["licenseConcluded"],
-            "NOASSERTION",
-        )
+        for name in (
+            "agent-collab-runtime",
+            "libpython3.13.dylib",
+        ):
+            self.assertEqual(
+                files[
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle/" + name
+                ]["licenseConcluded"],
+                "NOASSERTION",
+            )
         self.assertEqual(files[THIRD_PARTY_NOTICE]["licenseConcluded"], "NOASSERTION")
         for name in THIRD_PARTY_LICENSE_FILES:
             self.assertEqual(

@@ -12,8 +12,8 @@ post-install hook, or provider executor source.
   client behavior, migration, and release-safety checks.
 - Native runtime implementation and build/sign credentials stay in a separate
   private producer that contributors do not need to access.
-- This repository may receive only final signed native artifacts and their
-  size/hash/signature manifest metadata.
+- This repository may receive only final signed native standalone bundles and
+  their closed per-member/whole-bundle manifest metadata.
 - Never place executor source, bytecode, private absolute paths, or retired
   package trees in the active source or release archive.
 
@@ -49,10 +49,11 @@ requires explicit configuration and fails closed; non-governance use carries an
 independence warning. Policy-only safe mode preserves only validated async
 inbox/coordination seams and returns typed unavailable for every model route.
 
-The native client accepts no path override, resolves only the manifest-selected
-artifact beneath the plugin root, rejects symlinks and traversal, verifies
-platform/architecture/size/hash and macOS signing/notarization, scrubs the
-environment, and uses only the fixed protocol.
+The native client accepts no path or member override, resolves only the
+manifest-selected closed bundle beneath the plugin root, rejects links,
+aliases, traversal, writable or unknown members, verifies per-member
+architecture/type/size/hash/signing plus whole-bundle identity and macOS
+notarization, scrubs the environment, and uses only the fixed protocols.
 
 ## Clean public repository invariant
 

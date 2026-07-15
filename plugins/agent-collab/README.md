@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.2.0**
+Current: **3.3.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -38,39 +38,51 @@ archives, which contain none of the corresponding runtime components.
 
 ## Runtime and safe mode
 
-The package may contain a privately built signed native runtime only at the
-platform path declared by `runtime-manifest.json`. `runtime_client.py` rejects
-overrides, symlinks, parent traversal, wrong platform/architecture, wrong
-size/hash, and on macOS the wrong signing team or failed notarization. It
-inspects the executable as a thin arm64 Mach-O and requires exactly one macOS
-`LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those manifest
-labels. It uses a fixed JSON protocol and scrubbed environment. The package
+The package may contain a privately built signed native standalone bundle only
+at the platform path declared by `runtime-manifest.json`. Native manifest schema
+2 and contract 3 close the bundle path, entrypoint, sorted member list,
+per-member role/mode/size/hash/Mach-O facts, signing profile, and
+domain-separated whole-bundle identity. `runtime_client.py` rejects overrides,
+links, aliases, extra members, parent traversal, writable modes, wrong
+platform/architecture, wrong size/hash, the wrong signing team, or failed
+notarization. It inspects every member as thin arm64 Mach-O and requires exactly
+one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
+manifest labels. The broker transport is version 2 while the provider protocol
+remains version 1. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.2.0 package.
+identify this same 3.3.0 package.
 
-Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
+Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
 signed runtime for one request, and the broker exits after its single bounded
 response. The plist has no keepalive, run-at-load, polling, interval, calendar,
-or resident-process trigger. A missing or stale broker is a typed failure—these
-routes never fall back to the direct artifact path. Codex and runtime
-management retain fixed direct exact-artifact execution.
+or resident-process trigger. At idle, launchd retains only its job registration
+and one mode-`0600` Unix listening socket; the immutable bundle consumes disk,
+but there is no provider process, polling CPU, provider memory, or network
+traffic. A missing or stale broker is a typed failure—these routes never fall
+back to the direct entrypoint path. Only local runtime management retains fixed
+direct exact-entrypoint execution.
 The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
 socket activation does not inherit that client sandbox, so every brokered Grok
 and Composer attempt independently validates its own nested read-only sandbox.
-Provider children receive closed backend-specific environment allowlists and
-fresh private call roots. Broker transport cannot invoke local `status`,
+Provider children receive closed backend-specific environment allowlists,
+canonical passwd HOME for reliable authenticated state, and fresh private
+temporary/cwd roots. Grok uses real serialized `~/.grok`; OpenCode keeps
+private XDG roots and selected-provider auth; Codex keeps a sealed per-call
+`CODEX_HOME`, SQLite, and XDG overlay. A provider-specific policy overlay may
+narrow credentials or tools without replacing process HOME. Broker transport cannot invoke local `status`,
 `prepare`, or `grok_login` management authority.
-Client disconnect propagates cancellation through managed OpenCode, Grok, and
-Composer execution/readiness, reaps provider child groups, and discards partial
+Client disconnect propagates cancellation through every managed provider
+route, reaps provider child groups, and discards partial
 output. Disconnect cancellation is never retried; a deadline below the managed
 setup reserve returns typed `timeout` before provider setup.
-The current Gemini facade remains typed `containment_error` before Google
-provider setup until a separately reviewed completion-only transport exists;
-the broker does not treat an agentic CLI mode as a read-only guarantee.
+Gemini uses the managed agy backend with canonical passwd HOME, a mandatory
+controlling PTY, serialized shared state, and write containment. Its separate
+`governance` action emits complete artifact-bound broker proof; advisory and
+long-context results are explicitly non-governance evidence.
 
 No signed artifact is present in this source tree yet. Native **Gemini
-advisory/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
+advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
 read-only architecture consultation, governance review, and huge-context
 ingestion**, and **Composer output-only code/patch generation**
 roles are therefore **temporarily unavailable**. Policy-only safe mode keeps
@@ -78,7 +90,7 @@ all native model routes unavailable. A host inbox is eligible only after a
 current availability observation, and the public coordinator exposes readiness
 only rather than a send primitive.
 This package may still be distributed as a policy-only release: its manifest
-has no artifact rows, its archive has no runtime executable, and invocation
+has no artifact rows, its archive has no runtime bundle, and invocation
 continues to return typed unavailable until an activation release is verified.
 An activation archive must add the complete digest-pinned third-party legal
 tree and component-aware SPDX evidence alongside the signed runtime.
@@ -128,8 +140,9 @@ primary's family is blocked in either direction.
 Explicit `target=gemini`, `target=codex`, `target=opencode`, `target=grok`, and
 `target=composer` requests are fail-closed. A target is never silently
 replaced. Automatic general **advisory** routing may try only eligible
-Gemini/Codex routes. Automatic architecture and governance actions may also
-try the corresponding sealed Grok action, preserving read-only authority and
+Gemini/Codex routes. Automatic architecture may also try the corresponding
+sealed Grok action. Automatic governance maps Gemini and Grok to their explicit
+`governance` actions while Codex retains its sealed advisory action, preserving read-only authority and
 attempting each target once. Automatic worker routing is temporarily unavailable; worker
 requests require an explicit managed target. Read-only, output-only, and
 mutation-capable authority never promote or demote into one another.
@@ -139,6 +152,7 @@ mutation-capable authority never promote or demote into one another.
 | Request | Authority | Managed route |
 |---|---|---|
 | `target=gemini` review or advisory | Read-only | Gemini advisory |
+| `target=gemini` governance review | Read-only | Gemini `governance` with artifact-bound broker proof |
 | `target=gemini` large-corpus extraction | Read-only | Gemini long-context |
 | `target=codex` second opinion, high-stakes advice, or tiebreaker | Read-only | Codex advisory |
 | `target=codex` bounded implementation | Mutation-capable worker | Typed unavailable pending hardened mutation backend; no advisory fallback |
@@ -221,8 +235,9 @@ their exact supported external CLIs and standard authenticated host state;
 install and authenticate those through their vendor-supported interfaces.
 Policy-only releases return typed `unavailable` for runtime-dependent commands.
 Broker installation is explicit; import, readiness, and invocation never
-install or mutate launchd state. `install-broker` publishes the verified
-artifact/manifest into an immutable artifact-plus-manifest digest directory,
+install or mutate launchd state. `install-broker` publishes only the verified
+manifest-listed bundle members and manifest into an immutable
+artifact-plus-manifest digest directory,
 atomically activates a closed plist, proves the job/socket and one-request
 process exit, and retains one verified prior record. Failed updates restore the
 complete prior state; same-version reactivation preserves its rollback target,
@@ -267,7 +282,7 @@ Every request contains exactly `protocol_version`, `request_id`, `operation`,
 `timeout_ms` is an integer from 1 through 600000. An `execute` request also has
 `prompt`. A governance request has `prompt` plus `artifact`, exactly
 `{"content":"...","author_model":"..."}`; both values must be nonblank. It may
-use only a read-only governance-review contract: `gemini/advisory`,
+use only a read-only governance-review contract: `gemini/governance`,
 `codex/advisory`, or `grok/governance`.
 An execute request for `opencode/build`, `composer/codegen`, `codex/build`,
 `auto/worker`, `auto/advisory`, `auto/architecture`, `auto/governance`, or an
@@ -315,6 +330,7 @@ Exact row contracts are:
 | Contract | Exact `row` shape |
 |---|---|
 | `gemini/advisory` | `{"model":"google/...","effort":"low|medium|high|xhigh"}` |
+| `gemini/governance` | `{"model":"google/gemini-3.1-pro","effort":"high|xhigh"}`; requires `governance=true`, a non-Google artifact snapshot, and broker proof |
 | `gemini/long_context` | Gemini advisory fields plus `"documents":[{"label":"...","content":"..."}]` |
 | `codex/advisory` | `{"model":"openai/...","effort":"low|medium|high|xhigh","mode":"prompt-only"}` or `mode=repo-review` plus absolute `cwd` |
 | `opencode/plan` | Absolute `cwd`; optional explicitly observed `model` and `variant` |
@@ -343,8 +359,9 @@ sends an inbox message and never invokes Claude headlessly.
 Automatic general advisory routing uses `route=auto`, `action=advisory`; its
 `row` has exactly `gemini` and `codex` keys. Automatic architecture uses
 `action=architecture` and automatic governance uses `action=governance`; those
-rows have exact `gemini`, `codex`, and `grok` keys. The coordinator maps only
-the Grok leg to its sealed architecture/governance action. Generic advisory,
+rows have exact `gemini`, `codex`, and `grok` keys. For architecture the
+coordinator maps only Grok to `architecture`; for governance it maps Gemini and
+Grok to `governance` while Codex remains advisory. Generic advisory,
 brainstorm, debate, QA, and fallback calls cannot select Grok. Explicit targets
 never fall back.
 
@@ -381,9 +398,10 @@ fall back or promote into an advisory route. Example:
 No private repository, downloader, provider CLI recipe, or backend source is
 needed on a plugin-only machine. The coordinator accepts closed policy fields;
 the native client accepts only its sealed envelope. The first release target is
-Darwin arm64 and requires exact integer protocol versions, safe ownership/mode/
-link state, digest, Developer ID team, the actual numeric hardened-runtime
-code-signing flag, and notarization. Runtime stdout and stderr are bounded
+Darwin arm64 and requires exact integer protocol versions, exact bundle
+membership and identity, safe ownership/mode/link state, per-member digests and
+Mach-O facts, Developer ID team, the actual numeric hardened-runtime
+code-signing flag, and entrypoint notarization. Runtime stdout and stderr are bounded
 during execution; an output-limit violation terminates and reaps the runtime
 process group before returning typed `output_limit`. Unexpected selector or
 pipe-read failures follow the same terminate-and-reap rule before returning a
@@ -392,8 +410,9 @@ typed lifecycle error.
 This protects distribution integrity and narrows path substitution, but it does
 not claim isolation from a malicious process already running as the same UID.
 macOS has no descriptor-only Mach-O execution path here; the client rechecks
-file identity immediately before its fixed-path spawn, while treating the
-operator account and selected plugin cache as trusted.
+the complete bundle and entrypoint identity immediately before its fixed-path
+spawn, while treating the operator account and selected plugin cache as
+trusted.
 
 The manifest cannot choose its own signer. `signing_policy.py` pins the
 operator-owned Developer ID Team ID in reviewed policy source, and runtime plus
