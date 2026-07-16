@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.3.0**
+Current: **3.4.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -50,7 +50,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport is version 2 while the provider protocol
 remains version 1. The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.3.0 package.
+identify this same 3.4.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -62,6 +62,21 @@ but there is no provider process, polling CPU, provider memory, or network
 traffic. A missing or stale broker is a typed failure—these routes never fall
 back to the direct entrypoint path. Only local runtime management retains fixed
 direct exact-entrypoint execution.
+
+The client also understands one strict, private blue/green selector. Without a
+committed green lane it continues using the exact legacy blue broker, even when
+the newly installed client carries different runtime digests. Green label,
+socket, state, and plist paths are derived from its signed artifact and manifest
+digests; callers cannot supply them. Missing, malformed, unsafe, unproven, or
+unreachable green state leaves a proven blue lane usable when the green
+connection fails before any send attempt. A request captures one complete lane
+once, and no fallback occurs after a connection succeeds. This bootstrap is
+mechanically legacy-blue: it can stage and prove green metadata but refuses
+green promotion. A later governed dispatcher/client protocol must supply
+authenticated lane identity and a no-side-effect request-acceptance handshake
+before enabling green. Mutating broker lifecycle commands are unavailable from
+the Codex seatbelt at both packaged entrypoints; read-only `broker-status`
+remains available.
 The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
 socket activation does not inherit that client sandbox, so every brokered Grok
 and Composer attempt independently validates its own nested read-only sandbox.

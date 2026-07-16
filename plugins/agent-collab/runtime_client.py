@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import contextmanager
+import ctypes
 import hashlib
 import hmac
 import importlib.util
@@ -56,6 +57,25 @@ BROKER_PROTOCOL_VERSION = 2
 BROKER_LABEL = "com.agent-collab.provider-broker"
 BROKER_SOCKET_NAME = "ProviderBroker"
 BROKER_SOCKET_FILENAME = "provider-broker.sock"
+BROKER_SELECTOR_FILENAME = "selector.json"
+BROKER_SELECTOR_MAX_BYTES = 16 * 1024
+BROKER_SELECTOR_KEYS = frozenset(
+    {"schema_version", "generation", "selected_lane", "blue", "green"}
+)
+BROKER_LANE_REFERENCE_KEYS = frozenset(
+    {"artifact_sha256", "manifest_sha256"}
+)
+BROKER_DISPATCHER_STATE_KEYS = frozenset(
+    {
+        "schema_version",
+        "contract_version",
+        "broker_protocol_version",
+        "runtime_protocol_version",
+        "artifact_sha256",
+        "manifest_sha256",
+        "plist_sha256",
+    }
+)
 BROKER_FRAME_KEYS = frozenset(
     {
         "broker_protocol_version",
@@ -73,6 +93,12 @@ BROKER_MAX_REQUEST_BYTES = MAX_REQUEST_BYTES
 BROKER_MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES
 BROKER_STATE_MAX_BYTES = 64 * 1024
 BROKER_SUN_PATH_MAX_BYTES = 103
+BROKER_FALLBACK_CONNECT_TIMEOUT_SECONDS = 2.0
+BROKER_FALLBACK_RESERVE_SECONDS = 1.0
+# Version 3.4 can stage and prove green metadata but has no authenticated
+# endpoint/ready protocol.  A later protocol-bearing release must replace this
+# closed bootstrap guard as part of the reviewed cross-repository change.
+BROKER_GREEN_PROMOTION_SUPPORTED = False
 BROKER_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 BROKER_STATE_KEYS = frozenset(
     {
@@ -264,6 +290,16 @@ class RuntimeResolution:
     artifact_digest: str = ""
     identity: FileIdentity | None = None
     error: str = ""
+
+
+@dataclass(frozen=True)
+class BrokerLaneSnapshot:
+    name: str
+    generation: int
+    artifact_digest: str
+    manifest_digest: str
+    label: str
+    socket_path: Path
 
 
 @dataclass(frozen=True)
@@ -890,6 +926,120 @@ def _broker_root() -> Path:
     return Path(value) / ".agent-collab" / "provider-broker"
 
 
+def _broker_lane_reference_valid(document: object) -> bool:
+    return bool(
+        isinstance(document, dict)
+        and set(document) == BROKER_LANE_REFERENCE_KEYS
+        and isinstance(document.get("artifact_sha256"), str)
+        and _SHA256_RE.fullmatch(document["artifact_sha256"])
+        and isinstance(document.get("manifest_sha256"), str)
+        and _SHA256_RE.fullmatch(document["manifest_sha256"])
+    )
+
+
+def _broker_selector_valid(document: object) -> bool:
+    if not isinstance(document, dict) or set(document) != BROKER_SELECTOR_KEYS:
+        return False
+    if (
+        not _exact_int(document.get("schema_version"), 1)
+        or not _exact_int(document.get("generation"))
+        or document["generation"] < 1
+        or document.get("selected_lane") not in {"blue", "green"}
+        or not _broker_lane_reference_valid(document.get("blue"))
+    ):
+        return False
+    green = document.get("green")
+    if green is not None and not _broker_lane_reference_valid(green):
+        return False
+    return document["selected_lane"] != "green" or green is not None
+
+
+def _broker_selector_transition_valid(current: object, candidate: object) -> bool:
+    if not _broker_selector_valid(current) or not _broker_selector_valid(candidate):
+        return False
+    assert isinstance(current, dict) and isinstance(candidate, dict)
+    if (
+        candidate["generation"] != current["generation"] + 1
+        or candidate["blue"] != current["blue"]
+    ):
+        return False
+    if candidate["selected_lane"] == "green":
+        return current["green"] is not None and candidate["green"] == current["green"]
+    return True
+
+
+def _read_broker_selector(root: Path) -> dict[str, Any] | None:
+    if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
+        raise ValueError("provider broker root identity is unsafe")
+    path = root / BROKER_SELECTOR_FILENAME
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return None
+    identity = _exact_mode(path, expected_type=stat.S_IFREG, mode=0o600)
+    if identity is None or identity.st_size > BROKER_SELECTOR_MAX_BYTES:
+        raise ValueError("provider broker selector identity is unsafe")
+    raw, opened = _read_regular_nofollow(path, limit=BROKER_SELECTOR_MAX_BYTES)
+    if raw is None or opened is None:
+        raise ValueError("provider broker selector cannot be read safely")
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("provider broker selector is malformed") from exc
+    if not _broker_selector_valid(document):
+        raise ValueError("provider broker selector contract mismatch")
+    return dict(document)
+
+
+def _dispatcher_lane_token(artifact_digest: str, manifest_digest: str) -> str:
+    if (
+        not isinstance(artifact_digest, str)
+        or _SHA256_RE.fullmatch(artifact_digest) is None
+        or not isinstance(manifest_digest, str)
+        or _SHA256_RE.fullmatch(manifest_digest) is None
+    ):
+        raise ValueError("provider dispatcher identity is invalid")
+    digest = hashlib.sha256()
+    digest.update(b"agent-collab-provider-dispatcher-v1\0")
+    digest.update(bytes.fromhex(artifact_digest))
+    digest.update(bytes.fromhex(manifest_digest))
+    return digest.hexdigest()[:32]
+
+
+def _dispatcher_lane_snapshot(
+    root: Path,
+    *,
+    artifact_digest: str,
+    manifest_digest: str,
+    generation: int,
+) -> BrokerLaneSnapshot:
+    if not root.is_absolute() or not _exact_int(generation) or generation < 1:
+        raise ValueError("provider dispatcher lane input is invalid")
+    token = _dispatcher_lane_token(artifact_digest, manifest_digest)
+    socket_path = root / f"provider-dispatcher-{token}.sock"
+    if len(os.fsencode(socket_path)) > BROKER_SUN_PATH_MAX_BYTES:
+        raise ValueError("provider dispatcher socket path is too long")
+    return BrokerLaneSnapshot(
+        name="green",
+        generation=generation,
+        artifact_digest=artifact_digest,
+        manifest_digest=manifest_digest,
+        label=f"com.agent-collab.provider-dispatcher.{token}",
+        socket_path=socket_path,
+    )
+
+
+def _dispatcher_mutable_path(root: Path, lane: BrokerLaneSnapshot, suffix: str) -> Path:
+    if lane.name != "green" or suffix not in {"json", "plist"}:
+        raise ValueError("provider dispatcher mutable path is invalid")
+    token = _dispatcher_lane_token(lane.artifact_digest, lane.manifest_digest)
+    return root / f"provider-dispatcher-{token}.{suffix}"
+
+
 def _exact_mode(path: Path, *, expected_type: int, mode: int) -> os.stat_result | None:
     try:
         info = path.lstat()
@@ -1011,12 +1161,186 @@ def _load_broker_state(
     return dict(document), None
 
 
+def _load_legacy_broker_lane(root: Path) -> BrokerLaneSnapshot | None:
+    state = _read_current_broker_state(root)
+    if state is None:
+        return None
+    _verify_published_version(
+        root,
+        artifact_digest=state["artifact_sha256"],
+        manifest_digest=state["manifest_sha256"],
+    )
+    _verify_plist_against_state(root, state)
+    socket_path = root / BROKER_SOCKET_FILENAME
+    if _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
+        raise ValueError("provider broker socket identity is unavailable")
+    return BrokerLaneSnapshot(
+        name="blue",
+        generation=0,
+        artifact_digest=state["artifact_sha256"],
+        manifest_digest=state["manifest_sha256"],
+        label=BROKER_LABEL,
+        socket_path=socket_path,
+    )
+
+
+def _load_dispatcher_broker_lane(
+    root: Path, reference: Mapping[str, Any], generation: int
+) -> BrokerLaneSnapshot:
+    if not _broker_lane_reference_valid(reference):
+        raise ValueError("provider dispatcher reference is invalid")
+    lane = _dispatcher_lane_snapshot(
+        root,
+        artifact_digest=reference["artifact_sha256"],
+        manifest_digest=reference["manifest_sha256"],
+        generation=generation,
+    )
+    state_path = _dispatcher_mutable_path(root, lane, "json")
+    identity = _exact_mode(state_path, expected_type=stat.S_IFREG, mode=0o600)
+    if identity is None or identity.st_size > BROKER_STATE_MAX_BYTES:
+        raise ValueError("provider dispatcher state identity is unsafe")
+    raw, opened = _read_regular_nofollow(state_path, limit=BROKER_STATE_MAX_BYTES)
+    if raw is None or opened is None:
+        raise ValueError("provider dispatcher state cannot be read safely")
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("provider dispatcher state is malformed") from exc
+    if (
+        not isinstance(document, dict)
+        or set(document) != BROKER_DISPATCHER_STATE_KEYS
+        or not _exact_int(document.get("schema_version"), 1)
+        or not _exact_int(document.get("contract_version"), CONTRACT_VERSION)
+        or not _exact_int(
+            document.get("broker_protocol_version"), BROKER_PROTOCOL_VERSION
+        )
+        or not _exact_int(document.get("runtime_protocol_version"), PROTOCOL_VERSION)
+        or document.get("artifact_sha256") != lane.artifact_digest
+        or document.get("manifest_sha256") != lane.manifest_digest
+        or not isinstance(document.get("plist_sha256"), str)
+        or _SHA256_RE.fullmatch(document["plist_sha256"]) is None
+    ):
+        raise ValueError("provider dispatcher state contract mismatch")
+    _bundle, runtime, _manifest = _verify_published_version(
+        root,
+        artifact_digest=lane.artifact_digest,
+        manifest_digest=lane.manifest_digest,
+    )
+    plist_path = _dispatcher_mutable_path(root, lane, "plist")
+    plist_identity = _exact_mode(plist_path, expected_type=stat.S_IFREG, mode=0o600)
+    plist_raw, _plist_opened = _read_regular_nofollow(
+        plist_path, limit=1024 * 1024
+    )
+    if (
+        plist_identity is None
+        or plist_raw is None
+        or hashlib.sha256(plist_raw).hexdigest() != document["plist_sha256"]
+    ):
+        raise ValueError("provider dispatcher plist identity mismatch")
+    try:
+        plist_document = plistlib.loads(plist_raw)
+    except (plistlib.InvalidFileException, ValueError) as exc:
+        raise ValueError("provider dispatcher plist is malformed") from exc
+    home = _operator_home()
+    if home is None:
+        raise ValueError("operator home is unavailable")
+    expected_plist = _broker_plist_document(
+        runtime_path=runtime,
+        socket_path=lane.socket_path,
+        tmpdir=root / "tmp",
+        home=Path(home),
+        uid=os.getuid(),
+        label=lane.label,
+    )
+    if plist_document != expected_plist:
+        raise ValueError("provider dispatcher plist contract mismatch")
+    if _exact_mode(lane.socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
+        raise ValueError("provider dispatcher socket identity is unavailable")
+    return lane
+
+
+def _capture_broker_lanes(
+    resolution: RuntimeResolution,
+) -> tuple[tuple[BrokerLaneSnapshot, ...], RuntimeResult | None]:
+    if (
+        not isinstance(resolution, RuntimeResolution)
+        or not resolution.artifact_digest
+        or not resolution.manifest_digest
+    ):
+        return (), RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="verified runtime digests are unavailable",
+        )
+    try:
+        root = _broker_root()
+    except ValueError:
+        return (), RuntimeResult(
+            RuntimeStatus.CONFIG_ERROR,
+            error="provider broker configuration is unavailable",
+        )
+    blue: BrokerLaneSnapshot | None = None
+    blue_error: RuntimeResult | None = None
+    try:
+        blue = _load_legacy_broker_lane(root)
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+        blue_error = RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="legacy provider broker identity could not be proven",
+        )
+    try:
+        selector = _read_broker_selector(root)
+    except (OSError, ValueError):
+        selector = None
+    if selector is None:
+        if blue is not None:
+            return (blue,), None
+        return (), blue_error or RuntimeResult(
+            RuntimeStatus.UNAVAILABLE, error="provider broker is not installed"
+        )
+
+    if selector["selected_lane"] == "blue":
+        if blue is not None:
+            return (blue,), None
+        return (), blue_error or RuntimeResult(
+            RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
+        )
+
+    try:
+        green = _load_dispatcher_broker_lane(
+            root, selector["green"], selector["generation"]
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, TypeError):
+        green = None
+    if green is not None:
+        if not BROKER_GREEN_PROMOTION_SUPPORTED:
+            if blue is not None:
+                return (blue,), None
+            return (), RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                error="provider dispatcher promotion is not supported by this client",
+            )
+        # Each lane is proven independently.  A stale selector reference must
+        # not suppress either the committed green lane or the viable blue
+        # fallback while metadata catches up.
+        return ((green, blue) if blue is not None else (green,)), None
+    if blue is not None:
+        return (blue,), None
+    return (), blue_error or RuntimeResult(
+        RuntimeStatus.UNAVAILABLE, error="provider dispatcher is unavailable"
+    )
+
+
 def _broker_request_frame(
     *,
     request: Mapping[str, Any],
     artifact_digest: str,
     manifest_digest: str,
     timeout_ms: int,
+    deadline_monotonic_ms: int | None = None,
 ) -> dict[str, Any]:
     if (
         not isinstance(request, dict)
@@ -1024,6 +1348,13 @@ def _broker_request_frame(
         or not _SHA256_RE.fullmatch(manifest_digest)
         or not _exact_int(timeout_ms)
         or not 1 <= timeout_ms <= MAX_TIMEOUT_MS
+        or (
+            deadline_monotonic_ms is not None
+            and (
+                not _exact_int(deadline_monotonic_ms)
+                or deadline_monotonic_ms <= 0
+            )
+        )
         or os.getpid() <= 1
     ):
         raise ValueError("invalid provider broker request")
@@ -1035,7 +1366,11 @@ def _broker_request_frame(
         "manifest_sha256": manifest_digest,
         "client_pid": os.getpid(),
         "nonce": nonce,
-        "deadline_monotonic_ms": int(time.monotonic() * 1000) + timeout_ms,
+        "deadline_monotonic_ms": (
+            int(time.monotonic() * 1000) + timeout_ms
+            if deadline_monotonic_ms is None
+            else deadline_monotonic_ms
+        ),
         "request": dict(request),
     }
 
@@ -1161,32 +1496,61 @@ def _launch_broker(
         request = json.loads(payload.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="sealed broker request is invalid")
-    state, error = _load_broker_state(
-        artifact_digest=resolution.artifact_digest,
-        manifest_digest=resolution.manifest_digest,
-        require_socket=True,
-    )
-    if error is not None or state is None:
-        return error or RuntimeResult(RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable")
-    try:
-        frame = _broker_request_frame(
-            request=request,
-            artifact_digest=resolution.artifact_digest,
-            manifest_digest=resolution.manifest_digest,
-            timeout_ms=timeout_ms,
+    lanes, error = _capture_broker_lanes(resolution)
+    if error is not None or not lanes:
+        return error or RuntimeResult(
+            RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
         )
-        encoded = _encode_broker_frame(frame, max_bytes=BROKER_MAX_REQUEST_BYTES)
-        deadline = time.monotonic() + timeout_ms / 1000
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
-            peer.settimeout(timeout_ms / 1000)
-            peer.connect(state["socket_path"])
-            peer.sendall(encoded)
-            response = _read_broker_frame(
-                peer,
-                max_bytes=BROKER_MAX_RESPONSE_BYTES,
-                deadline=deadline,
+    started = time.monotonic()
+    deadline = started + timeout_ms / 1000
+    deadline_monotonic_ms = int(started * 1000) + timeout_ms
+    try:
+        for index, lane in enumerate(lanes):
+            frame = _broker_request_frame(
+                request=request,
+                artifact_digest=lane.artifact_digest,
+                manifest_digest=lane.manifest_digest,
+                timeout_ms=timeout_ms,
+                deadline_monotonic_ms=deadline_monotonic_ms,
             )
-        return _parse_broker_response(response, envelope)
+            encoded = _encode_broker_frame(
+                frame, max_bytes=BROKER_MAX_REQUEST_BYTES
+            )
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("provider broker deadline expired")
+                if index + 1 < len(lanes):
+                    reserve = min(BROKER_FALLBACK_RESERVE_SECONDS, remaining / 2)
+                    connect_budget = min(
+                        BROKER_FALLBACK_CONNECT_TIMEOUT_SECONDS,
+                        remaining - reserve,
+                    )
+                    if connect_budget <= 0:
+                        continue
+                else:
+                    connect_budget = remaining
+                peer.settimeout(connect_budget)
+                try:
+                    peer.connect(str(lane.socket_path))
+                except OSError:
+                    if index + 1 < len(lanes):
+                        continue
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("provider broker deadline expired")
+                peer.settimeout(remaining)
+                peer.sendall(encoded)
+                response = _read_broker_frame(
+                    peer,
+                    max_bytes=BROKER_MAX_RESPONSE_BYTES,
+                    deadline=deadline,
+                )
+            return _parse_broker_response(response, envelope)
+        return RuntimeResult(
+            RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
+        )
     except TimeoutError:
         return RuntimeResult(RuntimeStatus.TIMEOUT, error="provider broker deadline expired")
     except OverflowError:
@@ -1200,18 +1564,27 @@ def _launch_broker(
 
 
 def _broker_plist_document(
-    *, runtime_path: Path, socket_path: Path, tmpdir: Path, home: Path, uid: int
+    *,
+    runtime_path: Path,
+    socket_path: Path,
+    tmpdir: Path,
+    home: Path,
+    uid: int,
+    label: str = BROKER_LABEL,
 ) -> dict[str, Any]:
     if (
         not all(path.is_absolute() for path in (runtime_path, socket_path, tmpdir, home))
         or not _exact_int(uid)
         or uid < 0
+        or not isinstance(label, str)
+        or re.fullmatch(r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})", label)
+        is None
         or len(os.fsencode(socket_path)) > BROKER_SUN_PATH_MAX_BYTES
     ):
         raise ValueError("invalid provider broker plist input")
     runtime = str(runtime_path)
     return {
-        "Label": BROKER_LABEL,
+        "Label": label,
         "Program": runtime,
         "ProgramArguments": [runtime, "broker", "--protocol", str(BROKER_PROTOCOL_VERSION)],
         "EnvironmentVariables": {
@@ -1689,6 +2062,49 @@ def _verify_plist_against_state(root: Path, state: Mapping[str, Any]) -> None:
         raise ValueError("provider broker plist contract mismatch")
 
 
+def _sandbox_denies_broker_lifecycle() -> bool:
+    """Ask the Darwin kernel policy whether this process can reach launchd.
+
+    The environment marker remains a fast, explicit signal, but it is not an
+    authority boundary: descendants can delete environment variables while
+    retaining the parent's Seatbelt profile.  The kernel query survives that
+    deletion.  Fail closed on Darwin when the policy cannot be queried.
+    """
+
+    if platform.system().lower() != "darwin":
+        return False
+    try:
+        sandbox = ctypes.CDLL("/usr/lib/libsandbox.1.dylib", use_errno=True)
+        check = sandbox.sandbox_check
+        check.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        check.restype = ctypes.c_int
+        no_report = ctypes.c_int.in_dll(
+            sandbox, "SANDBOX_CHECK_NO_REPORT"
+        ).value
+        # SANDBOX_FILTER_GLOBAL_NAME is 2 in Darwin's sandbox interface.
+        result = check(
+            os.getpid(),
+            b"mach-lookup",
+            2 | no_report,
+            ctypes.c_char_p(b"com.apple.xpc.launchd"),
+        )
+    except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
+        return True
+    return result != 0
+
+
+def _broker_lifecycle_seatbelt_block() -> RuntimeResult | None:
+    if (
+        os.environ.get("CODEX_SANDBOX") != "seatbelt"
+        and not _sandbox_denies_broker_lifecycle()
+    ):
+        return None
+    return RuntimeResult(
+        RuntimeStatus.HOST_BLOCKED,
+        error="broker lifecycle is unavailable from the Codex seatbelt",
+    )
+
+
 def _activate_broker_record(
     root: Path,
     *,
@@ -1808,6 +2224,9 @@ def _activate_broker_record(
 
 
 def install_broker() -> RuntimeResult:
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
     resolution = resolve_runtime()
     if resolution.status is not RuntimeStatus.OK:
         return RuntimeResult(resolution.status, error=resolution.error)
@@ -1891,6 +2310,9 @@ def broker_status() -> RuntimeResult:
 
 
 def rollback_broker() -> RuntimeResult:
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
     try:
         root = _broker_root()
         state = _read_current_broker_state(root)
@@ -1921,6 +2343,9 @@ def rollback_broker() -> RuntimeResult:
 
 
 def uninstall_broker() -> RuntimeResult:
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
     try:
         root = _broker_root()
         state = _read_current_broker_state(root)

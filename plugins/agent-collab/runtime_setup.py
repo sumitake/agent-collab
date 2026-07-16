@@ -21,6 +21,9 @@ _LIFECYCLE_COMMANDS = {
     "rollback-broker": "rollback_broker",
     "uninstall-broker": "uninstall_broker",
 }
+_MUTATING_LIFECYCLE_COMMANDS = frozenset(
+    {"install-broker", "rollback-broker", "uninstall-broker"}
+)
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -43,7 +46,11 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         return 2
-    if args[0] in _LIFECYCLE_COMMANDS:
+    if args[0] in _MUTATING_LIFECYCLE_COMMANDS and (
+        blocked := runtime_client._broker_lifecycle_seatbelt_block()
+    ) is not None:
+        result = blocked
+    elif args[0] in _LIFECYCLE_COMMANDS:
         result = getattr(runtime_client, _LIFECYCLE_COMMANDS[args[0]])()
     else:
         action, timeout_ms = _COMMANDS[args[0]]

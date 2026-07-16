@@ -81,6 +81,11 @@ class RuntimeClientTests(unittest.TestCase):
         )
         self.platform_patch.start()
         self.arch_patch.start()
+        self.kernel_sandbox_probe = self.client._sandbox_denies_broker_lifecycle
+        self.sandbox_patch = mock.patch.object(
+            self.client, "_sandbox_denies_broker_lifecycle", return_value=False
+        )
+        self.sandbox_patch.start()
         def fixture_inspector(path, record, *, signing):
             valid, error = self.client._verify_macos_signature(
                 path,
@@ -109,6 +114,7 @@ class RuntimeClientTests(unittest.TestCase):
         self.inspector_patch.start()
 
     def tearDown(self) -> None:
+        self.sandbox_patch.stop()
         self.inspector_patch.stop()
         self.arch_patch.stop()
         self.platform_patch.stop()
@@ -499,6 +505,721 @@ print(json.dumps({{
         with self.assertRaises(OverflowError):
             self.client._encode_broker_frame({"large": "x" * 50}, max_bytes=8)
 
+    def _selector_document(
+        self,
+        *,
+        generation: int = 1,
+        selected_lane: str = "blue",
+        blue_artifact: str = "a" * 64,
+        blue_manifest: str = "b" * 64,
+        green_artifact: str | None = "c" * 64,
+        green_manifest: str | None = "d" * 64,
+    ) -> dict[str, object]:
+        green = None
+        if green_artifact is not None and green_manifest is not None:
+            green = {
+                "artifact_sha256": green_artifact,
+                "manifest_sha256": green_manifest,
+            }
+        return {
+            "schema_version": 1,
+            "generation": generation,
+            "selected_lane": selected_lane,
+            "blue": {
+                "artifact_sha256": blue_artifact,
+                "manifest_sha256": blue_manifest,
+            },
+            "green": green,
+        }
+
+    def test_broker_selector_schema_generation_and_paths_are_closed(self) -> None:
+        selector = self._selector_document()
+        self.assertTrue(self.client._broker_selector_valid(selector))
+        committed = self._selector_document(generation=2, selected_lane="green")
+        self.assertTrue(
+            self.client._broker_selector_transition_valid(selector, committed)
+        )
+        for generation in (1, 3, True, 2.0, -1):
+            candidate = self._selector_document(
+                generation=generation, selected_lane="green"
+            )
+            with self.subTest(generation=generation):
+                self.assertFalse(
+                    self.client._broker_selector_transition_valid(selector, candidate)
+                )
+
+        invalid = []
+        extra = self._selector_document()
+        extra["socket_path"] = "/tmp/attacker.sock"
+        invalid.append(extra)
+        missing = self._selector_document()
+        missing.pop("blue")
+        invalid.append(missing)
+        bool_generation = self._selector_document(generation=True)
+        invalid.append(bool_generation)
+        float_generation = self._selector_document(generation=1.0)
+        invalid.append(float_generation)
+        uppercase_digest = self._selector_document(green_artifact="C" * 64)
+        invalid.append(uppercase_digest)
+        arbitrary_green_path = self._selector_document()
+        assert isinstance(arbitrary_green_path["green"], dict)
+        arbitrary_green_path["green"]["label"] = "attacker.label"
+        invalid.append(arbitrary_green_path)
+        selected_missing_green = self._selector_document(
+            selected_lane="green", green_artifact=None, green_manifest=None
+        )
+        invalid.append(selected_missing_green)
+        for document in invalid:
+            with self.subTest(document=document):
+                self.assertFalse(self.client._broker_selector_valid(document))
+
+        lane = self.client._dispatcher_lane_snapshot(
+            self.root,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            generation=2,
+        )
+        token = self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+        self.assertEqual(
+            lane.label, f"com.agent-collab.provider-dispatcher.{token}"
+        )
+        self.assertEqual(
+            lane.socket_path, self.root / f"provider-dispatcher-{token}.sock"
+        )
+        self.assertEqual(lane.artifact_digest, "c" * 64)
+        self.assertEqual(lane.manifest_digest, "d" * 64)
+
+    def test_selector_file_is_exact_private_regular_and_bounded(self) -> None:
+        root = self.root / "selector-root"
+        root.mkdir(mode=0o700)
+        path = root / self.client.BROKER_SELECTOR_FILENAME
+        document = self._selector_document()
+        path.write_text(json.dumps(document), encoding="utf-8")
+        path.chmod(0o600)
+        self.assertEqual(self.client._read_broker_selector(root), document)
+
+        path.chmod(0o644)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_selector(root)
+        path.chmod(0o600)
+        path.write_text('{"schema_version":1', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.client._read_broker_selector(root)
+
+        path.write_text(json.dumps(document), encoding="utf-8")
+        hardlink = root / "selector-hardlink.json"
+        os.link(path, hardlink)
+        with self.assertRaises(ValueError):
+            self.client._read_broker_selector(root)
+
+    def test_dispatcher_lane_requires_exact_derived_state_plist_and_socket(self) -> None:
+        root = self.root / "dispatcher-root"
+        root.mkdir(mode=0o700)
+        lane = self.client._dispatcher_lane_snapshot(
+            root,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            generation=2,
+        )
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(lane.socket_path))
+        lane.socket_path.chmod(0o600)
+        self.addCleanup(listener.close)
+        runtime = self.root / "published-runtime"
+        plist_document = self.client._broker_plist_document(
+            runtime_path=runtime,
+            socket_path=lane.socket_path,
+            tmpdir=root / "tmp",
+            home=self.root,
+            uid=os.getuid(),
+            label=lane.label,
+        )
+        plist_raw = plistlib.dumps(
+            plist_document, fmt=plistlib.FMT_XML, sort_keys=True
+        )
+        plist_path = self.client._dispatcher_mutable_path(root, lane, "plist")
+        plist_path.write_bytes(plist_raw)
+        plist_path.chmod(0o600)
+        state = {
+            "schema_version": 1,
+            "contract_version": self.client.CONTRACT_VERSION,
+            "broker_protocol_version": self.client.BROKER_PROTOCOL_VERSION,
+            "runtime_protocol_version": self.client.PROTOCOL_VERSION,
+            "artifact_sha256": lane.artifact_digest,
+            "manifest_sha256": lane.manifest_digest,
+            "plist_sha256": hashlib.sha256(plist_raw).hexdigest(),
+        }
+        state_path = self.client._dispatcher_mutable_path(root, lane, "json")
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        state_path.chmod(0o600)
+        reference = {
+            "artifact_sha256": lane.artifact_digest,
+            "manifest_sha256": lane.manifest_digest,
+        }
+        with mock.patch.object(
+            self.client,
+            "_verify_published_version",
+            return_value=(self.root / "bundle", runtime, self.root / "manifest"),
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ):
+            observed = self.client._load_dispatcher_broker_lane(root, reference, 2)
+        self.assertEqual(observed, lane)
+
+        state_path.chmod(0o644)
+        with self.assertRaises(ValueError):
+            self.client._load_dispatcher_broker_lane(root, reference, 2)
+
+    def test_missing_invalid_or_unproven_green_leaves_blue_selected(self) -> None:
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=0,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / self.client.BROKER_SOCKET_FILENAME,
+        )
+        cases = (
+            None,
+            ValueError("partial selector"),
+            ValueError("malformed selector"),
+        )
+        for observed in cases:
+            with self.subTest(observed=repr(observed)), mock.patch.object(
+                self.client, "_load_legacy_broker_lane", return_value=blue
+            ), mock.patch.object(
+                self.client,
+                "_read_broker_selector",
+                side_effect=observed if isinstance(observed, BaseException) else None,
+                return_value=observed if observed is None else mock.DEFAULT,
+            ), mock.patch.object(
+                self.client, "_load_dispatcher_broker_lane"
+            ) as green:
+                lanes, error = self.client._capture_broker_lanes(resolution)
+            self.assertEqual(lanes, (blue,))
+            self.assertIsNone(error)
+            green.assert_not_called()
+
+        selected_green = self._selector_document(selected_lane="green")
+        with mock.patch.object(
+            self.client, "_load_legacy_broker_lane", return_value=blue
+        ), mock.patch.object(
+            self.client, "_read_broker_selector", return_value=selected_green
+        ), mock.patch.object(
+            self.client,
+            "_load_dispatcher_broker_lane",
+            side_effect=ValueError("unproven dispatcher"),
+        ):
+            lanes, error = self.client._capture_broker_lanes(resolution)
+        self.assertEqual(lanes, (blue,))
+        self.assertIsNone(error)
+
+    def test_selected_green_is_not_suppressed_by_stale_blue_reference(self) -> None:
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        current_blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=0,
+            artifact_digest="9" * 64,
+            manifest_digest="8" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / self.client.BROKER_SOCKET_FILENAME,
+        )
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=self.root / "green.sock",
+        )
+        selector = self._selector_document(selected_lane="green", generation=2)
+        with mock.patch.object(
+            self.client, "_load_legacy_broker_lane", return_value=current_blue
+        ), mock.patch.object(
+            self.client, "_read_broker_selector", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_dispatcher_broker_lane", return_value=green
+        ) as green_loader, mock.patch.object(
+            self.client, "BROKER_GREEN_PROMOTION_SUPPORTED", True
+        ):
+            lanes, error = self.client._capture_broker_lanes(resolution)
+        self.assertEqual(lanes, (green, current_blue))
+        self.assertIsNone(error)
+        green_loader.assert_called_once()
+
+    def test_bootstrap_refuses_green_promotion_until_handshake_support(self) -> None:
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=0,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / self.client.BROKER_SOCKET_FILENAME,
+        )
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=self.root / "green.sock",
+        )
+        selector = self._selector_document(selected_lane="green", generation=2)
+        with mock.patch.object(
+            self.client, "_load_legacy_broker_lane", return_value=blue
+        ), mock.patch.object(
+            self.client, "_read_broker_selector", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_dispatcher_broker_lane", return_value=green
+        ) as green_loader:
+            lanes, error = self.client._capture_broker_lanes(resolution)
+        self.assertEqual(lanes, (blue,))
+        self.assertIsNone(error)
+        green_loader.assert_called_once()
+
+    def test_client_upgrade_uses_one_captured_blue_tuple(self) -> None:
+        self._fixture()
+        socket_path = self.root / "blue-upgrade.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        socket_path.chmod(0o600)
+        self.addCleanup(listener.close)
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="blue-upgrade-1"
+        )
+        payload = self.client._native_document(envelope)
+        observed: dict[str, object] = {}
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=7,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=socket_path,
+        )
+
+        def server() -> None:
+            peer, _address = listener.accept()
+            with peer:
+                frame = self.client._read_broker_frame(
+                    peer,
+                    max_bytes=self.client.BROKER_MAX_REQUEST_BYTES,
+                    deadline=time.monotonic() + 2,
+                )
+                observed.update(frame)
+                response = {
+                    "protocol_version": 1,
+                    "request_id": envelope.request_id,
+                    "status": "unavailable",
+                    "error": "fixture route unavailable",
+                }
+                peer.sendall(
+                    self.client._encode_broker_frame(
+                        response, max_bytes=self.client.BROKER_MAX_RESPONSE_BYTES
+                    )
+                )
+
+        thread = threading.Thread(target=server)
+        thread.start()
+        client_resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "new-client-runtime",
+            manifest_digest="b" * 64,
+            artifact_digest="a" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((blue,), None)
+        ) as capture:
+            result = self.client._launch_broker(
+                resolution=client_resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual(observed["artifact_sha256"], "c" * 64)
+        self.assertEqual(observed["manifest_sha256"], "d" * 64)
+        capture.assert_called_once_with(client_resolution)
+
+    def test_green_connect_refusal_falls_back_before_blue_send(self) -> None:
+        self._fixture()
+        blue_socket = self.root / "blue-fallback.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(blue_socket))
+        listener.listen(1)
+        blue_socket.chmod(0o600)
+        self.addCleanup(listener.close)
+        envelope = self._envelope(
+            route="opencode", action="plan", request_id="green-fallback-1"
+        )
+        payload = self.client._native_document(envelope)
+        observed: dict[str, object] = {}
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=self.root / "missing-green.sock",
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=2,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=blue_socket,
+        )
+
+        def server() -> None:
+            peer, _address = listener.accept()
+            with peer:
+                frame = self.client._read_broker_frame(
+                    peer,
+                    max_bytes=self.client.BROKER_MAX_REQUEST_BYTES,
+                    deadline=time.monotonic() + 2,
+                )
+                observed.update(frame)
+                response = {
+                    "protocol_version": 1,
+                    "request_id": envelope.request_id,
+                    "status": "unavailable",
+                    "error": "fixture route unavailable",
+                }
+                peer.sendall(
+                    self.client._encode_broker_frame(
+                        response, max_bytes=self.client.BROKER_MAX_RESPONSE_BYTES
+                    )
+                )
+
+        thread = threading.Thread(target=server)
+        thread.start()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client,
+            "_capture_broker_lanes",
+            return_value=((green, blue), None),
+        ) as capture:
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual(observed["artifact_sha256"], "a" * 64)
+        self.assertEqual(observed["manifest_sha256"], "b" * 64)
+        capture.assert_called_once_with(resolution)
+
+    def test_green_connect_timeout_falls_back_with_blue_deadline_remaining(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini",
+            action="advisory",
+            request_id="green-timeout-1",
+            timeout_ms=1_000,
+        )
+        payload = self.client._native_document(envelope)
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=self.root / "slow-green.sock",
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=2,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / "blue.sock",
+        )
+        green_peer = mock.MagicMock()
+        blue_peer = mock.MagicMock()
+        green_peer.__enter__.return_value = green_peer
+        blue_peer.__enter__.return_value = blue_peer
+        green_peer.connect.side_effect = TimeoutError("green connect timed out")
+        response = {
+            "protocol_version": 1,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client,
+            "_capture_broker_lanes",
+            return_value=((green, blue), None),
+        ), mock.patch.object(
+            self.client.socket, "socket", side_effect=(green_peer, blue_peer)
+        ), mock.patch.object(
+            self.client, "_read_broker_frame", return_value=response
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=1_000,
+                envelope=envelope,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        green_peer.connect.assert_called_once_with(str(green.socket_path))
+        blue_peer.connect.assert_called_once_with(str(blue.socket_path))
+        blue_peer.sendall.assert_called_once()
+        self.assertLessEqual(green_peer.settimeout.call_args_list[0].args[0], 0.5)
+        self.assertGreater(blue_peer.settimeout.call_args_list[0].args[0], 0)
+
+    def test_green_fallback_preserves_one_absolute_broker_deadline(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="opencode", action="plan", request_id="fallback-deadline-1"
+        )
+        payload = self.client._native_document(envelope)
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=self.root / "green.sock",
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=2,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / "blue.sock",
+        )
+        green_peer = mock.MagicMock()
+        blue_peer = mock.MagicMock()
+        green_peer.__enter__.return_value = green_peer
+        blue_peer.__enter__.return_value = blue_peer
+        now = [100.0]
+
+        def reject_green(_path: str) -> None:
+            now[0] = 101.5
+            raise ConnectionRefusedError("green refused")
+
+        green_peer.connect.side_effect = reject_green
+        response = {
+            "protocol_version": 1,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client,
+            "_capture_broker_lanes",
+            return_value=((green, blue), None),
+        ), mock.patch.object(
+            self.client.socket, "socket", side_effect=(green_peer, blue_peer)
+        ), mock.patch.object(
+            self.client, "_read_broker_frame", return_value=response
+        ), mock.patch.object(
+            self.client.time, "monotonic", side_effect=lambda: now[0]
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        encoded = blue_peer.sendall.call_args.args[0]
+        size = struct.unpack(">Q", encoded[:8])[0]
+        frame = json.loads(encoded[8 : 8 + size])
+        self.assertEqual(frame["deadline_monotonic_ms"], 130_000)
+
+    def test_accepted_green_failure_never_retries_blue(self) -> None:
+        self._fixture()
+        green_socket = self.root / "accepted-green.sock"
+        blue_socket = self.root / "unused-blue.sock"
+        green_listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        blue_listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        green_listener.bind(str(green_socket))
+        blue_listener.bind(str(blue_socket))
+        green_listener.listen(1)
+        blue_listener.listen(1)
+        green_socket.chmod(0o600)
+        blue_socket.chmod(0o600)
+        self.addCleanup(green_listener.close)
+        self.addCleanup(blue_listener.close)
+        envelope = self._envelope(
+            route="grok", action="architecture", request_id="accepted-green-1"
+        )
+        payload = self.client._native_document(envelope)
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.test",
+            socket_path=green_socket,
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=2,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=blue_socket,
+        )
+
+        def accept_then_close() -> None:
+            peer, _address = green_listener.accept()
+            with peer:
+                self.client._read_broker_frame(
+                    peer,
+                    max_bytes=self.client.BROKER_MAX_REQUEST_BYTES,
+                    deadline=time.monotonic() + 2,
+                )
+
+        thread = threading.Thread(target=accept_then_close)
+        thread.start()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client,
+            "_capture_broker_lanes",
+            return_value=((green, blue), None),
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+        blue_listener.settimeout(0.05)
+        with self.assertRaises(TimeoutError):
+            blue_listener.accept()
+
+    def test_codex_seatbelt_blocks_mutating_lifecycle_before_any_read(self) -> None:
+        for function_name in ("install_broker", "rollback_broker", "uninstall_broker"):
+            with self.subTest(function_name=function_name), mock.patch.dict(
+                os.environ, {"CODEX_SANDBOX": "seatbelt"}, clear=True
+            ), mock.patch.object(
+                self.client, "resolve_runtime"
+            ) as resolve, mock.patch.object(
+                self.client, "_broker_root"
+            ) as root, mock.patch.object(
+                self.client, "_read_current_broker_state"
+            ) as read_state, mock.patch.object(
+                self.client, "_launchctl"
+            ) as launchctl:
+                result = getattr(self.client, function_name)()
+            self.assertEqual(result.status, self.client.RuntimeStatus.HOST_BLOCKED)
+            self.assertEqual(
+                result.error,
+                "broker lifecycle is unavailable from the Codex seatbelt",
+            )
+            resolve.assert_not_called()
+            root.assert_not_called()
+            read_state.assert_not_called()
+            launchctl.assert_not_called()
+
+    def test_kernel_sandbox_guard_survives_marker_removal(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            self.client, "_sandbox_denies_broker_lifecycle", return_value=True
+        ), mock.patch.object(
+            self.client, "resolve_runtime"
+        ) as resolve, mock.patch.object(
+            self.client, "_broker_root"
+        ) as root, mock.patch.object(
+            self.client, "_launchctl"
+        ) as launchctl:
+            result = self.client.install_broker()
+        self.assertEqual(result.status, self.client.RuntimeStatus.HOST_BLOCKED)
+        resolve.assert_not_called()
+        root.assert_not_called()
+        launchctl.assert_not_called()
+
+    def test_kernel_sandbox_probe_is_authoritative_and_fails_closed(self) -> None:
+        probe = self.kernel_sandbox_probe
+        check = mock.MagicMock(return_value=0)
+        sandbox = mock.MagicMock()
+        sandbox.sandbox_check = check
+        no_report = mock.MagicMock(value=1 << 30)
+        with mock.patch.object(
+            self.client.platform, "system", return_value="Darwin"
+        ), mock.patch.object(
+            self.client.ctypes, "CDLL", return_value=sandbox
+        ), mock.patch.object(
+            self.client.ctypes.c_int, "in_dll", return_value=no_report
+        ):
+            self.assertFalse(probe())
+        self.assertEqual(
+            check.call_args.args[:3],
+            (os.getpid(), b"mach-lookup", 2 | (1 << 30)),
+        )
+        self.assertEqual(check.call_args.args[3].value, b"com.apple.xpc.launchd")
+
+        check.return_value = 1
+        with mock.patch.object(
+            self.client.platform, "system", return_value="Darwin"
+        ), mock.patch.object(
+            self.client.ctypes, "CDLL", return_value=sandbox
+        ), mock.patch.object(
+            self.client.ctypes.c_int, "in_dll", return_value=no_report
+        ):
+            self.assertTrue(probe())
+
+        with mock.patch.object(
+            self.client.platform, "system", return_value="Darwin"
+        ), mock.patch.object(
+            self.client.ctypes, "CDLL", side_effect=OSError("unavailable")
+        ):
+            self.assertTrue(probe())
+
+        with mock.patch.object(
+            self.client.platform, "system", return_value="Linux"
+        ), mock.patch.object(self.client.ctypes, "CDLL") as loader:
+            self.assertFalse(probe())
+        loader.assert_not_called()
+
     def test_broker_frame_reader_rejects_truncated_and_oversize_payloads(self) -> None:
         left, right = socket.socketpair()
         self.addCleanup(left.close)
@@ -626,9 +1347,16 @@ print(json.dumps({{
             manifest_digest="b" * 64,
             artifact_digest="a" * 64,
         )
-        state = {"socket_path": str(socket_path)}
+        lane = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=0,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=socket_path,
+        )
         with mock.patch.object(
-            self.client, "_load_broker_state", return_value=(state, None)
+            self.client, "_capture_broker_lanes", return_value=((lane,), None)
         ):
             result = self.client._launch_broker(
                 resolution=resolution,
