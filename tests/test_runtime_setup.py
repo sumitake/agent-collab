@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -82,12 +83,84 @@ class RuntimeSetupTests(unittest.TestCase):
                     return_value=result,
                 ) as lifecycle, mock.patch.object(
                     self.setup.runtime_client, "manage_runtime"
-                ) as managed, contextlib.redirect_stdout(output):
+                ) as managed, mock.patch.dict(
+                    os.environ, {}, clear=True
+                ), mock.patch.object(
+                    self.setup.runtime_client,
+                    "_sandbox_denies_broker_lifecycle",
+                    return_value=False,
+                ), contextlib.redirect_stdout(output):
                     exit_code = self.setup.main([command])
                 self.assertEqual(exit_code, 0)
                 self.assertEqual(json.loads(output.getvalue())["status"], "ok")
                 lifecycle.assert_called_once_with()
                 managed.assert_not_called()
+
+    def test_codex_seatbelt_rejects_mutating_lifecycle_before_dispatch(self) -> None:
+        mutating = (
+            ("install-broker", "install_broker"),
+            ("rollback-broker", "rollback_broker"),
+            ("uninstall-broker", "uninstall_broker"),
+        )
+        for command, function_name in mutating:
+            with self.subTest(command=command):
+                output = io.StringIO()
+                with mock.patch.dict(
+                    os.environ, {"CODEX_SANDBOX": "seatbelt"}, clear=True
+                ), mock.patch.object(
+                    self.setup.runtime_client, function_name
+                ) as lifecycle, mock.patch.object(
+                    self.setup.runtime_client, "broker_status"
+                ) as status, mock.patch.object(
+                    self.setup.runtime_client, "manage_runtime"
+                ) as managed, contextlib.redirect_stdout(output):
+                    exit_code = self.setup.main([command])
+                self.assertEqual(exit_code, 1)
+                self.assertEqual(
+                    json.loads(output.getvalue()),
+                    {
+                        "status": "host_blocked",
+                        "error": "broker lifecycle is unavailable from the Codex seatbelt",
+                    },
+                )
+                lifecycle.assert_not_called()
+                status.assert_not_called()
+                managed.assert_not_called()
+
+    def test_kernel_sandbox_guard_rejects_setup_after_marker_removal(self) -> None:
+        output = io.StringIO()
+        with mock.patch.dict(
+            os.environ, {}, clear=True
+        ), mock.patch.object(
+            self.setup.runtime_client,
+            "_sandbox_denies_broker_lifecycle",
+            return_value=True,
+        ), mock.patch.object(
+            self.setup.runtime_client, "install_broker"
+        ) as lifecycle, contextlib.redirect_stdout(output):
+            exit_code = self.setup.main(["install-broker"])
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(output.getvalue())["status"], "host_blocked")
+        lifecycle.assert_not_called()
+
+    def test_codex_seatbelt_keeps_read_only_broker_status_available(self) -> None:
+        result = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"installed": True, "active": True},
+        )
+        output = io.StringIO()
+        with mock.patch.dict(
+            os.environ, {"CODEX_SANDBOX": "seatbelt"}, clear=True
+        ), mock.patch.object(
+            self.setup.runtime_client, "broker_status", return_value=result
+        ) as status, mock.patch.object(
+            self.setup.runtime_client, "install_broker"
+        ) as install, contextlib.redirect_stdout(output):
+            exit_code = self.setup.main(["broker-status"])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "ok")
+        status.assert_called_once_with()
+        install.assert_not_called()
 
     def test_cli_rejects_raw_provider_model_path_and_option_surfaces(self) -> None:
         invalid = (

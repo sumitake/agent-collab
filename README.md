@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.3.0). It gives
+This repository distributes one package: **agent-collab** (v3.4.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,26 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.3.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.4.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.3.0
+## What's new - v3.4.0
+
+- Add a strict, legacy-default blue/green broker selector. Updated clients can
+  continue using a separately verified legacy broker tuple while an optional
+  content-derived dispatcher lane is staged and proven.
+- Fall back to the proven blue lane only when the green connection fails before
+  any send attempt. Once a connection succeeds, the client never retries a
+  second lane.
+- Block install, rollback, and uninstall broker lifecycle at both packaged
+  entrypoints inside the Codex seatbelt while keeping read-only broker status
+  available.
+
+This bootstrap is mechanically legacy-blue: it can stage and prove green
+metadata but refuses green promotion. A later governed dispatcher/client
+protocol must supply authenticated lane identity and a no-side-effect
+request-acceptance handshake before enabling green.
+
+The v3.3.0 Gemini-governance changes remain in force:
 
 - Add a distinct broker-only `gemini/governance` contract using exact Gemini
   3.1 Pro/high selection and complete artifact-bound proof validation. Gemini

@@ -1,6 +1,6 @@
 ---
 name: untrusted-audit
-version: 3.3.0
+version: 3.4.0
 description: Audit an external or untrusted source before using it in code, skills, plugins, workflows, prompts, or operations. Use when the user says "audit this untrusted source," "can we use this repo," "review this gist," "prompt injection audit," "is this plugin safe," "evaluate this methodology," or "/agent-collab:untrusted-audit." Also offer this proactively when a task would incorporate third-party instructions, code, scripts, hooks, generated skills, package manifests, install steps, or auto-updated methodology into the workspace or agent environment.
 ---
 
