@@ -69,6 +69,12 @@ class RuntimeSetupTests(unittest.TestCase):
             "broker-status": "broker_status",
             "rollback-broker": "rollback_broker",
             "uninstall-broker": "uninstall_broker",
+            "stage-dispatcher": "stage_dispatcher",
+            "dispatcher-status": "dispatcher_status",
+            "commit-selector": "commit_dispatcher_selector",
+            "abort-candidate": "abort_dispatcher_candidate",
+            "recover-last-committed-control-plane": "recover_last_committed_control_plane",
+            "drain-retiring": "drain_retiring_dispatcher",
         }
         for command, function_name in mapping.items():
             with self.subTest(command=command):
@@ -101,6 +107,14 @@ class RuntimeSetupTests(unittest.TestCase):
             ("install-broker", "install_broker"),
             ("rollback-broker", "rollback_broker"),
             ("uninstall-broker", "uninstall_broker"),
+            ("stage-dispatcher", "stage_dispatcher"),
+            ("commit-selector", "commit_dispatcher_selector"),
+            ("abort-candidate", "abort_dispatcher_candidate"),
+            (
+                "recover-last-committed-control-plane",
+                "recover_last_committed_control_plane",
+            ),
+            ("drain-retiring", "drain_retiring_dispatcher"),
         )
         for command, function_name in mutating:
             with self.subTest(command=command):
@@ -126,6 +140,37 @@ class RuntimeSetupTests(unittest.TestCase):
                 lifecycle.assert_not_called()
                 status.assert_not_called()
                 managed.assert_not_called()
+
+    def test_dispatcher_probes_are_closed_non_lifecycle_commands(self) -> None:
+        cases = (
+            (
+                ["dispatcher-ping"],
+                "invoke_dispatcher_ping",
+                {"timeout_ms": 30_000},
+            ),
+            (
+                ["dispatcher-lock-probe", "--provider", "grok", "--timeout-ms", "750"],
+                "invoke_dispatcher_lock_probe",
+                {"provider": "grok", "timeout_ms": 750},
+            ),
+        )
+        for argv, function_name, expected_kwargs in cases:
+            with self.subTest(argv=argv):
+                output = io.StringIO()
+                result = self.client.RuntimeResult(
+                    self.client.RuntimeStatus.OK,
+                    result={"ready": True},
+                )
+                with mock.patch.object(
+                    self.setup.runtime_client, function_name, return_value=result
+                ) as probe, mock.patch.object(
+                    self.setup.runtime_client, "_broker_lifecycle_seatbelt_block"
+                ) as seatbelt, contextlib.redirect_stdout(output):
+                    exit_code = self.setup.main(list(argv))
+                self.assertEqual(exit_code, 0)
+                self.assertEqual(json.loads(output.getvalue())["status"], "ok")
+                probe.assert_called_once_with(**expected_kwargs)
+                seatbelt.assert_not_called()
 
     def test_kernel_sandbox_guard_rejects_setup_after_marker_removal(self) -> None:
         output = io.StringIO()

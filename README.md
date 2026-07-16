@@ -182,6 +182,28 @@ but no provider process, polling CPU, provider memory, or network traffic. Only
 local runtime-management calls retain the fixed direct exact-entrypoint path.
 Missing, stale, or mismatched broker state is a typed
 failure and never falls back to direct execution for any broker-only route.
+Updates use a legacy-default blue/green selector. A candidate dispatcher is
+published under a distinct content-derived label and socket, then proven with a
+no-provider ping while blue remains selected. Every request captures its lane
+ordering once: an in-flight blue request completes on blue, while the next
+request after atomic selector commitment selects green. Green may fall back to
+the still-proven blue lane only before any request bytes are accepted; it never
+retries blue after green accepts a request. Blue is retained until an explicit
+drain operation proves green, observes blue quiescence, receives the private
+registry/lock drain gate, and confirms host-client finalization. Codex host
+updates use a distinct marketplace-qualified candidate because a same-selector
+update deletes the prior cache; the migration doctor permits this bounded
+two-selector overlap because both entries are the unified `agent-collab`
+package, while retired package names remain blocking. The old selector/cache is
+removed only after fresh sessions prove the candidate selector, version, and
+loaded-path digest with zero old-client sessions.
+
+Gemini, Grok, and OpenCode use one canonical cross-lane lock for the entire
+request through provider teardown. The packaged lock probe proves both
+contention and acquisition against that namespace without reading credentials
+or invoking a provider. This makes mixed old/new host clients safe while all
+normal traffic remains blue and prevents blue and green from concurrently
+mutating the same provider state.
 The broker removes the Codex Desktop outer-Seatbelt marker before backend
 dispatch because socket activation does not inherit the client's Seatbelt.
 Every brokered Grok and Composer attempt must therefore build and validate its
@@ -258,20 +280,21 @@ until the signed runtime exposes the complete matrix, including Composer.
    evidence distinguishes project-owned PolyForm material from the embedded
    CPython, Nuitka, and incorporated third-party components.
 7. Hosts update one package, run the migration doctor, restart, and verify the
-   resolved profile plus eligible routes. Activation hosts run the co-packaged
-   `runtime_setup.py status` and `prepare` commands, then explicitly run
-   `install-broker` before enabling Codex, Gemini, OpenCode, Grok, or Composer. Managed Grok device
-   login is exposed only as `runtime_setup.py login-grok`.
-8. Broker updates copy only the manifest-listed regular bundle members and
-   manifest into an immutable artifact-plus-manifest digest directory,
-   atomically replace the closed
-   launchd plist/state, verify the exact job and socket, activate one
-   protocol-only request, and prove the broker process exits. Failed updates
-   restore the complete prior verified state, including its rollback target,
-   or report that no active version is proven. Same-version reactivation keeps
-   its existing rollback target; an unverified current version is never
-   advertised as rollback-safe. Bounded `launchctl` timeout/output failures
-   remain typed lifecycle errors rather than escaping as host tracebacks.
+   resolved profile plus eligible routes. Initial activation hosts run the
+   co-packaged `runtime_setup.py status` and `prepare` commands, then explicitly
+   run `install-broker`. Subsequent updates stage a distinct dispatcher, install
+   every dual-lane client beside the old client while blue remains selected,
+   prove ping and canonical locks, then commit, session-gate old-client
+   finalization, and separately drain through the private manager. Managed Grok
+   device login is exposed only as `runtime_setup.py login-grok`.
+8. Dispatcher updates copy only manifest-listed regular bundle members and the
+   manifest into an immutable artifact-plus-manifest digest directory. Staging
+   writes only candidate plist/state plus a blue-selected selector, verifies the
+   exact candidate job/socket, executes one protocol-only ping, and proves the
+   process exits. Failure restores the prior selector bytes and removes only the
+   candidate. Commitment is a one-generation selector CAS and never bootouts
+   blue. Bounded `launchctl` timeout/output failures remain typed lifecycle
+   errors rather than escaping as host tracebacks.
 
 Rollback uses policy-only safe mode. Set `AGENT_COLLAB_SAFE_MODE=1` in the
 active host runtime environment and restart that host; all model-execution
@@ -317,6 +340,7 @@ python3 "<plugin-root>/runtime_setup.py" status
 python3 "<plugin-root>/runtime_setup.py" prepare
 python3 "<plugin-root>/runtime_setup.py" install-broker
 python3 "<plugin-root>/runtime_setup.py" broker-status
+python3 "<plugin-root>/runtime_setup.py" dispatcher-status
 python3 "<plugin-root>/runtime_setup.py" login-grok
 ```
 
@@ -329,9 +353,29 @@ external prerequisites and must be installed and authenticated through their
 vendor-supported interfaces. No workspace checkout or provider-specific plugin
 is required. Policy-only releases report the management surface unavailable.
 
-Broker lifecycle is always explicit—import, readiness, and route invocation do
-not install or modify launchd state. To switch to the one retained prior digest
-or to remove the job while keeping immutable rollback artifacts, run:
+Broker lifecycle is always explicit—import, readiness, route invocation, and
+package auto-update do not install or modify launchd state. The private rollout
+manager invokes these closed update primitives in order after its host and
+provider gates:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" stage-dispatcher
+python3 "<plugin-root>/runtime_setup.py" dispatcher-ping
+python3 "<plugin-root>/runtime_setup.py" dispatcher-lock-probe --provider gemini --timeout-ms 5000
+python3 "<plugin-root>/runtime_setup.py" commit-selector
+python3 "<plugin-root>/runtime_setup.py" drain-retiring
+```
+
+Reject an uncommitted candidate or rebuild mutable files from the committed
+selector without changing desired provider binaries:
+
+```text
+python3 "<plugin-root>/runtime_setup.py" abort-candidate
+python3 "<plugin-root>/runtime_setup.py" recover-last-committed-control-plane
+```
+
+Manual historical switching and complete removal remain separately named and
+are never invoked by package auto-update:
 
 ```text
 python3 "<plugin-root>/runtime_setup.py" rollback-broker
