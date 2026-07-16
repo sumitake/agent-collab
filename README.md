@@ -35,7 +35,8 @@ Contributors need no access to the private build/sign system. See
   candidate and worker digest tuple, registry generations, route allowlist, and
   one-time authority token. It is not a policy route or model selector.
 - Permit an explicitly committed green selector only with the authenticated
-  handshake. The bounded request-free phase preserves a blue fallback budget;
+  handshake. A separate local bound on the request-free phase preserves a blue
+  fallback budget without shortening the original request deadline;
   pre-request handshake failure may use independently proven blue, while
   failure at or after request send never retries another lane.
 

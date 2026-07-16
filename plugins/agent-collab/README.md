@@ -71,9 +71,10 @@ digests; callers cannot supply them. Missing, malformed, unsafe, unproven, or
 unreachable green state leaves a proven blue lane usable until a
 request-bearing frame is sent. Green first proves Darwin peer credentials, the
 exact published dispatcher executable, and a request-free
-nonce/deadline/lane-bound hello/ready exchange whose bounded deadline preserves
-time for blue. A failure at or after request send never retries another lane.
-The selector remains legacy-blue by default;
+nonce/deadline/lane-bound hello/ready exchange. Its local I/O bound preserves
+time for blue without shortening the original request deadline. A failure at
+or after request send never retries another lane. The selector remains
+legacy-blue by default;
 staging green or invoking the token-gated internal `adoption_canary` operation
 does not select it for normal traffic. That operation binds one exact
 provider/candidate/worker/generation/route tuple and is not a public policy

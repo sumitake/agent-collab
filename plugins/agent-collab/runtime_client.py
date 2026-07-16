@@ -61,6 +61,7 @@ BROKER_SELECTOR_FILENAME = "selector.json"
 BROKER_SELECTOR_MAX_BYTES = 16 * 1024
 DISPATCHER_PROTOCOL_VERSION = 1
 DISPATCHER_MAX_HANDSHAKE_SECONDS = 30.0
+DISPATCHER_MAX_REQUEST_SECONDS = MAX_TIMEOUT_MS / 1000.0
 BROKER_SELECTOR_KEYS = frozenset(
     {"schema_version", "generation", "selected_lane", "blue", "green"}
 )
@@ -1233,7 +1234,7 @@ def _dispatcher_accept_ready(
         hello != expected_hello
         or hello["deadline_monotonic_ms"] <= now_ms
         or hello["deadline_monotonic_ms"]
-        > now_ms + int(DISPATCHER_MAX_HANDSHAKE_SECONDS * 1000)
+        > now_ms + int(DISPATCHER_MAX_REQUEST_SECONDS * 1000)
     ):
         raise ValueError("provider dispatcher hello is invalid")
     hello_sha256 = _dispatcher_frame_sha256(hello)
@@ -1500,7 +1501,7 @@ def _dispatcher_exchange(
             lane=lane,
             client_pid=os.getpid(),
             nonce=nonce,
-            deadline_monotonic_ms=int(selected_handshake_deadline * 1000),
+            deadline_monotonic_ms=int(deadline * 1000),
         )
         peer.settimeout(max(0.001, selected_handshake_deadline - time.monotonic()))
         peer.sendall(

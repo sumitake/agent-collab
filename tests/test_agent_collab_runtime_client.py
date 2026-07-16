@@ -742,7 +742,7 @@ print(json.dumps({{
             )
         self.assertEqual(peer.sendall.call_count, 1)
 
-    def test_dispatcher_exchange_caps_only_the_request_free_handshake(self) -> None:
+    def test_dispatcher_exchange_caps_handshake_without_shortening_request(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
             name="green",
             generation=7,
@@ -761,7 +761,7 @@ print(json.dumps({{
             lane=lane,
             client_pid=os.getpid(),
             nonce=nonce,
-            deadline_monotonic_ms=130_000,
+            deadline_monotonic_ms=400_000,
         )
         ready = {
             **hello,
@@ -801,7 +801,7 @@ print(json.dumps({{
         first = peer.sendall.call_args_list[0].args[0]
         first_size = struct.unpack(">Q", first[:8])[0]
         first_frame = json.loads(first[8 : 8 + first_size])
-        self.assertEqual(first_frame["deadline_monotonic_ms"], 130_000)
+        self.assertEqual(first_frame["deadline_monotonic_ms"], 400_000)
 
     def test_dispatcher_peer_proof_rejects_uid_pid_path_and_socket_drift(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
