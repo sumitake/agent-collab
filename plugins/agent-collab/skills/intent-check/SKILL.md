@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 3.4.0
+version: 3.5.0
 defaults:
   tier: Advanced
   effort: high

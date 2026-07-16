@@ -119,6 +119,72 @@ class CoordinatorTests(unittest.TestCase):
                 response = json.loads(result.stdout)
                 self.assertEqual(response["status"], "config_error")
 
+    def test_adoption_canary_is_internal_token_gated_and_bypasses_policy_routes(self) -> None:
+        coordinator = _load(
+            "agent_collab_adoption_canary_coordinator", PLUGIN / "coordinator.py"
+        )
+        request = {
+            "protocol_version": 1,
+            "request_id": "adoption-canary-1",
+            "operation": "adoption_canary",
+            "provider": "grok",
+            "registry_generation": 12,
+            "source_generation": 9,
+            "binary_sha256": "1" * 64,
+            "worker_sha256": "2" * 64,
+            "adapter_contract_generation": 4,
+            "routes": ["composer/codegen", "grok/architecture", "grok/governance", "grok/huge_context"],
+            "attempt_generation": 3,
+            "authority_token": "dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHQ",
+            "timeout_ms": 30_000,
+        }
+        validated, request_id, error = coordinator._validate(request)
+        self.assertEqual(validated, request)
+        self.assertEqual(request_id, "adoption-canary-1")
+        self.assertEqual(error, "")
+        runtime_client = _load(
+            "agent_collab_adoption_canary_runtime", PLUGIN / "runtime_client.py"
+        )
+        self.assertEqual(
+            coordinator.ADOPTION_PROVIDER_ROUTES,
+            runtime_client.ADOPTION_PROVIDER_ROUTES,
+        )
+
+        runtime = mock.Mock()
+        runtime.RuntimeStatus.OK = "ok"
+        runtime.invoke_adoption_canary.return_value = mock.Mock(
+            status=mock.Mock(value="ok"), result={"passed_routes": request["routes"]}, provenance=None, error=""
+        )
+        with mock.patch.object(
+            coordinator,
+            "_load",
+            side_effect=lambda _name, filename: runtime
+            if filename == "runtime_client.py"
+            else mock.Mock(),
+        ):
+            response, code = coordinator.process(request)
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "ok")
+        runtime.invoke_adoption_canary.assert_called_once_with(request=request)
+
+        for key, value in {
+            "route": "grok",
+            "provider_path": "/tmp/grok",
+            "auth_root": "/tmp/auth",
+            "model": "attacker/model",
+        }.items():
+            hostile = dict(request, **{key: value})
+            rejected, _label, _error = coordinator._validate(hostile)
+            self.assertIsNone(rejected)
+
+        unknown_route = dict(request, routes=["grok/not-a-governed-route"])
+        rejected, _label, _error = coordinator._validate(unknown_route)
+        self.assertIsNone(rejected)
+
+        invalid_request_id = dict(request, request_id="contains whitespace")
+        rejected, _label, _error = coordinator._validate(invalid_request_id)
+        self.assertIsNone(rejected)
+
     def test_governance_rejects_empty_artifact_content_or_model(self) -> None:
         base = {
             "protocol_version": 1,

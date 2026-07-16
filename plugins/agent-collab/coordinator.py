@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,38 @@ BASE_FIELDS = {
     "governance",
     "primary",
     "row",
+}
+ADOPTION_CANARY_FIELDS = {
+    "protocol_version",
+    "request_id",
+    "operation",
+    "provider",
+    "registry_generation",
+    "source_generation",
+    "binary_sha256",
+    "worker_sha256",
+    "adapter_contract_generation",
+    "routes",
+    "attempt_generation",
+    "authority_token",
+    "timeout_ms",
+}
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+ADOPTION_PROVIDER_ROUTES = {
+    "gemini": frozenset(
+        {"gemini/advisory", "gemini/governance", "gemini/long_context"}
+    ),
+    "grok": frozenset(
+        {
+            "composer/codegen",
+            "grok/architecture",
+            "grok/governance",
+            "grok/huge_context",
+        }
+    ),
+    "opencode": frozenset({"opencode/build", "opencode/plan"}),
 }
 EXECUTE_FIELDS = BASE_FIELDS | {"prompt"}
 GOVERNANCE_FIELDS = EXECUTE_FIELDS | {"artifact"}
@@ -118,6 +151,44 @@ def _validate(document: object) -> tuple[dict[str, Any] | None, str, str]:
     request_id = document.get("request_id")
     request_label = request_id if isinstance(request_id, str) else "unknown"
     operation = document.get("operation")
+    if operation == "adoption_canary":
+        routes = document.get("routes")
+        provider = document.get("provider")
+        if (
+            set(document) != ADOPTION_CANARY_FIELDS
+            or type(document.get("protocol_version")) is not int
+            or document["protocol_version"] != PROTOCOL_VERSION
+            or type(request_id) is not str
+            or _REQUEST_ID_RE.fullmatch(request_id) is None
+            or type(provider) is not str
+            or provider not in ADOPTION_PROVIDER_ROUTES
+            or type(routes) is not list
+            or not routes
+            or any(type(route) is not str for route in routes)
+            or routes != sorted(routes, key=lambda item: item.encode("utf-8"))
+            or len(routes) != len(set(routes))
+            or not set(routes).issubset(ADOPTION_PROVIDER_ROUTES[provider])
+            or any(
+                type(document.get(key)) is not int or document[key] < 1
+                for key in (
+                    "registry_generation",
+                    "source_generation",
+                    "adapter_contract_generation",
+                    "attempt_generation",
+                )
+            )
+            or type(document.get("timeout_ms")) is not int
+            or not 1 <= document["timeout_ms"] <= 600_000
+            or any(
+                type(document.get(key)) is not str
+                or _SHA256_RE.fullmatch(document[key]) is None
+                for key in ("binary_sha256", "worker_sha256")
+            )
+            or type(document.get("authority_token")) is not str
+            or _TOKEN_RE.fullmatch(document["authority_token"]) is None
+        ):
+            return None, request_label, "adoption canary violates the closed internal schema"
+        return document, request_label, ""
     governance = document.get("governance")
     contract = (document.get("route"), document.get("action"))
     optional_artifact = (
@@ -230,6 +301,17 @@ def process(document: object) -> tuple[dict[str, Any], int]:
     validated, request_id, error = _validate(document)
     if validated is None:
         return _response(request_id, "config_error", error), 2
+    if validated["operation"] == "adoption_canary":
+        runtime = _load("agent_collab_runtime_client", "runtime_client.py")
+        result = runtime.invoke_adoption_canary(request=validated)
+        response = _response(
+            validated["request_id"], result.status.value, result.error
+        )
+        if result.result is not None:
+            response["result"] = result.result
+        if result.provenance is not None:
+            response["provenance"] = result.provenance
+        return response, 0 if result.status.value not in {"config_error", "protocol_error"} else 2
     policy = _load("agent_collab_host_policy", "host_policy.py")
     runtime = _load("agent_collab_runtime_client", "runtime_client.py")
     artifact = validated.get("artifact", {})

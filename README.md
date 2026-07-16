@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.4.0). It gives
+This repository distributes one package: **agent-collab** (v3.5.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,24 +24,27 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.4.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.5.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.4.0
+## What's new - v3.5.0
 
-- Add a strict, legacy-default blue/green broker selector. Updated clients can
-  continue using a separately verified legacy broker tuple while an optional
-  content-derived dispatcher lane is staged and proven.
-- Fall back to the proven blue lane only when the green connection fails before
-  any send attempt. Once a connection succeeds, the client never retries a
-  second lane.
-- Block install, rollback, and uninstall broker lifecycle at both packaged
-  entrypoints inside the Codex seatbelt while keeping read-only broker status
-  available.
+- Authenticate a staged dispatcher with Darwin peer credentials, exact
+  published executable identity, and a request-free nonce/deadline/lane-bound
+  hello/ready exchange before sending provider-bearing bytes.
+- Add a separate internal `adoption_canary` operation bound to one provider,
+  candidate and worker digest tuple, registry generations, route allowlist, and
+  one-time authority token. It is not a policy route or model selector.
+- Permit an explicitly committed green selector only with the authenticated
+  handshake. The bounded request-free phase preserves a blue fallback budget;
+  pre-request handshake failure may use independently proven blue, while
+  failure at or after request send never retries another lane.
 
-This bootstrap is mechanically legacy-blue: it can stage and prove green
-metadata but refuses green promotion. A later governed dispatcher/client
-protocol must supply authenticated lane identity and a no-side-effect
-request-acceptance handshake before enabling green.
+The shipped selector remains legacy-blue by default. Staging a green lane or
+running an authorized shadow canary does not commit it for normal traffic.
+
+The v3.4.0 continuity-bootstrap changes remain in force: strict derived lane
+state, a separately verified blue fallback, one captured lane per request, and
+Codex-seatbelt lifecycle denial with read-only status preserved.
 
 The v3.3.0 Gemini-governance changes remain in force:
 
