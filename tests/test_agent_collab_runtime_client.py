@@ -59,6 +59,27 @@ def _load_client_without_pwd():
     return module
 
 
+def _load_client_without_fcntl():
+    """Load the public client as on a platform without POSIX file locking."""
+
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_runtime_client_without_fcntl", CLIENT
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    original_import = __import__
+
+    def blocked_fcntl_import(name, *args, **kwargs):
+        if name == "fcntl":
+            raise ImportError("fcntl is unavailable")
+        return original_import(name, *args, **kwargs)
+
+    with mock.patch("builtins.__import__", side_effect=blocked_fcntl_import):
+        spec.loader.exec_module(module)
+    return module
+
+
 class RuntimeClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -149,6 +170,23 @@ class RuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, client.RuntimeStatus.PLATFORM_UNSUPPORTED)
         self.assertIsNone(identity)
         self.assertIsNone(client._operator_home())
+
+    def test_module_loads_without_fcntl_and_locking_fails_before_io(self) -> None:
+        client = _load_client_without_fcntl()
+        with mock.patch.object(client.os, "getuid", None), mock.patch.object(
+            client, "PLUGIN_ROOT", self.root,
+        ):
+            result = client.resolve_runtime()
+        self.assertEqual(result.status, client.RuntimeStatus.PLATFORM_UNSUPPORTED)
+
+        with mock.patch.object(client, "_exact_mode") as exact_mode, mock.patch.object(
+            client.os, "open"
+        ) as open_file:
+            with self.assertRaisesRegex(ValueError, "locking is unavailable"):
+                with client._broker_control_lock(self.root):
+                    self.fail("unsupported locking must not enter the context")
+        exact_mode.assert_not_called()
+        open_file.assert_not_called()
 
     def _fixture(
         self,
@@ -1429,13 +1467,14 @@ print(json.dumps({{
             "host_context": "generic",
         }
         now = time.monotonic()
-        for returncode, expected in (
-            (3, self.client._DispatcherPreRequestError),
-            (4, self.client._DispatcherPostRequestError),
-            (2, self.client._DispatcherPostRequestError),
+        for returncode, output, expected in (
+            (3, b"", self.client._DispatcherPreRequestError),
+            (4, b"", self.client._DispatcherPostRequestError),
+            (2, b"", self.client._DispatcherPostRequestError),
+            (0, b"{", self.client._DispatcherPostRequestError),
         ):
             process = mock.Mock(returncode=returncode)
-            with self.subTest(returncode=returncode), mock.patch.object(
+            with self.subTest(returncode=returncode, output=output), mock.patch.object(
                 self.client, "_broker_root", return_value=self.root
             ), mock.patch.object(
                 self.client,
@@ -1446,7 +1485,7 @@ print(json.dumps({{
             ) as popen, mock.patch.object(
                 self.client,
                 "_collect_bounded_output",
-                return_value=(b"", b"", None),
+                return_value=(output, b"", None),
             ):
                 with self.assertRaises(expected):
                     self.client._invoke_dispatcher_bridge(
@@ -1459,6 +1498,32 @@ print(json.dumps({{
                 popen.call_args.args[0],
                 [str(runtime), "dispatcher-client", "--protocol", "1"],
             )
+
+        process = mock.Mock(returncode=0)
+        with self.subTest(collection_exception=True), mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client,
+            "_verify_published_version",
+            return_value=(bundle, runtime, self.root / "manifest"),
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.client,
+            "_collect_bounded_output",
+            side_effect=subprocess.SubprocessError("collection failed"),
+        ):
+            with self.assertRaises(self.client._DispatcherPostRequestError):
+                self.client._invoke_dispatcher_bridge(
+                    lane=lane,
+                    request=request,
+                    deadline=now + 5,
+                    handshake_deadline=now + 2,
+                )
+        self.assertEqual(
+            popen.call_args.args[0],
+            [str(runtime), "dispatcher-client", "--protocol", "1"],
+        )
 
     def test_client_upgrade_uses_one_captured_blue_tuple(self) -> None:
         self._fixture()

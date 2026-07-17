@@ -1,6 +1,6 @@
 ---
 name: governance-review
-version: 3.5.0
+version: 3.5.1
 description: Use when the operator says "governance review," "high-stakes review," "tiebreaker," or "second opinion." Also offer this proactively when reviewer-family independence must be enforced.
 ---
 
