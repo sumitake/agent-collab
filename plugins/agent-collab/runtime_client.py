@@ -614,13 +614,15 @@ def _verify_macos_signature(
         # codesign requirement `notarized` is the documented, code-object-native
         # proof and binds to this binary's CDHash. A tool failure or a failed
         # requirement is a fail-closed reject, never a pass. Offline note: a
-        # bare Mach-O CANNOT have a notarization ticket stapled (Apple supports
-        # stapling only for .app/.dmg/.pkg/.kext containers), so `=notarized`
-        # here depends on the host's notarization trust state (a cached result,
-        # or online reachability of Apple's notary service); a host with neither
-        # rejects a genuinely-notarized binary. That is fail-closed, not a
-        # bypass. The online/cache dependency for a non-stapleable bare binary
-        # at activation is a known operational constraint (pipeline follow-up).
+        # bare Mach-O cannot have a notarization ticket stapled (stapling targets
+        # bundles, disk images, and installer packages, not standalone binaries).
+        # Without `--check-notarization` this requirement does not run the online
+        # Gatekeeper lookup itself; it is satisfied by a stapled ticket or the
+        # host's local notarization trust state. A bare binary therefore relies
+        # on that local state (e.g. the host that notarized it, or a prior
+        # Gatekeeper assessment); a host without it fails closed, never a bypass.
+        # This activation-time dependency is a known operational constraint
+        # (pipeline follow-up).
         try:
             result = subprocess.run(
                 [
