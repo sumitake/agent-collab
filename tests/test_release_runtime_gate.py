@@ -343,29 +343,25 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                 if not expected:
                     self.assertTrue(any("Mach-O" in error for error in errors), errors)
 
-    def test_release_requires_secure_timestamp_and_exact_spctl_source(self) -> None:
+    def test_release_requires_secure_timestamp_and_notarization(self) -> None:
         valid_build = (
             "Load command 9\n"
             "      cmd LC_BUILD_VERSION\n"
             " platform 1\n"
             "    minos 14.0\n"
         )
+        # (timestamp, notarized, expected). Notarization is now verified with
+        # `codesign --verify --strict --test-requirement '=notarized'` (exit 0 =
+        # notarized), not `spctl --assess` — the runtime is a bare CLI Mach-O,
+        # which spctl cannot assess.
         cases = (
-            ("", "source=Notarized Developer ID", False),
-            ("Timestamp=none", "source=Notarized Developer ID", False),
-            (
-                "Timestamp=Jul 12, 2026 at 12:00:00",
-                "source=Developer ID",
-                False,
-            ),
-            (
-                "Timestamp=Jul 12, 2026 at 12:00:00",
-                "source=Notarized Developer ID",
-                True,
-            ),
+            ("", True, False),
+            ("Timestamp=none", True, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", False, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", True, True),
         )
-        for timestamp, source, expected in cases:
-            with self.subTest(timestamp=timestamp, source=source):
+        for timestamp, notarized, expected in cases:
+            with self.subTest(timestamp=timestamp, notarized=notarized):
                 self._manifest(set(self.gate.REQUIRED_CONTRACTS))
 
                 def run(command, **_kwargs):
@@ -390,11 +386,14 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                                 f"{timestamp}\n"
                             ),
                         )
-                    if command[0] == "/usr/sbin/spctl":
+                    if (
+                        command[0] == "/usr/bin/codesign"
+                        and "--test-requirement" in command
+                    ):
+                        # The notarization gate: exit 0 iff the =notarized
+                        # requirement is satisfied.
                         return mock.Mock(
-                            returncode=0,
-                            stdout="",
-                            stderr=f"accepted\n{source}\n",
+                            returncode=0 if notarized else 3, stdout="", stderr=""
                         )
                     return mock.Mock(returncode=0, stdout="", stderr="valid")
 
