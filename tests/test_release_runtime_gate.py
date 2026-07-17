@@ -93,7 +93,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         ]
         manifest = {
             "schema_version": 2,
-            "protocol_version": 1,
+            "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",
@@ -129,7 +129,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
 
     def test_empty_manifest_blocks_activation(self) -> None:
         (self.plugin / "runtime-manifest.json").write_text(
-            '{"schema_version":2,"protocol_version":1,"contract_version":3,"broker_protocol_version":2,"channel":"production","artifacts":[]}'
+            '{"schema_version":2,"protocol_version":2,"contract_version":3,"broker_protocol_version":2,"channel":"production","artifacts":[]}'
         )
         ok, _, errors = self.gate.verify_release(self.root, git_sha="abc")
         self.assertFalse(ok)

@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.5.2). It gives
+This repository distributes one package: **agent-collab** (v4.0.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,22 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.5.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.0.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.5.2
+## What's new - v4.0.0
+
+- Unify Grok architecture, governance, huge-context, and compatibility codegen
+  on the combined `grok-4.5` model. `target=composer` remains a compatibility
+  route name, not a second model identity.
+- Require `composer/codegen` callers to provide a sealed task class and a
+  low/medium/high effort level. Simple codegen starts at low, standard fixes
+  and features at medium, and complex multi-file or architecture-heavy work at
+  high; callers may raise but never undercut the task floor.
+- Advance the fixed provider protocol to v2. Old public clients and old signed
+  runtimes fail closed instead of selecting the retired Composer model or an
+  outdated effort policy.
+
+## v3.5.2 highlights
 
 - Authenticate launchd-activated dispatchers as two explicit principals: the
   root-owned launchd listener and the operator-owned sealed runtime process.
@@ -73,7 +86,8 @@ The v3.3.0 Gemini-governance changes remain in force:
 - Advance the native runtime to manifest schema 2, contract 3, and broker
   transport 2. Bind the public coordinator, closed standalone-bundle identity,
   lifecycle state, release gates, generated skills, and response parser to the
-  same route matrix while the provider protocol remains version 1.
+  same route matrix. That release used provider protocol 1; v4.0.0 advances it
+  to protocol 2 for the unified Grok contract.
 - Adopt canonical passwd HOME as the managed-provider reliability policy while
   retaining closed environments, family exclusion, route authority, provider
   state serialization, bounded lifecycle, and no raw CLI fallback.
@@ -169,7 +183,7 @@ flowchart LR
     S --> C["Verified plugin-relative native runtime client"]
     C --> B["Per-user launchd socket<br/>zero idle process"]
     B --> Q["Signed guardian + acknowledged gate"]
-    Q --> X1["Managed Codex, Gemini, OpenCode,<br/>Grok 4.5, and Composer"]
+    Q --> X1["Managed Codex, Gemini, OpenCode,<br/>and unified Grok 4.5 roles"]
     C --> X2["Local runtime management"]
     W["Private build/sign system"] -. "signed and notarized bundle" .-> C
     W -. "same exact digest" .-> B
@@ -264,13 +278,14 @@ coordinator nor the native runtime may reconstruct the artifact from a prompt
 copy.
 
 The repository intentionally contains no native runtime bundle yet. Native
-Gemini, Codex, OpenCode, Grok 4.5, and Composer routes remain unavailable until
+Gemini, Codex, OpenCode, and Grok 4.5 routes remain unavailable until
 the private build/sign integration supplies the real bundle, manifest digest,
 and complete contract declaration. Deterministic tests use temporary fixture
 bundles only. The release gate requires every platform artifact to expose
 the complete required contract matrix. Retirement and a policy-only release may
 land before native parity, but an activation release cannot launch any provider
-until the signed runtime exposes the complete matrix, including Composer.
+until the signed runtime exposes the complete matrix, including the
+`composer/codegen` compatibility route.
 
 ## Production lifecycle
 
@@ -472,9 +487,10 @@ a resolvable mutation-capable request but returns typed unavailable until a
 hardened mutation backend exists; it never widens advisory.
 
 Managed xAI targets are equally explicit: `target=grok` has separate read-only
-architecture, governance, and huge-context actions; `target=composer` is
-constrained output-only code generation. Composer has no file, shell, test,
-worktree, PR, or merge authority. Both remain deterministically temporarily
+architecture, governance, and huge-context actions; `target=composer` is the
+compatibility name for constrained Grok 4.5 output-only code generation. That
+route has no file, shell, test, worktree, PR, or merge authority. All remain
+deterministically temporarily
 unavailable until the signed runtime advertises their exact route/action contracts.
 Codex, Gemini, OpenCode, Grok, and Composer requests are broker-only and never fall back to direct runtime
 execution. Grok prose accepts only an explicit `EndTurn` terminal; exact
@@ -492,13 +508,13 @@ and that family is excluded from selection alongside the active primary family. 
 unknown artifact-author family emits an independence warning for
 non-governance work and fails governance closed.
 
-For non-trivial code generation, Composer must receive a comprehensive coding
+For non-trivial code generation, Grok 4.5 through `composer/codegen` must receive a comprehensive coding
 packet produced by the primary architect and reviewed by an eligible
 distinct-family synchronous architecture complement. The packet defines scope,
 invariants, authority boundaries, exact files and symbols, error taxonomy,
 lifecycle, tests, and acceptance criteria. Claude and Codex frontier primaries
 are the strongest default architecture seats; Grok 4.5 is the qualified
-near-peer/adversarial architecture complement. Composer implements the
+near-peer/adversarial architecture complement. The compatibility codegen route implements the
 converged packet; it never plans the architecture. Asynchronous inbox review is
 a fallback only when no eligible synchronous complement is available.
 

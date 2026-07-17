@@ -907,7 +907,12 @@ enabled = true
                 {"cwd": "/tmp/work", "model": "opencode/glm-5.2"},
                 "zhipu/glm-5.2",
             ),
-            ("composer", "codegen", {}, "xai/composer"),
+            (
+                "composer",
+                "codegen",
+                {"task_class": "standard_codegen", "effort": "medium"},
+                "xai/composer",
+            ),
         )
         with mock.patch.object(
             self.policy,
@@ -960,7 +965,7 @@ enabled = true
                     "host_runtime": "claude-code",
                     "session_identifier": "c-worker-unknown",
                 },
-                row_config={},
+                row_config={"task_class": "standard_codegen", "effort": "medium"},
                 artifact_author_model="custom/opaque-model",
                 artifact_content="existing implementation",
             )
@@ -1183,7 +1188,7 @@ enabled = true
             governance=False,
             prompt="generate",
             timeout_ms=30_000,
-            row_config={},
+            row_config={"task_class": "standard_codegen", "effort": "medium"},
             artifact_author_model="google/gemini-test",
             artifact_content=" \n\t",
             explicit_config={
@@ -1210,7 +1215,7 @@ enabled = true
                 governance=False,
                 prompt="generate",
                 timeout_ms=30_000,
-                row_config={},
+                row_config={"task_class": "standard_codegen", "effort": "medium"},
                 artifact_author_model="  ",
                 artifact_content="existing implementation",
                 explicit_config={
@@ -1226,6 +1231,98 @@ enabled = true
         assert outcome.envelope is not None
         self.assertTrue(outcome.envelope.artifact_present)
         self.assertIn("unknown artifact-author family", outcome.warning)
+
+    def test_grok_review_rows_are_sealed_to_role_task_and_effort(self) -> None:
+        profile = self.policy.resolve_profile(
+            {
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "grok-review-seal",
+            }
+        )
+        cases = (
+            (
+                ("grok", "architecture"),
+                {"mode": "prompt-only"},
+                {"mode": "prompt-only", "task_class": "architecture", "effort": "high"},
+            ),
+            (
+                ("grok", "governance"),
+                {"mode": "prompt-only"},
+                {"mode": "prompt-only", "task_class": "governance", "effort": "high"},
+            ),
+            (
+                ("grok", "huge_context"),
+                {"documents": [{"label": "a", "content": "document"}]},
+                {
+                    "documents": [{"label": "a", "content": "document"}],
+                    "task_class": "huge_context",
+                    "effort": "medium",
+                },
+            ),
+        )
+        for (route, action), row, expected in cases:
+            with self.subTest(action=action):
+                validated, family, error = self.policy._validate_row(
+                    route, action, row, profile, {}
+                )
+                self.assertEqual(error, "")
+                self.assertEqual(family, "xai")
+                self.assertEqual(validated, expected)
+
+        for forbidden in (
+            {"mode": "prompt-only", "effort": "low"},
+            {"mode": "prompt-only", "task_class": "simple_codegen"},
+            {"mode": "prompt-only", "model": "xai/grok-4.5"},
+        ):
+            with self.subTest(forbidden=forbidden):
+                validated, _family, _error = self.policy._validate_row(
+                    "grok", "architecture", forbidden, profile, {}
+                )
+                self.assertIsNone(validated)
+
+    def test_composer_compatibility_route_enforces_codegen_effort_floors(self) -> None:
+        profile = self.policy.resolve_profile(
+            {
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "grok-codegen-seal",
+            }
+        )
+        accepted = (
+            ("simple_codegen", "low"),
+            ("simple_codegen", "high"),
+            ("standard_codegen", "medium"),
+            ("standard_codegen", "high"),
+            ("complex_codegen", "high"),
+        )
+        for task_class, effort in accepted:
+            with self.subTest(task_class=task_class, effort=effort):
+                row = {"task_class": task_class, "effort": effort}
+                validated, family, error = self.policy._validate_row(
+                    "composer", "codegen", row, profile, {}
+                )
+                self.assertEqual((validated, family, error), (row, "xai", ""))
+
+        rejected = (
+            {},
+            {"task_class": "standard_codegen", "effort": "low"},
+            {"task_class": "complex_codegen", "effort": "medium"},
+            {"task_class": "simple_codegen", "effort": "xhigh"},
+            {
+                "task_class": "simple_codegen",
+                "effort": "low",
+                "model": "xai/grok-4.5",
+            },
+        )
+        for row in rejected:
+            with self.subTest(row=row):
+                validated, _family, _error = self.policy._validate_row(
+                    "composer", "codegen", row, profile, {}
+                )
+                self.assertIsNone(validated)
 
     def test_policy_envelope_detects_tampering(self) -> None:
         with mock.patch.object(

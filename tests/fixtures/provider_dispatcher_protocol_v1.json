@@ -44,7 +44,7 @@
       "binary_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "host_context": "generic",
       "operation": "adoption_canary",
-      "protocol_version": 1,
+      "protocol_version": 2,
       "provider": "gemini",
       "registry_generation": 17,
       "request_id": "parity-1",
@@ -57,6 +57,6 @@
       "worker_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
     }
   },
-  "request_sha256": "0f0de07f55857ac0ca83aa1a5820cfef9848e84c81c60877371074f56372374d",
+  "request_sha256": "ada31f6533d2cf78cb38af9e8f4a12626484dc5d47a0e5e397afd6ac194cb6d7",
   "schema_version": 1
 }

@@ -92,6 +92,20 @@ class PublicDistributionContractTests(unittest.TestCase):
         for path in generated_skills:
             self.assertIn(f"\nversion: {version}\n", path.read_text(encoding="utf-8"))
 
+    def test_activation_guidance_matches_provider_protocol(self) -> None:
+        manifest = json.loads(
+            (ROOT / "plugins" / "agent-collab" / "runtime-manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        migration = (
+            ROOT / "docs" / "migration-from-legacy-packages.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            f"provider protocol {manifest['protocol_version']}",
+            migration,
+        )
+
     def test_host_metadata_and_homelab_labels_are_not_distributed(self) -> None:
         self.assertFalse((ROOT / ".claude-session-owner").exists())
         self.assertIn(

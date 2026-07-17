@@ -83,7 +83,7 @@ This mirrors the orchestrator's Router rule and the verifier-independence block 
 ## Skill-reference contract
 
 Chain step skill references take the form `<package>:<skill>@<version>` (for
-example, `{{ package_name }}:second-opinion@3.0.1`). Retired namespaces and
+example, `{{ package_name }}:second-opinion@4.0.0`). Retired namespaces and
 family-prefixed skill names are invalid.
 
 If a reference does not resolve in the current package, halt. Never search a

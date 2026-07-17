@@ -1,6 +1,6 @@
 ---
 name: migration-doctor
-version: 3.5.2
+version: 4.0.0
 description: Use when the user says "migration doctor," "check old collaboration plugins," "verify agent-collab migration," or "/agent-collab:migration-doctor." Also offer this proactively after installing or updating agent-collab, when provider routing is blocked, or when a retired package may still be selected from an installed plugin or cache.
 ---
 
@@ -33,7 +33,8 @@ install, verify, and uninstall actions. Cache-only residue is reported
 separately. After cleanup, re-run the doctor before provider selection.
 
 If the signed native artifact is absent, report native Gemini, Codex, OpenCode,
-Grok, and Composer routes as typed unavailable. An async inbox is eligible only
+and Grok 4.5 routes, including `composer/codegen` compatibility, as typed
+unavailable. An async inbox is eligible only
 after a current host availability observation; the public coordinator reports
 readiness only and never sends. Without that observation it is unavailable in
 safe mode too. Never recommend reinstalling a retired package as a rollback.

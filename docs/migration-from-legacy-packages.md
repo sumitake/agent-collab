@@ -84,7 +84,7 @@ standalone bundle advertises the complete Gemini, Codex, OpenCode, Grok, and
 Composer route/action matrix. A policy-only release requires an empty runtime
 manifest and archive; it installs the migration and policy surface while every
 native route stays typed unavailable. An activation release requires manifest
-schema 2, native contract 3, broker transport 2, provider protocol 1, the
+schema 2, native contract 3, broker transport 2, provider protocol 2, the
 domain-separated whole-bundle identity, exact per-member Mach-O/signing facts,
 the complete contracts, and commit-bound notarization evidence. No raw launcher
 is a migration fallback.

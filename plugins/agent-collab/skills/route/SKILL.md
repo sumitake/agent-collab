@@ -1,6 +1,6 @@
 ---
 name: route
-version: 3.5.2
+version: 4.0.0
 description: Use when the operator says "ask Codex," "target=gemini," "target=grok," "target=composer," or explicitly names a managed backend. Also offer this proactively when routing needs dynamic primary-family exclusion.
 ---
 
@@ -33,7 +33,8 @@ managed worker target.
 Seal only supported native contracts: Gemini advisory, governance, and long-context are
 read-only; Codex advisory is read-only; OpenCode plan is read-only and OpenCode
 build is mutation-capable workspace-write; Grok architecture, governance, and
-huge-context are read-only; Composer codegen is output-only. Codex build
+huge-context are read-only; the `composer/codegen` compatibility route invokes
+Grok 4.5 with output-only authority. Codex build
 resolves as a separate mutation-capable role but is typed unavailable until the
 hardened backend exists, never advisory. Safe mode makes all five model-
 execution targets unavailable. A host async inbox is eligible only after an

@@ -86,6 +86,17 @@ AUTHORITIES = {
 GOVERNANCE_CONTRACTS = frozenset(
     {("gemini", "governance"), ("codex", "advisory"), ("grok", "governance")}
 )
+_GROK_REVIEW_SEALS = {
+    ("grok", "architecture"): ("architecture", "high"),
+    ("grok", "governance"): ("governance", "high"),
+    ("grok", "huge_context"): ("huge_context", "medium"),
+}
+_GROK_EFFORT_ORDER = {"low": 0, "medium": 1, "high": 2}
+_GROK_CODEGEN_MINIMUMS = {
+    "simple_codegen": "low",
+    "standard_codegen": "medium",
+    "complex_codegen": "high",
+}
 MAX_TIMEOUT_MS = 600_000
 MAX_PROMPT_BYTES = 1024 * 1024
 MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
@@ -517,6 +528,8 @@ def _validate_row(
     row_config: Mapping[str, Any],
     profile: HostProfile,
     explicit_config: Mapping[str, str] | None,
+    *,
+    sealed: bool = False,
 ) -> tuple[dict[str, Any] | None, str, str]:
     row = dict(row_config)
     contract = (route, action)
@@ -581,21 +594,64 @@ def _validate_row(
         row["model"] = model
         family = model_family
     elif contract in {("grok", "architecture"), ("grok", "governance")}:
-        if not {"mode"}.issubset(row) or not set(row).issubset({"mode", "cwd"}):
+        task_class, effort = _GROK_REVIEW_SEALS[contract]
+        allowed = {"mode", "cwd", "task_class", "effort"} if sealed else {"mode", "cwd"}
+        if not {"mode"}.issubset(row) or not set(row).issubset(allowed):
             return None, "unknown", "Grok row fields are invalid"
         if (
             not isinstance(row["mode"], str)
             or row["mode"] not in {"prompt-only", "repo-review"}
             or (row["mode"] == "prompt-only" and "cwd" in row)
             or (row["mode"] == "repo-review" and not _is_safe_cwd(row.get("cwd")))
+            or (
+                sealed
+                and (
+                    row.get("task_class") != task_class
+                    or row.get("effort") != effort
+                )
+            )
         ):
             return None, "unknown", "Grok row values are invalid"
+        if not sealed:
+            row.update({"task_class": task_class, "effort": effort})
     elif contract == ("grok", "huge_context"):
-        if set(row) != {"documents"} or not _validate_documents(row["documents"]):
+        task_class, effort = _GROK_REVIEW_SEALS[contract]
+        expected = (
+            {"documents", "task_class", "effort"}
+            if sealed
+            else {"documents"}
+        )
+        if (
+            set(row) != expected
+            or not _validate_documents(row.get("documents"))
+            or (
+                sealed
+                and (
+                    row.get("task_class") != task_class
+                    or row.get("effort") != effort
+                )
+            )
+        ):
             return None, "unknown", "Grok huge-context row is invalid"
+        if not sealed:
+            row.update({"task_class": task_class, "effort": effort})
     elif contract == ("composer", "codegen"):
-        if row:
-            return None, "unknown", "Composer accepts no model, cwd, tool, or apply fields"
+        if set(row) != {"task_class", "effort"}:
+            return None, "unknown", "Grok 4.5 codegen row fields are invalid"
+        task_class = row.get("task_class")
+        effort = row.get("effort")
+        minimum = (
+            _GROK_CODEGEN_MINIMUMS.get(task_class)
+            if isinstance(task_class, str)
+            else None
+        )
+        if (
+            minimum is None
+            or not isinstance(effort, str)
+            or effort not in _GROK_EFFORT_ORDER
+            or _GROK_EFFORT_ORDER[effort] < _GROK_EFFORT_ORDER[minimum]
+        ):
+            return None, "unknown", "Grok 4.5 codegen task or effort is invalid"
     else:
         return None, "unknown", "route/action contract is unsupported"
     return row, family, ""

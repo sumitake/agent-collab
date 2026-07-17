@@ -58,7 +58,7 @@ class CoordinatorTests(unittest.TestCase):
     def test_plugin_only_checkout_is_callable_and_empty_manifest_is_unavailable(self) -> None:
         result = self._run(
             {
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "request_id": "standalone-1",
                 "operation": "readiness",
                 "route": "codex",
@@ -85,7 +85,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_public_schema_rejects_provider_escape_fields(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "standalone-2",
             "operation": "readiness",
             "route": "codex",
@@ -124,7 +124,7 @@ class CoordinatorTests(unittest.TestCase):
             "agent_collab_adoption_canary_coordinator", PLUGIN / "coordinator.py"
         )
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "adoption-canary-1",
             "operation": "adoption_canary",
             "provider": "grok",
@@ -187,7 +187,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_governance_rejects_empty_artifact_content_or_model(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "empty-governance-artifact",
             "operation": "execute",
             "route": "grok",
@@ -223,7 +223,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_non_governance_rejects_model_without_artifact_content(self) -> None:
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "empty-optional-artifact",
             "operation": "execute",
             "route": "composer",
@@ -236,7 +236,7 @@ class CoordinatorTests(unittest.TestCase):
                 "host_runtime": "claude-code",
                 "session_identifier": "c-optional",
             },
-            "row": {},
+            "row": {"task_class": "standard_codegen", "effort": "medium"},
             "prompt": "generate",
             "artifact": {
                 "content": " \n\t",
@@ -260,7 +260,7 @@ class CoordinatorTests(unittest.TestCase):
             "session_identifier": "authority-1",
         }
         auto = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "auto-authority",
             "operation": "execute",
             "route": "auto",
@@ -293,7 +293,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_async_inbox_has_observed_readiness_only_coordinator_contract(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "inbox-readiness-1",
             "operation": "readiness",
             "route": "inbox",
@@ -343,7 +343,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_async_inbox_requires_consistent_target_family_and_session(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "inbox-target-provenance",
             "operation": "readiness",
             "route": "inbox",
@@ -431,7 +431,7 @@ class CoordinatorTests(unittest.TestCase):
             with self.subTest(primary=primary["primary_id"]):
                 result = self._run(
                     {
-                        "protocol_version": 1,
+                        "protocol_version": 2,
                         "request_id": f"same-family-{primary['primary_id']}",
                         "operation": "readiness",
                         "route": "inbox",
@@ -454,7 +454,7 @@ class CoordinatorTests(unittest.TestCase):
         policy = _load("agent_collab_async_only_policy", PLUGIN / "host_policy.py")
         runtime = _load("agent_collab_async_only_runtime", PLUGIN / "runtime_client.py")
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "claude-inbox-no-headless",
             "operation": "readiness",
             "route": "inbox",
@@ -495,7 +495,7 @@ class CoordinatorTests(unittest.TestCase):
     def test_async_inbox_surfaces_incomplete_primary_independence_warning(self) -> None:
         result = self._run(
             {
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "request_id": "inbox-incomplete-primary",
                 "operation": "readiness",
                 "route": "inbox",
@@ -523,7 +523,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_exact_integer_versions_and_timeout_are_required(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "standalone-3",
             "operation": "readiness",
             "route": "composer",
@@ -536,10 +536,11 @@ class CoordinatorTests(unittest.TestCase):
                 "host_runtime": "custom",
                 "session_identifier": "s-1",
             },
-            "row": {},
+            "row": {"task_class": "standard_codegen", "effort": "medium"},
         }
         for field, value in (
             ("protocol_version", True),
+            ("protocol_version", 1),
             ("protocol_version", 1.0),
             ("timeout_ms", True),
             ("timeout_ms", 30_000.0),
@@ -555,7 +556,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_automatic_advisory_has_closed_candidates_and_no_raw_fallback(self) -> None:
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "auto-1",
             "operation": "readiness",
             "route": "auto",
@@ -607,7 +608,7 @@ class CoordinatorTests(unittest.TestCase):
             )
 
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "auto-seal-1",
             "operation": "execute",
             "route": "auto",
@@ -666,7 +667,7 @@ class CoordinatorTests(unittest.TestCase):
             )
 
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "switch-1",
             "operation": "execute",
             "route": "codex",
@@ -717,7 +718,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_automatic_governance_normalizes_unknown_family_status(self) -> None:
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "auto-governance-1",
             "operation": "execute",
             "route": "auto",
@@ -759,7 +760,7 @@ class CoordinatorTests(unittest.TestCase):
             )
 
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "architecture-1",
             "operation": "execute",
             "route": "auto",
@@ -834,7 +835,7 @@ class CoordinatorTests(unittest.TestCase):
 
     def test_declared_unavailable_worker_roles_are_not_config_errors(self) -> None:
         base = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "worker-unavailable-1",
             "operation": "execute",
             "route": "codex",
@@ -869,7 +870,7 @@ class CoordinatorTests(unittest.TestCase):
         policy = _load("agent_collab_artifact_policy", PLUGIN / "host_policy.py")
         runtime = _load("agent_collab_artifact_runtime", PLUGIN / "runtime_client.py")
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "worker-artifact-1",
             "operation": "execute",
             "route": "opencode",
@@ -965,7 +966,7 @@ class CoordinatorTests(unittest.TestCase):
             with self.subTest(route=route):
                 result = self._run(
                     {
-                        "protocol_version": 1,
+                        "protocol_version": 2,
                         "request_id": f"bad-row-{route}",
                         "operation": "execute",
                         "route": route,
