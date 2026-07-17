@@ -17,9 +17,10 @@ request. The public policy captures the active primary/model/session and
 artifact-author model, excludes both families, and selects only an eligible
 Gemini or Grok governance row, or a Codex advisory row. No reviewer
 or escalation model is fixed in this skill. Claude is asynchronous inbox-only.
-Use low effort for the Gemini/Codex intent-comparison rows because this is a
-rudimentary interpretation check. If routing reaches the sealed Grok governance
-fallback, preserve that role's mandatory high-effort floor.
+Configure the Gemini governance row at high effort because its closed contract
+does not admit low. Configure the Codex advisory row at low effort because this
+is a rudimentary interpretation check. Keep the Grok governance fallback at
+high effort to preserve that sealed role's mandatory floor.
 
 ## Workflow
 

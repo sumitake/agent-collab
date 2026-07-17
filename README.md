@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.0.0). It gives
+This repository distributes one package: **agent-collab** (v4.0.1). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,15 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.0.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.0.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.0.0
+## What's new - v4.0.1
+
+- Correct the `intent-check` route guidance so the closed Gemini governance
+  contract receives its required high effort, while rudimentary Codex advisory
+  intent comparisons remain low and sealed Grok governance remains high.
+
+## v4.0.0 highlights
 
 - Unify Grok architecture, governance, huge-context, and compatibility codegen
   on the combined `grok-4.5` model. `target=composer` remains a compatibility

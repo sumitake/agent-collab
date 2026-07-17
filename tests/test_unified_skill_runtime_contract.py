@@ -146,6 +146,19 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         ):
             self.assertNotIn(fictional, text)
 
+    def test_intent_check_effort_guidance_matches_closed_route_contracts(self) -> None:
+        for path in (
+            SPECS / "intent-check.md",
+            SKILLS / "intent-check" / "SKILL.md",
+        ):
+            text = path.read_text(encoding="utf-8")
+            normalized = " ".join(text.split())
+            with self.subTest(path=path):
+                self.assertIn("Gemini governance row at high effort", normalized)
+                self.assertIn("Codex advisory row at low effort", normalized)
+                self.assertIn("Grok governance fallback at high effort", normalized)
+                self.assertNotIn("low effort for the Gemini/Codex", normalized)
+
     def test_root_readme_documents_current_codex_install_commands(self) -> None:
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn(
