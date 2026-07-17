@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.0.2**
+Current: **4.0.3**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -50,7 +50,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.0.2 package.
+identify this same 4.0.3 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -70,6 +70,10 @@ mutable files. Normal protocol-v2 invocation never sends a provider request to
 that v1 lane and still rejects v1 responses. Existing v1 host sessions remain
 on independently proven blue while candidate v2 clients prove green; after the
 selector commit, new v2 sessions use green and old sessions drain on blue.
+Lifecycle ping and lock-probe requests, and their successful replies, use the
+closed dispatcher control protocol v1. Typed lifecycle failures remain on the
+runtime protocol v2. Each response shape is validated against its own protocol,
+so swapped or malformed protocol pairings fail closed.
 Green label,
 socket, state, and plist paths are derived from its signed artifact and manifest
 digests; callers cannot supply them. Missing, malformed, unsafe, unproven, or

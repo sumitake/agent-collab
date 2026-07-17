@@ -1546,7 +1546,7 @@ print(json.dumps({{
             socket_path=self.root / "green.sock",
         )
         request = {
-            "protocol_version": 2,
+            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
             "request_id": "bridge-1",
             "operation": "dispatcher_ping",
             "timeout_ms": 5_000,
@@ -1575,6 +1575,108 @@ print(json.dumps({{
         self.assertNotIn(str(self.root), encoded.decode("ascii"))
         self.assertTrue(encoded.endswith(b"\n"))
 
+    def test_ping_uses_dispatcher_protocol_and_keeps_failure_protocol_distinct(
+        self,
+    ) -> None:
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=4,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "green.sock",
+        )
+        selector = self._selector_document(selected_lane="blue", generation=4)
+
+        def bridge(*, lane, request, deadline, handshake_deadline):
+            self.assertIs(lane, green)
+            self.assertEqual(
+                request["protocol_version"],
+                self.client.DISPATCHER_PROTOCOL_VERSION,
+            )
+            self.assertEqual(request["operation"], "dispatcher_ping")
+            self.assertLessEqual(handshake_deadline, deadline)
+            return {
+                "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+                "request_id": request["request_id"],
+                "status": "ok",
+                "result": {"ready": True},
+                "provenance": {"operation": "dispatcher_ping"},
+            }
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_dispatcher_broker_lane", return_value=green
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", side_effect=bridge
+        ):
+            result = self.client.invoke_dispatcher_ping(timeout_ms=5_000)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertEqual(result.result, {"ready": True})
+
+        request_id = "dispatcher-ping-contract"
+        typed_failure = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": request_id,
+            "status": "protocol_error",
+            "error": "provider dispatcher ping was rejected",
+        }
+        failure = self.client._dispatcher_ping_response(
+            typed_failure, request_id=request_id
+        )
+        self.assertEqual(failure.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+        self.assertEqual(failure.error, typed_failure["error"])
+
+        swapped_success = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": request_id,
+            "status": "ok",
+            "result": {"ready": True},
+            "provenance": {"operation": "dispatcher_ping"},
+        }
+        rejected_success = self.client._dispatcher_ping_response(
+            swapped_success, request_id=request_id
+        )
+        self.assertEqual(
+            rejected_success.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+        )
+        self.assertEqual(
+            rejected_success.error,
+            "provider dispatcher ping success was rejected",
+        )
+
+        swapped_failure = {
+            **typed_failure,
+            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+        }
+        rejected_failure = self.client._dispatcher_ping_response(
+            swapped_failure, request_id=request_id
+        )
+        self.assertEqual(
+            rejected_failure.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+        )
+        self.assertEqual(
+            rejected_failure.error,
+            "provider dispatcher ping failure was rejected",
+        )
+
+        malformed_failure = {**typed_failure, "unexpected": True}
+        malformed = self.client._dispatcher_ping_response(
+            malformed_failure, request_id=request_id
+        )
+        self.assertEqual(malformed.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+        self.assertEqual(
+            malformed.error,
+            "provider dispatcher ping failure was rejected",
+        )
+
     def test_lock_probe_uses_staged_bridge_and_returns_closed_namespace_proof(self) -> None:
         green = self.client.BrokerLaneSnapshot(
             name="green",
@@ -1591,11 +1693,15 @@ print(json.dumps({{
 
         def bridge(*, lane, request, deadline, handshake_deadline):
             self.assertIs(lane, green)
+            self.assertEqual(
+                request["protocol_version"],
+                self.client.DISPATCHER_PROTOCOL_VERSION,
+            )
             self.assertEqual(request["operation"], "dispatcher_lock_probe")
             self.assertEqual(request["provider"], "opencode")
             self.assertLessEqual(handshake_deadline, deadline)
             return {
-                "protocol_version": 2,
+                "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
                 "request_id": request["request_id"],
                 "status": "ok",
                 "result": {
@@ -1630,6 +1736,56 @@ print(json.dumps({{
         )
         self.assertEqual(
             result.provenance, {"operation": "dispatcher_lock_probe"}
+        )
+
+        request_id = "dispatcher-lock-probe-contract"
+        typed_failure = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": request_id,
+            "status": "provider_error",
+            "error": "provider dispatcher lock probe failed",
+        }
+        failure = self.client._dispatcher_lock_probe_response(
+            typed_failure, request_id=request_id, provider="opencode"
+        )
+        self.assertEqual(failure.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual(failure.error, typed_failure["error"])
+
+        swapped_success = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": request_id,
+            "status": "ok",
+            "result": {
+                "provider": "opencode",
+                "lock_acquired": True,
+                "namespace": "legacy-compatible-v1",
+            },
+            "provenance": {"operation": "dispatcher_lock_probe"},
+        }
+        rejected_success = self.client._dispatcher_lock_probe_response(
+            swapped_success, request_id=request_id, provider="opencode"
+        )
+        self.assertEqual(
+            rejected_success.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+        )
+        self.assertEqual(
+            rejected_success.error,
+            "provider dispatcher lock probe success was rejected",
+        )
+
+        swapped_failure = {
+            **typed_failure,
+            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+        }
+        rejected_failure = self.client._dispatcher_lock_probe_response(
+            swapped_failure, request_id=request_id, provider="opencode"
+        )
+        self.assertEqual(
+            rejected_failure.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+        )
+        self.assertEqual(
+            rejected_failure.error,
+            "provider dispatcher lock probe failure was rejected",
         )
 
     def test_selected_green_uses_immutable_bridge_without_python_socket_connection(self) -> None:
