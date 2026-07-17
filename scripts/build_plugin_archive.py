@@ -588,7 +588,16 @@ def _member_plan(
 # trusted inputs and byte-compares, so a candidate archive is only ever sliced
 # by offsets WE computed. Only the bounded gzip inflater touches candidate
 # bytes, under hard compressed- and decompressed-size caps.
-_MAX_COMPRESSED_ARCHIVE_BYTES = MAX_ARTIFACT_BYTES
+#
+# The runtime payload alone may be as large as MAX_ARTIFACT_BYTES (64 MiB); the
+# archive additionally holds the manifest, skills, licenses, plugin metadata,
+# tar headers/padding, and gzip framing, and a poorly-compressible (already
+# compressed/encrypted) runtime near the limit barely shrinks. So BOTH the
+# compressed and decompressed caps carry headroom above the payload cap
+# (2x = 128 MiB) — otherwise the builder could reject its OWN legitimate output
+# — while the decompressed cap still bounds a gzip bomb well below memory
+# exhaustion.
+_MAX_COMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
 _MAX_DECOMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
 _USTAR_BLOCK = 512
 # The complete fixed canonical 10-byte gzip header the builder emits: magic

@@ -411,6 +411,21 @@ class PluginArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match the canonical layout"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
+    def test_compressed_archive_cap_has_headroom_over_runtime_payload(self) -> None:
+        # The runtime payload alone may be up to MAX_ARTIFACT_BYTES; the archive
+        # also holds the manifest/skills/licenses/headers/gzip framing, and a
+        # poorly-compressible runtime near the cap barely shrinks. The compressed
+        # cap must exceed the payload cap or the builder would reject its own
+        # legitimate output; the decompressed cap must still bound a bomb.
+        self.assertGreater(
+            self.builder._MAX_COMPRESSED_ARCHIVE_BYTES,
+            self.builder.MAX_ARTIFACT_BYTES,
+        )
+        self.assertGreaterEqual(
+            self.builder._MAX_DECOMPRESSED_ARCHIVE_BYTES,
+            self.builder._MAX_COMPRESSED_ARCHIVE_BYTES,
+        )
+
     def test_archive_size_limit_and_required_policy_member_are_canonical(self) -> None:
         self.assertEqual(self.builder.MAX_ARTIFACT_BYTES, 64 * 1024 * 1024)
         self.assertEqual(self.builder.RUNTIME_FILE_MODE, 0o500)
