@@ -295,6 +295,11 @@ def _verify_member_signature(
     # un-notarized binaries pass (rc 0). `spctl_source` keeps its name and its
     # "Notarized Developer ID" value (a stable cross-job evidence-schema field);
     # it is now populated from the codesign requirement result rather than spctl.
+    # Offline note: the `notarized` requirement evaluates against a stapled ticket
+    # or, if unstapled, needs network to Apple — so a genuinely-notarized-but-
+    # unstapled binary in an offline CI would be rejected (not a bypass; staple
+    # before distribution). A `macOS notarization verification tool failed` /
+    # requirement failure here is a fail-closed reject, never a pass.
     spctl_source = ""
     if assess_notarization:
         try:
@@ -319,7 +324,7 @@ def _verify_member_signature(
                 spctl_source = "Notarized Developer ID"
             else:
                 errors.append(
-                    "runtime notarization source is not exactly Notarized Developer ID"
+                    "runtime is not notarized: codesign '=notarized' requirement failed"
                 )
     return {
         "codesign_timestamp": timestamp,

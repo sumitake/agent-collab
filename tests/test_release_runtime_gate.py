@@ -364,7 +364,10 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
             with self.subTest(timestamp=timestamp, notarized=notarized):
                 self._manifest(set(self.gate.REQUIRED_CONTRACTS))
 
+                codesign_calls = []
+
                 def run(command, **_kwargs):
+                    codesign_calls.append(list(command))
                     if command[0] == "/usr/bin/lipo":
                         return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
                     if command[0] == "/usr/bin/otool":
@@ -406,6 +409,19 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                         self.root, git_sha="abc"
                     )
                 self.assertEqual(ok, expected, errors)
+                # Notarization is asserted via the codesign requirement command
+                # shape (never spctl), and the exact `=notarized` predicate with
+                # --strict and WITHOUT --check-notarization (which would fail open).
+                notar = [
+                    c
+                    for c in codesign_calls
+                    if c[0] == "/usr/bin/codesign" and "--test-requirement" in c
+                ]
+                self.assertEqual(len(notar), 1)
+                self.assertIn("--strict", notar[0])
+                self.assertEqual(notar[0][notar[0].index("--test-requirement") + 1], "=notarized")
+                self.assertNotIn("--check-notarization", notar[0])
+                self.assertFalse(any(c and c[0] == "/usr/sbin/spctl" for c in codesign_calls))
                 if expected:
                     self.assertEqual(
                         evidence["spctl_source"], "Notarized Developer ID"
@@ -414,7 +430,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                 else:
                     self.assertTrue(
                         any(
-                            "Timestamp" in error or "notarization source" in error
+                            "Timestamp" in error or "notarized" in error
                             for error in errors
                         ),
                         errors,
