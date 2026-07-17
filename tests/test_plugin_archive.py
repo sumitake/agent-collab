@@ -8,6 +8,7 @@ import json
 import shutil
 import stat
 import sys
+import io
 import os
 import tarfile
 import tempfile
@@ -399,14 +400,15 @@ class PluginArchiveTests(unittest.TestCase):
         policy = self.plugin / "signing_policy.py"
         original = policy.read_bytes()
 
-        # Same-size drift is caught by byte parity …
+        # Same-size drift: the regenerated canonical tar differs from the
+        # candidate outside any runtime range → structural byte-compare fails.
         policy.write_bytes(b"#" * len(original))
-        with self.assertRaisesRegex(ValueError, "byte parity"):
+        with self.assertRaisesRegex(ValueError, "structure does not match"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
-        # … and size drift is caught (bounded) before any byte read.
+        # Size drift changes the total canonical length → rejected up front.
         policy.write_bytes(original + b"\n# tail\n")
-        with self.assertRaisesRegex(ValueError, "size parity"):
+        with self.assertRaisesRegex(ValueError, "does not match the canonical layout"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
     def test_archive_size_limit_and_required_policy_member_are_canonical(self) -> None:
@@ -574,7 +576,7 @@ class PluginArchiveTests(unittest.TestCase):
                 filename="", mode="wb", fileobj=raw, mtime=0
             ) as compressed:
                 with tarfile.open(
-                    fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                    fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT
                 ) as bundle:
                     for member, payload in members:
                         if member.name == target:
@@ -594,19 +596,20 @@ class PluginArchiveTests(unittest.TestCase):
         mode = self._build_activation()
         manifest_path = self.plugin / "runtime-manifest.json"
         # A SAME-SIZE, parse-valid, record-preserving byte change after the
-        # build (identity string tweak): size parity cannot notice, only the
-        # frozen-byte binding of the archived manifest can.
+        # build (identity string tweak): the archived manifest member is a
+        # non-runtime member, so the regenerated canonical (embedding the new
+        # on-disk bytes) differs from the candidate → structural compare fails.
         text = manifest_path.read_text(encoding="utf-8")
         swapped = text.replace("Test Operator", "Test Operatox")
         self.assertNotEqual(text, swapped)
         self.assertEqual(len(text), len(swapped))
         manifest_path.write_text(swapped, encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "frozen manifest"):
+        with self.assertRaisesRegex(ValueError, "structure does not match"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
-        # A size-changing swap fails closed too (bounded before any read).
+        # A size-changing swap changes the canonical total length → rejected.
         manifest_path.write_text(text + " ", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "size parity"):
+        with self.assertRaisesRegex(ValueError, "does not match the canonical layout"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
     def test_verify_archive_rejects_non_canonical_member_metadata(self) -> None:
@@ -631,7 +634,7 @@ class PluginArchiveTests(unittest.TestCase):
                 filename="", mode="wb", fileobj=raw, mtime=0
             ) as compressed:
                 with tarfile.open(
-                    fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                    fileobj=compressed, mode="w", format=tarfile.USTAR_FORMAT
                 ) as bundle:
                     for member, payload in members:
                         if member.name == target:
@@ -641,7 +644,7 @@ class PluginArchiveTests(unittest.TestCase):
                         else:
                             bundle.addfile(member, io.BytesIO(payload))
 
-        with self.assertRaisesRegex(ValueError, "metadata is not canonical"):
+        with self.assertRaisesRegex(ValueError, "structure does not match|canonical layout"):
             self.builder.verify_archive(self.plugin, tampered, mode=mode)
 
     def test_failed_exclusive_temp_open_preserves_foreign_file(self) -> None:
@@ -720,24 +723,128 @@ class PluginArchiveTests(unittest.TestCase):
         self._activate()
         mode = self._build_activation()
 
-        # A gzip bomb (tiny compressed, huge decompressed) must be rejected
-        # by the hard decompression bound BEFORE any tar/PAX parsing.
+        # A gzip bomb (tiny compressed, huge decompressed) with a CANONICAL
+        # header (mtime=0) must be rejected by the hard decompression bound,
+        # not materialized.
         import gzip as gzip_module
 
         bomb = self.root / "bomb.plugin"
         with bomb.open("wb") as raw:
-            with gzip_module.GzipFile(fileobj=raw, mode="wb") as stream:
+            # filename="" so no FNAME flag is set (canonical header), matching
+            # what the builder's os.fdopen path emits.
+            with gzip_module.GzipFile(
+                filename="", fileobj=raw, mode="wb", mtime=0
+            ) as stream:
                 zero_chunk = b"\0" * (1024 * 1024)
                 for _ in range(2 * 64 + 8):  # > 2 * MAX_ARTIFACT_BYTES
                     stream.write(zero_chunk)
         with self.assertRaisesRegex(ValueError, "decompression exceeds"):
             self.builder.verify_archive(self.plugin, bomb, mode=mode)
 
+        # A non-canonical gzip header (non-zero mtime) is rejected up front.
+        stamped = self.root / "stamped.plugin"
+        with stamped.open("wb") as raw:
+            with gzip_module.GzipFile(
+                fileobj=raw, mode="wb", mtime=1_700_000_000
+            ) as stream:
+                stream.write(b"whatever")
+        with self.assertRaisesRegex(ValueError, "gzip header is not canonical"):
+            self.builder.verify_archive(self.plugin, stamped, mode=mode)
+
         # A symlinked archive path is refused outright.
         alias = self.root / "archive-alias.plugin"
         alias.symlink_to(self.archive)
         with self.assertRaisesRegex(ValueError, "unreadable"):
             self.builder.verify_archive(self.plugin, alias, mode=mode)
+
+    def test_ustar_serializer_is_golden_across_python_versions(self) -> None:
+        # Design item 5: the regenerate-and-compare architecture requires the
+        # USTAR serializer to be byte-identical in the operator's build env
+        # (3.13.14) and CI (3.10/3.12/3.14). This golden binds the exact bytes;
+        # CI's version matrix fails here if any Python serializes USTAR
+        # differently, so a legitimate cross-env archive can never fail the
+        # verify byte-compare undetected.
+        buffer = io.BytesIO()
+        with tarfile.open(
+            fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT
+        ) as tar:
+            tar.addfile(
+                self.builder._synthesized_tarinfo(
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle",
+                    mode=0o500,
+                    directory=True,
+                )
+            )
+            tar.addfile(
+                self.builder._synthesized_tarinfo(
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle/agent-collab-runtime",
+                    mode=0o500,
+                    size=5,
+                ),
+                io.BytesIO(b"hello"),
+            )
+        data = buffer.getvalue()
+        self.assertEqual(
+            hashlib.sha256(data).hexdigest(),
+            "366c3a87cf260b77a3c937b6c44ad6f91d91f1073d59d195a9ae761ec66b6bd0",
+        )
+
+    def test_canonical_tar_is_byte_reproducible_across_calls(self) -> None:
+        # Design item 5: the canonical inflated tar must be byte-identical on
+        # regeneration (the cross-environment reproducibility contract the
+        # regenerate-and-compare architecture depends on). CI runs this on
+        # 3.10/3.12/3.14, so a serializer-version divergence would fail here.
+        self._activate()
+        plugin = self.plugin.resolve(strict=True)
+        frozen = self.builder._read_manifest_bytes(plugin)
+        records = self.builder.runtime_bundle.validate_file_records(
+            self.builder._parse_manifest(frozen)["artifacts"][0]["files"]
+        )
+        plan = self.builder._member_plan(plugin, mode="activation", records=records)
+        rbn = {
+            (self.builder.RUNTIME_BUNDLE_REL / r["path"]).as_posix(): r
+            for r in records
+        }
+        zero = {name: b"\x00" * r["size"] for name, r in rbn.items()}
+        first, ranges_a = self.builder._emit_canonical_tar(
+            plan, plugin_path=plugin, frozen_manifest=frozen,
+            record_by_name=rbn, runtime_payloads=zero,
+        )
+        second, ranges_b = self.builder._emit_canonical_tar(
+            plan, plugin_path=plugin, frozen_manifest=frozen,
+            record_by_name=rbn, runtime_payloads=zero,
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(ranges_a, ranges_b)
+        # The reported ranges are one-to-one with the manifest, disjoint, and
+        # in-bounds (item 6).
+        self.builder._assert_runtime_range_map(ranges_a, rbn, len(first))
+
+    def test_verify_rejects_raw_structural_tamper_without_parsing(self) -> None:
+        # A hostile archive whose runtime payload digest is preserved but whose
+        # STRUCTURE differs (here: a directory member's mode flipped) must be
+        # rejected by the byte-compare, with no reliance on tarfile parsing the
+        # candidate. We tamper the inflated tar bytes directly.
+        self._activate()
+        mode = self._build_activation()
+        raw = self.archive.read_bytes()
+        import gzip as gzip_module
+
+        inflated = gzip_module.decompress(raw)
+        # Flip one byte inside the first 512-byte header block (the manifest or
+        # first member's metadata region) — a structural mutation.
+        tampered_tar = bytearray(inflated)
+        tampered_tar[100] ^= 0x01
+        tampered = self.root / "raw-tamper.plugin"
+        with tampered.open("wb") as fh:
+            with gzip_module.GzipFile(
+                filename="", fileobj=fh, mode="wb", mtime=0
+            ) as gz:
+                gz.write(bytes(tampered_tar))
+        with self.assertRaisesRegex(
+            ValueError, "structure does not match|canonical layout"
+        ):
+            self.builder.verify_archive(self.plugin, tampered, mode=mode)
 
     def test_activation_archive_build_is_deterministic(self) -> None:
         self._activate()
