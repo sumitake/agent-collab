@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.5.0). It gives
+This repository distributes one package: **agent-collab** (v3.5.1). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,18 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.5.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.5.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.5.0
+## What's new - v3.5.1
+
+- Treat every dispatcher-client failure after the request-bearing child is
+  launched—including malformed or noncanonical output—as post-request, so a
+  possibly accepted green request can never be retried through blue.
+- Keep POSIX `fcntl` locking optional at import time so unsupported hosts
+  retain typed platform-unavailable behavior; lifecycle locking still fails
+  closed before filesystem I/O when the primitive is absent.
+
+The v3.5.0 dispatcher and adoption-canary changes remain in force:
 
 - Authenticate a staged dispatcher with Darwin peer credentials, exact
   published executable identity, and a request-free nonce/deadline/lane-bound

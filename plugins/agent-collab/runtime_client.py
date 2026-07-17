@@ -15,7 +15,6 @@ from __future__ import annotations
 import base64
 from contextlib import contextmanager
 import ctypes
-import fcntl
 import hashlib
 import hmac
 import importlib.util
@@ -39,6 +38,11 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX import
+    _fcntl = None
 
 try:
     import pwd as _pwd
@@ -2158,6 +2162,7 @@ def _invoke_dispatcher_bridge(
         "--protocol",
         str(DISPATCHER_PROTOCOL_VERSION),
     ]
+    request_launched = False
     try:
         with _isolated_runtime_tmpdir() as runtime_tmpdir:
             with tempfile.TemporaryFile(dir=runtime_tmpdir) as stdin:
@@ -2177,6 +2182,7 @@ def _invoke_dispatcher_bridge(
                     start_new_session=True,
                     close_fds=True,
                 )
+                request_launched = True
                 remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
                 out, err, collection_error = _collect_bounded_output(
                     process,
@@ -2219,8 +2225,15 @@ def _invoke_dispatcher_bridge(
             "provider dispatcher bridge cleanup was unproven"
         ) from exc
     except (OSError, PermissionError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
-        raise _DispatcherPreRequestError(
-            "provider dispatcher bridge could not start"
+        error = (
+            _DispatcherPostRequestError
+            if request_launched
+            else _DispatcherPreRequestError
+        )
+        raise error(
+            "provider dispatcher bridge failed after request launch"
+            if request_launched
+            else "provider dispatcher bridge could not start"
         ) from exc
 
 
@@ -2490,6 +2503,8 @@ def _unlink_private_durable(path: Path) -> None:
 
 @contextmanager
 def _broker_control_lock(root: Path) -> Iterator[None]:
+    if _fcntl is None:
+        raise ValueError("provider broker control locking is unavailable")
     if root != _broker_root() or _exact_mode(
         root, expected_type=stat.S_IFDIR, mode=0o700
     ) is None:
@@ -2513,11 +2528,11 @@ def _broker_control_lock(root: Path) -> Iterator[None]:
             or stat.S_IMODE(info.st_mode) != 0o600
         ):
             raise ValueError("provider broker control lock is unsafe")
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        _fcntl.flock(descriptor, _fcntl.LOCK_EX)
         yield
     finally:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            _fcntl.flock(descriptor, _fcntl.LOCK_UN)
         finally:
             os.close(descriptor)
 
