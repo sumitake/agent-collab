@@ -1020,7 +1020,9 @@ def build_archive(
     temp_path = output_resolved.parent / f".{output_resolved.name}.tmp.{os.getpid()}"
     temp_created = False
     try:
-        descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        # Owner-only (0o600): the archive is read + uploaded by the building
+        # user; no other local user needs read access to the release artifact.
+        descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         temp_created = True
         with os.fdopen(descriptor, "wb") as raw:
             with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
