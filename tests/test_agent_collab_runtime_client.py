@@ -569,6 +569,7 @@ print(json.dumps({{
 
     def test_adoption_canary_is_a_closed_internal_operation_not_a_route(self) -> None:
         request = self._adoption_canary_request()
+        original = dict(request)
         encoded = self.client._adoption_canary_document(request)
         document = json.loads(encoded)
         self.assertEqual(
@@ -576,13 +577,20 @@ print(json.dumps({{
             self.client.ADOPTION_CANARY_KEYS | {"host_context"},
         )
         self.assertEqual(document["operation"], "adoption_canary")
+        self.assertEqual(
+            document["protocol_version"],
+            self.client.PROTOCOL_VERSION,
+        )
         self.assertEqual(document["host_context"], "generic")
+        self.assertEqual(request, original)
+        self.assertEqual(request["protocol_version"], self.client.PROTOCOL_VERSION)
         self.assertNotIn("route", document)
         self.assertNotIn("action", document)
         self.assertNotIn("model", document)
 
         invalid = (
             self._adoption_canary_request(provider="unknown"),
+            self._adoption_canary_request(protocol_version=1),
             self._adoption_canary_request(routes=["grok/architecture"]),
             self._adoption_canary_request(routes=["gemini/governance", "gemini/advisory"]),
             self._adoption_canary_request(authority_token="0" * 64),
@@ -858,7 +866,7 @@ print(json.dumps({{
             "hello_sha256": self.client._dispatcher_frame_sha256(hello),
         }
         response = {
-            "protocol_version": 2,
+            "protocol_version": 1,
             "request_id": "adoption-canary-1",
             "status": "ok",
             "result": {"passed_routes": request["routes"]},
@@ -1155,7 +1163,7 @@ print(json.dumps({{
             green_manifest="b" * 64,
         )
         response = {
-            "protocol_version": 2,
+            "protocol_version": self.client.PROTOCOL_VERSION,
             "request_id": request["request_id"],
             "status": "ok",
             "result": {
@@ -1186,6 +1194,32 @@ print(json.dumps({{
         bridge.assert_called_once()
         self.assertEqual(bridge.call_args.kwargs["lane"], green)
         self.assertEqual(bridge.call_args.kwargs["request"]["host_context"], "generic")
+        self.assertEqual(
+            bridge.call_args.kwargs["request"]["protocol_version"],
+            self.client.PROTOCOL_VERSION,
+        )
+        self.assertEqual(request["protocol_version"], self.client.PROTOCOL_VERSION)
+
+        dispatcher_version_response = {
+            **response,
+            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+        }
+        rejected = self.client._parse_adoption_canary_response(
+            dispatcher_version_response,
+            request=bridge.call_args.kwargs["request"],
+        )
+        self.assertEqual(rejected.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+        failure = self.client._parse_adoption_canary_response(
+            {
+                "protocol_version": self.client.PROTOCOL_VERSION,
+                "request_id": request["request_id"],
+                "status": "timeout",
+                "error": "candidate deadline expired",
+            },
+            request=bridge.call_args.kwargs["request"],
+        )
+        self.assertEqual(failure.status, self.client.RuntimeStatus.TIMEOUT)
 
         missing = dict(selector, green=None)
         with mock.patch.object(

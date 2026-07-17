@@ -1412,7 +1412,13 @@ def _adoption_canary_document(request: object) -> bytes:
     ):
         raise ValueError("adoption canary fields are invalid")
     _dispatcher_nonce(request.get("authority_token"))
-    document = {**request, "host_context": classify_host_context()}
+    # The request remains on the public runtime protocol sealed into the
+    # one-time authority record.  Only the surrounding dispatcher bridge and
+    # handshake frames use the private dispatcher protocol.
+    document = {
+        **request,
+        "host_context": classify_host_context(),
+    }
     encoded = _dispatcher_canonical_json(document) + b"\n"
     if len(encoded) > MAX_REQUEST_BYTES:
         raise ValueError("adoption canary exceeds the fixed protocol limit")
@@ -5279,7 +5285,10 @@ def _parse_adoption_canary_response(
         }
         if (
             set(response) != {"protocol_version", "request_id", "status", "error"}
-            or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+            or not _exact_int(
+                response.get("protocol_version"),
+                PROTOCOL_VERSION,
+            )
             or response.get("request_id") != request.get("request_id")
             or status not in mapping
             or type(response.get("error")) is not str
@@ -5295,7 +5304,10 @@ def _parse_adoption_canary_response(
     if (
         set(response)
         != {"protocol_version", "request_id", "status", "result", "provenance"}
-        or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+        or not _exact_int(
+            response.get("protocol_version"),
+            PROTOCOL_VERSION,
+        )
         or response.get("request_id") != request.get("request_id")
         or type(result) is not dict
         or set(result)
