@@ -1,6 +1,6 @@
 ---
 name: teamwork
-version: 4.0.2
+version: 4.0.3
 defaults:
   tier: Standard
   effort: medium

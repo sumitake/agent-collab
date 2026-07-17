@@ -3404,7 +3404,7 @@ def _dispatcher_ping_response(
     if (
         set(response)
         != {"protocol_version", "request_id", "status", "result", "provenance"}
-        or response.get("protocol_version") != PROTOCOL_VERSION
+        or response.get("protocol_version") != DISPATCHER_PROTOCOL_VERSION
         or response.get("result") != {"ready": True}
         or response.get("provenance") != {"operation": "dispatcher_ping"}
     ):
@@ -3438,7 +3438,7 @@ def invoke_dispatcher_ping(*, timeout_ms: int = 30_000) -> RuntimeResult:
         )
         request_id = "dispatcher-ping-" + os.urandom(16).hex()
         request = {
-            "protocol_version": PROTOCOL_VERSION,
+            "protocol_version": DISPATCHER_PROTOCOL_VERSION,
             "request_id": request_id,
             "operation": "dispatcher_ping",
             "timeout_ms": timeout_ms,
@@ -3502,7 +3502,7 @@ def _dispatcher_lock_probe_response(
     if (
         set(response)
         != {"protocol_version", "request_id", "status", "result", "provenance"}
-        or response.get("protocol_version") != PROTOCOL_VERSION
+        or response.get("protocol_version") != DISPATCHER_PROTOCOL_VERSION
         or result
         != {
             "provider": provider,
@@ -3547,7 +3547,7 @@ def invoke_dispatcher_lock_probe(
         )
         request_id = "dispatcher-lock-probe-" + os.urandom(16).hex()
         request = {
-            "protocol_version": PROTOCOL_VERSION,
+            "protocol_version": DISPATCHER_PROTOCOL_VERSION,
             "request_id": request_id,
             "operation": "dispatcher_lock_probe",
             "provider": provider,

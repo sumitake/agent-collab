@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.0.2). It gives
+This repository distributes one package: **agent-collab** (v4.0.3). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,16 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.0.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.0.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.0.2
+## What's new - v4.0.3
+
+- Send dispatcher lifecycle ping and lock-probe control messages on their
+  sealed protocol-v1 contract while retaining protocol-v2 typed failures.
+  Successful lifecycle replies and failures are validated against their own
+  protocols, so swapped or malformed responses still fail closed.
+
+## v4.0.2 highlights
 
 - Permit dispatcher lifecycle control to prove an exact protocol-v1 blue
   baseline while staging protocol-v2 green. Normal v2 requests and responses
