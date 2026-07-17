@@ -654,7 +654,15 @@ def _emit_canonical_tar(
                 tar.addfile(info, io.BytesIO(payload))
                 ranges[name] = (header_offset + _USTAR_BLOCK, record["size"])
                 continue
-            info = _finalize_tarinfo(tar.gettarinfo(str(source), arcname=name))
+            info = tar.gettarinfo(str(source), arcname=name)
+            # git tracks ONLY the exec bit, but a working-tree checkout applies
+            # the local umask to the rest — so normalize non-runtime modes to
+            # 0o755/0o644 by the exec bit alone. Without this the operator's
+            # build host and CI (different umask, different checkouts) could
+            # emit different mode fields and the verify byte-compare would
+            # false-reject a legitimate archive.
+            info.mode = 0o755 if (info.isdir() or (info.mode & 0o111)) else 0o644
+            info = _finalize_tarinfo(info)
             if name == "runtime-manifest.json" and frozen_manifest is not None:
                 info.size = len(frozen_manifest)
                 tar.addfile(info, io.BytesIO(frozen_manifest))
@@ -891,12 +899,15 @@ def _read_runtime_payloads(
                 or info.st_size != record["size"]
             ):
                 raise ValueError("runtime bundle source member changed during packing")
-            data = b""
-            while len(data) <= record["size"]:
+            parts: list[bytes] = []
+            read_total = 0
+            while read_total <= record["size"]:
                 chunk = os.read(descriptor, 1024 * 1024)
                 if not chunk:
                     break
-                data += chunk
+                parts.append(chunk)
+                read_total += len(chunk)
+            data = b"".join(parts)
             if (
                 len(data) != record["size"]
                 or hashlib.sha256(data).hexdigest() != record["sha256"]

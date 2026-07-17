@@ -789,6 +789,28 @@ class PluginArchiveTests(unittest.TestCase):
             "366c3a87cf260b77a3c937b6c44ad6f91d91f1073d59d195a9ae761ec66b6bd0",
         )
 
+    def test_non_runtime_modes_are_umask_normalized(self) -> None:
+        # Non-runtime member modes must be exactly 0o644 (files) / 0o755 (dirs)
+        # regardless of the checkout host's umask, so the operator's build and
+        # CI's regeneration byte-match. Perturb a source file to 0o600 (as a
+        # umask-077 checkout would) and confirm the archive normalizes it.
+        self._activate()
+        (self.plugin / "signing_policy.py").chmod(0o600)
+        mode = self._build_activation()
+        self.assertEqual(mode, "activation")
+        with tarfile.open(self.archive, "r:gz") as bundle:
+            for member in bundle.getmembers():
+                if member.name.startswith("runtime/"):
+                    continue  # runtime members keep the sealed 0o500
+                expected = 0o755 if member.isdir() else 0o644
+                self.assertEqual(
+                    stat.S_IMODE(member.mode),
+                    expected,
+                    f"{member.name} mode not normalized",
+                )
+        # And it still verifies (build and verify both normalize identically).
+        self.builder.verify_archive(self.plugin, self.archive, mode="activation")
+
     def test_canonical_tar_is_byte_reproducible_across_calls(self) -> None:
         # Design item 5: the canonical inflated tar must be byte-identical on
         # regeneration (the cross-environment reproducibility contract the
