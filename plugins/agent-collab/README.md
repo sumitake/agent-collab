@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.0.1**
+Current: **4.0.2**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -50,7 +50,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.0.1 package.
+identify this same 4.0.2 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -63,9 +63,14 @@ traffic. A missing or stale broker is a typed failure—these routes never fall
 back to the direct entrypoint path. Only local runtime management retains fixed
 direct exact-entrypoint execution.
 
-The client also understands one strict, private blue/green selector. Without a
-committed green lane it continues using the exact legacy blue broker, even when
-the newly installed client carries different runtime digests. Green label,
+The client also understands one strict, private blue/green selector. During the
+v1-to-v2 transition, lifecycle control may prove the exact protocol-v1 blue
+broker solely to observe it, stage protocol-v2 green, or recover selector-bound
+mutable files. Normal protocol-v2 invocation never sends a provider request to
+that v1 lane and still rejects v1 responses. Existing v1 host sessions remain
+on independently proven blue while candidate v2 clients prove green; after the
+selector commit, new v2 sessions use green and old sessions drain on blue.
+Green label,
 socket, state, and plist paths are derived from its signed artifact and manifest
 digests; callers cannot supply them. Missing, malformed, unsafe, unproven, or
 unreachable green state leaves a proven blue lane usable until a

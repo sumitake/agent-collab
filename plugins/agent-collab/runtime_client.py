@@ -53,6 +53,7 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
 PROTOCOL_VERSION = 2
+LEGACY_BLUE_PROTOCOL_VERSION = 1
 CONTRACT_VERSION = 3
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -159,6 +160,9 @@ BROKER_FALLBACK_RESERVE_SECONDS = 1.0
 # selector transition to use the verified dispatcher protocol.
 BROKER_GREEN_PROMOTION_SUPPORTED = True
 BROKER_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+LIFECYCLE_BLUE_PROTOCOL_VERSIONS = frozenset(
+    {LEGACY_BLUE_PROTOCOL_VERSION, PROTOCOL_VERSION}
+)
 BROKER_STATE_KEYS = frozenset(
     {
         "schema_version",
@@ -548,7 +552,14 @@ def _contracts(value: object) -> frozenset[tuple[str, str]] | None:
     return frozenset(result)
 
 
-def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
+def _manifest_entry(
+    data: object, *, runtime_protocol_version: int | None = None
+) -> tuple[dict[str, Any] | None, str]:
+    expected_protocol = (
+        PROTOCOL_VERSION
+        if runtime_protocol_version is None
+        else runtime_protocol_version
+    )
     if not isinstance(data, dict) or set(data) != {
         "schema_version",
         "protocol_version",
@@ -559,8 +570,10 @@ def _manifest_entry(data: object) -> tuple[dict[str, Any] | None, str]:
     }:
         return None, "manifest root shape is invalid"
     if (
-        not _exact_int(data["schema_version"], 2)
-        or not _exact_int(data["protocol_version"], PROTOCOL_VERSION)
+        not _exact_int(expected_protocol)
+        or expected_protocol not in LIFECYCLE_BLUE_PROTOCOL_VERSIONS
+        or not _exact_int(data["schema_version"], 2)
+        or not _exact_int(data["protocol_version"], expected_protocol)
         or not _exact_int(data["contract_version"], CONTRACT_VERSION)
         or not _exact_int(data["broker_protocol_version"], BROKER_PROTOCOL_VERSION)
         or data["channel"] != "production"
@@ -1833,17 +1846,30 @@ def _exact_mode(path: Path, *, expected_type: int, mode: int) -> os.stat_result 
     return info
 
 
-def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) -> bool:
+def _broker_record_valid(
+    document: object,
+    root: Path,
+    *,
+    allow_previous: bool,
+    runtime_protocol_version: int | None = None,
+) -> bool:
+    expected_protocol = (
+        PROTOCOL_VERSION
+        if runtime_protocol_version is None
+        else runtime_protocol_version
+    )
     if not isinstance(document, dict) or set(document) != BROKER_STATE_KEYS:
         return False
     if (
-        not _exact_int(document.get("schema_version"), 2)
+        not _exact_int(expected_protocol)
+        or expected_protocol not in LIFECYCLE_BLUE_PROTOCOL_VERSIONS
+        or not _exact_int(document.get("schema_version"), 2)
         or not _exact_int(document.get("contract_version"), CONTRACT_VERSION)
         or not _exact_int(
             document.get("broker_protocol_version"), BROKER_PROTOCOL_VERSION
         )
         or not _exact_int(
-            document.get("runtime_protocol_version"), PROTOCOL_VERSION
+            document.get("runtime_protocol_version"), expected_protocol
         )
         or not isinstance(document.get("artifact_sha256"), str)
         or not _SHA256_RE.fullmatch(document["artifact_sha256"])
@@ -1871,10 +1897,16 @@ def _broker_record_valid(document: object, root: Path, *, allow_previous: bool) 
         if not isinstance(document.get(key), str) or document[key] != str(expected):
             return False
     previous = document.get("previous")
-    if previous is not None and (
-        not allow_previous or not _broker_record_valid(previous, root, allow_previous=False)
-    ):
-        return False
+    if previous is not None:
+        if not allow_previous or not isinstance(previous, dict):
+            return False
+        if not _broker_record_valid(
+            previous,
+            root,
+            allow_previous=False,
+            runtime_protocol_version=previous.get("runtime_protocol_version"),
+        ):
+            return False
     return True
 
 
@@ -1951,6 +1983,36 @@ def _load_legacy_broker_lane(root: Path) -> BrokerLaneSnapshot | None:
     socket_path = root / BROKER_SOCKET_FILENAME
     if _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600) is None:
         raise ValueError("provider broker socket identity is unavailable")
+    return BrokerLaneSnapshot(
+        name="blue",
+        generation=0,
+        artifact_digest=state["artifact_sha256"],
+        manifest_digest=state["manifest_sha256"],
+        label=BROKER_LABEL,
+        socket_path=socket_path,
+    )
+
+
+def _load_lifecycle_blue_lane(root: Path) -> BrokerLaneSnapshot | None:
+    """Verify an exact v1-or-v2 blue solely for dispatcher lifecycle control."""
+
+    state = _read_lifecycle_blue_state(root)
+    if state is None:
+        return None
+    _verify_published_version(
+        root,
+        artifact_digest=state["artifact_sha256"],
+        manifest_digest=state["manifest_sha256"],
+        runtime_protocol_version=state["runtime_protocol_version"],
+    )
+    _verify_plist_against_state(root, state)
+    socket_path = root / BROKER_SOCKET_FILENAME
+    if (
+        not _job_loaded(BROKER_LABEL)
+        or _exact_mode(socket_path, expected_type=stat.S_IFSOCK, mode=0o600)
+        is None
+    ):
+        raise ValueError("legacy provider broker lifecycle identity is unavailable")
     return BrokerLaneSnapshot(
         name="blue",
         generation=0,
@@ -2740,7 +2802,11 @@ def _broker_version_path(
 
 
 def _verify_published_version(
-    root: Path, *, artifact_digest: str, manifest_digest: str
+    root: Path,
+    *,
+    artifact_digest: str,
+    manifest_digest: str,
+    runtime_protocol_version: int | None = None,
 ) -> tuple[Path, Path, Path]:
     version = _broker_version_path(
         root,
@@ -2760,7 +2826,9 @@ def _verify_published_version(
         raise ValueError("provider broker version digest mismatch")
     try:
         document = runtime_bundle.load_closed_json_object(raw_manifest)
-        entry, error = _manifest_entry(document)
+        entry, error = _manifest_entry(
+            document, runtime_protocol_version=runtime_protocol_version
+        )
     except runtime_bundle.BundleContractError as exc:
         raise ValueError("provider broker manifest is invalid") from exc
     if entry is None or entry == {} or entry["sha256"] != artifact_digest:
@@ -2962,7 +3030,9 @@ def _blue_reference(state: Mapping[str, Any]) -> dict[str, str]:
     return dict(reference)
 
 
-def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
+def _read_current_broker_state(
+    root: Path, *, runtime_protocol_version: int | None = None
+) -> dict[str, Any] | None:
     try:
         root.lstat()
     except FileNotFoundError:
@@ -2985,9 +3055,31 @@ def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
         )
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("provider broker state is malformed") from exc
-    if not _broker_record_valid(document, root, allow_previous=True):
+    if not _broker_record_valid(
+        document,
+        root,
+        allow_previous=True,
+        runtime_protocol_version=runtime_protocol_version,
+    ):
         raise ValueError("provider broker state contract mismatch")
     return dict(document)
+
+
+def _read_lifecycle_blue_state(root: Path) -> dict[str, Any] | None:
+    """Read only the two closed blue protocols needed for a v1-to-v2 rollout."""
+
+    last_error: ValueError | None = None
+    for runtime_protocol_version in (
+        PROTOCOL_VERSION,
+        LEGACY_BLUE_PROTOCOL_VERSION,
+    ):
+        try:
+            return _read_current_broker_state(
+                root, runtime_protocol_version=runtime_protocol_version
+            )
+        except ValueError as exc:
+            last_error = exc
+    raise ValueError("legacy provider broker state contract mismatch") from last_error
 
 
 def _without_previous(document: Mapping[str, Any]) -> dict[str, Any]:
@@ -3163,7 +3255,18 @@ def _record_for(
     manifest_digest: str,
     plist_digest: str,
     previous: Mapping[str, Any] | None,
+    runtime_protocol_version: int | None = None,
 ) -> dict[str, Any]:
+    recorded_protocol = (
+        PROTOCOL_VERSION
+        if runtime_protocol_version is None
+        else runtime_protocol_version
+    )
+    if (
+        not _exact_int(recorded_protocol)
+        or recorded_protocol not in LIFECYCLE_BLUE_PROTOCOL_VERSIONS
+    ):
+        raise ValueError("provider broker runtime protocol is invalid")
     version = _broker_version_path(
         root,
         artifact_digest=artifact_digest,
@@ -3173,7 +3276,7 @@ def _record_for(
         "schema_version": 2,
         "contract_version": CONTRACT_VERSION,
         "broker_protocol_version": BROKER_PROTOCOL_VERSION,
-        "runtime_protocol_version": PROTOCOL_VERSION,
+        "runtime_protocol_version": recorded_protocol,
         "artifact_sha256": artifact_digest,
         "manifest_sha256": manifest_digest,
         "bundle_path": str(version / "agent-collab-runtime.bundle"),
@@ -3253,13 +3356,14 @@ def _broker_lifecycle_seatbelt_block() -> RuntimeResult | None:
 
 
 def _prove_legacy_blue(root: Path) -> dict[str, Any]:
-    state = _read_current_broker_state(root)
+    state = _read_lifecycle_blue_state(root)
     if state is None:
         raise ValueError("legacy provider broker is unavailable")
     _verify_published_version(
         root,
         artifact_digest=state["artifact_sha256"],
         manifest_digest=state["manifest_sha256"],
+        runtime_protocol_version=state["runtime_protocol_version"],
     )
     _verify_plist_against_state(root, state)
     if not _job_loaded(BROKER_LABEL):
@@ -3535,7 +3639,7 @@ def dispatcher_status() -> RuntimeResult:
         selector = _read_broker_selector(root)
         blue: BrokerLaneSnapshot | None
         try:
-            blue = _load_legacy_broker_lane(root)
+            blue = _load_lifecycle_blue_lane(root)
         except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
             blue = None
         if selector is None:
@@ -3932,14 +4036,38 @@ def abort_dispatcher_candidate() -> RuntimeResult:
         )
 
 
+def _verify_lifecycle_blue_version(
+    root: Path, reference: Mapping[str, Any]
+) -> tuple[int, Path, Path, Path]:
+    if not _broker_lane_reference_valid(reference):
+        raise ValueError("legacy provider broker reference is invalid")
+    last_error: ValueError | None = None
+    for runtime_protocol_version in (
+        PROTOCOL_VERSION,
+        LEGACY_BLUE_PROTOCOL_VERSION,
+    ):
+        try:
+            bundle, runtime, manifest = _verify_published_version(
+                root,
+                artifact_digest=reference["artifact_sha256"],
+                manifest_digest=reference["manifest_sha256"],
+                runtime_protocol_version=runtime_protocol_version,
+            )
+            return runtime_protocol_version, bundle, runtime, manifest
+        except ValueError as exc:
+            last_error = exc
+    raise ValueError("legacy provider broker version is unsupported") from last_error
+
+
 def _rebuild_legacy_blue_files(
     root: Path, reference: Mapping[str, Any]
 ) -> tuple[dict[str, Any], bytes]:
-    _bundle, runtime, _manifest = _verify_published_version(
-        root,
-        artifact_digest=reference["artifact_sha256"],
-        manifest_digest=reference["manifest_sha256"],
-    )
+    (
+        runtime_protocol_version,
+        _bundle,
+        runtime,
+        _manifest,
+    ) = _verify_lifecycle_blue_version(root, reference)
     home = _operator_home()
     if home is None:
         raise ValueError("operator home is unavailable")
@@ -3958,6 +4086,7 @@ def _rebuild_legacy_blue_files(
         manifest_digest=reference["manifest_sha256"],
         plist_digest=hashlib.sha256(plist_raw).hexdigest(),
         previous=None,
+        runtime_protocol_version=runtime_protocol_version,
     )
     return state, plist_raw
 
@@ -3994,7 +4123,7 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                 if not _job_loaded(BROKER_LABEL):
                     if not _bootstrap_broker(root / "broker.plist"):
                         raise RuntimeError("committed blue job could not be restored")
-                observed = _read_current_broker_state(root)
+                observed = _read_lifecycle_blue_state(root)
                 if observed != state:
                     raise RuntimeError("committed blue state was not restored")
                 _verify_plist_against_state(root, state)

@@ -265,7 +265,7 @@ print(json.dumps({
         bundle.chmod(0o500)
         manifest = {
             "schema_version": 2,
-            "protocol_version": 2,
+            "protocol_version": self.client.PROTOCOL_VERSION,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",
@@ -2540,6 +2540,12 @@ print(json.dumps({{
             json.loads((root / "state.json").read_text(encoding="utf-8")),
         )
 
+    def _install_protocol_v1_blue(
+        self, root: Path, *, body: str
+    ) -> tuple[bytes, bytes, dict]:
+        with mock.patch.object(self.client, "PROTOCOL_VERSION", 1):
+            return self._install_legacy_blue(root, body=body)
+
     def _stage_green(self, root: Path, *, body: str):
         self._fixture(body=body)
         ping = self.client.RuntimeResult(
@@ -2567,6 +2573,217 @@ print(json.dumps({{
             staged = self.client.stage_dispatcher()
         self.assertEqual(staged.status, self.client.RuntimeStatus.OK, staged.error)
         return staged
+
+    def test_protocol_v2_lifecycle_accepts_exact_v1_blue_without_routing_to_it(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_protocol_v1_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        selector = {
+            "schema_version": 1,
+            "generation": 4,
+            "selected_lane": "blue",
+            "blue": {
+                "artifact_sha256": blue["artifact_sha256"],
+                "manifest_sha256": blue["manifest_sha256"],
+            },
+            "green": None,
+        }
+        (root / "selector.json").write_text(
+            json.dumps(selector, sort_keys=True, separators=(",", ":")),
+            encoding="ascii",
+        )
+        (root / "selector.json").chmod(0o600)
+
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            artifact_digest="e" * 64,
+            manifest_digest="f" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            status = self.client.dispatcher_status()
+            lanes, route_error = self.client._capture_broker_lanes(resolution)
+
+        self.assertEqual(status.status, self.client.RuntimeStatus.OK, status.error)
+        self.assertEqual(status.result["selected_lane"], "blue")
+        self.assertEqual(status.result["blue"], {**selector["blue"], "available": True})
+        self.assertEqual(lanes, ())
+        self.assertIsNotNone(route_error)
+        self.assertEqual(route_error.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+
+    def test_stage_dispatcher_bridges_v1_blue_to_v2_green_without_rewriting_blue(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        blue_state_raw, blue_plist_raw, blue = self._install_protocol_v1_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        self._fixture(body="#!/bin/sh\nexit 7\n")
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout, mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client,
+            "invoke_dispatcher_ping",
+            return_value=self.client.RuntimeResult(
+                self.client.RuntimeStatus.OK,
+                result={"ready": True},
+                provenance={"operation": "dispatcher_ping"},
+            ),
+        ):
+            staged = self.client.stage_dispatcher()
+
+        self.assertEqual(staged.status, self.client.RuntimeStatus.OK, staged.error)
+        self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
+        self.assertEqual((root / "broker.plist").read_bytes(), blue_plist_raw)
+        selector = json.loads((root / "selector.json").read_text(encoding="utf-8"))
+        self.assertEqual(selector["selected_lane"], "blue")
+        self.assertEqual(selector["blue"], {
+            "artifact_sha256": blue["artifact_sha256"],
+            "manifest_sha256": blue["manifest_sha256"],
+        })
+        green_lane = self.client._dispatcher_lane_snapshot(
+            root,
+            artifact_digest=selector["green"]["artifact_sha256"],
+            manifest_digest=selector["green"]["manifest_sha256"],
+            generation=selector["generation"],
+        )
+        green_state_path = self.client._dispatcher_mutable_path(
+            root,
+            green_lane,
+            "json",
+        )
+        green_state = json.loads(green_state_path.read_text(encoding="utf-8"))
+        self.assertEqual(green_state["runtime_protocol_version"], 2)
+        bootout.assert_not_called()
+
+        green_state["runtime_protocol_version"] = 1
+        green_state_path.write_bytes(self.client._state_bytes(green_state))
+        green_state_path.chmod(0o600)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), self.assertRaises(ValueError):
+            self.client._load_dispatcher_broker_lane(
+                root, selector["green"], selector["generation"]
+            )
+
+    def test_lifecycle_bridge_rejects_every_unlisted_protocol_version(self) -> None:
+        self._fixture()
+        manifest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+        for forbidden in (0, 3, True, 1.0):
+            with self.subTest(forbidden=forbidden):
+                entry, _error = self.client._manifest_entry(
+                    manifest, runtime_protocol_version=forbidden
+                )
+                self.assertIsNone(entry)
+                with self.assertRaises(ValueError):
+                    self.client._record_for(
+                        root=self.root,
+                        artifact_digest="a" * 64,
+                        manifest_digest="b" * 64,
+                        plist_digest="c" * 64,
+                        previous=None,
+                        runtime_protocol_version=forbidden,
+                    )
+
+    def test_lifecycle_bridge_validates_previous_record_at_its_own_protocol(self) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_protocol_v1_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        candidate = self.client._record_for(
+            root=root,
+            artifact_digest="d" * 64,
+            manifest_digest="e" * 64,
+            plist_digest="f" * 64,
+            previous=blue,
+            runtime_protocol_version=2,
+        )
+
+        self.assertTrue(
+            self.client._broker_record_valid(
+                candidate,
+                root,
+                allow_previous=True,
+                runtime_protocol_version=2,
+            )
+        )
+
+        invalid_previous = dict(blue)
+        invalid_previous["runtime_protocol_version"] = 3
+        candidate["previous"] = invalid_previous
+        self.assertFalse(
+            self.client._broker_record_valid(
+                candidate,
+                root,
+                allow_previous=True,
+                runtime_protocol_version=2,
+            )
+        )
+
+    def test_recovery_derives_and_preserves_v1_blue_protocol_from_manifest(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        blue_state_raw, _blue_plist_raw, blue = self._install_protocol_v1_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        selector = {
+            "schema_version": 1,
+            "generation": 4,
+            "selected_lane": "blue",
+            "blue": {
+                "artifact_sha256": blue["artifact_sha256"],
+                "manifest_sha256": blue["manifest_sha256"],
+            },
+            "green": None,
+        }
+        (root / "selector.json").write_text(
+            json.dumps(selector, sort_keys=True, separators=(",", ":")),
+            encoding="ascii",
+        )
+        (root / "selector.json").chmod(0o600)
+        corrupted = dict(blue)
+        corrupted["runtime_protocol_version"] = 2
+        (root / "state.json").write_bytes(self.client._state_bytes(corrupted))
+        (root / "state.json").chmod(0o600)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(
+            recovered.status, self.client.RuntimeStatus.OK, recovered.error
+        )
+        self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
+        observed = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(observed["runtime_protocol_version"], 1)
 
     def test_stage_dispatcher_is_make_before_break_and_keeps_blue_selected(self) -> None:
         root = self.root / "broker-state"
