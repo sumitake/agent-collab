@@ -115,13 +115,6 @@ def _secure_codesign_timestamp(output: str) -> str:
     return value
 
 
-def _spctl_source(output: str) -> str:
-    expected = "source=Notarized Developer ID"
-    return "Notarized Developer ID" if expected in {
-        line.strip() for line in output.splitlines()
-    } else ""
-
-
 def _exact_int(value: object, expected: int) -> bool:
     return type(value) is int and value == expected
 
@@ -289,16 +282,39 @@ def _verify_member_signature(
     timestamp = _secure_codesign_timestamp(detail_output)
     if not timestamp:
         errors.append("runtime code signature is missing a secure Timestamp")
+    # The runtime entrypoint is a bare command-line Mach-O, not a .app bundle or
+    # an installer package, so `spctl --assess` cannot assess it: `--type execute`
+    # only assesses .app bundles (always "the code is valid but does not seem to
+    # be an app"), and `--type install` is an installer-package policy whose
+    # acceptance of a bare binary is empirical, not a documented contract. The
+    # documented, code-object-native notarization proof is the codesign
+    # requirement `notarized`, which binds to the CDHash. Empirically (exit codes):
+    # a notarized Developer-ID binary passes (0); unsigned (1), ad-hoc (3), and
+    # Developer-ID-signed-but-NOT-notarized (3) all fail. `--check-notarization`
+    # is deliberately NOT combined — with `--test-requirement` it makes ad-hoc and
+    # un-notarized binaries pass (rc 0). `spctl_source` keeps its name and its
+    # "Notarized Developer ID" value (a stable cross-job evidence-schema field);
+    # it is now populated from the codesign requirement result rather than spctl.
+    # Offline note: a bare command-line Mach-O cannot have a notarization ticket
+    # stapled (stapling targets bundles, disk images, and installer packages, not
+    # standalone binaries). Without `--check-notarization` this requirement does
+    # not run the online Gatekeeper lookup itself; it is satisfied by a stapled
+    # ticket or the host's local notarization trust state. A bare binary relies
+    # on that local state (the build host populates it at notarize time), so a
+    # clean host without it fails closed, never a bypass. A `macOS notarization
+    # verification tool failed` / requirement failure here is a fail-closed
+    # reject, never a pass.
     spctl_source = ""
     if assess_notarization:
         try:
             assessment = subprocess.run(
                 [
-                    "/usr/sbin/spctl",
-                    "--assess",
-                    "--type",
-                    "execute",
+                    "/usr/bin/codesign",
+                    "--verify",
+                    "--strict",
                     "--verbose=4",
+                    "--test-requirement",
+                    "=notarized",
                     str(path),
                 ],
                 capture_output=True,
@@ -308,10 +324,11 @@ def _verify_member_signature(
         except (OSError, subprocess.SubprocessError):
             errors.append("macOS notarization verification tool failed")
         else:
-            spctl_source = _spctl_source(assessment.stdout + assessment.stderr)
-            if assessment.returncode != 0 or not spctl_source:
+            if assessment.returncode == 0:
+                spctl_source = "Notarized Developer ID"
+            else:
                 errors.append(
-                    "runtime notarization source is not exactly Notarized Developer ID"
+                    "runtime is not notarized: codesign '=notarized' requirement failed"
                 )
     return {
         "codesign_timestamp": timestamp,

@@ -2162,30 +2162,29 @@ print(json.dumps({
                 if not expected:
                     self.assertIn("Mach-O", error)
 
-    def test_signature_requires_secure_timestamp_and_exact_notarized_source(self) -> None:
+    def test_signature_requires_secure_timestamp_and_notarization(self) -> None:
         valid_build = (
             "Load command 9\n"
             "      cmd LC_BUILD_VERSION\n"
             " platform 1\n"
             "    minos 14.0\n"
         )
+        # A bare command-line Mach-O is not an app bundle, so notarization is
+        # verified via codesign's `=notarized` requirement (binds to the CDHash),
+        # never `spctl --assess`. The check is purely returncode-driven: a
+        # notarized Developer-ID binary passes (0); un-notarized fails (3).
         cases = (
-            ("", "source=Notarized Developer ID", False),
-            ("Timestamp=none", "source=Notarized Developer ID", False),
-            (
-                "Timestamp=Jul 12, 2026 at 12:00:00",
-                "source=Developer ID",
-                False,
-            ),
-            (
-                "Timestamp=Jul 12, 2026 at 12:00:00",
-                "source=Notarized Developer ID",
-                True,
-            ),
+            ("", 0, False),
+            ("Timestamp=none", 0, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", 3, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", 0, True),
         )
-        for timestamp, source, expected in cases:
-            with self.subTest(timestamp=timestamp, source=source):
+        for timestamp, notarized_rc, expected in cases:
+            with self.subTest(timestamp=timestamp, notarized_rc=notarized_rc):
+                observed: list[list[str]] = []
+
                 def run(command, **_kwargs):
+                    observed.append(list(command))
                     if command[0] == "/usr/bin/lipo":
                         return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
                     if command[0] == "/usr/bin/otool":
@@ -2200,12 +2199,11 @@ print(json.dumps({
                                 f"{timestamp}\n"
                             ),
                         )
-                    if command[0] == "/usr/sbin/spctl":
-                        return mock.Mock(
-                            returncode=0,
-                            stdout="",
-                            stderr=f"accepted\n{source}\n",
-                        )
+                    if (
+                        command[0] == "/usr/bin/codesign"
+                        and "--test-requirement" in command
+                    ):
+                        return mock.Mock(returncode=notarized_rc, stdout="", stderr="")
                     return mock.Mock(returncode=0, stdout="", stderr="valid")
 
                 with mock.patch.object(self.client.subprocess, "run", side_effect=run):
@@ -2215,6 +2213,73 @@ print(json.dumps({
                         require_notarization=True,
                     )
                 self.assertEqual(valid, expected, error)
+                # Notarization must be proven by codesign's `=notarized`
+                # requirement, never by spctl.
+                self.assertFalse(
+                    any(cmd and cmd[0] == "/usr/sbin/spctl" for cmd in observed),
+                    "notarization must not shell out to spctl",
+                )
+                if timestamp.startswith("Timestamp=Jul"):
+                    self.assertTrue(
+                        any(
+                            cmd[:1] == ["/usr/bin/codesign"]
+                            and "--test-requirement" in cmd
+                            and "=notarized" in cmd
+                            for cmd in observed
+                        ),
+                        "expected a codesign =notarized notarization check",
+                    )
+                # `--check-notarization` must never be combined with the
+                # requirement — it makes ad-hoc / un-notarized binaries pass.
+                self.assertFalse(
+                    any("--check-notarization" in cmd for cmd in observed),
+                    "--check-notarization must not be combined (fails open)",
+                )
+
+    def test_notarization_tool_failure_is_fail_closed(self) -> None:
+        valid_build = (
+            "Load command 9\n"
+            "      cmd LC_BUILD_VERSION\n"
+            " platform 1\n"
+            "    minos 14.0\n"
+        )
+        # If the notarization codesign call raises (missing tool / timeout), the
+        # verifier must fail closed — never treat an un-run check as a pass.
+        for exc in (
+            OSError("codesign missing"),
+            subprocess.TimeoutExpired(cmd="codesign", timeout=20),
+        ):
+            with self.subTest(exc=type(exc).__name__):
+                def run(command, **_kwargs):
+                    if command[0] == "/usr/bin/lipo":
+                        return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
+                    if command[0] == "/usr/bin/otool":
+                        return mock.Mock(returncode=0, stdout=valid_build, stderr="")
+                    if command[0] == "/usr/bin/codesign" and "-dv" in command:
+                        return mock.Mock(
+                            returncode=0,
+                            stdout="",
+                            stderr=(
+                                "TeamIdentifier=TESTTEAM01\n"
+                                "CodeDirectory v=20500 flags=0x10000(runtime)\n"
+                                "Timestamp=Jul 12, 2026 at 12:00:00\n"
+                            ),
+                        )
+                    if (
+                        command[0] == "/usr/bin/codesign"
+                        and "--test-requirement" in command
+                    ):
+                        raise exc
+                    return mock.Mock(returncode=0, stdout="", stderr="valid")
+
+                with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                    valid, error = self.client._verify_macos_signature(
+                        Path("/tmp/agent-collab-runtime"),
+                        team_id="TESTTEAM01",
+                        require_notarization=True,
+                    )
+                self.assertFalse(valid)
+                self.assertIn("verification tool failed", error)
 
     def test_manifest_rejects_cross_platform_path_mismatch(self) -> None:
         self._fixture()
