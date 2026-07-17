@@ -67,6 +67,10 @@ BROKER_SELECTOR_MAX_BYTES = 16 * 1024
 DISPATCHER_PROTOCOL_VERSION = 1
 DISPATCHER_MAX_HANDSHAKE_SECONDS = 30.0
 DISPATCHER_MAX_REQUEST_SECONDS = MAX_TIMEOUT_MS / 1000.0
+DISPATCHER_LAUNCHD_LISTENER_UID = 0
+DISPATCHER_LAUNCHD_SENTINEL_PID = 1
+DISPATCHER_LAUNCHD_INITIAL_DELAY_SECONDS = 0.01
+DISPATCHER_LAUNCHD_MAX_DELAY_SECONDS = 0.1
 BROKER_SELECTOR_KEYS = frozenset(
     {"schema_version", "generation", "selected_lane", "blue", "green"}
 )
@@ -1402,7 +1406,13 @@ def _adoption_canary_document(request: object) -> bytes:
     return encoded
 
 
-def _observe_dispatcher_credentials(peer: socket.socket) -> tuple[int, int]:
+def _observe_dispatcher_credentials(
+    peer: socket.socket,
+    *,
+    allow_launchd_sentinel: bool = False,
+) -> tuple[int, int]:
+    if type(allow_launchd_sentinel) is not bool:
+        raise ValueError("provider dispatcher peer credential policy is invalid")
     try:
         raw = peer.getsockopt(0, 1, 256)
         pid_raw = peer.getsockopt(0, 2, struct.calcsize("i"))
@@ -1422,9 +1432,77 @@ def _observe_dispatcher_credentials(peer: socket.socket) -> tuple[int, int]:
     ):
         raise ValueError("provider dispatcher peer credentials are malformed")
     pid = int.from_bytes(pid_raw, sys.byteorder, signed=True)
-    if pid <= 1:
+    if pid <= 1 and not (
+        allow_launchd_sentinel and pid == DISPATCHER_LAUNCHD_SENTINEL_PID
+    ):
         raise ValueError("provider dispatcher peer PID is invalid")
     return uid, pid
+
+
+def _await_dispatcher_launchd_credentials(
+    peer: socket.socket,
+    *,
+    deadline: float,
+    credential_observer=None,
+    now_monotonic=time.monotonic,
+    sleeper=time.sleep,
+) -> tuple[int, int]:
+    if (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not math.isfinite(float(deadline))
+        or not callable(now_monotonic)
+        or not callable(sleeper)
+        or (credential_observer is not None and not callable(credential_observer))
+    ):
+        raise ValueError("provider dispatcher launchd peer deadline is invalid")
+    observer = credential_observer
+    if observer is None:
+        observer = lambda selected: _observe_dispatcher_credentials(
+            selected,
+            allow_launchd_sentinel=True,
+        )
+    delay = DISPATCHER_LAUNCHD_INITIAL_DELAY_SECONDS
+    while True:
+        try:
+            now = float(now_monotonic())
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("provider dispatcher launchd peer clock is invalid") from exc
+        if not math.isfinite(now) or now >= float(deadline):
+            raise ValueError("provider dispatcher launchd peer deadline expired")
+        try:
+            credentials = observer(peer)
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "provider dispatcher launchd peer credentials are unavailable"
+            ) from exc
+        if (
+            not isinstance(credentials, tuple)
+            or len(credentials) != 2
+            or type(credentials[0]) is not int
+            or type(credentials[1]) is not int
+        ):
+            raise ValueError("provider dispatcher launchd peer credentials are invalid")
+        uid, pid = credentials
+        if uid != DISPATCHER_LAUNCHD_LISTENER_UID:
+            raise ValueError("provider dispatcher launchd listener was rejected")
+        if pid > DISPATCHER_LAUNCHD_SENTINEL_PID:
+            return uid, pid
+        if pid != DISPATCHER_LAUNCHD_SENTINEL_PID:
+            raise ValueError("provider dispatcher launchd peer PID was rejected")
+        try:
+            current = float(now_monotonic())
+        except (OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("provider dispatcher launchd peer clock is invalid") from exc
+        remaining = float(deadline) - current
+        if not math.isfinite(current) or remaining <= 0:
+            raise ValueError("provider dispatcher launchd peer deadline expired")
+        sleep_for = min(delay, remaining)
+        try:
+            sleeper(sleep_for)
+        except (OSError, OverflowError, TypeError, ValueError) as exc:
+            raise ValueError("provider dispatcher launchd peer wait failed") from exc
+        delay = min(delay * 2, DISPATCHER_LAUNCHD_MAX_DELAY_SECONDS)
 
 
 def _observe_dispatcher_process(pid: int) -> tuple[str, Path]:
@@ -1490,6 +1568,10 @@ def _prove_dispatcher_peer(
     peer: socket.socket,
     lane: BrokerLaneSnapshot,
     *,
+    credentials: tuple[int, int] | None = None,
+    expected_credential_uid: int | None = None,
+    expected_pid: int | None = None,
+    final_credential_observer=None,
     credential_observer=_observe_dispatcher_credentials,
     process_observer=_observe_dispatcher_process,
     socket_observer=_observe_dispatcher_socket,
@@ -1502,6 +1584,24 @@ def _prove_dispatcher_peer(
     verifier = _verify_published_version if published_verifier is None else published_verifier
     if not isinstance(selected_root, Path) or not selected_root.is_absolute():
         raise ValueError("provider dispatcher root is invalid")
+    selected_credential_uid = (
+        os.getuid()
+        if expected_credential_uid is None
+        else expected_credential_uid
+    )
+    if (
+        type(selected_credential_uid) is not int
+        or selected_credential_uid < 0
+        or (
+            expected_pid is not None
+            and (type(expected_pid) is not int or expected_pid <= 1)
+        )
+        or (
+            final_credential_observer is not None
+            and not callable(final_credential_observer)
+        )
+    ):
+        raise ValueError("provider dispatcher peer policy is invalid")
     try:
         socket_before = socket_observer(lane)
         _bundle, runtime, _manifest = verifier(
@@ -1509,7 +1609,19 @@ def _prove_dispatcher_peer(
             artifact_digest=lane.artifact_digest,
             manifest_digest=lane.manifest_digest,
         )
-        uid, pid = credential_observer(peer)
+        observed_credentials = (
+            credential_observer(peer)
+            if credentials is None
+            else credentials
+        )
+        if (
+            not isinstance(observed_credentials, tuple)
+            or len(observed_credentials) != 2
+            or type(observed_credentials[0]) is not int
+            or type(observed_credentials[1]) is not int
+        ):
+            raise ValueError("provider dispatcher peer credentials are invalid")
+        uid, pid = observed_credentials
         start_before, path_before = process_observer(pid)
         start_after, path_after = process_observer(pid)
         _bundle2, runtime_after, _manifest2 = verifier(
@@ -1518,6 +1630,11 @@ def _prove_dispatcher_peer(
             manifest_digest=lane.manifest_digest,
         )
         socket_after = socket_observer(lane)
+        final_credentials = (
+            None
+            if final_credential_observer is None
+            else final_credential_observer()
+        )
     except (OSError, TypeError, ValueError) as exc:
         raise ValueError("provider dispatcher peer identity is unproven") from exc
     try:
@@ -1526,8 +1643,9 @@ def _prove_dispatcher_peer(
     except OSError as exc:
         raise ValueError("provider dispatcher executable identity is unproven") from exc
     if (
-        uid != os.getuid()
+        uid != selected_credential_uid
         or pid <= 1
+        or (expected_pid is not None and pid != expected_pid)
         or type(start_before) is not str
         or not start_before
         or start_after != start_before
@@ -1536,9 +1654,39 @@ def _prove_dispatcher_peer(
         or not same_before
         or not same_after
         or socket_after != socket_before
+        or (
+            final_credentials is not None
+            and (
+                not isinstance(final_credentials, tuple)
+                or len(final_credentials) != 2
+                or type(final_credentials[0]) is not int
+                or type(final_credentials[1]) is not int
+                or final_credentials != (uid, pid)
+            )
+        )
     ):
         raise ValueError("provider dispatcher peer identity changed")
     return pid
+
+
+def _prove_dispatcher_launchd_peer(
+    peer: socket.socket,
+    lane: BrokerLaneSnapshot,
+    *,
+    deadline: float,
+    credential_waiter=_await_dispatcher_launchd_credentials,
+    credential_observer=_observe_dispatcher_credentials,
+    peer_prover=_prove_dispatcher_peer,
+) -> int:
+    credentials = credential_waiter(peer, deadline=deadline)
+    return peer_prover(
+        peer,
+        lane,
+        credentials=credentials,
+        expected_credential_uid=DISPATCHER_LAUNCHD_LISTENER_UID,
+        expected_pid=credentials[1],
+        final_credential_observer=lambda: credential_observer(peer),
+    )
 
 
 def _dispatcher_exchange(
@@ -1551,7 +1699,6 @@ def _dispatcher_exchange(
 ) -> dict[str, Any]:
     request_started = False
     try:
-        dispatcher_pid = _prove_dispatcher_peer(peer, lane)
         now = time.monotonic()
         selected_handshake_deadline = (
             min(deadline, now + DISPATCHER_MAX_HANDSHAKE_SECONDS)
@@ -1571,6 +1718,11 @@ def _dispatcher_exchange(
             > now + DISPATCHER_MAX_HANDSHAKE_SECONDS
         ):
             raise ValueError("provider dispatcher handshake deadline is invalid")
+        dispatcher_pid = _prove_dispatcher_launchd_peer(
+            peer,
+            lane,
+            deadline=selected_handshake_deadline,
+        )
         nonce = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii").rstrip("=")
         hello = _dispatcher_build_hello(
             lane=lane,
