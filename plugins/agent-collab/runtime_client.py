@@ -1600,6 +1600,10 @@ def _prove_dispatcher_peer(
             final_credential_observer is not None
             and not callable(final_credential_observer)
         )
+        or (
+            expected_credential_uid is not None
+            and final_credential_observer is None
+        )
     ):
         raise ValueError("provider dispatcher peer policy is invalid")
     try:
