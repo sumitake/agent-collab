@@ -569,31 +569,57 @@ _MAX_DECOMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
 
 
 def _bounded_archive_stream(archive_path: Path) -> io.BytesIO:
-    """Decompress an archive under hard byte caps before tar parsing."""
+    """Decompress an archive under hard byte caps before tar parsing.
 
+    All checks are descriptor-based (O_NOFOLLOW open + fstat + read-counting
+    on the SAME fd), so a concurrent path swap or file growth cannot bypass
+    the compressed-size cap — there is no lstat→open window to race.
+    """
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
-        info = archive_path.lstat()
+        descriptor = os.open(archive_path, flags)
     except OSError as exc:
         raise ValueError("plugin archive is unreadable") from exc
-    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        raise ValueError("plugin archive is unreadable")
-    if info.st_size > _MAX_COMPRESSED_ARCHIVE_BYTES:
-        raise ValueError("plugin archive exceeds the canonical size bound")
+    compressed_chunks: list[bytes] = []
+    compressed_total = 0
+    try:
+        described = os.fstat(descriptor)
+        if not stat.S_ISREG(described.st_mode):
+            raise ValueError("plugin archive is unreadable")
+        if described.st_size > _MAX_COMPRESSED_ARCHIVE_BYTES:
+            raise ValueError("plugin archive exceeds the canonical size bound")
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            compressed_total += len(chunk)
+            if compressed_total > _MAX_COMPRESSED_ARCHIVE_BYTES:
+                # Enforced on the bytes actually read, so growth after the
+                # fstat cannot smuggle extra compressed input past the cap.
+                raise ValueError("plugin archive exceeds the canonical size bound")
+            compressed_chunks.append(chunk)
+    except OSError as exc:
+        raise ValueError("plugin archive is unreadable") from exc
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
     chunks: list[bytes] = []
     total = 0
     try:
-        with archive_path.open("rb") as raw:
-            with gzip.GzipFile(fileobj=raw) as stream:
-                while True:
-                    chunk = stream.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > _MAX_DECOMPRESSED_ARCHIVE_BYTES:
-                        raise ValueError(
-                            "plugin archive decompression exceeds the canonical bound"
-                        )
-                    chunks.append(chunk)
+        with gzip.GzipFile(fileobj=io.BytesIO(b"".join(compressed_chunks))) as stream:
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_DECOMPRESSED_ARCHIVE_BYTES:
+                    raise ValueError(
+                        "plugin archive decompression exceeds the canonical bound"
+                    )
+                chunks.append(chunk)
     except (OSError, EOFError, gzip.BadGzipFile, zlib_error) as exc:
         raise ValueError("plugin archive is unreadable") from exc
     return io.BytesIO(b"".join(chunks))
