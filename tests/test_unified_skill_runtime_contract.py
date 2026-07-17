@@ -254,12 +254,19 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         )
         self.assertIn(
             "Grok 4.5 read-only architecture consultation, governance review, "
-            "and huge-context ingestion",
+            "huge-context ingestion, and output-only code/patch generation "
+            "through the `composer/codegen` compatibility route",
             " ".join(readme.split()),
         )
-        self.assertIn(
-            "Composer output-only code/patch generation", " ".join(readme.split())
-        )
+        self.assertNotIn("Composer output-only code/patch generation", readme)
+        self.assertIn("`protocol_version` is integer `2`", readme)
+        for selection in (
+            "`simple_codegen` has a low minimum",
+            "`standard_codegen` a medium minimum",
+            "`complex_codegen` a high minimum",
+            "same author model, `xai/grok-4.5`",
+        ):
+            self.assertIn(selection, " ".join(readme.split()))
 
         combined = "\n".join(
             path.read_text(encoding="utf-8")

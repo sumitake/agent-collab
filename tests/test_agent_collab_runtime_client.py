@@ -216,12 +216,12 @@ families = {
     "codex": ("openai/codex-test", "openai"),
     "opencode": (request.get("model", "opencode/glm-5.2"), "zhipu"),
     "grok": ("xai/grok-4.5", "xai"),
-    "composer": ("xai/grok-composer-2.5-fast", "xai"),
+    "composer": ("xai/grok-4.5", "xai"),
     "gemini": ("google/gemini-test", "google"),
 }
 author_model, author_family = families[request["route"]]
 print(json.dumps({
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {
@@ -265,7 +265,7 @@ print(json.dumps({
         bundle.chmod(0o500)
         manifest = {
             "schema_version": 2,
-            "protocol_version": 1,
+            "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",
@@ -316,7 +316,7 @@ print(json.dumps({
 import json, os, sys
 request = json.loads(sys.stdin.readline())
 print(json.dumps({{
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {{
@@ -373,7 +373,10 @@ print(json.dumps({{
             ("grok", "huge_context"): {
                 "documents": [{"label": "a", "content": "document"}]
             },
-            ("composer", "codegen"): {},
+            ("composer", "codegen"): {
+                "task_class": "standard_codegen",
+                "effort": "medium",
+            },
         }
         policy = self.client._load_host_policy()
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
@@ -441,7 +444,7 @@ print(json.dumps({{
     def test_empty_manifest_is_unavailable_before_platform_rejection(self) -> None:
         manifest = {
             "schema_version": 2,
-            "protocol_version": 1,
+            "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",
@@ -482,7 +485,7 @@ print(json.dumps({{
                 ):
                     result = self.client.invoke(envelope=envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
-        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
+        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "2"])
         self.assertFalse(result.result["secret_present"])
         self.assertEqual(result.result["home"], pwd.getpwuid(os.getuid()).pw_dir)
         self.assertEqual(result.result["host_context"], "generic")
@@ -507,7 +510,7 @@ print(json.dumps({{
 
     def test_broker_frame_is_exact_digest_bound_and_uses_canonical_nonce(self) -> None:
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "broker-frame-1",
             "operation": "execute",
         }
@@ -524,7 +527,7 @@ print(json.dumps({{
             )
         self.assertEqual(set(frame), self.client.BROKER_FRAME_KEYS)
         self.assertEqual(frame["broker_protocol_version"], 2)
-        self.assertEqual(frame["runtime_protocol_version"], 1)
+        self.assertEqual(frame["runtime_protocol_version"], 2)
         self.assertEqual(frame["artifact_sha256"], "a" * 64)
         self.assertEqual(frame["manifest_sha256"], "b" * 64)
         self.assertEqual(frame["client_pid"], os.getpid())
@@ -545,7 +548,7 @@ print(json.dumps({{
 
     def _adoption_canary_request(self, **overrides: object) -> dict[str, object]:
         request: dict[str, object] = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "adoption-canary-1",
             "operation": "adoption_canary",
             "provider": "gemini",
@@ -855,7 +858,7 @@ print(json.dumps({{
             "hello_sha256": self.client._dispatcher_frame_sha256(hello),
         }
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "adoption-canary-1",
             "status": "ok",
             "result": {"passed_routes": request["routes"]},
@@ -946,7 +949,7 @@ print(json.dumps({{
             "hello_sha256": self.client._dispatcher_frame_sha256(hello),
         }
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": request["request_id"],
             "status": "canary_blocked",
             "error": "fixture",
@@ -1152,7 +1155,7 @@ print(json.dumps({{
             green_manifest="b" * 64,
         )
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": request["request_id"],
             "status": "ok",
             "result": {
@@ -1543,7 +1546,7 @@ print(json.dumps({{
             socket_path=self.root / "green.sock",
         )
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "bridge-1",
             "operation": "dispatcher_ping",
             "timeout_ms": 5_000,
@@ -1592,7 +1595,7 @@ print(json.dumps({{
             self.assertEqual(request["provider"], "opencode")
             self.assertLessEqual(handshake_deadline, deadline)
             return {
-                "protocol_version": 1,
+                "protocol_version": 2,
                 "request_id": request["request_id"],
                 "status": "ok",
                 "result": {
@@ -1647,7 +1650,7 @@ print(json.dumps({{
             socket_path=self.root / "green.sock",
         )
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "unavailable",
             "error": "fixture route unavailable",
@@ -1693,7 +1696,7 @@ print(json.dumps({{
         runtime.write_bytes(b"runtime")
         runtime.chmod(0o500)
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "bridge-phase-1",
             "operation": "dispatcher_ping",
             "timeout_ms": 5_000,
@@ -1790,7 +1793,7 @@ print(json.dumps({{
                 )
                 observed.update(frame)
                 response = {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "request_id": envelope.request_id,
                     "status": "unavailable",
                     "error": "fixture route unavailable",
@@ -1865,7 +1868,7 @@ print(json.dumps({{
                 )
                 observed.update(frame)
                 response = {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "request_id": envelope.request_id,
                     "status": "unavailable",
                     "error": "fixture route unavailable",
@@ -1930,7 +1933,7 @@ print(json.dumps({{
         blue_peer = mock.MagicMock()
         blue_peer.__enter__.return_value = blue_peer
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "unavailable",
             "error": "fixture route unavailable",
@@ -2002,7 +2005,7 @@ print(json.dumps({{
         blue_peer = mock.MagicMock()
         blue_peer.__enter__.return_value = blue_peer
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "unavailable",
             "error": "fixture route unavailable",
@@ -2069,7 +2072,7 @@ print(json.dumps({{
             now[0] = 101.5
             raise self.client._DispatcherPreRequestError("green refused")
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "unavailable",
             "error": "fixture route unavailable",
@@ -2335,7 +2338,7 @@ print(json.dumps({{
                 )
                 observed.update(frame)
                 response = {
-                    "protocol_version": 1,
+                    "protocol_version": 2,
                     "request_id": envelope.request_id,
                     "status": "ok",
                     "result": {
@@ -2406,7 +2409,7 @@ print(json.dumps({{
             with self.subTest(status=status):
                 result = self.client._parse_broker_response(
                     {
-                        "protocol_version": 1,
+                        "protocol_version": 2,
                         "request_id": envelope.request_id,
                         "status": status,
                         "error": "provider broker request was rejected",
@@ -3347,7 +3350,7 @@ print(json.dumps({{
                 timeout_ms=30_000,
             )
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
-        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "1"])
+        self.assertEqual(result.result["argv"], ["invoke", "--protocol", "2"])
         self.assertEqual(result.result["management_action"], "status")
         self.assertEqual(result.result["host_context"], "codex_desktop")
         self.assertFalse(result.result["secret_present"])
@@ -3386,7 +3389,7 @@ request = json.loads(sys.stdin.readline())
 sys.stderr.write("device-login-prompt\\n")
 sys.stderr.flush()
 print(json.dumps({
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {"authenticated": True},
@@ -3412,7 +3415,7 @@ request = json.loads(sys.stdin.readline())
 sys.stderr.write("x" * 256)
 sys.stderr.flush()
 print(json.dumps({
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {"authenticated": True},
@@ -3776,7 +3779,7 @@ print(json.dumps({
                 "host_runtime": "claude-code",
                 "session_identifier": "c-1",
             },
-            row_config={},
+            row_config={"task_class": "standard_codegen", "effort": "medium"},
         )
         self.assertEqual(decision.status, policy.PreflightStatus.CONFIG_ERROR)
 
@@ -3814,7 +3817,10 @@ print(json.dumps({
                         "host_runtime": "claude-code",
                         "session_identifier": "c-1",
                     },
-                    row_config={},
+                    row_config={
+                        "task_class": "standard_codegen",
+                        "effort": "medium",
+                    },
                 )
         self.assertEqual(decision.status, policy.PreflightStatus.UNAVAILABLE)
 
@@ -3874,7 +3880,7 @@ print(json.dumps({
 import json, sys
 request = json.loads(sys.stdin.readline())
 print(json.dumps({{
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {{"review": "ok"}},
@@ -3912,7 +3918,7 @@ print(json.dumps({{
 import json, sys
 request = json.loads(sys.stdin.readline())
 print(json.dumps({{
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {{"review": "ok"}},
@@ -3955,7 +3961,13 @@ print(json.dumps({{
             ),
             ("grok", "architecture", {"mode": "prompt-only"},
              "xai/grok-composer-2.5-fast", "xai"),
-            ("composer", "codegen", {}, "xai/grok-4.5", "xai"),
+            (
+                "composer",
+                "codegen",
+                {"task_class": "standard_codegen", "effort": "medium"},
+                "xai/grok-composer-2.5-fast",
+                "xai",
+            ),
         )
         for route, action, row, wrong_model, family in cases:
             with self.subTest(route=route, action=action):
@@ -3964,7 +3976,7 @@ print(json.dumps({{
 import json, sys
 request = json.loads(sys.stdin.readline())
 print(json.dumps({{
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
     "result": {{"text": "wrong model"}},
@@ -4004,6 +4016,29 @@ print(json.dumps({{
                     self.assertEqual(
                         result.status, self.client.RuntimeStatus.MANIFEST_INVALID
                     )
+
+    def test_protocol_v1_manifest_and_response_fail_closed(self) -> None:
+        self._fixture()
+        manifest_path = self.root / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["protocol_version"] = 1
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            resolution = self.client.resolve_runtime()
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.MANIFEST_INVALID)
+
+        self._fixture()
+        envelope = self._envelope()
+        stale = json.dumps(
+            {
+                "protocol_version": 1,
+                "request_id": envelope.request_id,
+                "status": "provider_error",
+                "error": "stale runtime",
+            }
+        ).encode("utf-8")
+        parsed = self.client._parse_response(stale, envelope, 0)
+        self.assertEqual(parsed.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
 
     def test_manifest_schema_allows_only_exact_route_action_pairs(self) -> None:
         schema = json.loads(
@@ -4061,7 +4096,7 @@ print(json.dumps({{
 import json, sys
 request = json.loads(sys.stdin.readline())
 print(json.dumps({{
-    "protocol_version": 1,
+    "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "{native_status}",
     "error": "typed failure",
@@ -4262,10 +4297,10 @@ time.sleep(10)
             ("codex", "advisory"): {"model", "effort", "mode"},
             ("opencode", "plan"): {"model", "cwd"},
             ("opencode", "build"): {"model", "cwd"},
-            ("grok", "architecture"): {"mode"},
-            ("grok", "governance"): {"mode"},
-            ("grok", "huge_context"): {"documents"},
-            ("composer", "codegen"): set(),
+            ("grok", "architecture"): {"mode", "task_class", "effort"},
+            ("grok", "governance"): {"mode", "task_class", "effort"},
+            ("grok", "huge_context"): {"documents", "task_class", "effort"},
+            ("composer", "codegen"): {"task_class", "effort"},
         }
         base = {
             "protocol_version",
@@ -4298,6 +4333,28 @@ time.sleep(10)
                 self.assertNotIn("argv", document)
                 self.assertNotIn("tools", document)
                 self.assertNotIn("model_override", document)
+
+    def test_grok_routes_share_protocol_v2_and_one_fixed_author_model(self) -> None:
+        self._fixture()
+        self.assertEqual(self.client.PROTOCOL_VERSION, 2)
+        self.assertEqual(
+            self.client.FIXED_AUTHOR_MODELS,
+            {"grok": "xai/grok-4.5", "composer": "xai/grok-4.5"},
+        )
+
+        cases = (
+            ("grok", "architecture", "architecture", "high"),
+            ("grok", "huge_context", "huge_context", "medium"),
+            ("composer", "codegen", "standard_codegen", "medium"),
+        )
+        for route, action, task_class, effort in cases:
+            with self.subTest(route=route, action=action):
+                envelope = self._envelope(route=route, action=action)
+                document = json.loads(self.client._native_document(envelope))
+                self.assertEqual(document["protocol_version"], 2)
+                self.assertEqual(document["task_class"], task_class)
+                self.assertEqual(document["effort"], effort)
+                self.assertNotIn("model", document)
 
     def test_native_protocol_binds_exact_artifact_bytes_model_and_hash(self) -> None:
         policy = self.client._load_host_policy()

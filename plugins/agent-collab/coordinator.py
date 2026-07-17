@@ -17,7 +17,7 @@ from typing import Any
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 MAX_INPUT_BYTES = 40 * 1024 * 1024
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 BASE_FIELDS = {
@@ -141,7 +141,10 @@ def _response(request_id: str, status: str, error: str = "", **extra: Any) -> di
 def _emit(document: dict[str, Any]) -> None:
     encoded = (json.dumps(document, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     if len(encoded) > MAX_OUTPUT_BYTES:
-        encoded = b'{"protocol_version":1,"request_id":"unknown","status":"output_limit","error":"coordinator output limit exceeded"}\n'
+        encoded = (
+            '{"protocol_version":%d,"request_id":"unknown","status":"output_limit",'
+            '"error":"coordinator output limit exceeded"}\n' % PROTOCOL_VERSION
+        ).encode("ascii")
     sys.stdout.buffer.write(encoded)
 
 

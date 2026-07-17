@@ -198,7 +198,7 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
             "artifacts",
         }
         or not _exact_int(data.get("schema_version"), 2)
-        or not _exact_int(data.get("protocol_version"), 1)
+        or not _exact_int(data.get("protocol_version"), 2)
         or not _exact_int(data.get("contract_version"), 3)
         or not _exact_int(data.get("broker_protocol_version"), 2)
         or data.get("channel") != "production"

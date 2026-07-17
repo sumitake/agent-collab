@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **3.5.2**
+Current: **4.0.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -47,10 +47,10 @@ links, aliases, extra members, parent traversal, writable modes, wrong
 platform/architecture, wrong size/hash, the wrong signing team, or failed
 notarization. It inspects every member as thin arm64 Mach-O and requires exactly
 one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
-manifest labels. The broker transport is version 2 while the provider protocol
-remains version 1. The package
+manifest labels. The broker transport and provider protocol are both version 2.
+The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 3.5.2 package.
+identify this same 4.0.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -101,9 +101,10 @@ controlling PTY, serialized shared state, and write containment. Its separate
 long-context results are explicitly non-governance evidence.
 
 No signed artifact is present in this source tree yet. Native **Gemini
-advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**, **Grok 4.5
-read-only architecture consultation, governance review, and huge-context
-ingestion**, and **Composer output-only code/patch generation**
+advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**,
+and **Grok 4.5 read-only architecture consultation, governance review,
+huge-context ingestion, and output-only code/patch generation through the
+`composer/codegen` compatibility route**
 roles are therefore **temporarily unavailable**. Policy-only safe mode keeps
 all native model routes unavailable. A host inbox is eligible only after a
 current availability observation, and the public coordinator exposes readiness
@@ -129,8 +130,8 @@ public `coordinator.py` captures immutable primary and artifact snapshots,
 applies family exclusion, and seals one route, action, and authority
 combination before `runtime_client.py` will launch. The client requires the response to
 return matching artifact-author model/family provenance. It cannot use an
-advisory role as a worker or silently turn output-only Composer generation into
-filesystem mutation.
+advisory role as a worker or silently turn output-only Grok 4.5 compatibility
+codegen into filesystem mutation.
 
 For governance plus applicable review, fallback, and worker roles, the
 artifact remains separate from the prompt. The sealed native document carries
@@ -180,7 +181,7 @@ mutation-capable authority never promote or demote into one another.
 | `target=grok` architecture consultation | Read-only | Grok 4.5 `architecture` action |
 | `target=grok` governance review | Read-only | Grok 4.5 `governance` action |
 | `target=grok` large-corpus extraction | Read-only | Grok 4.5 huge-context ingestion |
-| `target=composer` constrained patch/code generation | Output-only | Composer output-only code/patch generation; trusted primary applies and verifies |
+| `target=composer` constrained patch/code generation | Output-only | Grok 4.5 through the `composer/codegen` compatibility route; trusted primary applies and verifies |
 
 Grok prose succeeds only on an explicit `EndTurn` terminal. Exact `Cancelled`
 is a typed non-success with no retained assistant text; the managed broker may
@@ -189,11 +190,11 @@ deadline. Grok and Composer enforce an inclusive 1,048,576-byte final UTF-8
 input ceiling before authentication or spawn and return typed `input_limit`
 above it.
 
-Non-trivial Composer work starts from a comprehensive architectural coding
+Non-trivial Grok 4.5 compatibility codegen starts from a comprehensive architectural coding
 packet: scope, invariants, authority boundaries, exact files and symbols, error
 taxonomy, lifecycle, tests, and acceptance criteria. The primary architect owns
 that packet, an eligible distinct-family synchronous frontier architect is the
-adversarial complement, and Composer is implementation-only. Claude and Codex
+adversarial complement, and `composer/codegen` is implementation-only. Claude and Codex
 frontier primaries are the strongest default architecture seats; Grok 4.5 is
 the qualified near-peer architecture/governance complement. Async inbox review
 is fallback-only when no eligible synchronous complement is available.
@@ -296,7 +297,7 @@ outside the row contract are never accepted.
 
 Every request contains exactly `protocol_version`, `request_id`, `operation`,
 `route`, `action`, `timeout_ms`, `governance`, `primary`, and `row`.
-`protocol_version` is integer `1`; `request_id` matches
+`protocol_version` is integer `2`; `request_id` matches
 `[A-Za-z0-9._:-]{1,128}`; `operation` is `readiness` or `execute`; and
 `timeout_ms` is an integer from 1 through 600000. An `execute` request also has
 `prompt`. A governance request has `prompt` plus `artifact`, exactly
@@ -357,8 +358,18 @@ Exact row contracts are:
 | `grok/architecture` | `{"mode":"prompt-only"}` or `mode=repo-review` plus absolute `cwd` |
 | `grok/governance` | Same exact row as architecture; requires `governance=true` and an artifact snapshot |
 | `grok/huge_context` | `{"documents":[{"label":"...","content":"..."}]}` |
-| `composer/codegen` | `{}` |
+| `composer/codegen` | `{"task_class":"simple_codegen|standard_codegen|complex_codegen","effort":"low|medium|high"}` |
 | `inbox/async` | `{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`; readiness-only, non-governance, observed host transport |
+
+The public Grok review rows do not accept caller-selected task or effort
+fields. Policy seals `architecture/high`, `governance/high`, and
+`huge_context/medium` after validating the public row. The compatibility
+codegen route requires an explicit task class: `simple_codegen` has a low
+minimum, `standard_codegen` a medium minimum, and `complex_codegen` a high
+minimum. A caller may raise effort above a floor, but may not select `xhigh`,
+`max`, a retired model name, or any raw model/tool/sandbox/environment field.
+Both `grok/*` and `composer/codegen` require runtime provenance identifying the
+same author model, `xai/grok-4.5`.
 
 For OpenCode, a `model` field in the row is compatibility input only and never
 selects a backend. Selection is recomputed for every request from the strong
@@ -397,7 +408,7 @@ fall back or promote into an advisory route. Example:
 
 ```json
 {
-  "protocol_version": 1,
+  "protocol_version": 2,
   "request_id": "review-1",
   "operation": "execute",
   "route": "codex",

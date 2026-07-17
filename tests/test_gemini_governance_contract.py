@@ -91,7 +91,7 @@ class GeminiGovernancePolicyTests(unittest.TestCase):
 
     def test_direct_schema_requires_governance_authority(self) -> None:
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "gemini-governance-direct",
             "operation": "execute",
             "route": "gemini",
@@ -138,7 +138,7 @@ class GeminiGovernancePolicyTests(unittest.TestCase):
             )
 
         request = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "gemini-governance-auto",
             "operation": "execute",
             "route": "auto",
@@ -287,7 +287,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         }
         result["governance_proof"] = self._proof(envelope, text)
         return {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "ok",
             "result": result,
@@ -347,7 +347,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "artifact_author_family": envelope.artifact_author_family,
         }
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "ok",
             "result": result,
@@ -364,7 +364,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
     def test_advisory_cannot_emit_governance_evidence(self) -> None:
         envelope = self._envelope(action="advisory")
         response = {
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": envelope.request_id,
             "status": "ok",
             "result": {"text": "advice", "governance_evidence": True},

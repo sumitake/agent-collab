@@ -34,5 +34,5 @@ route/action. Never embed provider commands in a graph.
    results, failed/blocked nodes, validations, and unresolved operator gates.
 
 Safe mode permits local/async coordination only. Codex build remains a distinct
-typed-unavailable role; Composer can return output-only code material for the
-trusted primary to apply and verify.
+typed-unavailable role; the Grok 4.5 `composer/codegen` compatibility route can
+return output-only code material for the trusted primary to apply and verify.

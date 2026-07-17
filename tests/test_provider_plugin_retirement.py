@@ -59,7 +59,7 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             "opencode/glm-5.2",
             "Zhipu",
             "Grok 4.5",
-            "Composer",
+            "`composer/codegen` compatibility",
             "Claude",
             "async inbox",
             "temporarily unavailable",

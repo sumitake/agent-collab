@@ -1,6 +1,6 @@
 ---
 name: governance-review
-version: 3.5.2
+version: 4.0.0
 description: Use when the operator says "governance review," "high-stakes review," "tiebreaker," or "second opinion." Also offer this proactively when reviewer-family independence must be enforced.
 ---
 
@@ -26,7 +26,8 @@ is eligible, return `unavailable`; a specifically selected same-family route is
 
 The only eligible advertised read-only actions are Gemini `governance`, Codex
 advisory, and Grok `governance`. OpenCode plan, every build role, and
-Composer codegen are never governance-review candidates.
+the output-only `composer/codegen` compatibility route are never governance-
+review candidates.
 
 Gemini governance is a distinct broker-only action, never an advisory alias.
 Accept its result only when the public client validates the complete artifact-

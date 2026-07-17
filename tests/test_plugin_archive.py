@@ -125,7 +125,7 @@ class PluginArchiveTests(unittest.TestCase):
         )
         manifest = {
             "schema_version": 2,
-            "protocol_version": 1,
+            "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",

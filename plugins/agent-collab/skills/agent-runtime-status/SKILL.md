@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 3.5.2
+version: 4.0.0
 defaults:
   tier: Fast
   effort: low
@@ -28,7 +28,8 @@ skill; no external repository is required.
    configuration. Do not infer the primary from installed CLIs.
 3. Submit a bounded `readiness` request for each exact matrix row:
    Gemini `advisory|governance|long_context`; Codex `advisory`; OpenCode `plan|build`;
-   Grok `architecture|governance|huge_context`; Composer `codegen`.
+   Grok `architecture|governance|huge_context`; Grok 4.5 compatibility
+   `composer/codegen` with `standard_codegen/medium` as the readiness profile.
 4. Preserve typed results such as `unavailable`, `auth_error`, `quota_error`,
    `containment_error`, `timeout`, and `output_limit`. Do not flatten them into
    a generic failure or try another provider command.
@@ -58,7 +59,7 @@ agent-collab runtime:
 - grok/architecture: <status>
 - grok/governance: <status>
 - grok/huge_context: <status>
-- composer/codegen: <status>
+- composer/codegen (Grok 4.5 compatibility): <status>
 - codex/build: temporarily unavailable (separate mutation role)
 ```
 

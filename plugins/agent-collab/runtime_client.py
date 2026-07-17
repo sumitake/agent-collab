@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 CONTRACT_VERSION = 3
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -266,7 +266,7 @@ ADOPTION_PROVIDER_ROUTES = {
 }
 FIXED_AUTHOR_MODELS = {
     "grok": "xai/grok-4.5",
-    "composer": "xai/grok-composer-2.5-fast",
+    "composer": "xai/grok-4.5",
 }
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_DISPLAY = "Gemini 3.1 Pro (High)"
@@ -4492,6 +4492,7 @@ def _native_document(envelope: object) -> bytes:
             True,
         ),
         {"opencode_model": row.get("model", "")},
+        sealed=True,
     )
     if validated is None or family != envelope.target_author_family:
         raise ValueError(error or "policy row family changed")

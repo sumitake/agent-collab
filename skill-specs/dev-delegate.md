@@ -21,7 +21,9 @@ and preserves artifact provenance. Never discover a provider executable.
 - OpenCode `plan`: read-only plan in one contained cwd.
 - OpenCode `build`: mutation-capable workspace-write execution within one
   contained cwd; no `.git`, commit, push, PR, merge, or deploy authority.
-- Composer `codegen`: output-only patch/code JSON; no workspace tools.
+- Grok 4.5 through the `composer/codegen` compatibility route: output-only
+  patch/code JSON; no workspace tools. Seal simple work as low effort, standard
+  fixes/features as medium, and complex multi-file or architecture work as high.
 - Gemini `long_context` and Grok `huge_context`: read-only corpus work.
 - Codex and Gemini `advisory`: review/plan only. Grok is not a generic
   advisory or worker route; its read-only actions are architecture,

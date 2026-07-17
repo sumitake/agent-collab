@@ -1,6 +1,6 @@
 ---
 name: chain
-version: 3.5.2
+version: 4.0.0
 defaults:
   tier: Standard
   effort: medium
@@ -86,7 +86,7 @@ This mirrors the orchestrator's Router rule and the verifier-independence block 
 ## Skill-reference contract
 
 Chain step skill references take the form `<package>:<skill>@<version>` (for
-example, `agent-collab:second-opinion@3.0.1`). Retired namespaces and
+example, `agent-collab:second-opinion@4.0.0`). Retired namespaces and
 family-prefixed skill names are invalid.
 
 If a reference does not resolve in the current package, halt. Never search a
