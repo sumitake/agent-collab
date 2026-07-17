@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v3.5.1). It gives
+This repository distributes one package: **agent-collab** (v3.5.2). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,17 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 3.5.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 3.5.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v3.5.1
+## What's new - v3.5.2
+
+- Authenticate launchd-activated dispatchers as two explicit principals: the
+  root-owned launchd listener and the operator-owned sealed runtime process.
+  The client waits only for the exact kernel pid-1 handoff sentinel under the
+  handshake deadline, then completes stable process, artifact, socket, and
+  final peer-PID proof before sending any hello bytes.
+
+The v3.5.1 dispatcher-boundary changes remain in force:
 
 - Treat every dispatcher-client failure after the request-bearing child is
   launched—including malformed or noncanonical output—as post-request, so a

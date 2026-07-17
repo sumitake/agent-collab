@@ -1,6 +1,6 @@
 ---
 name: migration-doctor
-version: 3.5.1
+version: 3.5.2
 description: Use when the user says "migration doctor," "check old collaboration plugins," "verify agent-collab migration," or "/agent-collab:migration-doctor." Also offer this proactively after installing or updating agent-collab, when provider routing is blocked, or when a retired package may still be selected from an installed plugin or cache.
 ---
 

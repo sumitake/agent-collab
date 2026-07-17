@@ -1,6 +1,6 @@
 ---
 name: worker
-version: 3.5.1
+version: 3.5.2
 description: Use when the operator says "delegate this implementation," "use Gemini for this corpus," "ask Codex to build," or "use Composer for codegen." Also offer this proactively when a bounded non-governance task benefits from a managed worker.
 ---
 

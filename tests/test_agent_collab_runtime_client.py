@@ -698,6 +698,135 @@ print(json.dumps({{
             self.client._dispatcher_frame_sha256(frame), fixture["request_sha256"]
         )
 
+    def test_dispatcher_launchd_readiness_retries_only_root_pid_one(self) -> None:
+        now = [100.0]
+        sleeps: list[float] = []
+        observer = mock.Mock(side_effect=[(0, 1), (0, 1), (0, 9001)])
+
+        def sleep(delay: float) -> None:
+            sleeps.append(delay)
+            now[0] += delay
+
+        credentials = self.client._await_dispatcher_launchd_credentials(
+            mock.Mock(),
+            deadline=101.0,
+            credential_observer=observer,
+            now_monotonic=lambda: now[0],
+            sleeper=sleep,
+        )
+
+        self.assertEqual(credentials, (0, 9001))
+        self.assertEqual(sleeps, [0.01, 0.02])
+        self.assertEqual(observer.call_count, 3)
+
+    def test_dispatcher_launchd_readiness_is_bounded_and_fail_closed(self) -> None:
+        now = [100.0]
+        sleeps: list[float] = []
+        observer = mock.Mock(return_value=(0, 1))
+
+        def sleep(delay: float) -> None:
+            sleeps.append(delay)
+            now[0] += delay
+
+        with self.assertRaises(ValueError):
+            self.client._await_dispatcher_launchd_credentials(
+                mock.Mock(),
+                deadline=100.025,
+                credential_observer=observer,
+                now_monotonic=lambda: now[0],
+                sleeper=sleep,
+            )
+        self.assertEqual(len(sleeps), 2)
+        self.assertAlmostEqual(sleeps[0], 0.01)
+        self.assertAlmostEqual(sleeps[1], 0.015)
+        self.assertAlmostEqual(now[0], 100.025)
+
+        invalid = (
+            (1, 1),
+            (0, 0),
+            (0, -1),
+            (False, 1),
+            (0, True),
+            OSError("closed"),
+        )
+        for value in invalid:
+            observer = mock.Mock(
+                side_effect=value if isinstance(value, BaseException) else None,
+                return_value=None if isinstance(value, BaseException) else value,
+            )
+            sleeper = mock.Mock()
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.client._await_dispatcher_launchd_credentials(
+                    mock.Mock(),
+                    deadline=101.0,
+                    credential_observer=observer,
+                    now_monotonic=lambda: 100.0,
+                    sleeper=sleeper,
+                )
+            observer.assert_called_once()
+            sleeper.assert_not_called()
+
+    def test_dispatcher_launchd_readiness_caps_exponential_sleep(self) -> None:
+        now = [100.0]
+        sleeps: list[float] = []
+        observer = mock.Mock(side_effect=[(0, 1)] * 6 + [(0, 9001)])
+
+        def sleep(delay: float) -> None:
+            sleeps.append(delay)
+            now[0] += delay
+
+        self.client._await_dispatcher_launchd_credentials(
+            mock.Mock(),
+            deadline=102.0,
+            credential_observer=observer,
+            now_monotonic=lambda: now[0],
+            sleeper=sleep,
+        )
+
+        self.assertEqual(sleeps, [0.01, 0.02, 0.04, 0.08, 0.1, 0.1])
+
+    def test_dispatcher_launchd_proof_pins_listener_runtime_and_final_reread(
+        self,
+    ) -> None:
+        lane = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=7,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
+            ),
+            socket_path=self.root / "dispatcher.sock",
+        )
+        peer = mock.Mock()
+        waiter = mock.Mock(return_value=(0, 9001))
+        final_observer = mock.Mock(return_value=(0, 9001))
+        prover = mock.Mock(return_value=9001)
+
+        observed = self.client._prove_dispatcher_launchd_peer(
+            peer,
+            lane,
+            deadline=130.0,
+            credential_waiter=waiter,
+            credential_observer=final_observer,
+            peer_prover=prover,
+        )
+
+        self.assertEqual(observed, 9001)
+        waiter.assert_called_once_with(
+            peer,
+            deadline=130.0,
+            credential_observer=final_observer,
+        )
+        call = prover.call_args
+        self.assertEqual(call.args, (peer, lane))
+        self.assertEqual(call.kwargs["credentials"], (0, 9001))
+        self.assertEqual(call.kwargs["expected_credential_uid"], 0)
+        self.assertEqual(call.kwargs["expected_pid"], 9001)
+        call.kwargs["final_credential_observer"]()
+        final_observer.assert_called_once_with(peer)
+
     def test_dispatcher_exchange_sends_no_request_until_ready_is_proven(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
             name="green",
@@ -733,8 +862,15 @@ print(json.dumps({{
             "provenance": {},
         }
 
+        def prove_before_send(*_args, **kwargs):
+            self.assertEqual(peer.sendall.call_count, 0)
+            self.assertEqual(kwargs["deadline"], 130.0)
+            return 9001
+
         with mock.patch.object(
-            self.client, "_prove_dispatcher_peer", return_value=9001
+            self.client,
+            "_prove_dispatcher_launchd_peer",
+            side_effect=prove_before_send,
         ), mock.patch.object(
             self.client, "_read_broker_frame", side_effect=(ready, response)
         ), mock.patch.object(
@@ -764,7 +900,9 @@ print(json.dumps({{
         peer.reset_mock()
         wrong_ready = dict(ready, dispatcher_pid=9002)
         with mock.patch.object(
-            self.client, "_prove_dispatcher_peer", return_value=9001
+            self.client,
+            "_prove_dispatcher_launchd_peer",
+            return_value=9001,
         ), mock.patch.object(
             self.client, "_read_broker_frame", return_value=wrong_ready
         ), mock.patch.object(
@@ -820,7 +958,9 @@ print(json.dumps({{
             return ready if len(observed_deadlines) == 1 else response
 
         with mock.patch.object(
-            self.client, "_prove_dispatcher_peer", return_value=9001
+            self.client,
+            "_prove_dispatcher_launchd_peer",
+            return_value=9001,
         ), mock.patch.object(
             self.client, "_read_broker_frame", side_effect=read_frame
         ), mock.patch.object(
@@ -864,6 +1004,29 @@ print(json.dumps({{
                 (self.root / "bundle", runtime, self.root / "manifest"),
             ]
         )
+
+        with self.assertRaises(ValueError):
+            self.client._prove_dispatcher_peer(
+                mock.Mock(),
+                lane,
+                credentials=(0, 4242),
+                expected_credential_uid=0,
+                expected_pid=4242,
+                process_observer=mock.Mock(
+                    side_effect=[("10:1", runtime), ("10:1", runtime)]
+                ),
+                socket_observer=mock.Mock(
+                    side_effect=[socket_identity, socket_identity]
+                ),
+                published_verifier=mock.Mock(
+                    side_effect=[
+                        (self.root / "bundle", runtime, self.root / "manifest"),
+                        (self.root / "bundle", runtime, self.root / "manifest"),
+                    ]
+                ),
+                root=self.root,
+            )
+
         observed = self.client._prove_dispatcher_peer(
             mock.Mock(),
             lane,
@@ -874,6 +1037,76 @@ print(json.dumps({{
             root=self.root,
         )
         self.assertEqual(observed, 4242)
+
+        launchd_final = mock.Mock(return_value=(0, 4242))
+        launchd_observed = self.client._prove_dispatcher_peer(
+            mock.Mock(),
+            lane,
+            credentials=(0, 4242),
+            expected_credential_uid=0,
+            expected_pid=4242,
+            final_credential_observer=launchd_final,
+            process_observer=mock.Mock(
+                side_effect=[("10:1", runtime), ("10:1", runtime)]
+            ),
+            socket_observer=mock.Mock(
+                side_effect=[socket_identity, socket_identity]
+            ),
+            published_verifier=mock.Mock(
+                side_effect=[
+                    (self.root / "bundle", runtime, self.root / "manifest"),
+                    (self.root / "bundle", runtime, self.root / "manifest"),
+                ]
+            ),
+            root=self.root,
+        )
+        self.assertEqual(launchd_observed, 4242)
+        launchd_final.assert_called_once_with()
+
+        with self.assertRaises(ValueError):
+            self.client._prove_dispatcher_peer(
+                mock.Mock(),
+                lane,
+                credentials=(0, 4242),
+                expected_credential_uid=0,
+                expected_pid=4242,
+                final_credential_observer=mock.Mock(return_value=(0, 4242)),
+                process_observer=mock.Mock(
+                    side_effect=ValueError("operator process UID was rejected")
+                ),
+                socket_observer=mock.Mock(return_value=socket_identity),
+                published_verifier=mock.Mock(
+                    return_value=(
+                        self.root / "bundle",
+                        runtime,
+                        self.root / "manifest",
+                    )
+                ),
+                root=self.root,
+            )
+
+        with self.assertRaises(ValueError):
+            self.client._prove_dispatcher_peer(
+                mock.Mock(),
+                lane,
+                credentials=(0, 4242),
+                expected_credential_uid=0,
+                expected_pid=4242,
+                final_credential_observer=mock.Mock(return_value=(0, 4243)),
+                process_observer=mock.Mock(
+                    side_effect=[("10:1", runtime), ("10:1", runtime)]
+                ),
+                socket_observer=mock.Mock(
+                    side_effect=[socket_identity, socket_identity]
+                ),
+                published_verifier=mock.Mock(
+                    side_effect=[
+                        (self.root / "bundle", runtime, self.root / "manifest"),
+                        (self.root / "bundle", runtime, self.root / "manifest"),
+                    ]
+                ),
+                root=self.root,
+            )
 
         failures = (
             {"credential_observer": mock.Mock(return_value=(os.getuid() + 1, 4242))},
