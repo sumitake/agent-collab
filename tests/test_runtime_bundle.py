@@ -215,6 +215,33 @@ class RuntimeBundleTreeTests(unittest.TestCase):
             finally:
                 root.chmod(0o700)
 
+    def test_host_normalized_root_with_strict_members_is_verified(self):
+        # Regression lock for the REAL install state observed across EVERY host
+        # manager (Claude Code, Codex, Antigravity/agy, and the broker's sealed
+        # copies): install/autoUpdate normalizes the bundle DIRECTORY to 0o755
+        # but leaves the member FILES at 0o500. The loader must accept this
+        # (root-mode tolerance in _bundle_root_mode_ok + strict-0o500 members).
+        #
+        # This is the empirical refutation of the release-pipeline design-of-
+        # record §9.7 premise ("host normalizes member files to 0o700"): a scan
+        # of every installed bundle found 2356/2356 member files at 0o500 and
+        # ZERO at 0o700, and resolve_runtime() returns OK on the real install.
+        # No source-mode loosening is warranted (it would be unnecessary AND
+        # would open a direct-execution-of-owner-writable-source bypass); this
+        # test instead pins the already-correct behavior against regression.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "agent-collab-runtime.bundle"
+            root.mkdir()
+            records = self._create_bundle(root)  # member files 0o500
+            root.chmod(0o755)  # host-normalized directory
+            try:
+                self.assertEqual(
+                    rb.verify_bundle_tree(root, records, inspector=self._inspector),
+                    rb.compute_bundle_identity(records),
+                )
+            finally:
+                root.chmod(0o700)
+
     def test_symlink_hardlink_extra_missing_and_content_drift_fail_closed(self):
         mutations = ("symlink", "hardlink", "extra", "missing", "content")
         for mutation in mutations:
