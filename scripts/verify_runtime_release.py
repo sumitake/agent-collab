@@ -295,11 +295,14 @@ def _verify_member_signature(
     # un-notarized binaries pass (rc 0). `spctl_source` keeps its name and its
     # "Notarized Developer ID" value (a stable cross-job evidence-schema field);
     # it is now populated from the codesign requirement result rather than spctl.
-    # Offline note: the `notarized` requirement evaluates against a stapled ticket
-    # or, if unstapled, needs network to Apple — so a genuinely-notarized-but-
-    # unstapled binary in an offline CI would be rejected (not a bypass; staple
-    # before distribution). A `macOS notarization verification tool failed` /
-    # requirement failure here is a fail-closed reject, never a pass.
+    # Offline note: a bare command-line Mach-O CANNOT have a notarization ticket
+    # stapled (Apple supports stapling only for .app/.dmg/.pkg/.kext), so the
+    # `notarized` requirement here depends on the host's notarization trust state
+    # (a cached result, or online reachability of Apple's notary service); an
+    # offline host without a cached result rejects a genuinely-notarized binary.
+    # That is fail-closed, never a bypass (CI runs online). A `macOS notarization
+    # verification tool failed` / requirement failure here is a fail-closed
+    # reject, never a pass.
     spctl_source = ""
     if assess_notarization:
         try:

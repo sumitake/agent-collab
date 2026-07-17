@@ -613,10 +613,14 @@ def _verify_macos_signature(
         # the same way the release gate (verify_runtime_release.py) does: the
         # codesign requirement `notarized` is the documented, code-object-native
         # proof and binds to this binary's CDHash. A tool failure or a failed
-        # requirement is a fail-closed reject, never a pass. Offline note: the
-        # requirement evaluates against a stapled ticket or, if unstapled, needs
-        # network to Apple — staple before distribution so activation works
-        # offline.
+        # requirement is a fail-closed reject, never a pass. Offline note: a
+        # bare Mach-O CANNOT have a notarization ticket stapled (Apple supports
+        # stapling only for .app/.dmg/.pkg/.kext containers), so `=notarized`
+        # here depends on the host's notarization trust state (a cached result,
+        # or online reachability of Apple's notary service); a host with neither
+        # rejects a genuinely-notarized binary. That is fail-closed, not a
+        # bypass. The online/cache dependency for a non-stapleable bare binary
+        # at activation is a known operational constraint (pipeline follow-up).
         try:
             result = subprocess.run(
                 [
