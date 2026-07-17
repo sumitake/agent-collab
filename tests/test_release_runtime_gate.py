@@ -436,6 +436,63 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                         errors,
                     )
 
+    def test_release_notarization_tool_failure_is_fail_closed(self) -> None:
+        valid_build = (
+            "Load command 9\n"
+            "      cmd LC_BUILD_VERSION\n"
+            " platform 1\n"
+            "    minos 14.0\n"
+        )
+        # If the notarization codesign call raises (missing tool / timeout), the
+        # gate must fail closed — an un-run check is never treated as notarized.
+        for exc in (
+            OSError("codesign missing"),
+            self.gate.subprocess.TimeoutExpired(cmd="codesign", timeout=30),
+        ):
+            with self.subTest(exc=type(exc).__name__):
+                self._manifest(set(self.gate.REQUIRED_CONTRACTS))
+
+                def run(command, **_kwargs):
+                    if command[0] == "/usr/bin/lipo":
+                        return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
+                    if command[0] == "/usr/bin/otool":
+                        if "-hv" in command:
+                            return mock.Mock(
+                                returncode=0,
+                                stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                                stderr="",
+                            )
+                        return mock.Mock(returncode=0, stdout=valid_build, stderr="")
+                    if command[0] == "/usr/bin/codesign" and "-dv" in command:
+                        return mock.Mock(
+                            returncode=0,
+                            stdout="",
+                            stderr=(
+                                "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
+                                "TeamIdentifier=TESTTEAM01\n"
+                                "CodeDirectory v=20500 flags=0x10000(runtime)\n"
+                                "Timestamp=Jul 12, 2026 at 12:00:00\n"
+                            ),
+                        )
+                    if (
+                        command[0] == "/usr/bin/codesign"
+                        and "--test-requirement" in command
+                    ):
+                        raise exc
+                    return mock.Mock(returncode=0, stdout="", stderr="valid")
+
+                with (
+                    mock.patch.object(self.gate.subprocess, "run", side_effect=run),
+                    mock.patch.object(self.gate.platform, "system", return_value="Darwin"),
+                    mock.patch.object(self.gate.platform, "machine", return_value="arm64"),
+                ):
+                    ok, _, errors = self.gate.verify_release(self.root, git_sha="abc")
+                self.assertFalse(ok)
+                self.assertTrue(
+                    any("verification tool failed" in error for error in errors),
+                    errors,
+                )
+
     def test_workflow_and_tools_have_no_unsigned_or_ignored_tag_path(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         merge_tool = (ROOT / "scripts" / "merge-and-tag.py").read_text()
