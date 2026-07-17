@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.0.1). It gives
+This repository distributes one package: **agent-collab** (v4.0.2). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,17 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.0.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.0.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.0.1
+## What's new - v4.0.2
+
+- Permit dispatcher lifecycle control to prove an exact protocol-v1 blue
+  baseline while staging protocol-v2 green. Normal v2 requests and responses
+  still reject v1, so the bridge cannot become a provider-routing downgrade.
+- Preserve the selected blue protocol when recovery rebuilds mutable state and
+  plist files from the immutable manifest.
+
+## v4.0.1 highlights
 
 - Correct the `intent-check` route guidance so the closed Gemini governance
   contract receives its required high effort, while rudimentary Codex advisory
