@@ -7,6 +7,7 @@ import argparse
 import gzip
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -174,16 +175,43 @@ def _safe_source(path: Path) -> os.stat_result:
 
 
 def _read_manifest_bytes(plugin_path: Path) -> bytes:
-    """Read the committed manifest exactly once for a frozen-snapshot check."""
+    """Read the committed manifest exactly once for a frozen-snapshot check.
+
+    The read goes through a single O_NOFOLLOW descriptor whose fstat is
+    checked, so the snapshot is one coherent read of one regular file — a
+    concurrent swap yields either the old bytes or the new bytes, never a
+    mixture, and everything downstream derives from the returned snapshot.
+    """
 
     manifest_path = plugin_path / "runtime-manifest.json"
     info = _safe_source(manifest_path)
     if not stat.S_ISREG(info.st_mode):
         raise ValueError("runtime-manifest.json is not a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
-        return manifest_path.read_bytes()
+        descriptor = os.open(manifest_path, flags)
     except OSError as exc:
         raise ValueError("runtime manifest is unreadable") from exc
+    try:
+        described = os.fstat(descriptor)
+        if not stat.S_ISREG(described.st_mode):
+            raise ValueError("runtime-manifest.json is not a regular file")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if sum(len(part) for part in chunks) > MAX_ARTIFACT_BYTES:
+                raise ValueError("runtime manifest is unreasonably large")
+        return b"".join(chunks)
+    except OSError as exc:
+        raise ValueError("runtime manifest is unreadable") from exc
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
 
 
 def _parse_manifest(data: bytes) -> dict[str, object]:
@@ -531,7 +559,13 @@ def _member_plan(
     return [(name, members[name]) for name in sorted(members)]
 
 
-def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
+def verify_archive(
+    plugin_path: Path,
+    archive_path: Path,
+    *,
+    mode: str,
+    frozen_manifest: bytes | None = None,
+) -> None:
     """Verify one built archive without trusting any mutable runtime source.
 
     Non-runtime members are byte/mode-parity-checked against the git-tracked
@@ -541,20 +575,27 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
     plus the archived manifest bytes themselves — so a source-tree swap after
     the build-time validation can never produce a passing archive, and no
     runtime bundle source is needed to verify (CI runs this without one).
+
+    ``frozen_manifest`` lets `build_archive` hand over the EXACT byte snapshot
+    it validated, packed, and embedded, so build+verify share one snapshot and
+    a mid-build manifest swap on disk is irrelevant. Standalone callers (CI)
+    omit it and the snapshot is read once from the checkout here.
     """
 
     plugin_path = plugin_path.resolve(strict=True)
     if classify_package(plugin_path) != mode:
         raise ValueError("archive mode no longer matches the source package")
-    frozen_manifest = b""
     records: tuple[dict[str, object], ...] = ()
     if mode == "activation":
-        frozen_manifest = _read_manifest_bytes(plugin_path)
+        if frozen_manifest is None:
+            frozen_manifest = _read_manifest_bytes(plugin_path)
         manifest = _parse_manifest(frozen_manifest)
         artifacts = manifest["artifacts"]
         if len(artifacts) != 1:
             raise ValueError("activation package requires exactly one runtime artifact")
         records = runtime_bundle.validate_file_records(artifacts[0]["files"])
+    else:
+        frozen_manifest = None
     plan = _member_plan(plugin_path, mode=mode, records=records)
     expected_names = [name for name, _ in plan]
     record_by_name = {
@@ -576,6 +617,26 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
                 raise ValueError("archive contains an unsafe member path")
         if names != expected_names:
             raise ValueError("archive member list is not canonical")
+        for member in members:
+            # Canonical archive metadata is part of the contract for EVERY
+            # member: only regular files and directories, normalized
+            # ownership, zero mtime, no link targets, and no PAX extension
+            # headers (canonical members never need any). This also rejects
+            # hostile archives that smuggle devices/links or oversized PAX
+            # payloads past the name checks.
+            if (
+                not (member.isfile() or member.isdir())
+                or member.uid != 0
+                or member.gid != 0
+                or member.uname != ""
+                or member.gname != ""
+                or member.mtime != 0
+                or member.linkname != ""
+                or member.pax_headers
+            ):
+                raise ValueError(
+                    f"archive member metadata is not canonical: {member.name}"
+                )
         for (name, source), member in zip(plan, members, strict=True):
             if source is None:
                 directory_mode = _RUNTIME_DIR_MODES.get(name)
@@ -612,6 +673,18 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
             if stat.S_IMODE(member.mode) != stat.S_IMODE(source_info.st_mode):
                 raise ValueError(f"archive member mode parity failed: {member.name}")
             if source_is_file:
+                # Bound the read BEFORE extracting: the declared member size
+                # must already match the expected payload exactly, so a
+                # hostile archive cannot force an unbounded decompression.
+                expected_size = (
+                    len(frozen_manifest)
+                    if name == "runtime-manifest.json" and frozen_manifest is not None
+                    else source_info.st_size
+                )
+                if member.size != expected_size:
+                    raise ValueError(
+                        f"archive member size parity failed: {member.name}"
+                    )
                 archived = bundle.extractfile(member)
                 if archived is None:
                     raise ValueError(f"archive member byte parity failed: {member.name}")
@@ -664,6 +737,7 @@ def build_archive(
     mode = classify_package(plugin_path)
     records: tuple[dict[str, object], ...] = ()
     bundle_leaf: Path | None = None
+    frozen_manifest: bytes | None = None
     if mode == "policy-only":
         # The committed manifest — never the flag — decides the mode.
         if bundle_source is not None:
@@ -687,7 +761,11 @@ def build_archive(
         if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
             raise ValueError("runtime bundle source is unsafe")
         bundle_leaf = bundle_source.resolve(strict=True)
-        manifest = _parse_manifest(_read_manifest_bytes(plugin_path))
+        # Freeze the manifest ONCE: these exact bytes drive the bundle-tree
+        # validation, are embedded into the archive verbatim, and are handed
+        # to verify_archive — a mid-build manifest swap on disk is irrelevant.
+        frozen_manifest = _read_manifest_bytes(plugin_path)
+        manifest = _parse_manifest(frozen_manifest)
         artifacts = manifest["artifacts"]
         if len(artifacts) != 1:
             raise ValueError("activation package requires exactly one runtime artifact")
@@ -697,22 +775,34 @@ def build_archive(
     record_by_name = {
         (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
     }
+    def _reject_source_alias(candidate: Path) -> None:
+        for forbidden in (plugin_path, bundle_leaf):
+            if forbidden is not None and candidate.is_relative_to(forbidden):
+                raise ValueError("archive output must not alias a source tree")
+
+    # Reject a source-tree destination BEFORE creating any directory (mkdir
+    # must never mutate a rejected destination), then re-check the strictly
+    # resolved path once the parent exists.
+    _reject_source_alias(output.resolve())
     output.parent.mkdir(parents=True, exist_ok=True)
     output_resolved = output.parent.resolve(strict=True) / output.name
-    for forbidden in (plugin_path, bundle_leaf):
-        if forbidden is not None and output_resolved.is_relative_to(forbidden):
-            raise ValueError("archive output must not alias a source tree")
+    _reject_source_alias(output_resolved)
     # Build into an exclusive temporary file, verify THAT, and only then move
     # it to the requested destination — a failed build or failed verification
     # never leaves a publishable artifact at the output path.
     temp_path = output_resolved.parent / f".{output_resolved.name}.tmp.{os.getpid()}"
     member_flags = (
-        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
     )
+    temp_created = False
     try:
         descriptor = os.open(
             temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644
         )
+        temp_created = True
         with os.fdopen(descriptor, "wb") as raw:
             with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
                 with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as bundle:
@@ -724,7 +814,16 @@ def build_archive(
                             info.uname = ""
                             info.gname = ""
                             info.mtime = 0
-                            if info.isfile():
+                            if (
+                                name == "runtime-manifest.json"
+                                and frozen_manifest is not None
+                            ):
+                                # Embed the EXACT frozen snapshot the runtime
+                                # records were validated against — never a
+                                # re-read of the mutable checkout.
+                                info.size = len(frozen_manifest)
+                                bundle.addfile(info, io.BytesIO(frozen_manifest))
+                            elif info.isfile():
                                 with source.open("rb") as stream:
                                     bundle.addfile(info, stream)
                             else:
@@ -746,19 +845,44 @@ def build_archive(
                                 mode=record["install_mode"],
                                 size=record["size"],
                             )
-                            assert bundle_leaf is not None
+                            if bundle_leaf is None:
+                                raise ValueError(
+                                    "runtime member requires a bundle source"
+                                )
                             member_descriptor = os.open(
                                 bundle_leaf / record["path"], member_flags
                             )
                             with os.fdopen(member_descriptor, "rb") as stream:
+                                # Revalidate the OPEN descriptor before
+                                # streaming: a post-validation swap to a
+                                # FIFO/device/hardlinked/resized entry is
+                                # rejected here (O_NONBLOCK keeps a swapped
+                                # FIFO from blocking the open), and the byte
+                                # content itself is re-bound to the manifest
+                                # digest by verify_archive below.
+                                streamed = os.fstat(stream.fileno())
+                                if (
+                                    not stat.S_ISREG(streamed.st_mode)
+                                    or streamed.st_uid != os.getuid()
+                                    or streamed.st_nlink != 1
+                                    or stat.S_IMODE(streamed.st_mode)
+                                    != record["install_mode"]
+                                    or streamed.st_size != record["size"]
+                                ):
+                                    raise ValueError(
+                                        "runtime bundle source member changed during packing"
+                                    )
                                 bundle.addfile(info, stream)
-        verify_archive(plugin_path, temp_path, mode=mode)
+        verify_archive(
+            plugin_path, temp_path, mode=mode, frozen_manifest=frozen_manifest
+        )
         os.replace(temp_path, output_resolved)
     except BaseException:
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
+        if temp_created:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
         raise
     return mode
 

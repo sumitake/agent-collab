@@ -396,8 +396,17 @@ class PluginArchiveTests(unittest.TestCase):
         mode = self.builder.build_archive(
             self.root, plugin="agent-collab", output=self.archive
         )
-        (self.plugin / "signing_policy.py").write_text("changed\n", encoding="utf-8")
+        policy = self.plugin / "signing_policy.py"
+        original = policy.read_bytes()
+
+        # Same-size drift is caught by byte parity …
+        policy.write_bytes(b"#" * len(original))
         with self.assertRaisesRegex(ValueError, "byte parity"):
+            self.builder.verify_archive(self.plugin, self.archive, mode=mode)
+
+        # … and size drift is caught (bounded) before any byte read.
+        policy.write_bytes(original + b"\n# tail\n")
+        with self.assertRaisesRegex(ValueError, "size parity"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
 
     def test_archive_size_limit_and_required_policy_member_are_canonical(self) -> None:
@@ -584,13 +593,69 @@ class PluginArchiveTests(unittest.TestCase):
         self._activate()
         mode = self._build_activation()
         manifest_path = self.plugin / "runtime-manifest.json"
-        # A parse-identical byte change (trailing whitespace) after the build:
-        # the archived manifest must equal the CURRENT frozen bytes exactly.
-        manifest_path.write_text(
-            manifest_path.read_text(encoding="utf-8") + " ", encoding="utf-8"
-        )
+        # A SAME-SIZE, parse-valid, record-preserving byte change after the
+        # build (identity string tweak): size parity cannot notice, only the
+        # frozen-byte binding of the archived manifest can.
+        text = manifest_path.read_text(encoding="utf-8")
+        swapped = text.replace("Test Operator", "Test Operatox")
+        self.assertNotEqual(text, swapped)
+        self.assertEqual(len(text), len(swapped))
+        manifest_path.write_text(swapped, encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "frozen manifest"):
             self.builder.verify_archive(self.plugin, self.archive, mode=mode)
+
+        # A size-changing swap fails closed too (bounded before any read).
+        manifest_path.write_text(text + " ", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "size parity"):
+            self.builder.verify_archive(self.plugin, self.archive, mode=mode)
+
+    def test_verify_archive_rejects_non_canonical_member_metadata(self) -> None:
+        self._activate()
+        mode = self._build_activation()
+        target = "signing_policy.py"
+
+        # Repack with one member's mtime perturbed while bytes/modes stay
+        # identical: source parity cannot notice, only the canonical-metadata
+        # contract can.
+        tampered = self.root / "tampered-metadata.plugin"
+        import gzip as gzip_module
+        import io
+
+        with tarfile.open(self.archive, "r:gz") as original:
+            members = [
+                (member, original.extractfile(member).read() if member.isfile() else None)
+                for member in original.getmembers()
+            ]
+        with tampered.open("wb") as raw:
+            with gzip_module.GzipFile(
+                filename="", mode="wb", fileobj=raw, mtime=0
+            ) as compressed:
+                with tarfile.open(
+                    fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                ) as bundle:
+                    for member, payload in members:
+                        if member.name == target:
+                            member.mtime = 1
+                        if payload is None:
+                            bundle.addfile(member)
+                        else:
+                            bundle.addfile(member, io.BytesIO(payload))
+
+        with self.assertRaisesRegex(ValueError, "metadata is not canonical"):
+            self.builder.verify_archive(self.plugin, tampered, mode=mode)
+
+    def test_failed_exclusive_temp_open_preserves_foreign_file(self) -> None:
+        self._activate()
+        # Pre-create the exact temp path this invocation would claim: the
+        # O_EXCL open must fail AND the foreign file must survive untouched.
+        foreign = (
+            self.archive.parent / f".{self.archive.name}.tmp.{os.getpid()}"
+        )
+        foreign.write_bytes(b"foreign artifact")
+        with self.assertRaises(OSError):
+            self._build_activation()
+        self.assertEqual(foreign.read_bytes(), b"foreign artifact")
+        self.assertFalse(self.archive.exists())
 
     def test_activation_archive_build_is_deterministic(self) -> None:
         self._activate()
