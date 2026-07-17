@@ -20,7 +20,7 @@
     "tier_flash_resolves_to_claude": "an asynchronous Anthropic inbox review; never a synchronous invocation",
     "tier_pro_resolves_to_gemini": "an eligible managed Google-family reviewer at high effort",
     "tier_flash_resolves_to_gemini": "an eligible managed Google-family reviewer at low effort",
-    "skill_version": "4.0.3",
+    "skill_version": "4.0.4",
     "agent_runtime_status_defaults_block": "defaults:\n  tier: Fast\n  effort: low\n",
     "merge_resolve_defaults_block": "defaults:\n  tier: Advanced\n  effort: high\n",
     "merge_resolve_call_params": "`effort='high'` in every eligible advisory row and no `tier` request field",

@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.0.3). It gives
+This repository distributes one package: **agent-collab** (v4.0.4). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,17 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.0.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.0.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.0.3
+## What's new - v4.0.4
+
+- Translate the sealed public protocol-v2 provider-adoption request to the
+  private dispatcher protocol-v1 authority frame at the installed-client
+  boundary, and validate dispatcher replies on that same private protocol.
+  Normal public requests remain protocol v2, the caller document is unchanged,
+  and swapped protocol versions fail closed.
+
+## v4.0.3 highlights
 
 - Send dispatcher lifecycle ping and lock-probe control messages on their
   sealed protocol-v1 contract while retaining protocol-v2 typed failures.
@@ -84,7 +92,9 @@ The v3.5.0 dispatcher and adoption-canary changes remain in force:
   hello/ready exchange before sending provider-bearing bytes.
 - Add a separate internal `adoption_canary` operation bound to one provider,
   candidate and worker digest tuple, registry generations, route allowlist, and
-  one-time authority token. It is not a policy route or model selector.
+  one-time authority token. The sealed canary document remains on runtime
+  protocol v2 inside dispatcher bridge/handshake frames that use private
+  protocol v1. It is not a policy route or model selector.
 - Permit an explicitly committed green selector only with the authenticated
   handshake. A separate local bound on the request-free phase preserves a blue
   fallback budget without shortening the original request deadline;
