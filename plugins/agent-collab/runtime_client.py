@@ -607,19 +607,35 @@ def _verify_macos_signature(
     ):
         return False, "macOS code signature is missing a secure Timestamp"
     if require_notarization:
-        result = subprocess.run(
-            ["/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", str(path)],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
+        # The runtime entrypoint is a bare command-line Mach-O, not a .app
+        # bundle, so `spctl --assess --type execute` always rejects it ("the
+        # code is valid but does not seem to be an app"). Verify notarization
+        # the same way the release gate (verify_runtime_release.py) does: the
+        # codesign requirement `notarized` is the documented, code-object-native
+        # proof and binds to this binary's CDHash. A tool failure or a failed
+        # requirement is a fail-closed reject, never a pass. Offline note: the
+        # requirement evaluates against a stapled ticket or, if unstapled, needs
+        # network to Apple — staple before distribution so activation works
+        # offline.
+        try:
+            result = subprocess.run(
+                [
+                    "/usr/bin/codesign",
+                    "--verify",
+                    "--strict",
+                    "--verbose=4",
+                    "--test-requirement",
+                    "=notarized",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False, "macOS notarization verification tool failed"
         if result.returncode != 0:
-            return False, "macOS notarization assessment failed"
-        assessment = result.stdout + result.stderr
-        if "source=Notarized Developer ID" not in {
-            line.strip() for line in assessment.splitlines()
-        }:
-            return False, "macOS notarization source is not Notarized Developer ID"
+            return False, "runtime is not notarized: codesign '=notarized' requirement failed"
     return True, ""
 
 
