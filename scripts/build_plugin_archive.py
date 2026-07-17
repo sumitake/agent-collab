@@ -13,7 +13,6 @@ import re
 import stat
 import tarfile
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 try:
     from scripts.skill_structure import expected_skill_relpaths, skill_tree_differences
@@ -174,14 +173,23 @@ def _safe_source(path: Path) -> os.stat_result:
     return info
 
 
-def _load_manifest(plugin_path: Path) -> dict[str, object]:
+def _read_manifest_bytes(plugin_path: Path) -> bytes:
+    """Read the committed manifest exactly once for a frozen-snapshot check."""
+
     manifest_path = plugin_path / "runtime-manifest.json"
     info = _safe_source(manifest_path)
     if not stat.S_ISREG(info.st_mode):
         raise ValueError("runtime-manifest.json is not a regular file")
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+        return manifest_path.read_bytes()
+    except OSError as exc:
+        raise ValueError("runtime manifest is unreadable") from exc
+
+
+def _parse_manifest(data: bytes) -> dict[str, object]:
+    try:
+        manifest = json.loads(data.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("runtime manifest is unreadable") from exc
     if (
         not isinstance(manifest, dict)
@@ -208,7 +216,20 @@ def _load_manifest(plugin_path: Path) -> dict[str, object]:
     return manifest
 
 
-def _validate_activation(plugin_path: Path, item: object) -> None:
+def _load_manifest(plugin_path: Path) -> dict[str, object]:
+    return _parse_manifest(_read_manifest_bytes(plugin_path))
+
+
+def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]:
+    """Validate the activation artifact SHAPE from the committed manifest only.
+
+    Deliberately touches no filesystem bundle state: with the signed runtime
+    shipped as a release asset (never committed), the committed manifest is the
+    activation marker (design decision D1) and the physical bundle bytes are
+    validated separately against wherever they are sourced from
+    (`_validate_activation_bundle_tree`).
+    """
+
     fields = {
         "platform",
         "arch",
@@ -289,38 +310,86 @@ def _validate_activation(plugin_path: Path, item: object) -> None:
         or len(contracts_value) != len(contracts)
     ):
         raise ValueError("activation runtime manifest fields are invalid")
+    return records
 
-    runtime_root = plugin_path / "runtime"
-    allowed = {
-        Path("runtime"),
-        Path("runtime/darwin-arm64"),
-        RUNTIME_BUNDLE_REL,
-        *(RUNTIME_BUNDLE_REL / record["path"] for record in records),
-    }
-    observed = {path.relative_to(plugin_path) for path in runtime_root.rglob("*")}
-    observed.add(Path("runtime"))
-    if observed != allowed:
-        raise ValueError("activation package runtime bundle membership is not exact")
-    bundle = plugin_path / RUNTIME_BUNDLE_REL
-    bundle_info = _safe_source(bundle)
+
+def _validate_activation_bundle_tree(
+    bundle_leaf: Path, records: tuple[dict[str, object], ...]
+) -> None:
+    """Validate the physical runtime bundle leaf directory against the manifest.
+
+    The leaf is HOSTILE input (an operator-supplied out-of-tree handoff):
+    enumerate it bounded and non-following, require member-set EQUALITY with
+    the manifest records, and admit only regular files owned by the invoking
+    user with nlink 1, the exact install mode, exact size, and exact sha256.
+    Devices, FIFOs, sockets, and symlinks all fail the S_ISREG/O_NOFOLLOW
+    checks. `validate_file_records` has already rejected traversal, separator
+    confusables, and Unicode-normalization/case-fold collisions in the paths.
+    """
+
+    try:
+        leaf_info = bundle_leaf.lstat()
+    except OSError as exc:
+        raise ValueError("runtime bundle source is missing") from exc
     if (
-        not stat.S_ISDIR(bundle_info.st_mode)
-        or bundle_info.st_uid != os.getuid()
-        or stat.S_IMODE(bundle_info.st_mode) != runtime_bundle.INSTALL_MODE
+        stat.S_ISLNK(leaf_info.st_mode)
+        or not stat.S_ISDIR(leaf_info.st_mode)
+        or leaf_info.st_uid != os.getuid()
+        or stat.S_IMODE(leaf_info.st_mode) != runtime_bundle.INSTALL_MODE
     ):
-        raise ValueError("activation runtime bundle root identity is invalid")
+        raise ValueError("runtime bundle source root identity is invalid")
+    expected_names = {record["path"] for record in records}
+    observed_names: set[str] = set()
+    try:
+        with os.scandir(bundle_leaf) as entries:
+            for entry in entries:
+                observed_names.add(entry.name)
+                if len(observed_names) > len(expected_names):
+                    raise ValueError(
+                        "runtime bundle source membership is not exact"
+                    )
+    except OSError as exc:
+        raise ValueError("runtime bundle source could not be enumerated") from exc
+    if observed_names != expected_names:
+        raise ValueError("runtime bundle source membership is not exact")
+    member_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     for record in records:
-        member = bundle / record["path"]
-        info = _safe_source(member)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or info.st_nlink != 1
-            or stat.S_IMODE(info.st_mode) != record["install_mode"]
-            or info.st_size != record["size"]
-            or _sha256(member) != record["sha256"]
-        ):
-            raise ValueError("activation runtime bundle member identity is invalid")
+        member = bundle_leaf / record["path"]
+        try:
+            lexical = member.lstat()
+            descriptor = os.open(member, member_flags)
+        except OSError as exc:
+            raise ValueError("runtime bundle source member is unsafe") from exc
+        try:
+            info = os.fstat(descriptor)
+            if (
+                stat.S_ISLNK(lexical.st_mode)
+                or not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+                or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != record["install_mode"]
+                or info.st_size != record["size"]
+            ):
+                raise ValueError(
+                    "runtime bundle source member identity is invalid"
+                )
+            digest = hashlib.sha256()
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+            if digest.hexdigest() != record["sha256"]:
+                raise ValueError("runtime bundle source member digest is invalid")
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def classify_package(plugin_path: Path) -> str:
@@ -338,7 +407,11 @@ def classify_package(plugin_path: Path) -> str:
         return "policy-only"
     if len(artifacts) != 1:
         raise ValueError("activation package requires exactly one runtime artifact")
-    _validate_activation(plugin_path, artifacts[0])
+    # D1: the committed manifest is the activation marker. The physical bundle
+    # is NOT read here — it ships as a release asset (never committed) and is
+    # validated against its actual source by `_validate_activation_bundle_tree`
+    # (build) and against the frozen manifest records (verify_archive).
+    _validate_activation_manifest(artifacts[0])
     return "activation"
 
 
@@ -402,9 +475,37 @@ def _require_exact_third_party_notice_tree(plugin_path: Path) -> None:
             raise ValueError("activation third-party notice content digest is invalid")
 
 
-def _member_paths(plugin_path: Path, *, mode: str) -> list[Path]:
+# Runtime DIRECTORY members are packaging scaffolding, synthesized with fixed
+# canonical metadata — never statted from a mutable source tree. The two
+# traversal parents are plain 0o755 directories; the bundle leaf itself keeps
+# the sealed install mode.
+_RUNTIME_DIR_MODES: dict[str, int] = {
+    "runtime": 0o755,
+    "runtime/darwin-arm64": 0o755,
+    RUNTIME_BUNDLE_REL.as_posix(): runtime_bundle.INSTALL_MODE,
+}
+
+
+def _member_plan(
+    plugin_path: Path,
+    *,
+    mode: str,
+    records: tuple[dict[str, object], ...] = (),
+) -> list[tuple[str, Path | None]]:
+    """Return the canonical (archive name, source path) plan, sorted by name.
+
+    Runtime members carry a ``None`` source: their archive metadata derives
+    entirely from the frozen manifest ``records`` (and `_RUNTIME_DIR_MODES`),
+    never from a stat of a mutable tree. Every other member is sourced from
+    the git-tracked plugin tree.
+    """
+
     if mode not in {"policy-only", "activation"}:
         raise ValueError("unknown archive mode")
+    if mode == "activation" and not records:
+        raise ValueError("activation member plan requires frozen manifest records")
+    if mode == "policy-only" and records:
+        raise ValueError("policy-only member plan forbids runtime records")
     _require_exact_manifest_trees(plugin_path)
     differences = skill_tree_differences(plugin_path / "skills", SPECS_DIR)
     if differences:
@@ -415,39 +516,51 @@ def _member_paths(plugin_path: Path, *, mode: str) -> list[Path]:
         Path("skills"),
         *(Path("skills") / relative for relative in expected_skill_relpaths(SPECS_DIR)),
     ]
+    members: dict[str, Path | None] = {}
     if mode == "activation":
         _require_exact_third_party_notice_tree(plugin_path)
-        manifest = _load_manifest(plugin_path)
-        records = runtime_bundle.validate_file_records(
-            manifest["artifacts"][0]["files"]
-        )
-        relatives.extend(
-            (
-                Path("runtime"),
-                Path("runtime/darwin-arm64"),
-                RUNTIME_BUNDLE_REL,
-                *(RUNTIME_BUNDLE_REL / record["path"] for record in records),
-                *ACTIVATION_THIRD_PARTY_MEMBERS,
-            )
-        )
-    members: dict[str, Path] = {}
+        relatives.extend(ACTIVATION_THIRD_PARTY_MEMBERS)
+        for name in _RUNTIME_DIR_MODES:
+            members[name] = None
+        for record in records:
+            members[(RUNTIME_BUNDLE_REL / record["path"]).as_posix()] = None
     for relative in relatives:
         source = plugin_path / relative
         _safe_source(source)
         members[relative.as_posix()] = source
-    return [members[name] for name in sorted(members)]
-
-
-def _canonical_names(paths: Iterable[Path], plugin_path: Path) -> list[str]:
-    return [path.relative_to(plugin_path).as_posix() for path in paths]
+    return [(name, members[name]) for name in sorted(members)]
 
 
 def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
+    """Verify one built archive without trusting any mutable runtime source.
+
+    Non-runtime members are byte/mode-parity-checked against the git-tracked
+    plugin tree (which CI additionally binds to the signed-tag tree). Runtime
+    members are validated ONLY against a single frozen snapshot of the
+    committed manifest — exact member sequence, type, mode, size, and sha256,
+    plus the archived manifest bytes themselves — so a source-tree swap after
+    the build-time validation can never produce a passing archive, and no
+    runtime bundle source is needed to verify (CI runs this without one).
+    """
+
     plugin_path = plugin_path.resolve(strict=True)
     if classify_package(plugin_path) != mode:
         raise ValueError("archive mode no longer matches the source package")
-    expected_paths = _member_paths(plugin_path, mode=mode)
-    expected_names = _canonical_names(expected_paths, plugin_path)
+    frozen_manifest = b""
+    records: tuple[dict[str, object], ...] = ()
+    if mode == "activation":
+        frozen_manifest = _read_manifest_bytes(plugin_path)
+        manifest = _parse_manifest(frozen_manifest)
+        artifacts = manifest["artifacts"]
+        if len(artifacts) != 1:
+            raise ValueError("activation package requires exactly one runtime artifact")
+        records = runtime_bundle.validate_file_records(artifacts[0]["files"])
+    plan = _member_plan(plugin_path, mode=mode, records=records)
+    expected_names = [name for name, _ in plan]
+    record_by_name = {
+        (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record
+        for record in records
+    }
     try:
         bundle = tarfile.open(archive_path, "r:gz")
     except (OSError, tarfile.TarError) as exc:
@@ -463,7 +576,33 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
                 raise ValueError("archive contains an unsafe member path")
         if names != expected_names:
             raise ValueError("archive member list is not canonical")
-        for source, member in zip(expected_paths, members, strict=True):
+        for (name, source), member in zip(plan, members, strict=True):
+            if source is None:
+                directory_mode = _RUNTIME_DIR_MODES.get(name)
+                if directory_mode is not None:
+                    if not member.isdir() or stat.S_IMODE(member.mode) != directory_mode:
+                        raise ValueError(
+                            f"archive runtime directory identity failed: {member.name}"
+                        )
+                    continue
+                record = record_by_name[name]
+                if (
+                    not member.isreg()
+                    or stat.S_IMODE(member.mode) != record["install_mode"]
+                    or member.size != record["size"]
+                ):
+                    raise ValueError(
+                        f"archive runtime member identity failed: {member.name}"
+                    )
+                archived = bundle.extractfile(member)
+                if (
+                    archived is None
+                    or hashlib.sha256(archived.read()).hexdigest() != record["sha256"]
+                ):
+                    raise ValueError(
+                        f"archive runtime member digest failed: {member.name}"
+                    )
+                continue
             source_info = _safe_source(source)
             source_is_file = stat.S_ISREG(source_info.st_mode)
             if source_is_file != member.isfile() or (
@@ -474,51 +613,153 @@ def verify_archive(plugin_path: Path, archive_path: Path, *, mode: str) -> None:
                 raise ValueError(f"archive member mode parity failed: {member.name}")
             if source_is_file:
                 archived = bundle.extractfile(member)
-                if archived is None or archived.read() != source.read_bytes():
+                if archived is None:
+                    raise ValueError(f"archive member byte parity failed: {member.name}")
+                data = archived.read()
+                if name == "runtime-manifest.json" and mode == "activation":
+                    # Bind the archived manifest to the SAME frozen bytes the
+                    # runtime records above were parsed from (never a second
+                    # read) — closes the manifest-swap window.
+                    if data != frozen_manifest:
+                        raise ValueError(
+                            "archived runtime manifest does not match the frozen manifest"
+                        )
+                elif data != source.read_bytes():
                     raise ValueError(f"archive member byte parity failed: {member.name}")
         runtime_files = [
             member.name
             for member in members
             if member.isfile() and member.name.startswith("runtime/")
         ]
-        expected_runtime = (
-            [
-                (RUNTIME_BUNDLE_REL / record["path"]).as_posix()
-                for record in runtime_bundle.validate_file_records(
-                    _load_manifest(plugin_path)["artifacts"][0]["files"]
-                )
-            ]
-            if mode == "activation"
-            else []
-        )
+        expected_runtime = [
+            (RUNTIME_BUNDLE_REL / record["path"]).as_posix() for record in records
+        ]
         if runtime_files != expected_runtime:
             raise ValueError("archive runtime membership does not match release mode")
 
 
-def build_archive(root: Path, *, plugin: str, output: Path) -> str:
+def _synthesized_tarinfo(name: str, *, mode: int, size: int = 0, directory: bool = False) -> tarfile.TarInfo:
+    info = tarfile.TarInfo(name)
+    info.type = tarfile.DIRTYPE if directory else tarfile.REGTYPE
+    info.mode = mode
+    info.size = size
+    info.uid = 0
+    info.gid = 0
+    info.uname = ""
+    info.gname = ""
+    info.mtime = 0
+    return info
+
+
+def build_archive(
+    root: Path,
+    *,
+    plugin: str,
+    output: Path,
+    bundle_source: Path | None = None,
+) -> str:
     if plugin != PLUGIN_NAME:
         raise ValueError("agent-collab is the only releaseable plugin")
     plugin_path = (root / "plugins" / plugin).resolve(strict=True)
     mode = classify_package(plugin_path)
-    members = _member_paths(plugin_path, mode=mode)
+    records: tuple[dict[str, object], ...] = ()
+    bundle_leaf: Path | None = None
+    if mode == "policy-only":
+        # The committed manifest — never the flag — decides the mode.
+        if bundle_source is not None:
+            raise ValueError("policy-only manifest forbids --bundle-source")
+    else:
+        # Fail closed: an activation manifest without a matching signed bundle
+        # source is a hard error, never a silent policy-only downgrade.
+        if bundle_source is None:
+            raise ValueError("activation manifest requires --bundle-source")
+        runtime_root = plugin_path / "runtime"
+        if runtime_root.exists() or runtime_root.is_symlink():
+            raise ValueError(
+                "in-tree runtime conflicts with --bundle-source; remove one source"
+            )
+        try:
+            raw_source = bundle_source.lstat()
+        except OSError as exc:
+            raise ValueError("runtime bundle source is missing") from exc
+        # lstat the raw CLI argument BEFORE resolving — resolve() would erase
+        # the evidence that the argument itself was a symlink.
+        if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
+            raise ValueError("runtime bundle source is unsafe")
+        bundle_leaf = bundle_source.resolve(strict=True)
+        manifest = _parse_manifest(_read_manifest_bytes(plugin_path))
+        artifacts = manifest["artifacts"]
+        if len(artifacts) != 1:
+            raise ValueError("activation package requires exactly one runtime artifact")
+        records = runtime_bundle.validate_file_records(artifacts[0]["files"])
+        _validate_activation_bundle_tree(bundle_leaf, records)
+    plan = _member_plan(plugin_path, mode=mode, records=records)
+    record_by_name = {
+        (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
+    }
     output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as bundle:
-                for source in members:
-                    name = source.relative_to(plugin_path).as_posix()
-                    info = bundle.gettarinfo(str(source), arcname=name)
-                    info.uid = 0
-                    info.gid = 0
-                    info.uname = ""
-                    info.gname = ""
-                    info.mtime = 0
-                    if info.isfile():
-                        with source.open("rb") as stream:
-                            bundle.addfile(info, stream)
-                    else:
-                        bundle.addfile(info)
-    verify_archive(plugin_path, output, mode=mode)
+    output_resolved = output.parent.resolve(strict=True) / output.name
+    for forbidden in (plugin_path, bundle_leaf):
+        if forbidden is not None and output_resolved.is_relative_to(forbidden):
+            raise ValueError("archive output must not alias a source tree")
+    # Build into an exclusive temporary file, verify THAT, and only then move
+    # it to the requested destination — a failed build or failed verification
+    # never leaves a publishable artifact at the output path.
+    temp_path = output_resolved.parent / f".{output_resolved.name}.tmp.{os.getpid()}"
+    member_flags = (
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    )
+    try:
+        descriptor = os.open(
+            temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644
+        )
+        with os.fdopen(descriptor, "wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+                with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as bundle:
+                    for name, source in plan:
+                        if source is not None:
+                            info = bundle.gettarinfo(str(source), arcname=name)
+                            info.uid = 0
+                            info.gid = 0
+                            info.uname = ""
+                            info.gname = ""
+                            info.mtime = 0
+                            if info.isfile():
+                                with source.open("rb") as stream:
+                                    bundle.addfile(info, stream)
+                            else:
+                                bundle.addfile(info)
+                        elif name in _RUNTIME_DIR_MODES:
+                            bundle.addfile(
+                                _synthesized_tarinfo(
+                                    name, mode=_RUNTIME_DIR_MODES[name], directory=True
+                                )
+                            )
+                        else:
+                            # Runtime file member: metadata comes ENTIRELY from
+                            # the frozen manifest record; only the bytes stream
+                            # from the validated source (and verify_archive
+                            # re-binds those bytes to the record digest).
+                            record = record_by_name[name]
+                            info = _synthesized_tarinfo(
+                                name,
+                                mode=record["install_mode"],
+                                size=record["size"],
+                            )
+                            assert bundle_leaf is not None
+                            member_descriptor = os.open(
+                                bundle_leaf / record["path"], member_flags
+                            )
+                            with os.fdopen(member_descriptor, "rb") as stream:
+                                bundle.addfile(info, stream)
+        verify_archive(plugin_path, temp_path, mode=mode)
+        os.replace(temp_path, output_resolved)
+    except BaseException:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
     return mode
 
 
@@ -528,6 +769,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plugin", default=PLUGIN_NAME)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--print-mode", action="store_true")
+    parser.add_argument(
+        "--bundle-source",
+        type=Path,
+        default=None,
+        help=(
+            "path to the signed runtime bundle leaf directory "
+            "(…/agent-collab-runtime.bundle) from the local release handoff; "
+            "required for an activation manifest, forbidden for policy-only"
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         if args.plugin != PLUGIN_NAME:
@@ -540,7 +791,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.output is None:
             raise ValueError("--output is required when building an archive")
-        mode = build_archive(args.repo_root, plugin=args.plugin, output=args.output)
+        mode = build_archive(
+            args.repo_root,
+            plugin=args.plugin,
+            output=args.output,
+            bundle_source=args.bundle_source,
+        )
     except (OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
         return 1

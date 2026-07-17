@@ -102,12 +102,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
         )
         for name in LEGAL_FILES:
             shutil.copy2(ROOT / name, repo / name)
-        bundle = (
-            plugin
-            / "runtime"
-            / "darwin-arm64"
-            / "agent-collab-runtime.bundle"
-        )
+        # The signed bundle ships as a release asset (never committed): the
+        # fixture stages it OUT-of-tree and supplies it via bundle_source.
+        bundle = self.root / "handoff" / "agent-collab-runtime.bundle"
         bundle.mkdir(parents=True)
         runtime_members = {
             "agent-collab-runtime": (
@@ -192,7 +189,10 @@ class ReleaseEvidenceTests(unittest.TestCase):
             json.dumps(manifest), encoding="utf-8"
         )
         mode = archive_builder.build_archive(
-            repo, plugin="agent-collab", output=self.archive
+            repo,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=bundle,
         )
         self.assertEqual(mode, "activation")
         evidence_builder.build_evidence(

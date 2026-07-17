@@ -8,10 +8,12 @@ import json
 import shutil
 import stat
 import sys
+import os
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,14 +71,19 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertTrue((licenses / name).is_file())
 
     def _activate(self) -> Path:
+        """Stage an activation manifest in-tree + a signed bundle OUT-of-tree.
+
+        The runtime bundle ships as a release asset (never committed), so the
+        fixture mirrors production: the committed tree carries only the
+        manifest, and the 0o500 bundle leaf lives in an external handoff
+        directory supplied to the builder via ``bundle_source``.
+        """
+
         self._install_third_party_notices()
-        runtime = (
-            self.plugin
-            / "runtime"
-            / "darwin-arm64"
-            / "agent-collab-runtime.bundle"
-            / "agent-collab-runtime"
+        self.bundle_leaf = (
+            self.root / "handoff" / "agent-collab-runtime.bundle"
         )
+        runtime = self.bundle_leaf / "agent-collab-runtime"
         runtime.parent.mkdir(parents=True)
         runtime.write_bytes(b"signed-runtime-fixture")
         library = runtime.parent / "libpython3.13.dylib"
@@ -206,10 +213,14 @@ class PluginArchiveTests(unittest.TestCase):
     def test_activation_archive_has_exactly_one_runtime_with_byte_mode_parity(self) -> None:
         runtime = self._activate()
         mode = self.builder.build_archive(
-            self.root, plugin="agent-collab", output=self.archive
+            self.root,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=self.bundle_leaf,
         )
         self.assertEqual(mode, "activation")
 
+        bundle_prefix = "runtime/darwin-arm64/agent-collab-runtime.bundle/"
         with tarfile.open(self.archive, "r:gz") as bundle:
             runtime_files = [
                 member
@@ -219,18 +230,37 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertEqual(
                 [member.name for member in runtime_files],
                 [
-                    "runtime/darwin-arm64/agent-collab-runtime.bundle/agent-collab-runtime",
-                    "runtime/darwin-arm64/agent-collab-runtime.bundle/libpython3.13.dylib",
+                    bundle_prefix + "agent-collab-runtime",
+                    bundle_prefix + "libpython3.13.dylib",
                 ],
             )
             member = runtime_files[0]
             self.assertEqual(bundle.extractfile(member).read(), runtime.read_bytes())
             self.assertEqual(stat.S_IMODE(member.mode), 0o500)
 
+            # Synthesized runtime directory scaffolding carries fixed canonical
+            # modes: 0o755 traversal parents + the sealed 0o500 bundle leaf.
+            directory_modes = {
+                archived.name: stat.S_IMODE(archived.mode)
+                for archived in bundle.getmembers()
+                if archived.isdir() and archived.name.startswith("runtime")
+            }
+            self.assertEqual(
+                directory_modes,
+                {
+                    "runtime": 0o755,
+                    "runtime/darwin-arm64": 0o755,
+                    "runtime/darwin-arm64/agent-collab-runtime.bundle": 0o500,
+                },
+            )
+
             for archived in bundle.getmembers():
                 if not archived.isfile():
                     continue
-                source = self.plugin / archived.name
+                if archived.name.startswith(bundle_prefix):
+                    source = self.bundle_leaf / archived.name[len(bundle_prefix):]
+                else:
+                    source = self.plugin / archived.name
                 self.assertEqual(bundle.extractfile(archived).read(), source.read_bytes())
                 self.assertEqual(
                     stat.S_IMODE(archived.mode),
@@ -240,7 +270,10 @@ class PluginArchiveTests(unittest.TestCase):
     def test_activation_archive_includes_canonical_third_party_notice_tree(self) -> None:
         self._activate()
         mode = self.builder.build_archive(
-            self.root, plugin="agent-collab", output=self.archive
+            self.root,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=self.bundle_leaf,
         )
         self.assertEqual(mode, "activation")
 
@@ -278,7 +311,10 @@ class PluginArchiveTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "third-party notice tree"):
             self.builder.build_archive(
-                self.root, plugin="agent-collab", output=self.archive
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=self.bundle_leaf,
             )
 
     def test_activation_rejects_missing_top_level_third_party_notice(self) -> None:
@@ -287,7 +323,10 @@ class PluginArchiveTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "third-party notice tree"):
             self.builder.build_archive(
-                self.root, plugin="agent-collab", output=self.archive
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=self.bundle_leaf,
             )
 
     def test_activation_rejects_unexpected_third_party_notice_member(self) -> None:
@@ -298,7 +337,10 @@ class PluginArchiveTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "third-party notice tree"):
             self.builder.build_archive(
-                self.root, plugin="agent-collab", output=self.archive
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=self.bundle_leaf,
             )
 
     def test_activation_rejects_third_party_notice_content_drift(self) -> None:
@@ -308,7 +350,10 @@ class PluginArchiveTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "content digest"):
             self.builder.build_archive(
-                self.root, plugin="agent-collab", output=self.archive
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=self.bundle_leaf,
             )
 
     def test_activation_rejects_symlinked_third_party_notice_member(self) -> None:
@@ -319,7 +364,10 @@ class PluginArchiveTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unsafe|third-party notice tree"):
             self.builder.build_archive(
-                self.root, plugin="agent-collab", output=self.archive
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=self.bundle_leaf,
             )
 
     def test_policy_only_rejects_unadvertised_runtime_and_missing_policy(self) -> None:
@@ -367,6 +415,194 @@ class PluginArchiveTests(unittest.TestCase):
             self.builder.build_archive(
                 self.root, plugin="agent-collab", output=self.archive
             )
+
+    def _build_activation(self) -> str:
+        return self.builder.build_archive(
+            self.root,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=self.bundle_leaf,
+        )
+
+    def test_activation_manifest_requires_bundle_source_fail_closed(self) -> None:
+        self._activate()
+        with self.assertRaisesRegex(ValueError, "requires --bundle-source"):
+            self.builder.build_archive(
+                self.root, plugin="agent-collab", output=self.archive
+            )
+        self.assertFalse(self.archive.exists())
+
+    def test_policy_only_manifest_forbids_bundle_source(self) -> None:
+        self._install_third_party_notices()
+        stray = self.root / "stray-bundle"
+        stray.mkdir()
+        with self.assertRaisesRegex(ValueError, "forbids --bundle-source"):
+            self.builder.build_archive(
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=stray,
+            )
+
+    def test_in_tree_runtime_conflicts_with_bundle_source(self) -> None:
+        self._activate()
+        (self.plugin / "runtime").mkdir()
+        with self.assertRaisesRegex(ValueError, "in-tree runtime conflicts"):
+            self._build_activation()
+
+    def test_bundle_source_rejects_symlink_argument_before_resolve(self) -> None:
+        self._activate()
+        alias = self.root / "leaf-alias"
+        alias.symlink_to(self.bundle_leaf)
+        with self.assertRaisesRegex(ValueError, "runtime bundle source is unsafe"):
+            self.builder.build_archive(
+                self.root,
+                plugin="agent-collab",
+                output=self.archive,
+                bundle_source=alias,
+            )
+
+    def test_bundle_source_rejects_content_and_size_drift(self) -> None:
+        self._activate()
+        library = self.bundle_leaf / "libpython3.13.dylib"
+        original = library.read_bytes()
+
+        library.chmod(0o700)
+        library.write_bytes(b"X" * len(original))  # same size, wrong bytes
+        library.chmod(0o500)
+        with self.assertRaisesRegex(ValueError, "digest is invalid"):
+            self._build_activation()
+
+        library.chmod(0o700)
+        library.write_bytes(original + b"tail")  # size drift
+        library.chmod(0o500)
+        with self.assertRaisesRegex(ValueError, "member identity is invalid"):
+            self._build_activation()
+        self.assertFalse(self.archive.exists())
+
+    def test_bundle_source_rejects_mode_drift(self) -> None:
+        self._activate()
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "member identity is invalid"):
+            self._build_activation()
+
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o500)
+        self.bundle_leaf.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "root identity is invalid"):
+            self._build_activation()
+
+    def test_bundle_source_requires_exact_membership(self) -> None:
+        self._activate()
+        self.bundle_leaf.chmod(0o700)
+        extra = self.bundle_leaf / "extra-member"
+        extra.write_bytes(b"unexpected")
+        self.bundle_leaf.chmod(0o500)
+        with self.assertRaisesRegex(ValueError, "membership is not exact"):
+            self._build_activation()
+
+        self.bundle_leaf.chmod(0o700)
+        extra.unlink()
+        (self.bundle_leaf / "libpython3.13.dylib").unlink()
+        self.bundle_leaf.chmod(0o500)
+        with self.assertRaisesRegex(ValueError, "membership is not exact"):
+            self._build_activation()
+
+    def test_bundle_source_rejects_symlinked_member(self) -> None:
+        self._activate()
+        self.bundle_leaf.chmod(0o700)
+        library = self.bundle_leaf / "libpython3.13.dylib"
+        library.unlink()
+        library.symlink_to("agent-collab-runtime")
+        self.bundle_leaf.chmod(0o500)
+        with self.assertRaisesRegex(
+            ValueError, "member is unsafe|member identity is invalid"
+        ):
+            self._build_activation()
+
+    def test_bundle_source_rejects_hardlinked_member(self) -> None:
+        self._activate()
+        os.link(
+            self.bundle_leaf / "agent-collab-runtime",
+            self.root / "hardlink-aside",
+        )
+        with self.assertRaisesRegex(ValueError, "member identity is invalid"):
+            self._build_activation()
+
+    def test_failed_verification_leaves_no_output_artifact(self) -> None:
+        self._activate()
+        with mock.patch.object(
+            self.builder, "verify_archive", side_effect=ValueError("forced failure")
+        ):
+            with self.assertRaisesRegex(ValueError, "forced failure"):
+                self._build_activation()
+        self.assertFalse(self.archive.exists())
+        leftovers = [
+            path.name
+            for path in self.archive.parent.iterdir()
+            if ".tmp" in path.name
+        ]
+        self.assertEqual(leftovers, [])
+
+    def test_verify_archive_binds_runtime_bytes_to_frozen_manifest(self) -> None:
+        self._activate()
+        mode = self._build_activation()
+        target = "runtime/darwin-arm64/agent-collab-runtime.bundle/agent-collab-runtime"
+
+        # Repack the archive swapping the runtime member's bytes for same-size
+        # garbage while keeping every member's metadata identical: source
+        # parity cannot notice (the source tree is untouched), only the frozen
+        # manifest digest binding can.
+        tampered = self.root / "tampered.plugin"
+        with tarfile.open(self.archive, "r:gz") as original:
+            members = [
+                (member, original.extractfile(member).read() if member.isfile() else None)
+                for member in original.getmembers()
+            ]
+        import gzip as gzip_module
+
+        with tampered.open("wb") as raw:
+            with gzip_module.GzipFile(
+                filename="", mode="wb", fileobj=raw, mtime=0
+            ) as compressed:
+                with tarfile.open(
+                    fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                ) as bundle:
+                    for member, payload in members:
+                        if member.name == target:
+                            payload = b"Y" * member.size
+                        if payload is None:
+                            bundle.addfile(member)
+                        else:
+                            import io
+
+                            bundle.addfile(member, io.BytesIO(payload))
+
+        with self.assertRaisesRegex(ValueError, "runtime member digest failed"):
+            self.builder.verify_archive(self.plugin, tampered, mode=mode)
+
+    def test_verify_archive_binds_archived_manifest_to_frozen_bytes(self) -> None:
+        self._activate()
+        mode = self._build_activation()
+        manifest_path = self.plugin / "runtime-manifest.json"
+        # A parse-identical byte change (trailing whitespace) after the build:
+        # the archived manifest must equal the CURRENT frozen bytes exactly.
+        manifest_path.write_text(
+            manifest_path.read_text(encoding="utf-8") + " ", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "frozen manifest"):
+            self.builder.verify_archive(self.plugin, self.archive, mode=mode)
+
+    def test_activation_archive_build_is_deterministic(self) -> None:
+        self._activate()
+        self._build_activation()
+        second = self.root / "agent-collab-second.plugin"
+        self.builder.build_archive(
+            self.root,
+            plugin="agent-collab",
+            output=second,
+            bundle_source=self.bundle_leaf,
+        )
+        self.assertEqual(self.archive.read_bytes(), second.read_bytes())
 
     def test_archive_rejects_unexpected_manifest_and_skill_members(self) -> None:
         extra_manifest = self.plugin / ".claude-plugin" / "extra.dat"
