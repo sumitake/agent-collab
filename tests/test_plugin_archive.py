@@ -657,6 +657,88 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertEqual(foreign.read_bytes(), b"foreign artifact")
         self.assertFalse(self.archive.exists())
 
+    def test_output_alias_of_source_trees_is_rejected(self) -> None:
+        self._activate()
+        for alias in (
+            self.plugin / "aliased-output.plugin",
+            self.bundle_leaf / "aliased-output.plugin",
+        ):
+            with self.subTest(alias=str(alias)):
+                with self.assertRaisesRegex(ValueError, "alias a source tree"):
+                    self.builder.build_archive(
+                        self.root,
+                        plugin="agent-collab",
+                        output=alias,
+                        bundle_source=self.bundle_leaf,
+                    )
+        # A symlinked parent that resolves into a source tree is caught too.
+        symdir = self.root / "sym-parent"
+        symdir.symlink_to(self.plugin)
+        with self.assertRaisesRegex(ValueError, "alias a source tree"):
+            self.builder.build_archive(
+                self.root,
+                plugin="agent-collab",
+                output=symdir / "aliased-output.plugin",
+                bundle_source=self.bundle_leaf,
+            )
+        self.assertFalse((self.plugin / "aliased-output.plugin").exists())
+
+    def test_pack_time_failure_leaves_no_output_or_temp(self) -> None:
+        self._activate()
+        with mock.patch.object(
+            self.builder,
+            "_synthesized_tarinfo",
+            side_effect=OSError("forced pack failure"),
+        ):
+            with self.assertRaises(OSError):
+                self._build_activation()
+        self.assertFalse(self.archive.exists())
+        leftovers = [
+            path.name
+            for path in self.archive.parent.iterdir()
+            if ".tmp" in path.name
+        ]
+        self.assertEqual(leftovers, [])
+
+    def test_cli_builds_activation_archive_with_bundle_source(self) -> None:
+        self._activate()
+        exit_code = self.builder.main(
+            [
+                "--repo-root",
+                str(self.root),
+                "--output",
+                str(self.archive),
+                "--bundle-source",
+                str(self.bundle_leaf),
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(self.archive.is_file())
+        self.builder.verify_archive(self.plugin, self.archive, mode="activation")
+
+    def test_verify_bounds_hostile_archive_decompression(self) -> None:
+        self._activate()
+        mode = self._build_activation()
+
+        # A gzip bomb (tiny compressed, huge decompressed) must be rejected
+        # by the hard decompression bound BEFORE any tar/PAX parsing.
+        import gzip as gzip_module
+
+        bomb = self.root / "bomb.plugin"
+        with bomb.open("wb") as raw:
+            with gzip_module.GzipFile(fileobj=raw, mode="wb") as stream:
+                zero_chunk = b"\0" * (1024 * 1024)
+                for _ in range(2 * 64 + 8):  # > 2 * MAX_ARTIFACT_BYTES
+                    stream.write(zero_chunk)
+        with self.assertRaisesRegex(ValueError, "decompression exceeds"):
+            self.builder.verify_archive(self.plugin, bomb, mode=mode)
+
+        # A symlinked archive path is refused outright.
+        alias = self.root / "archive-alias.plugin"
+        alias.symlink_to(self.archive)
+        with self.assertRaisesRegex(ValueError, "unreadable"):
+            self.builder.verify_archive(self.plugin, alias, mode=mode)
+
     def test_activation_archive_build_is_deterministic(self) -> None:
         self._activate()
         self._build_activation()

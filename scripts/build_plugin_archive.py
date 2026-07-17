@@ -10,6 +10,7 @@ import importlib.util
 import io
 import json
 import os
+from zlib import error as zlib_error
 import re
 import stat
 import tarfile
@@ -559,6 +560,45 @@ def _member_plan(
     return [(name, members[name]) for name in sorted(members)]
 
 
+# Hard resource bounds for reading a possibly-hostile archive: the compressed
+# file and its decompressed expansion are both capped BEFORE any tar/PAX
+# parsing happens, so a crafted asset cannot exhaust memory or time during
+# tarfile's own header processing.
+_MAX_COMPRESSED_ARCHIVE_BYTES = MAX_ARTIFACT_BYTES
+_MAX_DECOMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
+
+
+def _bounded_archive_stream(archive_path: Path) -> io.BytesIO:
+    """Decompress an archive under hard byte caps before tar parsing."""
+
+    try:
+        info = archive_path.lstat()
+    except OSError as exc:
+        raise ValueError("plugin archive is unreadable") from exc
+    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        raise ValueError("plugin archive is unreadable")
+    if info.st_size > _MAX_COMPRESSED_ARCHIVE_BYTES:
+        raise ValueError("plugin archive exceeds the canonical size bound")
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        with archive_path.open("rb") as raw:
+            with gzip.GzipFile(fileobj=raw) as stream:
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > _MAX_DECOMPRESSED_ARCHIVE_BYTES:
+                        raise ValueError(
+                            "plugin archive decompression exceeds the canonical bound"
+                        )
+                    chunks.append(chunk)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib_error) as exc:
+        raise ValueError("plugin archive is unreadable") from exc
+    return io.BytesIO(b"".join(chunks))
+
+
 def verify_archive(
     plugin_path: Path,
     archive_path: Path,
@@ -603,7 +643,9 @@ def verify_archive(
         for record in records
     }
     try:
-        bundle = tarfile.open(archive_path, "r:gz")
+        bundle = tarfile.open(
+            fileobj=_bounded_archive_stream(archive_path), mode="r:"
+        )
     except (OSError, tarfile.TarError) as exc:
         raise ValueError("plugin archive is unreadable") from exc
     with bundle:
@@ -623,7 +665,10 @@ def verify_archive(
             # ownership, zero mtime, no link targets, and no PAX extension
             # headers (canonical members never need any). This also rejects
             # hostile archives that smuggle devices/links or oversized PAX
-            # payloads past the name checks.
+            # payloads past the name checks. Deliberate constraint: member
+            # names must stay ASCII and <= 100 chars (the ustar name field) —
+            # a longer/non-ASCII path would make gettarinfo emit a PAX "path"
+            # header and the build would fail-closed against this check.
             if (
                 not (member.isfile() or member.isdir())
                 or member.uid != 0
@@ -789,7 +834,11 @@ def build_archive(
     _reject_source_alias(output_resolved)
     # Build into an exclusive temporary file, verify THAT, and only then move
     # it to the requested destination — a failed build or failed verification
-    # never leaves a publishable artifact at the output path.
+    # never leaves a publishable artifact at the output path. The pid-suffixed
+    # temp name is predictable: in a shared/world-writable output directory an
+    # adversary could pre-create it as a DoS (O_EXCL fails, their file
+    # survives untouched — integrity is unaffected). Release builds write to
+    # operator-owned directories.
     temp_path = output_resolved.parent / f".{output_resolved.name}.tmp.{os.getpid()}"
     member_flags = (
         os.O_RDONLY
