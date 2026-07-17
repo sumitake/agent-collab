@@ -385,6 +385,7 @@ def _validate_activation_bundle_tree(
         os.O_RDONLY
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)  # a swapped FIFO must not block the open
     )
     for record in records:
         member = bundle_leaf / record["path"]
@@ -407,12 +408,16 @@ def _validate_activation_bundle_tree(
                     "runtime bundle source member identity is invalid"
                 )
             digest = hashlib.sha256()
-            while True:
+            read_total = 0
+            while read_total <= record["size"]:
+                # Cap the read at the fstat'd size: a file that grows after the
+                # fstat cannot cause unbounded reading.
                 chunk = os.read(descriptor, 1024 * 1024)
                 if not chunk:
                     break
+                read_total += len(chunk)
                 digest.update(chunk)
-            if digest.hexdigest() != record["sha256"]:
+            if read_total != record["size"] or digest.hexdigest() != record["sha256"]:
                 raise ValueError("runtime bundle source member digest is invalid")
         finally:
             try:
@@ -421,27 +426,45 @@ def _validate_activation_bundle_tree(
                 pass
 
 
-def classify_package(plugin_path: Path) -> str:
-    plugin_path = plugin_path.resolve(strict=True)
+def _classify_from_manifest(
+    plugin_path: Path, manifest_bytes: bytes
+) -> tuple[str, tuple[dict[str, object], ...]]:
+    """Classify + fully validate the package from ONE manifest byte snapshot.
+
+    The mode decision, the full activation-manifest shape validation, and the
+    runtime records ALL derive from the same ``manifest_bytes`` — so a caller
+    that freezes the manifest once and passes those exact bytes here cannot be
+    raced (an A→B→A manifest swap between classification and packing is
+    impossible; the frozen bytes are the single source).
+    """
+
     policy = plugin_path / "signing_policy.py"
     policy_info = _safe_source(policy)
     if not stat.S_ISREG(policy_info.st_mode):
         raise ValueError("signing_policy.py must be a regular file")
-    manifest = _load_manifest(plugin_path)
+    manifest = _parse_manifest(manifest_bytes)
     artifacts = manifest["artifacts"]
     runtime_root = plugin_path / "runtime"
     if not artifacts:
         if runtime_root.exists() or runtime_root.is_symlink():
             raise ValueError("policy-only package contains an unadvertised runtime")
-        return "policy-only"
+        return "policy-only", ()
     if len(artifacts) != 1:
         raise ValueError("activation package requires exactly one runtime artifact")
     # D1: the committed manifest is the activation marker. The physical bundle
     # is NOT read here — it ships as a release asset (never committed) and is
     # validated against its actual source by `_validate_activation_bundle_tree`
     # (build) and against the frozen manifest records (verify_archive).
-    _validate_activation_manifest(artifacts[0])
-    return "activation"
+    records = _validate_activation_manifest(artifacts[0])
+    return "activation", records
+
+
+def classify_package(plugin_path: Path) -> str:
+    plugin_path = plugin_path.resolve(strict=True)
+    mode, _records = _classify_from_manifest(
+        plugin_path, _read_manifest_bytes(plugin_path)
+    )
+    return mode
 
 
 def _require_exact_manifest_trees(plugin_path: Path) -> None:
@@ -568,12 +591,15 @@ def _member_plan(
 _MAX_COMPRESSED_ARCHIVE_BYTES = MAX_ARTIFACT_BYTES
 _MAX_DECOMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
 _USTAR_BLOCK = 512
-# Fixed canonical gzip header: magic (1f 8b), DEFLATE method (08), flags 0
-# (rejects FTEXT/FHCRC/FEXTRA/FNAME/FCOMMENT — the malleability/amplification
-# vectors), and mtime 0. Bytes 8-9 (XFL, OS) are compressor/platform-derived,
-# informational, and not attacker-amplifiable, so they are deliberately not
-# bound — the inflated-tar byte-compare binds all CONTENT regardless.
-_CANONICAL_GZIP_PREFIX = b"\x1f\x8b\x08\x00\x00\x00\x00\x00"
+# The complete fixed canonical 10-byte gzip header the builder emits: magic
+# (1f 8b), DEFLATE method (08), flags 0 (rejects FTEXT/FHCRC/FEXTRA/FNAME/
+# FCOMMENT — the malleability/amplification vectors), mtime 0, XFL 02
+# (best-compression, GzipFile default level 9), OS ff (unknown). CPython's gzip
+# writes XFL and OS deterministically (hardcoded ff for OS; 02 for level 9), so
+# binding all ten is byte-reproducible across the operator's build Python and
+# CI's 3.10/3.12/3.14 — and the build→verify round-trip tests fail closed on
+# any version that diverges rather than silently accepting a variant.
+_CANONICAL_GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"
 
 
 def _synthesized_tarinfo(
@@ -729,7 +755,7 @@ def _inflate_bounded(compressed: bytes) -> bytes:
     complete with NO trailing/concatenated data.
     """
 
-    if len(compressed) < 10 or compressed[:8] != _CANONICAL_GZIP_PREFIX:
+    if compressed[:10] != _CANONICAL_GZIP_HEADER:
         raise ValueError("plugin archive gzip header is not canonical")
     decompressor = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
     chunk_size = 1024 * 1024
@@ -821,19 +847,14 @@ def verify_archive(
     """
 
     plugin_path = plugin_path.resolve(strict=True)
-    if classify_package(plugin_path) != mode:
+    # Freeze ONE manifest snapshot: mode classification, full shape validation,
+    # runtime records, and the embedded manifest member all derive from it (a
+    # caller-supplied snapshot from build_archive, or a single read here in CI).
+    if frozen_manifest is None:
+        frozen_manifest = _read_manifest_bytes(plugin_path)
+    resolved_mode, records = _classify_from_manifest(plugin_path, frozen_manifest)
+    if resolved_mode != mode:
         raise ValueError("archive mode no longer matches the source package")
-    records: tuple[dict[str, object], ...] = ()
-    if mode == "activation":
-        if frozen_manifest is None:
-            frozen_manifest = _read_manifest_bytes(plugin_path)
-        manifest = _parse_manifest(frozen_manifest)
-        artifacts = manifest["artifacts"]
-        if len(artifacts) != 1:
-            raise ValueError("activation package requires exactly one runtime artifact")
-        records = runtime_bundle.validate_file_records(artifacts[0]["files"])
-    else:
-        frozen_manifest = None
     plan = _member_plan(plugin_path, mode=mode, records=records)
     record_by_name = {
         (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
@@ -932,10 +953,13 @@ def build_archive(
     if plugin != PLUGIN_NAME:
         raise ValueError("agent-collab is the only releaseable plugin")
     plugin_path = (root / "plugins" / plugin).resolve(strict=True)
-    mode = classify_package(plugin_path)
-    records: tuple[dict[str, object], ...] = ()
+    # Freeze the manifest ONCE: mode classification, full shape validation,
+    # runtime records, the bundle-tree validation, the embedded manifest member,
+    # and verify_archive ALL derive from this single snapshot, so a mid-build
+    # A→B→A manifest swap on disk cannot change what gets packaged.
+    frozen_manifest: bytes | None = _read_manifest_bytes(plugin_path)
+    mode, records = _classify_from_manifest(plugin_path, frozen_manifest)
     bundle_leaf: Path | None = None
-    frozen_manifest: bytes | None = None
     runtime_payloads: dict[str, bytes] = {}
     if mode == "policy-only":
         # The committed manifest — never the flag — decides the mode.
@@ -960,15 +984,6 @@ def build_archive(
         if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
             raise ValueError("runtime bundle source is unsafe")
         bundle_leaf = bundle_source.resolve(strict=True)
-        # Freeze the manifest ONCE: these exact bytes drive the bundle-tree
-        # validation, are embedded into the archive verbatim, and are handed to
-        # verify_archive — a mid-build manifest swap on disk is irrelevant.
-        frozen_manifest = _read_manifest_bytes(plugin_path)
-        manifest = _parse_manifest(frozen_manifest)
-        artifacts = manifest["artifacts"]
-        if len(artifacts) != 1:
-            raise ValueError("activation package requires exactly one runtime artifact")
-        records = runtime_bundle.validate_file_records(artifacts[0]["files"])
         _validate_activation_bundle_tree(bundle_leaf, records)
         runtime_payloads = _read_runtime_payloads(bundle_leaf, records)
     plan = _member_plan(plugin_path, mode=mode, records=records)

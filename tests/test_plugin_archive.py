@@ -751,6 +751,22 @@ class PluginArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "gzip header is not canonical"):
             self.builder.verify_archive(self.plugin, stamped, mode=mode)
 
+        # The FULL 10-byte header is bound: re-gzipping identical content at a
+        # different compression level (changes the XFL byte) is rejected even
+        # though the inflated content is identical.
+        inflated_ok = gzip_module.decompress(self.archive.read_bytes())
+        xfl_variant = self.root / "xfl.plugin"
+        with xfl_variant.open("wb") as raw:
+            with gzip_module.GzipFile(
+                filename="", fileobj=raw, mode="wb", mtime=0, compresslevel=1
+            ) as gz:
+                gz.write(inflated_ok)
+        self.assertNotEqual(
+            xfl_variant.read_bytes()[:10], self.archive.read_bytes()[:10]
+        )
+        with self.assertRaisesRegex(ValueError, "gzip header is not canonical"):
+            self.builder.verify_archive(self.plugin, xfl_variant, mode=mode)
+
         # A symlinked archive path is refused outright.
         alias = self.root / "archive-alias.plugin"
         alias.symlink_to(self.archive)
