@@ -742,7 +742,7 @@ print(json.dumps({{
         self.assertAlmostEqual(now[0], 100.025)
 
         invalid = (
-            (os.getuid(), 1),
+            (1, 1),
             (0, 0),
             (0, -1),
             (False, 1),
@@ -814,7 +814,11 @@ print(json.dumps({{
         )
 
         self.assertEqual(observed, 9001)
-        waiter.assert_called_once_with(peer, deadline=130.0)
+        waiter.assert_called_once_with(
+            peer,
+            deadline=130.0,
+            credential_observer=final_observer,
+        )
         call = prover.call_args
         self.assertEqual(call.args, (peer, lane))
         self.assertEqual(call.kwargs["credentials"], (0, 9001))

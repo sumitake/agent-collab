@@ -1456,12 +1456,16 @@ def _await_dispatcher_launchd_credentials(
         or (credential_observer is not None and not callable(credential_observer))
     ):
         raise ValueError("provider dispatcher launchd peer deadline is invalid")
-    observer = credential_observer
-    if observer is None:
-        observer = lambda selected: _observe_dispatcher_credentials(
-            selected,
-            allow_launchd_sentinel=True,
-        )
+    if credential_observer is None:
+        def observe_launchd_peer(selected: socket.socket) -> tuple[int, int]:
+            return _observe_dispatcher_credentials(
+                selected,
+                allow_launchd_sentinel=True,
+            )
+
+        observer = observe_launchd_peer
+    else:
+        observer = credential_observer
     delay = DISPATCHER_LAUNCHD_INITIAL_DELAY_SECONDS
     while True:
         try:
@@ -1682,7 +1686,14 @@ def _prove_dispatcher_launchd_peer(
     credential_observer=_observe_dispatcher_credentials,
     peer_prover=_prove_dispatcher_peer,
 ) -> int:
-    credentials = credential_waiter(peer, deadline=deadline)
+    if credential_observer is _observe_dispatcher_credentials:
+        credentials = credential_waiter(peer, deadline=deadline)
+    else:
+        credentials = credential_waiter(
+            peer,
+            deadline=deadline,
+            credential_observer=credential_observer,
+        )
     return peer_prover(
         peer,
         lane,
