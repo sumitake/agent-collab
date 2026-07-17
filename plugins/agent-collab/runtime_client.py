@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 from contextlib import contextmanager
 import ctypes
+import fcntl
 import hashlib
 import hmac
 import importlib.util
@@ -59,6 +60,9 @@ BROKER_SOCKET_NAME = "ProviderBroker"
 BROKER_SOCKET_FILENAME = "provider-broker.sock"
 BROKER_SELECTOR_FILENAME = "selector.json"
 BROKER_SELECTOR_MAX_BYTES = 16 * 1024
+DISPATCHER_PROTOCOL_VERSION = 1
+DISPATCHER_MAX_HANDSHAKE_SECONDS = 30.0
+DISPATCHER_MAX_REQUEST_SECONDS = MAX_TIMEOUT_MS / 1000.0
 BROKER_SELECTOR_KEYS = frozenset(
     {"schema_version", "generation", "selected_lane", "blue", "green"}
 )
@@ -69,7 +73,7 @@ BROKER_DISPATCHER_STATE_KEYS = frozenset(
     {
         "schema_version",
         "contract_version",
-        "broker_protocol_version",
+        "dispatcher_protocol_version",
         "runtime_protocol_version",
         "artifact_sha256",
         "manifest_sha256",
@@ -88,6 +92,53 @@ BROKER_FRAME_KEYS = frozenset(
         "request",
     }
 )
+DISPATCHER_HELLO_KEYS = frozenset(
+    {
+        "frame_type",
+        "dispatcher_protocol_version",
+        "client_pid",
+        "nonce",
+        "deadline_monotonic_ms",
+        "lane_generation",
+        "lane_token",
+        "artifact_sha256",
+        "manifest_sha256",
+    }
+)
+DISPATCHER_READY_KEYS = frozenset(
+    set(DISPATCHER_HELLO_KEYS) | {"dispatcher_pid", "hello_sha256"}
+)
+DISPATCHER_REQUEST_KEYS = frozenset(
+    set(DISPATCHER_HELLO_KEYS) | {"hello_sha256", "ready_sha256", "request"}
+)
+DISPATCHER_BRIDGE_KEYS = frozenset(
+    {
+        "bridge_protocol_version",
+        "lane_generation",
+        "artifact_sha256",
+        "manifest_sha256",
+        "deadline_monotonic_ms",
+        "handshake_deadline_monotonic_ms",
+        "request",
+    }
+)
+ADOPTION_CANARY_KEYS = frozenset(
+    {
+        "protocol_version",
+        "request_id",
+        "operation",
+        "provider",
+        "registry_generation",
+        "source_generation",
+        "binary_sha256",
+        "worker_sha256",
+        "adapter_contract_generation",
+        "routes",
+        "attempt_generation",
+        "authority_token",
+        "timeout_ms",
+    }
+)
 BROKERED_ROUTES = frozenset({"codex", "opencode", "gemini", "grok", "composer"})
 BROKER_MAX_REQUEST_BYTES = MAX_REQUEST_BYTES
 BROKER_MAX_RESPONSE_BYTES = MAX_RESPONSE_BYTES
@@ -95,10 +146,10 @@ BROKER_STATE_MAX_BYTES = 64 * 1024
 BROKER_SUN_PATH_MAX_BYTES = 103
 BROKER_FALLBACK_CONNECT_TIMEOUT_SECONDS = 2.0
 BROKER_FALLBACK_RESERVE_SECONDS = 1.0
-# Version 3.4 can stage and prove green metadata but has no authenticated
-# endpoint/ready protocol.  A later protocol-bearing release must replace this
-# closed bootstrap guard as part of the reviewed cross-repository change.
-BROKER_GREEN_PROMOTION_SUPPORTED = False
+# Version 3.5 supports an authenticated request-free green handshake.  The
+# shipped selector remains blue; this flag only permits a separately committed
+# selector transition to use the verified dispatcher protocol.
+BROKER_GREEN_PROMOTION_SUPPORTED = True
 BROKER_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 BROKER_STATE_KEYS = frozenset(
     {
@@ -188,6 +239,23 @@ SUPPORTED_CONTRACTS = frozenset(
         ("composer", "codegen"),
     }
 )
+ADOPTION_PROVIDER_ROUTES = {
+    "gemini": frozenset(
+        f"{route}/{action}"
+        for route, action in SUPPORTED_CONTRACTS
+        if route == "gemini"
+    ),
+    "grok": frozenset(
+        f"{route}/{action}"
+        for route, action in SUPPORTED_CONTRACTS
+        if route in {"grok", "composer"}
+    ),
+    "opencode": frozenset(
+        f"{route}/{action}"
+        for route, action in SUPPORTED_CONTRACTS
+        if route == "opencode"
+    ),
+}
 FIXED_AUTHOR_MODELS = {
     "grok": "xai/grok-4.5",
     "composer": "xai/grok-composer-2.5-fast",
@@ -266,6 +334,7 @@ class RuntimeStatus(str, Enum):
     INPUT_LIMIT = "input_limit"
     TEARDOWN_ERROR = "teardown_error"
     PROVIDER_ERROR = "provider_error"
+    CANARY_BLOCKED = "canary_blocked"
 
 
 @dataclass(frozen=True)
@@ -302,12 +371,59 @@ class BrokerLaneSnapshot:
     socket_path: Path
 
 
+@dataclass
+class DispatcherSession:
+    lane: BrokerLaneSnapshot
+    client_pid: int
+    dispatcher_pid: int
+    nonce: str
+    deadline_monotonic_ms: int
+    hello_sha256: str
+    ready_sha256: str
+    consumed: bool = False
+
+
 @dataclass(frozen=True)
 class RuntimeResult:
     status: RuntimeStatus
     result: Mapping[str, Any] | None = None
     provenance: Mapping[str, Any] | None = None
     error: str = ""
+
+
+class _DispatcherPreRequestError(RuntimeError):
+    """Green failed before any request-bearing frame could be accepted."""
+
+
+class _DispatcherPostRequestError(RuntimeError):
+    """Green failed at or after request send, so another lane is prohibited."""
+
+
+class _DarwinProcBSDInfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
 
 
 def normalized_platform() -> str:
@@ -1032,6 +1148,474 @@ def _dispatcher_lane_token(artifact_digest: str, manifest_digest: str) -> str:
     return digest.hexdigest()[:32]
 
 
+def _dispatcher_canonical_json(document: Mapping[str, Any]) -> bytes:
+    if type(document) is not dict:
+        raise ValueError("provider dispatcher frame must be an object")
+    try:
+        return json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError("provider dispatcher frame is not canonical") from exc
+
+
+def _dispatcher_frame_sha256(document: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_dispatcher_canonical_json(document)).hexdigest()
+
+
+def _dispatcher_nonce(value: object) -> str:
+    if type(value) is not str or not value or len(value) > 64:
+        raise ValueError("provider dispatcher nonce is invalid")
+    try:
+        padded = value + "=" * ((4 - len(value) % 4) % 4)
+        raw = base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        )
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError("provider dispatcher nonce is invalid") from exc
+    if (
+        len(raw) != 32
+        or base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=") != value
+    ):
+        raise ValueError("provider dispatcher nonce is invalid")
+    return value
+
+
+def _dispatcher_lane_fields(lane: BrokerLaneSnapshot) -> dict[str, Any]:
+    if (
+        not isinstance(lane, BrokerLaneSnapshot)
+        or lane.name != "green"
+        or not _exact_int(lane.generation)
+        or lane.generation < 1
+        or _SHA256_RE.fullmatch(lane.artifact_digest) is None
+        or _SHA256_RE.fullmatch(lane.manifest_digest) is None
+        or lane.label
+        != "com.agent-collab.provider-dispatcher."
+        + _dispatcher_lane_token(lane.artifact_digest, lane.manifest_digest)
+    ):
+        raise ValueError("provider dispatcher lane identity is invalid")
+    return {
+        "lane_generation": lane.generation,
+        "lane_token": _dispatcher_lane_token(
+            lane.artifact_digest, lane.manifest_digest
+        ),
+        "artifact_sha256": lane.artifact_digest,
+        "manifest_sha256": lane.manifest_digest,
+    }
+
+
+def _dispatcher_build_hello(
+    *,
+    lane: BrokerLaneSnapshot,
+    client_pid: int,
+    nonce: str,
+    deadline_monotonic_ms: int,
+) -> dict[str, Any]:
+    if (
+        type(client_pid) is not int
+        or client_pid <= 1
+        or type(deadline_monotonic_ms) is not int
+        or deadline_monotonic_ms < 1
+    ):
+        raise ValueError("provider dispatcher hello identity is invalid")
+    document = {
+        "frame_type": "hello",
+        "dispatcher_protocol_version": DISPATCHER_PROTOCOL_VERSION,
+        "client_pid": client_pid,
+        "nonce": _dispatcher_nonce(nonce),
+        "deadline_monotonic_ms": deadline_monotonic_ms,
+        **_dispatcher_lane_fields(lane),
+    }
+    if set(document) != DISPATCHER_HELLO_KEYS:
+        raise ValueError("provider dispatcher hello schema is invalid")
+    _dispatcher_canonical_json(document)
+    return document
+
+
+def _dispatcher_accept_ready(
+    hello: object,
+    ready: object,
+    *,
+    lane: BrokerLaneSnapshot,
+    expected_dispatcher_pid: int,
+    now_monotonic: float,
+) -> DispatcherSession:
+    if (
+        type(hello) is not dict
+        or set(hello) != DISPATCHER_HELLO_KEYS
+        or type(ready) is not dict
+        or set(ready) != DISPATCHER_READY_KEYS
+        or type(expected_dispatcher_pid) is not int
+        or expected_dispatcher_pid <= 1
+        or isinstance(now_monotonic, bool)
+        or not isinstance(now_monotonic, (int, float))
+        or not math.isfinite(float(now_monotonic))
+        or float(now_monotonic) < 0
+    ):
+        raise ValueError("provider dispatcher ready schema is invalid")
+    expected_hello = _dispatcher_build_hello(
+        lane=lane,
+        client_pid=hello.get("client_pid"),
+        nonce=hello.get("nonce"),
+        deadline_monotonic_ms=hello.get("deadline_monotonic_ms"),
+    )
+    now_ms = int(float(now_monotonic) * 1000)
+    if (
+        hello != expected_hello
+        or hello["deadline_monotonic_ms"] <= now_ms
+        or hello["deadline_monotonic_ms"]
+        > now_ms + int(DISPATCHER_MAX_REQUEST_SECONDS * 1000)
+    ):
+        raise ValueError("provider dispatcher hello is invalid")
+    hello_sha256 = _dispatcher_frame_sha256(hello)
+    expected_ready = {
+        **hello,
+        "frame_type": "ready",
+        "dispatcher_pid": expected_dispatcher_pid,
+        "hello_sha256": hello_sha256,
+    }
+    if ready != expected_ready:
+        raise ValueError("provider dispatcher ready identity is unbound")
+    return DispatcherSession(
+        lane=lane,
+        client_pid=hello["client_pid"],
+        dispatcher_pid=expected_dispatcher_pid,
+        nonce=hello["nonce"],
+        deadline_monotonic_ms=hello["deadline_monotonic_ms"],
+        hello_sha256=hello_sha256,
+        ready_sha256=_dispatcher_frame_sha256(expected_ready),
+    )
+
+
+def _dispatcher_build_request_frame(
+    *, session: DispatcherSession, request: Mapping[str, Any]
+) -> dict[str, Any]:
+    if (
+        not isinstance(session, DispatcherSession)
+        or session.consumed
+        or type(request) is not dict
+    ):
+        raise ValueError("provider dispatcher handshake was already consumed")
+    document = {
+        "frame_type": "request",
+        "dispatcher_protocol_version": DISPATCHER_PROTOCOL_VERSION,
+        "client_pid": session.client_pid,
+        "nonce": session.nonce,
+        "deadline_monotonic_ms": session.deadline_monotonic_ms,
+        **_dispatcher_lane_fields(session.lane),
+        "hello_sha256": session.hello_sha256,
+        "ready_sha256": session.ready_sha256,
+        "request": dict(request),
+    }
+    if set(document) != DISPATCHER_REQUEST_KEYS:
+        raise ValueError("provider dispatcher request schema is invalid")
+    _dispatcher_canonical_json(document)
+    return document
+
+
+def _dispatcher_bridge_document(
+    *,
+    lane: BrokerLaneSnapshot,
+    request: Mapping[str, Any],
+    deadline_monotonic_ms: int,
+    handshake_deadline_monotonic_ms: int,
+) -> bytes:
+    if (
+        not isinstance(lane, BrokerLaneSnapshot)
+        or lane.name != "green"
+        or lane.label
+        != "com.agent-collab.provider-dispatcher."
+        + _dispatcher_lane_token(lane.artifact_digest, lane.manifest_digest)
+        or type(request) is not dict
+        or not _exact_int(deadline_monotonic_ms)
+        or not _exact_int(handshake_deadline_monotonic_ms)
+        or handshake_deadline_monotonic_ms <= 0
+        or handshake_deadline_monotonic_ms > deadline_monotonic_ms
+    ):
+        raise ValueError("provider dispatcher bridge input is invalid")
+    document = {
+        "bridge_protocol_version": DISPATCHER_PROTOCOL_VERSION,
+        "lane_generation": lane.generation,
+        "artifact_sha256": lane.artifact_digest,
+        "manifest_sha256": lane.manifest_digest,
+        "deadline_monotonic_ms": deadline_monotonic_ms,
+        "handshake_deadline_monotonic_ms": handshake_deadline_monotonic_ms,
+        "request": dict(request),
+    }
+    if set(document) != DISPATCHER_BRIDGE_KEYS:
+        raise ValueError("provider dispatcher bridge schema is invalid")
+    encoded = _dispatcher_canonical_json(document) + b"\n"
+    if len(encoded) > MAX_REQUEST_BYTES:
+        raise ValueError("provider dispatcher bridge exceeded its bound")
+    return encoded
+
+
+def _adoption_canary_document(request: object) -> bytes:
+    if type(request) is not dict or set(request) != ADOPTION_CANARY_KEYS:
+        raise ValueError("adoption canary schema is invalid")
+    provider = request.get("provider")
+    routes = request.get("routes")
+    if (
+        request.get("operation") != "adoption_canary"
+        or not _exact_int(request.get("protocol_version"), PROTOCOL_VERSION)
+        or type(request.get("request_id")) is not str
+        or _REQUEST_ID_RE.fullmatch(request["request_id"]) is None
+        or type(provider) is not str
+        or provider not in ADOPTION_PROVIDER_ROUTES
+        or type(routes) is not list
+        or not routes
+        or any(type(route) is not str for route in routes)
+        or routes != sorted(routes, key=lambda item: item.encode("utf-8"))
+        or len(routes) != len(set(routes))
+        or not set(routes).issubset(ADOPTION_PROVIDER_ROUTES[provider])
+        or any(
+            type(request.get(key)) is not int or request[key] < 1
+            for key in (
+                "registry_generation",
+                "source_generation",
+                "adapter_contract_generation",
+                "attempt_generation",
+            )
+        )
+        or type(request.get("timeout_ms")) is not int
+        or not 1 <= request["timeout_ms"] <= MAX_TIMEOUT_MS
+        or any(
+            type(request.get(key)) is not str
+            or _SHA256_RE.fullmatch(request[key]) is None
+            for key in ("binary_sha256", "worker_sha256")
+        )
+    ):
+        raise ValueError("adoption canary fields are invalid")
+    _dispatcher_nonce(request.get("authority_token"))
+    document = {**request, "host_context": classify_host_context()}
+    encoded = _dispatcher_canonical_json(document) + b"\n"
+    if len(encoded) > MAX_REQUEST_BYTES:
+        raise ValueError("adoption canary exceeds the fixed protocol limit")
+    return encoded
+
+
+def _observe_dispatcher_credentials(peer: socket.socket) -> tuple[int, int]:
+    try:
+        raw = peer.getsockopt(0, 1, 256)
+        pid_raw = peer.getsockopt(0, 2, struct.calcsize("i"))
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        raise ValueError("provider dispatcher peer credentials are unavailable") from exc
+    if not isinstance(raw, bytes) or len(raw) < 12:
+        raise ValueError("provider dispatcher peer credentials are malformed")
+    version = int.from_bytes(raw[0:4], sys.byteorder, signed=False)
+    uid = int.from_bytes(raw[4:8], sys.byteorder, signed=False)
+    group_count = int.from_bytes(raw[8:10], sys.byteorder, signed=True)
+    if (
+        version != 0
+        or not 0 <= group_count <= 16
+        or len(raw) < 12 + group_count * 4
+        or not isinstance(pid_raw, bytes)
+        or len(pid_raw) != struct.calcsize("i")
+    ):
+        raise ValueError("provider dispatcher peer credentials are malformed")
+    pid = int.from_bytes(pid_raw, sys.byteorder, signed=True)
+    if pid <= 1:
+        raise ValueError("provider dispatcher peer PID is invalid")
+    return uid, pid
+
+
+def _observe_dispatcher_process(pid: int) -> tuple[str, Path]:
+    if normalized_platform() != "darwin" or type(pid) is not int or pid <= 1:
+        raise ValueError("provider dispatcher process proof is unavailable")
+    try:
+        library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        path_function = library.proc_pidpath
+        path_function.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+        path_function.restype = ctypes.c_int
+        buffer = ctypes.create_string_buffer(4096)
+        length = int(path_function(pid, buffer, len(buffer)))
+        if length <= 0 or length >= len(buffer):
+            raise OSError("dispatcher path query failed")
+        raw = bytes(buffer.raw[:length])
+        if b"\0" in raw:
+            raise OSError("dispatcher path contains NUL")
+        path = Path(os.fsdecode(raw))
+        if not path.is_absolute() or os.fsencode(path) != raw:
+            raise OSError("dispatcher path is invalid")
+
+        info_function = library.proc_pidinfo
+        info_function.argtypes = [
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint64,
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        info_function.restype = ctypes.c_int
+        info = _DarwinProcBSDInfo()
+        observed = int(
+            info_function(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+        )
+        if (
+            observed != ctypes.sizeof(info)
+            or info.pbi_pid != pid
+            or info.pbi_uid != os.getuid()
+            or info.pbi_start_tvsec <= 0
+        ):
+            raise OSError("dispatcher process identity is invalid")
+        return f"{info.pbi_start_tvsec}:{info.pbi_start_tvusec}", path
+    except (OSError, TypeError, ValueError, UnicodeError, ctypes.ArgumentError) as exc:
+        raise ValueError("provider dispatcher process proof failed") from exc
+
+
+def _observe_dispatcher_socket(lane: BrokerLaneSnapshot) -> FileIdentity:
+    info = _exact_mode(lane.socket_path, expected_type=stat.S_IFSOCK, mode=0o600)
+    if info is None:
+        raise ValueError("provider dispatcher socket identity is unavailable")
+    return FileIdentity(
+        device=info.st_dev,
+        inode=info.st_ino,
+        size=info.st_size,
+        mtime_ns=info.st_mtime_ns,
+        mode=info.st_mode,
+        uid=info.st_uid,
+        links=info.st_nlink,
+    )
+
+
+def _prove_dispatcher_peer(
+    peer: socket.socket,
+    lane: BrokerLaneSnapshot,
+    *,
+    credential_observer=_observe_dispatcher_credentials,
+    process_observer=_observe_dispatcher_process,
+    socket_observer=_observe_dispatcher_socket,
+    published_verifier=None,
+    root: Path | None = None,
+) -> int:
+    if not isinstance(lane, BrokerLaneSnapshot) or lane.name != "green":
+        raise ValueError("provider dispatcher lane proof is invalid")
+    selected_root = _broker_root() if root is None else root
+    verifier = _verify_published_version if published_verifier is None else published_verifier
+    if not isinstance(selected_root, Path) or not selected_root.is_absolute():
+        raise ValueError("provider dispatcher root is invalid")
+    try:
+        socket_before = socket_observer(lane)
+        _bundle, runtime, _manifest = verifier(
+            selected_root,
+            artifact_digest=lane.artifact_digest,
+            manifest_digest=lane.manifest_digest,
+        )
+        uid, pid = credential_observer(peer)
+        start_before, path_before = process_observer(pid)
+        start_after, path_after = process_observer(pid)
+        _bundle2, runtime_after, _manifest2 = verifier(
+            selected_root,
+            artifact_digest=lane.artifact_digest,
+            manifest_digest=lane.manifest_digest,
+        )
+        socket_after = socket_observer(lane)
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("provider dispatcher peer identity is unproven") from exc
+    try:
+        same_before = os.path.samefile(path_before, runtime)
+        same_after = os.path.samefile(path_after, runtime_after)
+    except OSError as exc:
+        raise ValueError("provider dispatcher executable identity is unproven") from exc
+    if (
+        uid != os.getuid()
+        or pid <= 1
+        or type(start_before) is not str
+        or not start_before
+        or start_after != start_before
+        or path_after != path_before
+        or runtime_after != runtime
+        or not same_before
+        or not same_after
+        or socket_after != socket_before
+    ):
+        raise ValueError("provider dispatcher peer identity changed")
+    return pid
+
+
+def _dispatcher_exchange(
+    *,
+    peer: socket.socket,
+    lane: BrokerLaneSnapshot,
+    request: Mapping[str, Any],
+    deadline: float,
+    handshake_deadline: float | None = None,
+) -> dict[str, Any]:
+    request_started = False
+    try:
+        dispatcher_pid = _prove_dispatcher_peer(peer, lane)
+        now = time.monotonic()
+        selected_handshake_deadline = (
+            min(deadline, now + DISPATCHER_MAX_HANDSHAKE_SECONDS)
+            if handshake_deadline is None
+            else handshake_deadline
+        )
+        if (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(float(deadline))
+            or isinstance(selected_handshake_deadline, bool)
+            or not isinstance(selected_handshake_deadline, (int, float))
+            or not math.isfinite(float(selected_handshake_deadline))
+            or selected_handshake_deadline <= now
+            or selected_handshake_deadline > deadline
+            or selected_handshake_deadline
+            > now + DISPATCHER_MAX_HANDSHAKE_SECONDS
+        ):
+            raise ValueError("provider dispatcher handshake deadline is invalid")
+        nonce = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii").rstrip("=")
+        hello = _dispatcher_build_hello(
+            lane=lane,
+            client_pid=os.getpid(),
+            nonce=nonce,
+            deadline_monotonic_ms=int(deadline * 1000),
+        )
+        peer.settimeout(max(0.001, selected_handshake_deadline - time.monotonic()))
+        peer.sendall(
+            _encode_broker_frame(hello, max_bytes=BROKER_MAX_REQUEST_BYTES)
+        )
+        ready = _read_broker_frame(
+            peer,
+            max_bytes=BROKER_MAX_REQUEST_BYTES,
+            deadline=selected_handshake_deadline,
+        )
+        session = _dispatcher_accept_ready(
+            hello,
+            ready,
+            lane=lane,
+            expected_dispatcher_pid=dispatcher_pid,
+            now_monotonic=time.monotonic(),
+        )
+        frame = _dispatcher_build_request_frame(session=session, request=request)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("provider dispatcher request deadline expired")
+        peer.settimeout(remaining)
+        request_started = True
+        session.consumed = True
+        peer.sendall(
+            _encode_broker_frame(frame, max_bytes=BROKER_MAX_REQUEST_BYTES)
+        )
+        return _read_broker_frame(
+            peer,
+            max_bytes=BROKER_MAX_RESPONSE_BYTES,
+            deadline=deadline,
+        )
+    except _DispatcherPostRequestError:
+        raise
+    except (OSError, OverflowError, TimeoutError, TypeError, ValueError) as exc:
+        error = (
+            _DispatcherPostRequestError
+            if request_started
+            else _DispatcherPreRequestError
+        )
+        raise error("provider dispatcher exchange failed") from exc
+
+
 def _dispatcher_lane_snapshot(
     root: Path,
     *,
@@ -1238,7 +1822,8 @@ def _load_dispatcher_broker_lane(
         or not _exact_int(document.get("schema_version"), 1)
         or not _exact_int(document.get("contract_version"), CONTRACT_VERSION)
         or not _exact_int(
-            document.get("broker_protocol_version"), BROKER_PROTOCOL_VERSION
+            document.get("dispatcher_protocol_version"),
+            DISPATCHER_PROTOCOL_VERSION,
         )
         or not _exact_int(document.get("runtime_protocol_version"), PROTOCOL_VERSION)
         or document.get("artifact_sha256") != lane.artifact_digest
@@ -1505,6 +2090,140 @@ def _parse_broker_response(document: dict[str, Any], envelope: object) -> Runtim
     return _parse_response(encoded, envelope, 0)
 
 
+def _closed_dispatcher_bridge_response(raw: bytes) -> dict[str, Any]:
+    if type(raw) is not bytes or not raw or len(raw) > MAX_RESPONSE_BYTES:
+        raise ValueError("provider dispatcher bridge response is invalid")
+    body = raw[:-1] if raw.endswith(b"\n") else raw
+    try:
+        document = json.loads(
+            body.decode("ascii"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_float=_finite_broker_json_float,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+        canonical = _dispatcher_canonical_json(document)
+    except (UnicodeError, ValueError, TypeError, RecursionError) as exc:
+        raise ValueError("provider dispatcher bridge response is malformed") from exc
+    if type(document) is not dict or canonical != body:
+        raise ValueError("provider dispatcher bridge response is noncanonical")
+    return document
+
+
+def _invoke_dispatcher_bridge(
+    *,
+    lane: BrokerLaneSnapshot,
+    request: Mapping[str, Any],
+    deadline: float,
+    handshake_deadline: float,
+) -> dict[str, Any]:
+    try:
+        now = time.monotonic()
+        if (
+            not isinstance(lane, BrokerLaneSnapshot)
+            or lane.name != "green"
+            or type(request) is not dict
+            or isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(float(deadline))
+            or isinstance(handshake_deadline, bool)
+            or not isinstance(handshake_deadline, (int, float))
+            or not math.isfinite(float(handshake_deadline))
+            or handshake_deadline <= now
+            or handshake_deadline > deadline
+        ):
+            raise ValueError("provider dispatcher bridge input is invalid")
+        root = _broker_root()
+        bundle, runtime, _manifest = _verify_published_version(
+            root,
+            artifact_digest=lane.artifact_digest,
+            manifest_digest=lane.manifest_digest,
+        )
+        identity = _safe_file_identity(runtime, executable=True)
+        if identity is None:
+            raise ValueError("provider dispatcher bridge executable is unsafe")
+        payload = _dispatcher_bridge_document(
+            lane=lane,
+            request=request,
+            deadline_monotonic_ms=int(deadline * 1000),
+            handshake_deadline_monotonic_ms=int(handshake_deadline * 1000),
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError) as exc:
+        raise _DispatcherPreRequestError(
+            "provider dispatcher bridge preflight failed"
+        ) from exc
+
+    command = [
+        str(runtime),
+        "dispatcher-client",
+        "--protocol",
+        str(DISPATCHER_PROTOCOL_VERSION),
+    ]
+    try:
+        with _isolated_runtime_tmpdir() as runtime_tmpdir:
+            with tempfile.TemporaryFile(dir=runtime_tmpdir) as stdin:
+                stdin.write(payload)
+                stdin.seek(0)
+                if _safe_file_identity(runtime, executable=True) != identity:
+                    raise _DispatcherPreRequestError(
+                        "provider dispatcher bridge identity changed before launch"
+                    )
+                process = subprocess.Popen(
+                    command,
+                    stdin=stdin,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=str(bundle),
+                    env=_scrubbed_env(tmpdir=runtime_tmpdir),
+                    start_new_session=True,
+                    close_fds=True,
+                )
+                remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+                out, err, collection_error = _collect_bounded_output(
+                    process,
+                    timeout_ms=remaining_ms,
+                )
+                if collection_error is not None:
+                    raise _DispatcherPostRequestError(
+                        "provider dispatcher bridge completion was unproven"
+                    )
+                returncode = process.returncode if process.returncode is not None else -1
+                if err:
+                    raise _DispatcherPostRequestError(
+                        "provider dispatcher bridge emitted stderr"
+                    )
+                if returncode == 3 and not out:
+                    raise _DispatcherPreRequestError(
+                        "provider dispatcher bridge failed before request"
+                    )
+                if returncode != 0:
+                    raise _DispatcherPostRequestError(
+                        "provider dispatcher bridge failed after preflight"
+                    )
+                response = _closed_dispatcher_bridge_response(out)
+                if _safe_file_identity(runtime, executable=True) != identity:
+                    raise _DispatcherPostRequestError(
+                        "provider dispatcher bridge identity changed after launch"
+                    )
+                _verify_published_version(
+                    root,
+                    artifact_digest=lane.artifact_digest,
+                    manifest_digest=lane.manifest_digest,
+                )
+                return response
+    except _DispatcherPreRequestError:
+        raise
+    except _DispatcherPostRequestError:
+        raise
+    except _RuntimeTempCleanupError as exc:
+        raise _DispatcherPostRequestError(
+            "provider dispatcher bridge cleanup was unproven"
+        ) from exc
+    except (OSError, PermissionError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
+        raise _DispatcherPreRequestError(
+            "provider dispatcher bridge could not start"
+        ) from exc
+
+
 def _launch_broker(
     *,
     resolution: RuntimeResolution,
@@ -1528,16 +2247,34 @@ def _launch_broker(
     deadline_monotonic_ms = int(started * 1000) + timeout_ms
     try:
         for index, lane in enumerate(lanes):
-            frame = _broker_request_frame(
-                request=request,
-                artifact_digest=lane.artifact_digest,
-                manifest_digest=lane.manifest_digest,
-                timeout_ms=timeout_ms,
-                deadline_monotonic_ms=deadline_monotonic_ms,
-            )
-            encoded = _encode_broker_frame(
-                frame, max_bytes=BROKER_MAX_REQUEST_BYTES
-            )
+            if lane.name == "green":
+                now = time.monotonic()
+                remaining = deadline - now
+                if remaining <= 0:
+                    raise TimeoutError("provider broker deadline expired")
+                handshake_deadline = min(
+                    deadline,
+                    now + DISPATCHER_MAX_HANDSHAKE_SECONDS,
+                )
+                if index + 1 < len(lanes):
+                    reserve = min(BROKER_FALLBACK_RESERVE_SECONDS, remaining / 2)
+                    handshake_deadline = min(handshake_deadline, deadline - reserve)
+                try:
+                    response = _invoke_dispatcher_bridge(
+                        lane=lane,
+                        request=request,
+                        deadline=deadline,
+                        handshake_deadline=handshake_deadline,
+                    )
+                except _DispatcherPreRequestError:
+                    if index + 1 < len(lanes):
+                        continue
+                    raise ValueError("provider dispatcher bridge preflight failed")
+                except _DispatcherPostRequestError as exc:
+                    raise ValueError(
+                        "provider dispatcher failed after request acceptance"
+                    ) from exc
+                return _parse_broker_response(response, envelope)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -1563,6 +2300,16 @@ def _launch_broker(
                 if remaining <= 0:
                     raise TimeoutError("provider broker deadline expired")
                 peer.settimeout(remaining)
+                frame = _broker_request_frame(
+                    request=request,
+                    artifact_digest=lane.artifact_digest,
+                    manifest_digest=lane.manifest_digest,
+                    timeout_ms=timeout_ms,
+                    deadline_monotonic_ms=deadline_monotonic_ms,
+                )
+                encoded = _encode_broker_frame(
+                    frame, max_bytes=BROKER_MAX_REQUEST_BYTES
+                )
                 peer.sendall(encoded)
                 response = _read_broker_frame(
                     peer,
@@ -1605,10 +2352,15 @@ def _broker_plist_document(
     ):
         raise ValueError("invalid provider broker plist input")
     runtime = str(runtime_path)
+    dispatcher = label.startswith("com.agent-collab.provider-dispatcher.")
+    subcommand = "dispatcher" if dispatcher else "broker"
+    protocol = (
+        DISPATCHER_PROTOCOL_VERSION if dispatcher else BROKER_PROTOCOL_VERSION
+    )
     return {
         "Label": label,
         "Program": runtime,
-        "ProgramArguments": [runtime, "broker", "--protocol", str(BROKER_PROTOCOL_VERSION)],
+        "ProgramArguments": [runtime, subcommand, "--protocol", str(protocol)],
         "EnvironmentVariables": {
             "HOME": str(home),
             "TMPDIR": str(tmpdir),
@@ -1669,7 +2421,18 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _write_private_atomic(path: Path, content: bytes, *, mode: int) -> None:
-    if path.parent != _broker_root() or path.name not in {"broker.plist", "state.json"}:
+    derived_dispatcher = re.fullmatch(
+        r"provider-dispatcher-[0-9a-f]{32}\.(?:json|plist)", path.name
+    )
+    if path.parent != _broker_root() or (
+        path.name
+        not in {
+            "broker.plist",
+            "state.json",
+            BROKER_SELECTOR_FILENAME,
+        }
+        and derived_dispatcher is None
+    ):
         raise ValueError("unsafe provider broker write target")
     temporary = path.parent / "tmp" / f".{path.name}.{os.urandom(16).hex()}"
     try:
@@ -1698,6 +2461,65 @@ def _write_private_atomic(path: Path, content: bytes, *, mode: int) -> None:
         except OSError:
             pass
         raise
+
+
+def _unlink_private_durable(path: Path) -> None:
+    derived_dispatcher = re.fullmatch(
+        r"provider-dispatcher-[0-9a-f]{32}\.(?:json|plist|sock)", path.name
+    )
+    if path.parent != _broker_root() or (
+        path.name
+        not in {
+            "broker.plist",
+            "state.json",
+            BROKER_SELECTOR_FILENAME,
+            BROKER_SOCKET_FILENAME,
+        }
+        and derived_dispatcher is None
+    ):
+        raise ValueError("unsafe provider broker unlink target")
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    if info.st_uid != os.getuid() or stat.S_ISLNK(info.st_mode):
+        raise ValueError("unsafe provider broker unlink identity")
+    path.unlink()
+    _fsync_directory(path.parent)
+
+
+@contextmanager
+def _broker_control_lock(root: Path) -> Iterator[None]:
+    if root != _broker_root() or _exact_mode(
+        root, expected_type=stat.S_IFDIR, mode=0o700
+    ) is None:
+        raise ValueError("provider broker control root is unsafe")
+    path = root / "control.lock"
+    descriptor = os.open(
+        path,
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0),
+        0o600,
+    )
+    try:
+        os.fchmod(descriptor, 0o600)
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise ValueError("provider broker control lock is unsafe")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 def _copy_regular_nofollow(source: Path, target: Path, *, limit: int, mode: int) -> None:
@@ -1872,6 +2694,92 @@ def _state_bytes(document: Mapping[str, Any]) -> bytes:
     )
 
 
+def _selector_bytes(document: Mapping[str, Any]) -> bytes:
+    value = dict(document)
+    if not _broker_selector_valid(value):
+        raise ValueError("provider broker selector contract mismatch")
+    raw = _state_bytes(value)
+    try:
+        roundtrip = json.loads(
+            raw.decode("ascii"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("provider broker selector roundtrip failed") from exc
+    if roundtrip != value:
+        raise ValueError("provider broker selector roundtrip failed")
+    return raw
+
+
+def _read_selector_snapshot(root: Path) -> tuple[dict[str, Any] | None, bytes | None]:
+    selector = _read_broker_selector(root)
+    if selector is None:
+        return None, None
+    path = root / BROKER_SELECTOR_FILENAME
+    raw, identity = _read_regular_nofollow(path, limit=BROKER_SELECTOR_MAX_BYTES)
+    if raw is None or identity is None or json.loads(raw) != selector:
+        raise ValueError("provider broker selector snapshot is unproven")
+    return selector, raw
+
+
+def _restore_selector_snapshot(root: Path, raw: bytes | None) -> bool:
+    try:
+        if raw is None:
+            _unlink_private_durable(root / BROKER_SELECTOR_FILENAME)
+        else:
+            document = json.loads(
+                raw.decode("ascii"),
+                object_pairs_hook=_unique_broker_json_object,
+                parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+            )
+            if not _broker_selector_valid(document):
+                raise ValueError("provider broker selector restore is invalid")
+            _write_private_atomic(
+                root / BROKER_SELECTOR_FILENAME, raw, mode=0o600
+            )
+        _observed, observed_raw = _read_selector_snapshot(root)
+        return observed_raw == raw
+    except (OSError, TypeError, ValueError, RecursionError):
+        return False
+
+
+def _dispatcher_state_document(
+    *, artifact_digest: str, manifest_digest: str, plist_digest: str
+) -> dict[str, Any]:
+    document = {
+        "schema_version": 1,
+        "contract_version": CONTRACT_VERSION,
+        "dispatcher_protocol_version": DISPATCHER_PROTOCOL_VERSION,
+        "runtime_protocol_version": PROTOCOL_VERSION,
+        "artifact_sha256": artifact_digest,
+        "manifest_sha256": manifest_digest,
+        "plist_sha256": plist_digest,
+    }
+    if (
+        not _broker_lane_reference_valid(
+            {
+                "artifact_sha256": artifact_digest,
+                "manifest_sha256": manifest_digest,
+            }
+        )
+        or not isinstance(plist_digest, str)
+        or _SHA256_RE.fullmatch(plist_digest) is None
+    ):
+        raise ValueError("provider dispatcher state identity is invalid")
+    return document
+
+
+def _blue_reference(state: Mapping[str, Any]) -> dict[str, str]:
+    reference = {
+        "artifact_sha256": state.get("artifact_sha256"),
+        "manifest_sha256": state.get("manifest_sha256"),
+    }
+    if not _broker_lane_reference_valid(reference):
+        raise ValueError("legacy provider broker reference is invalid")
+    return dict(reference)
+
+
 def _read_current_broker_state(root: Path) -> dict[str, Any] | None:
     try:
         root.lstat()
@@ -1956,10 +2864,23 @@ def _bootstrap_broker(plist_path: Path) -> bool:
     ).returncode == 0
 
 
-def _broker_job_loaded() -> bool:
+def _job_loaded(label: str) -> bool:
+    if (
+        not isinstance(label, str)
+        or re.fullmatch(
+            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
+            label,
+        )
+        is None
+    ):
+        raise ValueError("provider job label is invalid")
     return _launchctl(
-        ["print", f"gui/{os.getuid()}/{BROKER_LABEL}"]
+        ["print", f"gui/{os.getuid()}/{label}"]
     ).returncode == 0
+
+
+def _broker_job_loaded() -> bool:
+    return _job_loaded(BROKER_LABEL)
 
 
 # The activation liveness knock must outlast the signed runtime's cold start.
@@ -1995,8 +2916,17 @@ def _broker_ping(socket_path: Path) -> bool:
         return False
 
 
-def _broker_process_idle() -> bool:
-    result = _launchctl(["print", f"gui/{os.getuid()}/{BROKER_LABEL}"])
+def _job_process_idle(label: str) -> bool:
+    if (
+        not isinstance(label, str)
+        or re.fullmatch(
+            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
+            label,
+        )
+        is None
+    ):
+        raise ValueError("provider job label is invalid")
+    result = _launchctl(["print", f"gui/{os.getuid()}/{label}"])
     if result.returncode != 0:
         return False
     # launchctl prints a `state = active` line for each listening socket
@@ -2018,6 +2948,19 @@ def _broker_process_idle() -> bool:
     return bool(states) and not has_live_pid and all(
         state in {"not running", "exited"} for state in states
     )
+
+
+def _broker_process_idle() -> bool:
+    return _job_process_idle(BROKER_LABEL)
+
+
+def _wait_for_job_idle(label: str) -> bool:
+    deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if _job_process_idle(label):
+            return True
+        time.sleep(0.05)
+    return False
 
 
 def _wait_for_broker_exit() -> bool:
@@ -2127,6 +3070,893 @@ def _broker_lifecycle_seatbelt_block() -> RuntimeResult | None:
     )
 
 
+def _prove_legacy_blue(root: Path) -> dict[str, Any]:
+    state = _read_current_broker_state(root)
+    if state is None:
+        raise ValueError("legacy provider broker is unavailable")
+    _verify_published_version(
+        root,
+        artifact_digest=state["artifact_sha256"],
+        manifest_digest=state["manifest_sha256"],
+    )
+    _verify_plist_against_state(root, state)
+    if not _job_loaded(BROKER_LABEL):
+        raise ValueError("legacy provider broker job is unavailable")
+    if _exact_mode(
+        root / BROKER_SOCKET_FILENAME, expected_type=stat.S_IFSOCK, mode=0o600
+    ) is None:
+        raise ValueError("legacy provider broker socket is unavailable")
+    return state
+
+
+def _dispatcher_ping_response(
+    response: object, *, request_id: str
+) -> RuntimeResult:
+    if not isinstance(response, dict) or response.get("request_id") != request_id:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="provider dispatcher ping response was rejected",
+        )
+    if response.get("status") != "ok":
+        status_value = response.get("status")
+        error = response.get("error")
+        try:
+            status = RuntimeStatus(status_value)
+        except (TypeError, ValueError):
+            status = RuntimeStatus.PROTOCOL_ERROR
+        if (
+            set(response) != {"protocol_version", "request_id", "status", "error"}
+            or response.get("protocol_version") != PROTOCOL_VERSION
+            or type(error) is not str
+            or not error
+        ):
+            return RuntimeResult(
+                RuntimeStatus.PROTOCOL_ERROR,
+                error="provider dispatcher ping failure was rejected",
+            )
+        return RuntimeResult(status, error=error)
+    if (
+        set(response)
+        != {"protocol_version", "request_id", "status", "result", "provenance"}
+        or response.get("protocol_version") != PROTOCOL_VERSION
+        or response.get("result") != {"ready": True}
+        or response.get("provenance") != {"operation": "dispatcher_ping"}
+    ):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="provider dispatcher ping success was rejected",
+        )
+    return RuntimeResult(
+        RuntimeStatus.OK,
+        result={"ready": True},
+        provenance={"operation": "dispatcher_ping"},
+    )
+
+
+def invoke_dispatcher_ping(*, timeout_ms: int = 30_000) -> RuntimeResult:
+    if type(timeout_ms) is not int or not 1 <= timeout_ms <= MAX_TIMEOUT_MS:
+        return RuntimeResult(
+            RuntimeStatus.CONFIG_ERROR,
+            error="provider dispatcher ping timeout is invalid",
+        )
+    try:
+        root = _broker_root()
+        selector = _read_broker_selector(root)
+        if selector is None or selector.get("green") is None:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                error="staged provider dispatcher is unavailable",
+            )
+        lane = _load_dispatcher_broker_lane(
+            root, selector["green"], selector["generation"]
+        )
+        request_id = "dispatcher-ping-" + os.urandom(16).hex()
+        request = {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": request_id,
+            "operation": "dispatcher_ping",
+            "timeout_ms": timeout_ms,
+            "host_context": classify_host_context(),
+        }
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        response = _invoke_dispatcher_bridge(
+            lane=lane,
+            request=request,
+            deadline=deadline,
+            handshake_deadline=min(
+                deadline, time.monotonic() + DISPATCHER_MAX_HANDSHAKE_SECONDS
+            ),
+        )
+        return _dispatcher_ping_response(response, request_id=request_id)
+    except _DispatcherPreRequestError:
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher ping bridge is unproven",
+        )
+    except _DispatcherPostRequestError:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="staged provider dispatcher ping completion is unproven",
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher ping identity is unproven",
+        )
+
+
+def _dispatcher_lock_probe_response(
+    response: object, *, request_id: str, provider: str
+) -> RuntimeResult:
+    if not isinstance(response, dict) or response.get("request_id") != request_id:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="provider dispatcher lock probe response was rejected",
+        )
+    if response.get("status") != "ok":
+        status_value = response.get("status")
+        error = response.get("error")
+        try:
+            status = RuntimeStatus(status_value)
+        except (TypeError, ValueError):
+            status = RuntimeStatus.PROTOCOL_ERROR
+        if (
+            set(response) != {"protocol_version", "request_id", "status", "error"}
+            or response.get("protocol_version") != PROTOCOL_VERSION
+            or type(error) is not str
+            or not error
+        ):
+            return RuntimeResult(
+                RuntimeStatus.PROTOCOL_ERROR,
+                error="provider dispatcher lock probe failure was rejected",
+            )
+        return RuntimeResult(status, error=error)
+    result = response.get("result")
+    provenance = response.get("provenance")
+    if (
+        set(response)
+        != {"protocol_version", "request_id", "status", "result", "provenance"}
+        or response.get("protocol_version") != PROTOCOL_VERSION
+        or result
+        != {
+            "provider": provider,
+            "lock_acquired": True,
+            "namespace": "legacy-compatible-v1",
+        }
+        or provenance != {"operation": "dispatcher_lock_probe"}
+    ):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="provider dispatcher lock probe success was rejected",
+        )
+    return RuntimeResult(
+        RuntimeStatus.OK,
+        result=dict(result),
+        provenance=dict(provenance),
+    )
+
+
+def invoke_dispatcher_lock_probe(
+    *, provider: str, timeout_ms: int = 5_000
+) -> RuntimeResult:
+    if (
+        provider not in {"gemini", "grok", "opencode"}
+        or type(timeout_ms) is not int
+        or not 1 <= timeout_ms <= MAX_TIMEOUT_MS
+    ):
+        return RuntimeResult(
+            RuntimeStatus.CONFIG_ERROR,
+            error="provider dispatcher lock probe input is invalid",
+        )
+    try:
+        root = _broker_root()
+        selector = _read_broker_selector(root)
+        if selector is None or selector.get("green") is None:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                error="staged provider dispatcher is unavailable",
+            )
+        lane = _load_dispatcher_broker_lane(
+            root, selector["green"], selector["generation"]
+        )
+        request_id = "dispatcher-lock-probe-" + os.urandom(16).hex()
+        request = {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": request_id,
+            "operation": "dispatcher_lock_probe",
+            "provider": provider,
+            "timeout_ms": timeout_ms,
+            "host_context": classify_host_context(),
+        }
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        response = _invoke_dispatcher_bridge(
+            lane=lane,
+            request=request,
+            deadline=deadline,
+            handshake_deadline=min(
+                deadline, time.monotonic() + DISPATCHER_MAX_HANDSHAKE_SECONDS
+            ),
+        )
+        return _dispatcher_lock_probe_response(
+            response, request_id=request_id, provider=provider
+        )
+    except _DispatcherPreRequestError:
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher lock probe bridge is unproven",
+        )
+    except _DispatcherPostRequestError:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="staged provider dispatcher lock probe completion is unproven",
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher lock probe identity is unproven",
+        )
+
+
+def _cleanup_dispatcher_candidate(root: Path, lane: BrokerLaneSnapshot) -> bool:
+    cleaned = True
+    plist_path = _dispatcher_mutable_path(root, lane, "plist")
+    try:
+        if not _bootout_broker(plist_path):
+            cleaned = False
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+        cleaned = False
+    for path in (
+        lane.socket_path,
+        _dispatcher_mutable_path(root, lane, "json"),
+        plist_path,
+    ):
+        try:
+            _unlink_private_durable(path)
+        except (OSError, ValueError):
+            cleaned = False
+    return cleaned
+
+
+def _staged_dispatcher_result(
+    *, selector: Mapping[str, Any], lane: BrokerLaneSnapshot
+) -> RuntimeResult:
+    return RuntimeResult(
+        RuntimeStatus.OK,
+        result={
+            "staged": True,
+            "generation": selector["generation"],
+            "selected_lane": selector["selected_lane"],
+            "blue": dict(selector["blue"]),
+            "green": dict(selector["green"]),
+            "label": lane.label,
+            "socket_activated": True,
+            "persistent_process": False,
+        },
+    )
+
+
+def dispatcher_status() -> RuntimeResult:
+    """Report the committed lane and independently proven blue/green identities."""
+
+    try:
+        root = _broker_root()
+        try:
+            root.lstat()
+        except FileNotFoundError:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"installed": False},
+                error="provider dispatcher is not installed",
+            )
+        if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
+            raise ValueError("provider broker root identity is unsafe")
+        selector = _read_broker_selector(root)
+        blue: BrokerLaneSnapshot | None
+        try:
+            blue = _load_legacy_broker_lane(root)
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            blue = None
+        if selector is None:
+            if blue is None:
+                return RuntimeResult(
+                    RuntimeStatus.UNAVAILABLE,
+                    result={"installed": False},
+                    error="provider dispatcher is not installed",
+                )
+            return RuntimeResult(
+                RuntimeStatus.OK,
+                result={
+                    "installed": True,
+                    "generation": 0,
+                    "selected_lane": "blue",
+                    "blue": {
+                        "artifact_sha256": blue.artifact_digest,
+                        "manifest_sha256": blue.manifest_digest,
+                        "available": True,
+                    },
+                    "green": None,
+                    "blue_retained": True,
+                    "persistent_process": False,
+                },
+            )
+        green: BrokerLaneSnapshot | None = None
+        if selector.get("green") is not None:
+            try:
+                green = _load_dispatcher_broker_lane(
+                    root, selector["green"], selector["generation"]
+                )
+            except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+                green = None
+        if selector["selected_lane"] == "blue" and blue is None:
+            raise ValueError("selected blue dispatcher is unavailable")
+        if selector["selected_lane"] == "green" and green is None:
+            raise ValueError("selected green dispatcher is unavailable")
+        return RuntimeResult(
+            RuntimeStatus.OK,
+            result={
+                "installed": True,
+                "generation": selector["generation"],
+                "selected_lane": selector["selected_lane"],
+                "blue": {
+                    **dict(selector["blue"]),
+                    "available": blue is not None,
+                },
+                "green": (
+                    None
+                    if selector["green"] is None
+                    else {
+                        **dict(selector["green"]),
+                        "available": green is not None,
+                    }
+                ),
+                "blue_retained": blue is not None,
+                "persistent_process": False,
+            },
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="provider dispatcher status could not be proven",
+        )
+
+
+def stage_dispatcher() -> RuntimeResult:
+    """Publish and prove green without stopping or selecting legacy blue."""
+
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
+    resolution = resolve_runtime()
+    if resolution.status is not RuntimeStatus.OK:
+        return RuntimeResult(resolution.status, error=resolution.error)
+    selector_before_raw: bytes | None = None
+    selector_snapshot_captured = False
+    lane: BrokerLaneSnapshot | None = None
+    try:
+        root = _ensure_broker_layout()
+        with _broker_control_lock(root):
+            blue_state = _prove_legacy_blue(root)
+            blue = _blue_reference(blue_state)
+            if (
+                resolution.artifact_digest == blue["artifact_sha256"]
+                and resolution.manifest_digest == blue["manifest_sha256"]
+            ):
+                return RuntimeResult(
+                    RuntimeStatus.CONFIG_ERROR,
+                    error="provider dispatcher candidate matches legacy blue",
+                )
+            _publish_broker_version(root, resolution=resolution)
+            selector_before, selector_before_raw = _read_selector_snapshot(root)
+            selector_snapshot_captured = True
+            if selector_before is not None:
+                if (
+                    selector_before["selected_lane"] != "blue"
+                    or selector_before["blue"] != blue
+                ):
+                    raise ValueError("provider dispatcher selector is not a blue baseline")
+                if selector_before["green"] is not None:
+                    expected = {
+                        "artifact_sha256": resolution.artifact_digest,
+                        "manifest_sha256": resolution.manifest_digest,
+                    }
+                    if selector_before["green"] != expected:
+                        raise ValueError("another provider dispatcher candidate is staged")
+                    lane = _load_dispatcher_broker_lane(
+                        root, expected, selector_before["generation"]
+                    )
+                    ping = invoke_dispatcher_ping()
+                    if ping.status is not RuntimeStatus.OK or not _wait_for_job_idle(
+                        lane.label
+                    ):
+                        raise RuntimeError("staged provider dispatcher is not ready")
+                    return _staged_dispatcher_result(
+                        selector=selector_before, lane=lane
+                    )
+
+            generation = (
+                1 if selector_before is None else selector_before["generation"] + 1
+            )
+            green = {
+                "artifact_sha256": resolution.artifact_digest,
+                "manifest_sha256": resolution.manifest_digest,
+            }
+            lane = _dispatcher_lane_snapshot(
+                root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+                generation=generation,
+            )
+            for path in (
+                lane.socket_path,
+                _dispatcher_mutable_path(root, lane, "json"),
+                _dispatcher_mutable_path(root, lane, "plist"),
+            ):
+                if path.exists() or path.is_symlink():
+                    raise ValueError("untracked provider dispatcher candidate exists")
+            _bundle, runtime, _manifest = _verify_published_version(
+                root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+            )
+            home = _operator_home()
+            if home is None:
+                raise ValueError("operator home is unavailable")
+            plist_document = _broker_plist_document(
+                runtime_path=runtime,
+                socket_path=lane.socket_path,
+                tmpdir=root / "tmp",
+                home=Path(home),
+                uid=os.getuid(),
+                label=lane.label,
+            )
+            plist_raw = _plist_bytes(plist_document)
+            state = _dispatcher_state_document(
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+                plist_digest=hashlib.sha256(plist_raw).hexdigest(),
+            )
+            _write_private_atomic(
+                _dispatcher_mutable_path(root, lane, "plist"),
+                plist_raw,
+                mode=0o600,
+            )
+            _write_private_atomic(
+                _dispatcher_mutable_path(root, lane, "json"),
+                _state_bytes(state),
+                mode=0o600,
+            )
+            if not _bootstrap_broker(
+                _dispatcher_mutable_path(root, lane, "plist")
+            ):
+                raise RuntimeError("provider dispatcher could not be bootstrapped")
+            if not _job_loaded(lane.label) or _exact_mode(
+                lane.socket_path, expected_type=stat.S_IFSOCK, mode=0o600
+            ) is None:
+                raise RuntimeError("provider dispatcher launchd identity is unavailable")
+            selector = {
+                "schema_version": 1,
+                "generation": generation,
+                "selected_lane": "blue",
+                "blue": blue,
+                "green": green,
+            }
+            if selector_before is not None and not _broker_selector_transition_valid(
+                selector_before, selector
+            ):
+                raise ValueError("provider dispatcher stage transition is invalid")
+            if selector_before is None and not _broker_selector_valid(selector):
+                raise ValueError("provider dispatcher initial selector is invalid")
+            _write_private_atomic(
+                root / BROKER_SELECTOR_FILENAME,
+                _selector_bytes(selector),
+                mode=0o600,
+            )
+            ping = invoke_dispatcher_ping()
+            if ping.status is not RuntimeStatus.OK:
+                raise RuntimeError("provider dispatcher activation ping failed")
+            if not _wait_for_job_idle(lane.label):
+                raise RuntimeError("provider dispatcher process exit was not observed")
+            observed = _read_broker_selector(root)
+            if observed != selector:
+                raise RuntimeError("provider dispatcher selector readback failed")
+            _load_dispatcher_broker_lane(root, green, generation)
+            return _staged_dispatcher_result(selector=selector, lane=lane)
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        restored = False
+        try:
+            root = _broker_root()
+            restored = (
+                _restore_selector_snapshot(root, selector_before_raw)
+                if selector_snapshot_captured
+                else True
+            )
+            if lane is not None:
+                restored = _cleanup_dispatcher_candidate(root, lane) and restored
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            restored = False
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher staging failed; blue remained selected"
+                if restored
+                else "provider dispatcher staging failed; candidate cleanup is unproven"
+            ),
+        )
+
+
+def commit_dispatcher_selector() -> RuntimeResult:
+    """Atomically select an already-proven green generation; never stop blue."""
+
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
+    selector_raw: bytes | None = None
+    selector_snapshot_captured = False
+    try:
+        root = _broker_root()
+        with _broker_control_lock(root):
+            selector, selector_raw = _read_selector_snapshot(root)
+            selector_snapshot_captured = True
+            if selector is None or selector.get("green") is None:
+                return RuntimeResult(
+                    RuntimeStatus.UNAVAILABLE,
+                    error="provider dispatcher candidate is unavailable",
+                )
+            lane = _load_dispatcher_broker_lane(
+                root, selector["green"], selector["generation"]
+            )
+            if selector["selected_lane"] == "green":
+                return RuntimeResult(
+                    RuntimeStatus.OK,
+                    result={
+                        "committed": True,
+                        "generation": selector["generation"],
+                        "selected_lane": "green",
+                        "blue_retained": True,
+                        "green": dict(selector["green"]),
+                    },
+                )
+            if not _job_loaded(lane.label):
+                raise RuntimeError("provider dispatcher job is unavailable")
+            ping = invoke_dispatcher_ping()
+            if ping.status is not RuntimeStatus.OK or not _wait_for_job_idle(lane.label):
+                raise RuntimeError("provider dispatcher commitment preflight failed")
+            candidate = {
+                **selector,
+                "generation": selector["generation"] + 1,
+                "selected_lane": "green",
+            }
+            if not _broker_selector_transition_valid(selector, candidate):
+                raise ValueError("provider dispatcher selector transition is invalid")
+            _write_private_atomic(
+                root / BROKER_SELECTOR_FILENAME,
+                _selector_bytes(candidate),
+                mode=0o600,
+            )
+            if _read_broker_selector(root) != candidate:
+                raise RuntimeError("provider dispatcher selector commit was not observed")
+            return RuntimeResult(
+                RuntimeStatus.OK,
+                result={
+                    "committed": True,
+                    "generation": candidate["generation"],
+                    "selected_lane": "green",
+                    "blue_retained": True,
+                    "green": dict(candidate["green"]),
+                },
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        restored = False
+        try:
+            restored = (
+                _restore_selector_snapshot(_broker_root(), selector_raw)
+                if selector_snapshot_captured
+                else True
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            restored = False
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher selector commit failed; prior generation restored"
+                if restored
+                else "provider dispatcher selector commit failed; control metadata is unproven"
+            ),
+        )
+
+
+def abort_dispatcher_candidate() -> RuntimeResult:
+    """Discard only an uncommitted green candidate; never alter blue."""
+
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
+    selector_raw: bytes | None = None
+    selector_snapshot_captured = False
+    try:
+        root = _broker_root()
+        with _broker_control_lock(root):
+            selector, selector_raw = _read_selector_snapshot(root)
+            selector_snapshot_captured = True
+            if selector is None or selector.get("green") is None:
+                return RuntimeResult(
+                    RuntimeStatus.OK,
+                    result={"aborted": False, "selected_lane": "blue"},
+                )
+            if selector["selected_lane"] != "blue":
+                return RuntimeResult(
+                    RuntimeStatus.CONFIG_ERROR,
+                    error="committed provider dispatcher cannot be aborted",
+                )
+            lane = _dispatcher_lane_snapshot(
+                root,
+                artifact_digest=selector["green"]["artifact_sha256"],
+                manifest_digest=selector["green"]["manifest_sha256"],
+                generation=selector["generation"],
+            )
+            candidate = {
+                **selector,
+                "generation": selector["generation"] + 1,
+                "green": None,
+            }
+            if not _broker_selector_transition_valid(selector, candidate):
+                raise ValueError("provider dispatcher abort transition is invalid")
+            _write_private_atomic(
+                root / BROKER_SELECTOR_FILENAME,
+                _selector_bytes(candidate),
+                mode=0o600,
+            )
+            if _read_broker_selector(root) != candidate:
+                raise RuntimeError("provider dispatcher abort was not observed")
+            if not _cleanup_dispatcher_candidate(root, lane):
+                return RuntimeResult(
+                    RuntimeStatus.PROVIDER_ERROR,
+                    result={
+                        "aborted": True,
+                        "selected_lane": "blue",
+                        "candidate_cleanup": False,
+                    },
+                    error="provider dispatcher candidate was unselected but cleanup is unproven",
+                )
+            return RuntimeResult(
+                RuntimeStatus.OK,
+                result={
+                    "aborted": True,
+                    "generation": candidate["generation"],
+                    "selected_lane": "blue",
+                    "candidate_cleanup": True,
+                },
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        restored = False
+        try:
+            restored = (
+                _restore_selector_snapshot(_broker_root(), selector_raw)
+                if selector_snapshot_captured
+                else True
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            restored = False
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher abort failed; prior selector restored"
+                if restored
+                else "provider dispatcher abort failed; selector is unproven"
+            ),
+        )
+
+
+def _rebuild_legacy_blue_files(
+    root: Path, reference: Mapping[str, Any]
+) -> tuple[dict[str, Any], bytes]:
+    _bundle, runtime, _manifest = _verify_published_version(
+        root,
+        artifact_digest=reference["artifact_sha256"],
+        manifest_digest=reference["manifest_sha256"],
+    )
+    home = _operator_home()
+    if home is None:
+        raise ValueError("operator home is unavailable")
+    plist_raw = _plist_bytes(
+        _broker_plist_document(
+            runtime_path=runtime,
+            socket_path=root / BROKER_SOCKET_FILENAME,
+            tmpdir=root / "tmp",
+            home=Path(home),
+            uid=os.getuid(),
+        )
+    )
+    state = _record_for(
+        root=root,
+        artifact_digest=reference["artifact_sha256"],
+        manifest_digest=reference["manifest_sha256"],
+        plist_digest=hashlib.sha256(plist_raw).hexdigest(),
+        previous=None,
+    )
+    return state, plist_raw
+
+
+def recover_last_committed_control_plane() -> RuntimeResult:
+    """Repair mutable control files from the committed selector reference."""
+
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
+    try:
+        root = _broker_root()
+        with _broker_control_lock(root):
+            selector = _read_broker_selector(root)
+            if selector is None:
+                return RuntimeResult(
+                    RuntimeStatus.UNAVAILABLE,
+                    error="committed provider dispatcher selector is unavailable",
+                )
+            selected = selector["selected_lane"]
+            reference = selector[selected]
+            if selected == "blue":
+                state, plist_raw = _rebuild_legacy_blue_files(root, reference)
+                # State first is deliberate.  If the second write is interrupted,
+                # the committed selector still identifies blue and the next
+                # recovery deterministically rebuilds the plist.  The inverse
+                # order recreates the observed old-plist/candidate-state split.
+                _write_private_atomic(
+                    root / "state.json", _state_bytes(state), mode=0o600
+                )
+                _write_private_atomic(
+                    root / "broker.plist", plist_raw, mode=0o600
+                )
+                if not _job_loaded(BROKER_LABEL):
+                    if not _bootstrap_broker(root / "broker.plist"):
+                        raise RuntimeError("committed blue job could not be restored")
+                observed = _read_current_broker_state(root)
+                if observed != state:
+                    raise RuntimeError("committed blue state was not restored")
+                _verify_plist_against_state(root, state)
+            else:
+                lane = _dispatcher_lane_snapshot(
+                    root,
+                    artifact_digest=reference["artifact_sha256"],
+                    manifest_digest=reference["manifest_sha256"],
+                    generation=selector["generation"],
+                )
+                _bundle, runtime, _manifest = _verify_published_version(
+                    root,
+                    artifact_digest=lane.artifact_digest,
+                    manifest_digest=lane.manifest_digest,
+                )
+                home = _operator_home()
+                if home is None:
+                    raise ValueError("operator home is unavailable")
+                plist_raw = _plist_bytes(
+                    _broker_plist_document(
+                        runtime_path=runtime,
+                        socket_path=lane.socket_path,
+                        tmpdir=root / "tmp",
+                        home=Path(home),
+                        uid=os.getuid(),
+                        label=lane.label,
+                    )
+                )
+                state = _dispatcher_state_document(
+                    artifact_digest=lane.artifact_digest,
+                    manifest_digest=lane.manifest_digest,
+                    plist_digest=hashlib.sha256(plist_raw).hexdigest(),
+                )
+                _write_private_atomic(
+                    _dispatcher_mutable_path(root, lane, "json"),
+                    _state_bytes(state),
+                    mode=0o600,
+                )
+                _write_private_atomic(
+                    _dispatcher_mutable_path(root, lane, "plist"),
+                    plist_raw,
+                    mode=0o600,
+                )
+                if not _job_loaded(lane.label):
+                    if not _bootstrap_broker(
+                        _dispatcher_mutable_path(root, lane, "plist")
+                    ):
+                        raise RuntimeError("committed green job could not be restored")
+                _load_dispatcher_broker_lane(
+                    root, reference, selector["generation"]
+                )
+            return RuntimeResult(
+                RuntimeStatus.OK,
+                result={
+                    "recovered": True,
+                    "generation": selector["generation"],
+                    "selected_lane": selected,
+                    "desired_provider_binaries_changed": False,
+                },
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"recovered": False},
+            error="last committed provider control plane could not be recovered",
+        )
+
+
+BROKER_RETIRE_QUIESCENCE_SECONDS = 1.0
+
+
+def _observe_job_quiescent(label: str) -> bool:
+    if not _job_process_idle(label):
+        return False
+    time.sleep(BROKER_RETIRE_QUIESCENCE_SECONDS)
+    return _job_process_idle(label)
+
+
+def drain_retiring_dispatcher() -> RuntimeResult:
+    """Retire blue only after green is committed and blue is quiescent."""
+
+    blocked = _broker_lifecycle_seatbelt_block()
+    if blocked is not None:
+        return blocked
+    try:
+        root = _broker_root()
+        with _broker_control_lock(root):
+            selector = _read_broker_selector(root)
+            if (
+                selector is None
+                or selector["selected_lane"] != "green"
+                or selector.get("green") is None
+            ):
+                return RuntimeResult(
+                    RuntimeStatus.CONFIG_ERROR,
+                    error="green provider dispatcher is not committed",
+                )
+            lane = _load_dispatcher_broker_lane(
+                root, selector["green"], selector["generation"]
+            )
+            if not _job_loaded(lane.label):
+                raise RuntimeError("committed green job is unavailable")
+            ping = invoke_dispatcher_ping()
+            if ping.status is not RuntimeStatus.OK:
+                raise RuntimeError("committed green dispatcher is unavailable")
+            state_path = root / "state.json"
+            plist_path = root / "broker.plist"
+            socket_path = root / BROKER_SOCKET_FILENAME
+            if not state_path.exists() and not plist_path.exists() and not socket_path.exists():
+                return RuntimeResult(
+                    RuntimeStatus.OK,
+                    result={
+                        "selected_lane": "green",
+                        "blue_retired": True,
+                        "versions_retained": True,
+                    },
+                )
+            if not _observe_job_quiescent(BROKER_LABEL):
+                return RuntimeResult(
+                    RuntimeStatus.UNAVAILABLE,
+                    error="legacy blue dispatcher is not quiescent",
+                )
+            if not _bootout_broker(plist_path) or _job_loaded(BROKER_LABEL):
+                raise RuntimeError("legacy blue dispatcher could not be stopped")
+            for path in (state_path, plist_path, socket_path):
+                _unlink_private_durable(path)
+            if any(path.exists() or path.is_symlink() for path in (state_path, plist_path, socket_path)):
+                raise RuntimeError("legacy blue dispatcher retirement was not observed")
+            return RuntimeResult(
+                RuntimeStatus.OK,
+                result={
+                    "selected_lane": "green",
+                    "blue_retired": True,
+                    "versions_retained": True,
+                },
+            )
+    except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"blue_retired": False},
+            error="legacy blue dispatcher retirement could not be proven",
+        )
+
+
 def _activate_broker_record(
     root: Path,
     *,
@@ -2215,12 +4045,19 @@ def _activate_broker_record(
                 prior_raw = _plist_bytes(prior_document)
                 if hashlib.sha256(prior_raw).hexdigest() != restore_record["plist_sha256"]:
                     raise ValueError("prior provider broker plist digest mismatch")
-                _write_private_atomic(plist_path, prior_raw, mode=0o600)
-                if not _bootstrap_broker(plist_path) or not _broker_job_loaded():
-                    raise RuntimeError("prior provider broker could not be restored")
+                # Publish the committed record before its derived plist.  The
+                # previous order bootstrapped the prior plist while target
+                # state.json was still visible, producing the observed split
+                # after a failed update.  A mid-write interruption is now
+                # recoverable from the committed record (and, once seeded, the
+                # blue selector reference) without mistaking candidate state
+                # for the restored control plane.
                 _write_private_atomic(
                     root / "state.json", _state_bytes(restore_record), mode=0o600
                 )
+                _write_private_atomic(plist_path, prior_raw, mode=0o600)
+                if not _bootstrap_broker(plist_path) or not _broker_job_loaded():
+                    raise RuntimeError("prior provider broker could not be restored")
                 restored = True
             else:
                 for candidate in (
@@ -3100,3 +4937,136 @@ def invoke(*, envelope: object) -> RuntimeResult:
         timeout_ms=envelope.timeout_ms,
         envelope=envelope,
     )
+
+
+def _parse_adoption_canary_response(
+    response: object, *, request: Mapping[str, Any]
+) -> RuntimeResult:
+    if type(response) is not dict:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="adoption canary response contract mismatch",
+        )
+    status = response.get("status")
+    if status != "ok":
+        mapping = {
+            "unavailable": RuntimeStatus.UNAVAILABLE,
+            "auth_error": RuntimeStatus.AUTH_ERROR,
+            "quota_error": RuntimeStatus.QUOTA_ERROR,
+            "containment_error": RuntimeStatus.CONTAINMENT_ERROR,
+            "cancelled": RuntimeStatus.CANCELLED,
+            "input_limit": RuntimeStatus.INPUT_LIMIT,
+            "timeout": RuntimeStatus.TIMEOUT,
+            "output_limit": RuntimeStatus.OUTPUT_LIMIT,
+            "teardown_error": RuntimeStatus.TEARDOWN_ERROR,
+            "provider_error": RuntimeStatus.PROVIDER_ERROR,
+            "integrity_error": RuntimeStatus.INTEGRITY_ERROR,
+            "protocol_error": RuntimeStatus.PROTOCOL_ERROR,
+            "resource_error": RuntimeStatus.UNAVAILABLE,
+            "canary_blocked": RuntimeStatus.CANARY_BLOCKED,
+        }
+        if (
+            set(response) != {"protocol_version", "request_id", "status", "error"}
+            or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+            or response.get("request_id") != request.get("request_id")
+            or status not in mapping
+            or type(response.get("error")) is not str
+            or len(response["error"].encode("utf-8")) > 4096
+        ):
+            return RuntimeResult(
+                RuntimeStatus.PROTOCOL_ERROR,
+                error="adoption canary failure contract mismatch",
+            )
+        return RuntimeResult(mapping[status], error=response["error"])
+    result = response.get("result")
+    provenance = response.get("provenance")
+    if (
+        set(response)
+        != {"protocol_version", "request_id", "status", "result", "provenance"}
+        or not _exact_int(response.get("protocol_version"), PROTOCOL_VERSION)
+        or response.get("request_id") != request.get("request_id")
+        or type(result) is not dict
+        or set(result)
+        != {
+            "provider",
+            "registry_generation",
+            "attempt_generation",
+            "passed_routes",
+        }
+        or result.get("provider") != request.get("provider")
+        or result.get("registry_generation") != request.get("registry_generation")
+        or result.get("attempt_generation") != request.get("attempt_generation")
+        or result.get("passed_routes") != request.get("routes")
+        or type(provenance) is not dict
+        or set(provenance)
+        != {
+            "operation",
+            "binary_sha256",
+            "worker_sha256",
+            "adapter_contract_generation",
+        }
+        or provenance.get("operation") != "adoption_canary"
+        or provenance.get("binary_sha256") != request.get("binary_sha256")
+        or provenance.get("worker_sha256") != request.get("worker_sha256")
+        or provenance.get("adapter_contract_generation")
+        != request.get("adapter_contract_generation")
+    ):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="adoption canary response contract mismatch",
+        )
+    return RuntimeResult(
+        RuntimeStatus.OK,
+        result=dict(result),
+        provenance=dict(provenance),
+    )
+
+
+def invoke_adoption_canary(*, request: object) -> RuntimeResult:
+    try:
+        payload = _adoption_canary_document(request)
+        document = json.loads(payload.decode("ascii"))
+        root = _broker_root()
+        selector = _read_broker_selector(root)
+        if selector is None or selector.get("green") is None:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                error="staged provider dispatcher is unavailable",
+            )
+        lane = _load_dispatcher_broker_lane(
+            root, selector["green"], selector["generation"]
+        )
+    except (OSError, TypeError, ValueError, RecursionError):
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher identity is unproven",
+        )
+    deadline = time.monotonic() + document["timeout_ms"] / 1000.0
+    try:
+        now = time.monotonic()
+        handshake_deadline = min(
+            deadline,
+            now + DISPATCHER_MAX_HANDSHAKE_SECONDS,
+        )
+        response = _invoke_dispatcher_bridge(
+            lane=lane,
+            request=document,
+            deadline=deadline,
+            handshake_deadline=handshake_deadline,
+        )
+    except _DispatcherPreRequestError:
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="staged provider dispatcher bridge is unproven",
+        )
+    except _DispatcherPostRequestError:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="staged provider dispatcher failed after canary acceptance",
+        )
+    except (OSError, TypeError, ValueError):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="adoption canary exchange failed",
+        )
+    return _parse_adoption_canary_response(response, request=document)

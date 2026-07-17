@@ -285,6 +285,40 @@ enabled = true
         self.assertEqual(inventory.active_packages, ())
         self.assertEqual(inventory.installed_packages, ())
 
+    def test_sanctioned_two_selector_agent_collab_overlap_does_not_trip_legacy_duplicate_block(self) -> None:
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            """
+[plugins."agent-collab@agent-collab-dev"]
+enabled = true
+
+[plugins."agent-collab@agent-collab-dev-candidate"]
+enabled = true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+        inventory = self.doctor.inventory_legacy_packages(self.home)
+        self.assertEqual(inventory.active_packages, ())
+        self.assertEqual(inventory.installed_packages, ())
+        self.assertEqual(inventory.errors, ())
+
+        outcome = self._preflight(
+            governance=False,
+            explicit_config={
+                "primary_id": "codex",
+                "primary_family": "openai",
+                "active_model": "gpt-5",
+                "host_runtime": "codex",
+                "session_identifier": "candidate-overlap",
+            },
+            active_legacy_packages=inventory.active_packages,
+            safe_mode=False,
+        )
+        self.assertEqual(outcome.status, self.policy.PreflightStatus.OK)
+        self.assertNotEqual(outcome.status, self.policy.PreflightStatus.DUPLICATE_BLOCKED)
+
     def test_python310_fallback_rejects_unsupported_plugin_toml(self) -> None:
         config = self.home / ".codex" / "config.toml"
         config.parent.mkdir(parents=True)
