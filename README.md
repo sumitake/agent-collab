@@ -30,8 +30,10 @@ Contributors need no access to the private build/sign system. See
 
 - Accept the exact Gemini governance proof version emitted by provider runtime
   2.0.0 while keeping that proof contract separate from the public bundle
-  manifest contract. Legacy and crossed version tuples continue to fail closed,
-  including when their proof digests are otherwise valid.
+  manifest contract. Governance response provenance must identify that same
+  compatible runtime version. Legacy, crossed, and mixed-provenance tuples
+  continue to fail closed, including when their proof digests are otherwise
+  valid.
 
 ## v4.0.4 highlights
 

@@ -115,7 +115,10 @@ controlling PTY, serialized shared state, and write containment. Its separate
 long-context results are explicitly non-governance evidence. The public client
 accepts exactly provider runtime `2.0.0` with governance proof contract `2`;
 those proof-domain versions remain separate from public bundle manifest
-contract `3`, and legacy or crossed tuples fail closed.
+contract `3`. Governance response provenance must identify that same compatible
+runtime version; legacy, crossed, or mixed-provenance tuples fail closed. This
+is a response-consistency check inside the broker transport trust boundary, not
+a separate provenance-attestation mechanism.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**,
