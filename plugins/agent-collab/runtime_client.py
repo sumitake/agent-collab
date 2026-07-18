@@ -274,7 +274,11 @@ FIXED_AUTHOR_MODELS = {
 }
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_DISPLAY = "Gemini 3.1 Pro (High)"
-GEMINI_GOVERNANCE_RUNTIME_VERSION = "1.2.0"
+GEMINI_GOVERNANCE_PROOF_RUNTIME_VERSION = "2.0.0"
+GEMINI_GOVERNANCE_PROOF_CONTRACT_VERSION = 2
+GEMINI_GOVERNANCE_HOST_RUNTIME = (
+    f"agent-collab-provider-runtime/{GEMINI_GOVERNANCE_PROOF_RUNTIME_VERSION}"
+)
 GEMINI_GOVERNANCE_CONTAINMENT = "write_contained_shared_home"
 GEMINI_GOVERNANCE_PROOF_KEYS = frozenset(
     {
@@ -4839,8 +4843,8 @@ def _gemini_governance_execute_result_valid(
         "authority": "read_only",
         "transport": "broker",
         "backend": "agy",
-        "runtime_version": GEMINI_GOVERNANCE_RUNTIME_VERSION,
-        "contract_version": CONTRACT_VERSION,
+        "runtime_version": GEMINI_GOVERNANCE_PROOF_RUNTIME_VERSION,
+        "contract_version": GEMINI_GOVERNANCE_PROOF_CONTRACT_VERSION,
         "artifact_sha256": envelope.artifact_sha256,
         "artifact_author_model": envelope.artifact_author_model,
         "artifact_author_family": envelope.artifact_author_family,
@@ -4899,6 +4903,7 @@ def _gemini_result_valid(
             or envelope.primary_family == "google"
             or envelope.artifact_present is not True
             or envelope.artifact_author_family in {"google", "unknown"}
+            or provenance.get("host_runtime") != GEMINI_GOVERNANCE_HOST_RUNTIME
         ):
             return False
         policy = _load_host_policy()
