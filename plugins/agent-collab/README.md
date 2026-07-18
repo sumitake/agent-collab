@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.0.4**
+Current: **4.0.5**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -50,7 +50,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.0.4 package.
+identify this same 4.0.5 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -112,7 +112,10 @@ setup reserve returns typed `timeout` before provider setup.
 Gemini uses the managed agy backend with canonical passwd HOME, a mandatory
 controlling PTY, serialized shared state, and write containment. Its separate
 `governance` action emits complete artifact-bound broker proof; advisory and
-long-context results are explicitly non-governance evidence.
+long-context results are explicitly non-governance evidence. The public client
+accepts exactly provider runtime `2.0.0` with governance proof contract `2`;
+those proof-domain versions remain separate from public bundle manifest
+contract `3`, and legacy or crossed tuples fail closed.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**,

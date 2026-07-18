@@ -232,12 +232,19 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "authority": envelope.authority,
             "author_model": "google/gemini-3.1-pro",
             "author_family": "google",
-            "host_runtime": "agent-collab-provider-runtime/1.2.0",
+            "host_runtime": "agent-collab-provider-runtime/2.0.0",
             "session_identifier": "gemini-session",
             "observation_sequence": 1,
         }
 
-    def _proof(self, envelope, text: str) -> dict[str, object]:
+    def _proof(
+        self,
+        envelope,
+        text: str,
+        *,
+        runtime_version: str = "2.0.0",
+        contract_version: int = 2,
+    ) -> dict[str, object]:
         proof: dict[str, object] = {
             "version": 1,
             "request_id": envelope.request_id,
@@ -245,8 +252,8 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "authority": "read_only",
             "transport": "broker",
             "backend": "agy",
-            "runtime_version": "1.2.0",
-            "contract_version": 3,
+            "runtime_version": runtime_version,
+            "contract_version": contract_version,
             "artifact_sha256": envelope.artifact_sha256,
             "artifact_author_model": envelope.artifact_author_model,
             "artifact_author_family": envelope.artifact_author_family,
@@ -271,7 +278,14 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         proof["proof_sha256"] = hashlib.sha256(canonical).hexdigest()
         return proof
 
-    def _response(self, envelope, *, text: str = "approved") -> dict[str, object]:
+    def _response(
+        self,
+        envelope,
+        *,
+        text: str = "approved",
+        runtime_version: str = "2.0.0",
+        contract_version: int = 2,
+    ) -> dict[str, object]:
         result = {
             "text": text,
             "containment_level": "write_contained_shared_home",
@@ -285,7 +299,12 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "artifact_author_model": envelope.artifact_author_model,
             "artifact_author_family": envelope.artifact_author_family,
         }
-        result["governance_proof"] = self._proof(envelope, text)
+        result["governance_proof"] = self._proof(
+            envelope,
+            text,
+            runtime_version=runtime_version,
+            contract_version=contract_version,
+        )
         return {
             "protocol_version": 2,
             "request_id": envelope.request_id,
@@ -321,6 +340,12 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             lambda response: response["result"]["governance_proof"].__setitem__(
                 "transport", "direct"
             ),
+            lambda response: response["result"]["governance_proof"].pop(
+                "runtime_version"
+            ),
+            lambda response: response["result"]["governance_proof"].__setitem__(
+                "unexpected", True
+            ),
         )
         for mutate in mutators:
             with self.subTest(mutate=mutate):
@@ -329,6 +354,38 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
                 rejected = self._parse(response, envelope)
                 self.assertEqual(
                     rejected.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+                )
+
+    def test_execute_accepts_provider_runtime_v2_governance_proof(self) -> None:
+        envelope = self._envelope()
+        response = self._response(
+            envelope,
+            runtime_version="2.0.0",
+            contract_version=2,
+        )
+        result = self._parse(response, envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+
+    def test_execute_rejects_legacy_or_crossed_proof_versions(self) -> None:
+        envelope = self._envelope()
+        for runtime_version, contract_version in (
+            ("1.2.0", 3),
+            ("2.0.0", 3),
+            ("1.2.0", 2),
+        ):
+            with self.subTest(
+                runtime_version=runtime_version,
+                contract_version=contract_version,
+            ):
+                response = self._response(
+                    envelope,
+                    runtime_version=runtime_version,
+                    contract_version=contract_version,
+                )
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
                 )
 
     def test_governance_readiness_requires_shared_home_pty_proof_tuple(self) -> None:

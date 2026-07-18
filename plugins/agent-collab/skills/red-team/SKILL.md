@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 4.0.4
+version: 4.0.5
 defaults:
   tier: Advanced
   effort: high
