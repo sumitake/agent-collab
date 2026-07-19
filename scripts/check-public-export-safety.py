@@ -588,7 +588,7 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             "artifacts",
         }
         or type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 2
+        or manifest["schema_version"] != 3
         or type(manifest.get("protocol_version")) is not int
         or manifest["protocol_version"] != 2
         or type(manifest.get("contract_version")) is not int
@@ -640,6 +640,8 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             "entrypoint",
             "size",
             "sha256",
+            "provider_runtime_version",
+            "route_contract_version",
             "signing",
             "files",
             "contracts",
@@ -651,6 +653,8 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         or item.get("path")
         != "runtime/darwin-arm64/agent-collab-runtime.bundle"
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
+        or item.get("provider_runtime_version") != "2.0.0"
+        or item.get("route_contract_version") != 2
         or type(item.get("size")) is not int
         or item["size"] != sum(record["size"] for record in records)
         or item.get("sha256") != bundle_identity

@@ -193,6 +193,10 @@ class RuntimeClientTests(unittest.TestCase):
         *,
         body: str | None = None,
         contracts: list[tuple[str, str]] | None = None,
+        schema_version: int = 3,
+        runtime_protocol_version: int = 2,
+        provider_runtime_version: str = "2.0.0",
+        route_contract_version: int = 2,
     ) -> Path:
         system = "darwin"
         arch = "arm64"
@@ -264,8 +268,8 @@ print(json.dumps({
         ]
         bundle.chmod(0o500)
         manifest = {
-            "schema_version": 2,
-            "protocol_version": self.client.PROTOCOL_VERSION,
+            "schema_version": schema_version,
+            "protocol_version": runtime_protocol_version,
             "contract_version": 3,
             "broker_protocol_version": 2,
             "channel": "production",
@@ -299,6 +303,13 @@ print(json.dumps({
                 }
             ],
         }
+        if schema_version == 3:
+            manifest["artifacts"][0].update(
+                {
+                    "provider_runtime_version": provider_runtime_version,
+                    "route_contract_version": route_contract_version,
+                }
+            )
         (self.root / "runtime-manifest.json").write_text(
             json.dumps(manifest), encoding="utf-8"
         )
@@ -443,7 +454,7 @@ print(json.dumps({{
 
     def test_empty_manifest_is_unavailable_before_platform_rejection(self) -> None:
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
@@ -458,6 +469,181 @@ print(json.dumps({{
         ), mock.patch.object(self.client, "normalized_arch", return_value="x86_64"):
             result = self.client.resolve_runtime()
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+
+    def test_schema3_manifest_carries_the_authenticated_runtime_contract_anchor(
+        self,
+    ) -> None:
+        self._fixture(
+            provider_runtime_version="2.0.0",
+            route_contract_version=2,
+        )
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            resolution = self.client.resolve_runtime()
+
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.OK, resolution.error)
+        self.assertEqual(
+            resolution.anchor,
+            self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+
+    def test_manifest_classifier_enforces_the_closed_compatibility_matrix(self) -> None:
+        self._fixture()
+        manifest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+
+        current, error = self.client._manifest_entry(
+            manifest,
+            role="candidate",
+            dispatcher_protocol_version=2,
+        )
+        self.assertIsNotNone(current, error)
+        self.assertEqual(
+            current["_anchor"],
+            self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+
+        legacy = json.loads(json.dumps(manifest))
+        legacy["schema_version"] = 2
+        legacy["artifacts"][0].pop("provider_runtime_version")
+        legacy["artifacts"][0].pop("route_contract_version")
+        selected, error = self.client._manifest_entry(
+            legacy,
+            role="selected",
+            dispatcher_protocol_version=1,
+        )
+        self.assertIsNotNone(selected, error)
+        self.assertEqual(
+            selected["_anchor"],
+            self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        selected_broker, error = self.client._manifest_entry(
+            legacy,
+            role="selected",
+            transport="broker",
+            dispatcher_protocol_version=None,
+        )
+        self.assertIsNotNone(selected_broker, error)
+        self.assertEqual(
+            selected_broker["_anchor"],
+            self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        for role, dispatcher_protocol in (
+            ("candidate", 1),
+            ("selected", 2),
+            ("lifecycle", 1),
+        ):
+            with self.subTest(role=role, dispatcher_protocol=dispatcher_protocol):
+                rejected, _error = self.client._manifest_entry(
+                    legacy,
+                    role=role,
+                    dispatcher_protocol_version=dispatcher_protocol,
+                )
+                self.assertIsNone(rejected)
+
+        lifecycle = json.loads(json.dumps(legacy))
+        lifecycle["protocol_version"] = 1
+        accepted_lifecycle, error = self.client._manifest_entry(
+            lifecycle,
+            role="lifecycle",
+            dispatcher_protocol_version=None,
+        )
+        self.assertIsNotNone(accepted_lifecycle, error)
+        self.assertIsNone(accepted_lifecycle["_anchor"])
+        for role in ("candidate", "selected", "retained"):
+            with self.subTest(role=role):
+                rejected, _error = self.client._manifest_entry(
+                    lifecycle,
+                    role=role,
+                    dispatcher_protocol_version=1,
+                )
+                self.assertIsNone(rejected)
+
+    def test_distribution_hook_cannot_bypass_schema_anchor_or_role_matrix(self) -> None:
+        self._fixture()
+        manifest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+        item = manifest["artifacts"][0]
+        manifest["channel"] = "development"
+        for record in item["files"]:
+            record["signing_profile"] = "development_adhoc"
+        item["sha256"] = self.client.runtime_bundle.compute_bundle_identity(
+            item["files"]
+        )
+        development_signing = {
+            "mode": "adhoc",
+            "hardened_runtime": True,
+            "require_notarization": False,
+            "library_validation": "disabled_for_adhoc_entrypoint",
+            "entrypoint_entitlements_sha256": "a" * 64,
+        }
+        item["signing"] = development_signing
+        normalized = {
+            "mode": "adhoc",
+            "identity": "",
+            "team_id": "",
+            "require_notarization": False,
+            "hardened_runtime": True,
+            "secure_timestamp": False,
+        }
+
+        def development_policy(*, channel, signing, file_signing_profiles):
+            self.assertEqual(channel, "development")
+            self.assertEqual(signing, development_signing)
+            self.assertEqual(file_signing_profiles, ("development_adhoc",))
+            return dict(normalized)
+
+        rejected, _error = self.client._manifest_entry(manifest)
+        self.assertIsNone(rejected)
+        with mock.patch.object(
+            self.client,
+            "_distribution_signing_policy",
+            side_effect=development_policy,
+        ):
+            accepted, error = self.client._manifest_entry(manifest)
+            self.assertIsNotNone(accepted, error)
+            self.assertEqual(accepted["signing"], normalized)
+            self.assertEqual(
+                accepted["_anchor"],
+                self.client.RuntimeContractAnchor("2.0.0", 2),
+            )
+
+            invalid_schema = json.loads(json.dumps(manifest))
+            invalid_schema["schema_version"] = 2
+            invalid_anchor = json.loads(json.dumps(manifest))
+            invalid_anchor["artifacts"][0].pop("route_contract_version")
+            for invalid, kwargs in (
+                (invalid_schema, {}),
+                (invalid_anchor, {}),
+                (
+                    manifest,
+                    {
+                        "role": "selected",
+                        "transport": "broker",
+                        "dispatcher_protocol_version": None,
+                    },
+                ),
+            ):
+                bypassed, _error = self.client._manifest_entry(invalid, **kwargs)
+                self.assertIsNone(bypassed)
+
+        with mock.patch.object(
+            self.client,
+            "_distribution_signing_policy",
+            return_value={**normalized, "unexpected": True},
+        ):
+            malformed, _error = self.client._manifest_entry(manifest)
+        self.assertIsNone(malformed)
+        with mock.patch.object(
+            self.client,
+            "_distribution_signing_policy",
+            side_effect=RuntimeError("injected policy failure"),
+        ):
+            failed_closed, _error = self.client._manifest_entry(manifest)
+        self.assertIsNone(failed_closed)
 
     def test_invalid_manifest_is_rejected_before_platform_rejection(self) -> None:
         (self.root / "runtime-manifest.json").write_text("{}", encoding="utf-8")
@@ -603,8 +789,9 @@ print(json.dumps({{
                 self.client._adoption_canary_document(candidate)
 
     def test_dispatcher_handshake_is_request_free_and_digest_bound(self) -> None:
+        request = self._adoption_canary_request()
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="candidate",
             generation=7,
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
@@ -613,6 +800,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
             ),
             socket_path=self.root / "dispatcher.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         nonce = base64.urlsafe_b64encode(b"n" * 32).decode("ascii").rstrip("=")
         hello = self.client._dispatcher_build_hello(
@@ -620,10 +810,17 @@ print(json.dumps({{
             client_pid=4242,
             nonce=nonce,
             deadline_monotonic_ms=123_456,
+            request=request,
         )
         self.assertEqual(set(hello), self.client.DISPATCHER_HELLO_KEYS)
         self.assertEqual(hello["frame_type"], "hello")
         self.assertNotIn("request", hello)
+        canonical_request = self.client._dispatcher_canonical_json(request)
+        self.assertEqual(hello["request_size"], len(canonical_request))
+        self.assertEqual(
+            hello["request_sha256"], hashlib.sha256(canonical_request).hexdigest()
+        )
+        self.assertEqual(hello["execution_key"], "gemini")
         hello_sha256 = hashlib.sha256(
             json.dumps(
                 hello,
@@ -645,7 +842,6 @@ print(json.dumps({{
             expected_dispatcher_pid=9001,
             now_monotonic=100.0,
         )
-        request = self._adoption_canary_request()
         frame = self.client._dispatcher_build_request_frame(
             session=session,
             request=request,
@@ -654,6 +850,27 @@ print(json.dumps({{
         self.assertEqual(frame["request"], request)
         self.assertEqual(frame["hello_sha256"], hello_sha256)
         self.assertNotEqual(frame["ready_sha256"], hello_sha256)
+
+        mappings = {
+            ("execute", "gemini", None): "gemini",
+            ("execute", "grok", None): "grok",
+            ("execute", "composer", None): "grok",
+            ("execute", "opencode", None): "opencode",
+            ("execute", "codex", None): "codex",
+            ("adoption_canary", None, "grok"): "grok",
+            ("dispatcher_lock_probe", None, "opencode"): "opencode",
+            ("dispatcher_ping", None, None): "dispatcher_ping",
+        }
+        for (operation, route, provider), expected in mappings.items():
+            candidate = {"operation": operation}
+            if route is not None:
+                candidate["route"] = route
+            if provider is not None:
+                candidate["provider"] = provider
+            with self.subTest(candidate=candidate):
+                self.assertEqual(
+                    self.client._dispatcher_execution_key(candidate), expected
+                )
 
         replay = dict(ready, lane_token="0" * 32)
         with self.assertRaises(ValueError):
@@ -672,7 +889,7 @@ print(json.dumps({{
             )
         )
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="selected",
             generation=7,
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
@@ -681,12 +898,16 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
             ),
             socket_path=self.root / "dispatcher.sock",
+            transport="dispatcher",
+            protocol_version=1,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         hello = self.client._dispatcher_build_hello(
             lane=lane,
             client_pid=4242,
             nonce=fixture["hello"]["nonce"],
             deadline_monotonic_ms=123_456,
+            request=fixture["request"]["request"],
         )
         session = self.client._dispatcher_accept_ready(
             hello,
@@ -800,7 +1021,7 @@ print(json.dumps({{
         self,
     ) -> None:
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="selected",
             generation=7,
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
@@ -809,6 +1030,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
             ),
             socket_path=self.root / "dispatcher.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         peer = mock.Mock()
         waiter = mock.Mock(return_value=(0, 9001))
@@ -858,6 +1082,7 @@ print(json.dumps({{
             client_pid=os.getpid(),
             nonce=nonce,
             deadline_monotonic_ms=130_000,
+            request=request,
         )
         ready = {
             **hello,
@@ -929,6 +1154,62 @@ print(json.dumps({{
             )
         self.assertEqual(peer.sendall.call_count, 1)
 
+    def test_dispatcher2_ready_consumes_fallback_but_dispatcher1_keeps_legacy_boundary(
+        self,
+    ) -> None:
+        request = self._adoption_canary_request()
+        nonce = base64.urlsafe_b64encode(b"n" * 32).decode("ascii").rstrip("=")
+        for protocol_version, expected_error in (
+            (2, self.client._DispatcherPostRequestError),
+            (1, self.client._DispatcherPreRequestError),
+        ):
+            lane = self.client.BrokerLaneSnapshot(
+                name="selected",
+                generation=7,
+                artifact_digest="a" * 64,
+                manifest_digest="b" * 64,
+                label=(
+                    "com.agent-collab.provider-dispatcher."
+                    + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
+                ),
+                socket_path=self.root / f"dispatcher-{protocol_version}.sock",
+                transport="dispatcher",
+                protocol_version=protocol_version,
+                anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+            )
+            hello = self.client._dispatcher_build_hello(
+                lane=lane,
+                client_pid=os.getpid(),
+                nonce=nonce,
+                deadline_monotonic_ms=130_000,
+                request=request,
+            )
+            ready = {
+                **hello,
+                "frame_type": "ready",
+                "dispatcher_pid": 9001,
+                "hello_sha256": self.client._dispatcher_frame_sha256(hello),
+            }
+            peer = mock.Mock()
+            with self.subTest(protocol_version=protocol_version), mock.patch.object(
+                self.client, "_prove_dispatcher_launchd_peer", return_value=9001
+            ), mock.patch.object(
+                self.client, "_read_broker_frame", return_value=ready
+            ), mock.patch.object(
+                self.client.time,
+                "monotonic",
+                side_effect=(100.0, 100.0, 100.0, 131.0),
+            ), mock.patch.object(
+                self.client.os, "urandom", return_value=b"n" * 32
+            ), self.assertRaises(expected_error):
+                self.client._dispatcher_exchange(
+                    peer=peer,
+                    lane=lane,
+                    request=request,
+                    deadline=130.0,
+                )
+            self.assertEqual(peer.sendall.call_count, 1)
+
     def test_dispatcher_exchange_caps_handshake_without_shortening_request(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
             name="green",
@@ -949,6 +1230,7 @@ print(json.dumps({{
             client_pid=os.getpid(),
             nonce=nonce,
             deadline_monotonic_ms=400_000,
+            request=request,
         )
         ready = {
             **hello,
@@ -994,7 +1276,7 @@ print(json.dumps({{
 
     def test_dispatcher_peer_proof_rejects_uid_pid_path_and_socket_drift(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="selected",
             generation=7,
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
@@ -1003,6 +1285,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
             ),
             socket_path=self.root / "dispatcher.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         runtime = self.root / "runtime"
         runtime.write_bytes(b"runtime")
@@ -1011,8 +1296,8 @@ print(json.dumps({{
         process = mock.Mock(side_effect=[("10:1", runtime), ("10:1", runtime)])
         published = mock.Mock(
             side_effect=[
-                (self.root / "bundle", runtime, self.root / "manifest"),
-                (self.root / "bundle", runtime, self.root / "manifest"),
+                (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
+                (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
             ]
         )
 
@@ -1031,8 +1316,8 @@ print(json.dumps({{
                 ),
                 published_verifier=mock.Mock(
                     side_effect=[
-                        (self.root / "bundle", runtime, self.root / "manifest"),
-                        (self.root / "bundle", runtime, self.root / "manifest"),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
                     ]
                 ),
                 root=self.root,
@@ -1065,8 +1350,8 @@ print(json.dumps({{
             ),
             published_verifier=mock.Mock(
                 side_effect=[
-                    (self.root / "bundle", runtime, self.root / "manifest"),
-                    (self.root / "bundle", runtime, self.root / "manifest"),
+                    (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
+                    (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
                 ]
             ),
             root=self.root,
@@ -1091,6 +1376,7 @@ print(json.dumps({{
                         self.root / "bundle",
                         runtime,
                         self.root / "manifest",
+                        lane.anchor,
                     )
                 ),
                 root=self.root,
@@ -1112,8 +1398,8 @@ print(json.dumps({{
                 ),
                 published_verifier=mock.Mock(
                     side_effect=[
-                        (self.root / "bundle", runtime, self.root / "manifest"),
-                        (self.root / "bundle", runtime, self.root / "manifest"),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
                     ]
                 ),
                 root=self.root,
@@ -1132,8 +1418,8 @@ print(json.dumps({{
                 "socket_observer": mock.Mock(side_effect=[socket_identity, socket_identity]),
                 "published_verifier": mock.Mock(
                     side_effect=[
-                        (self.root / "bundle", runtime, self.root / "manifest"),
-                        (self.root / "bundle", runtime, self.root / "manifest"),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
+                        (self.root / "bundle", runtime, self.root / "manifest", lane.anchor),
                     ]
                 ),
             }
@@ -1146,7 +1432,7 @@ print(json.dumps({{
     def test_adoption_canary_uses_only_the_staged_green_lane(self) -> None:
         request = self._adoption_canary_request()
         green = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="candidate",
             generation=7,
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
@@ -1155,6 +1441,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("a" * 64, "b" * 64)
             ),
             socket_path=self.root / "green.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         selector = self._selector_document(
             generation=7,
@@ -1182,9 +1471,11 @@ print(json.dumps({{
         with mock.patch.object(
             self.client, "_broker_root", return_value=self.root
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selector
+            self.client,
+            "_read_broker_selector_v2",
+            return_value={"candidate": selector["green"]},
         ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
+            self.client, "_load_selector_v2_lane", return_value=green
         ), mock.patch.object(
             self.client, "_invoke_dispatcher_bridge", return_value=response
         ) as bridge:
@@ -1200,12 +1491,12 @@ print(json.dumps({{
         )
         self.assertEqual(request["protocol_version"], self.client.PROTOCOL_VERSION)
 
-        dispatcher_version_response = {
+        legacy_dispatcher_response = {
             **response,
-            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+            "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
         }
         rejected = self.client._parse_adoption_canary_response(
-            dispatcher_version_response,
+            legacy_dispatcher_response,
             request=bridge.call_args.kwargs["request"],
         )
         self.assertEqual(rejected.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
@@ -1259,6 +1550,156 @@ print(json.dumps({{
             },
             "green": green,
         }
+
+    def _selector_v2_document(
+        self,
+        *,
+        generation: int = 1,
+        v1_sha256: str = "e" * 64,
+        selected: dict[str, object] | None = None,
+        retained: dict[str, object] | None = None,
+        candidate: dict[str, object] | None = None,
+        lifecycle: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        def lane(
+            artifact: str,
+            manifest: str,
+            *,
+            transport: str,
+            protocol_version: int,
+            lane_generation: int,
+        ) -> dict[str, object]:
+            return {
+                "artifact_sha256": artifact,
+                "manifest_sha256": manifest,
+                "transport": transport,
+                "protocol_version": protocol_version,
+                "lane_generation": lane_generation,
+            }
+
+        return {
+            "schema_version": 2,
+            "generation": generation,
+            "selector_v1_sha256": v1_sha256,
+            "selected": selected
+            or lane(
+                "a" * 64,
+                "b" * 64,
+                transport="dispatcher",
+                protocol_version=1,
+                lane_generation=28,
+            ),
+            "retained": retained,
+            "candidate": candidate
+            or lane(
+                "c" * 64,
+                "d" * 64,
+                transport="dispatcher",
+                protocol_version=2,
+                lane_generation=29,
+            ),
+            "lifecycle": lifecycle
+            or lane(
+                "1" * 64,
+                "2" * 64,
+                transport="broker",
+                protocol_version=1,
+                lane_generation=0,
+            ),
+        }
+
+    def test_selector_v2_has_independent_roles_and_closed_transitions(self) -> None:
+        staged = self._selector_v2_document()
+        self.assertTrue(self.client._broker_selector_v2_valid(staged))
+        committed = self._selector_v2_document(
+            generation=2,
+            selected=dict(staged["candidate"]),
+            retained=dict(staged["selected"]),
+            candidate=None,
+        )
+        committed["candidate"] = None
+        self.assertTrue(
+            self.client._broker_selector_v2_transition_valid(
+                staged, committed, action="commit"
+            )
+        )
+        aborted = self._selector_v2_document(generation=2, candidate=None)
+        aborted["candidate"] = None
+        self.assertTrue(
+            self.client._broker_selector_v2_transition_valid(
+                staged, aborted, action="abort"
+            )
+        )
+        self.assertEqual(committed["selector_v1_sha256"], staged["selector_v1_sha256"])
+        self.assertEqual(committed["lifecycle"], staged["lifecycle"])
+        self.assertEqual(committed["selected"]["lane_generation"], 29)
+        self.assertEqual(committed["retained"]["lane_generation"], 28)
+
+        crossed = json.loads(json.dumps(committed))
+        crossed["selected"]["protocol_version"] = 1
+        self.assertFalse(
+            self.client._broker_selector_v2_transition_valid(
+                staged, crossed, action="commit"
+            )
+        )
+
+    def test_malformed_selector_v2_never_downgrades_to_valid_selector_v1(self) -> None:
+        root = self.root / "selector-overlap"
+        root.mkdir(mode=0o700)
+        v1 = self._selector_document(selected_lane="green", generation=28)
+        v1_raw = self.client._state_bytes(v1)
+        (root / self.client.BROKER_SELECTOR_FILENAME).write_bytes(v1_raw)
+        (root / self.client.BROKER_SELECTOR_FILENAME).chmod(0o600)
+        (root / self.client.BROKER_SELECTOR_V2_FILENAME).write_text(
+            '{"schema_version":2', encoding="ascii"
+        )
+        (root / self.client.BROKER_SELECTOR_V2_FILENAME).chmod(0o600)
+
+        with self.assertRaises(ValueError):
+            self.client._read_broker_selector_view(root)
+
+    def test_historical_committed_broker2_remains_a_normal_selected_lane(self) -> None:
+        root = self.root / "historical-broker2"
+        root.mkdir(mode=0o700)
+        selected = {
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "transport": "broker",
+            "protocol_version": 2,
+            "lane_generation": 0,
+        }
+        selector = self._selector_v2_document(selected=selected)
+        selector["candidate"] = None
+        selector["lifecycle"] = None
+        self.assertTrue(self.client._broker_selector_v2_valid(selector))
+        lane = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=0,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=root / self.client.BROKER_SOCKET_FILENAME,
+            transport="broker",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_selector_v2_lane", return_value=lane
+        ) as loader:
+            lanes, error = self.client._capture_broker_lanes(resolution)
+        self.assertIsNone(error)
+        self.assertEqual(lanes, (lane,))
+        loader.assert_called_once_with(root, selected, role="selected")
 
     def test_broker_selector_schema_generation_and_paths_are_closed(self) -> None:
         selector = self._selector_document()
@@ -1348,6 +1789,7 @@ print(json.dumps({{
             artifact_digest="c" * 64,
             manifest_digest="d" * 64,
             generation=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         listener.bind(str(lane.socket_path))
@@ -1387,7 +1829,12 @@ print(json.dumps({{
         with mock.patch.object(
             self.client,
             "_verify_published_version",
-            return_value=(self.root / "bundle", runtime, self.root / "manifest"),
+            return_value=(
+                self.root / "bundle",
+                runtime,
+                self.root / "manifest",
+                self.client.RuntimeContractAnchor("2.0.0", 2),
+            ),
         ), mock.patch.object(
             self.client, "_operator_home", return_value=str(self.root)
         ):
@@ -1395,26 +1842,18 @@ print(json.dumps({{
         self.assertEqual(observed, lane)
         self.assertEqual(
             plist_document["ProgramArguments"],
-            [str(runtime), "dispatcher", "--protocol", "1"],
+            [str(runtime), "dispatcher", "--protocol", "2"],
         )
 
         state_path.chmod(0o644)
         with self.assertRaises(ValueError):
             self.client._load_dispatcher_broker_lane(root, reference, 2)
 
-    def test_missing_invalid_or_unproven_green_leaves_blue_selected(self) -> None:
+    def test_missing_or_malformed_selector_v2_fails_closed(self) -> None:
         resolution = self.client.RuntimeResolution(
             self.client.RuntimeStatus.OK,
             manifest_digest="f" * 64,
             artifact_digest="e" * 64,
-        )
-        blue = self.client.BrokerLaneSnapshot(
-            name="blue",
-            generation=0,
-            artifact_digest="a" * 64,
-            manifest_digest="b" * 64,
-            label=self.client.BROKER_LABEL,
-            socket_path=self.root / self.client.BROKER_SOCKET_FILENAME,
         )
         cases = (
             None,
@@ -1423,33 +1862,14 @@ print(json.dumps({{
         )
         for observed in cases:
             with self.subTest(observed=repr(observed)), mock.patch.object(
-                self.client, "_load_legacy_broker_lane", return_value=blue
-            ), mock.patch.object(
                 self.client,
-                "_read_broker_selector",
+                "_read_broker_selector_view",
                 side_effect=observed if isinstance(observed, BaseException) else None,
                 return_value=observed if observed is None else mock.DEFAULT,
-            ), mock.patch.object(
-                self.client, "_load_dispatcher_broker_lane"
-            ) as green:
+            ):
                 lanes, error = self.client._capture_broker_lanes(resolution)
-            self.assertEqual(lanes, (blue,))
-            self.assertIsNone(error)
-            green.assert_not_called()
-
-        selected_green = self._selector_document(selected_lane="green")
-        with mock.patch.object(
-            self.client, "_load_legacy_broker_lane", return_value=blue
-        ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selected_green
-        ), mock.patch.object(
-            self.client,
-            "_load_dispatcher_broker_lane",
-            side_effect=ValueError("unproven dispatcher"),
-        ):
-            lanes, error = self.client._capture_broker_lanes(resolution)
-        self.assertEqual(lanes, (blue,))
-        self.assertIsNone(error)
+            self.assertEqual(lanes, ())
+            self.assertIsNotNone(error)
 
     def test_selected_green_is_not_suppressed_by_stale_blue_reference(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1466,27 +1886,31 @@ print(json.dumps({{
             socket_path=self.root / self.client.BROKER_SOCKET_FILENAME,
         )
         green = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="candidate",
             generation=2,
             artifact_digest="c" * 64,
             manifest_digest="d" * 64,
             label="com.agent-collab.provider-dispatcher.test",
             socket_path=self.root / "green.sock",
         )
-        selector = self._selector_document(selected_lane="green", generation=2)
+        selector = self._selector_v2_document()
+        selector["candidate"] = None
+        selector["retained"] = {
+            "artifact_sha256": current_blue.artifact_digest,
+            "manifest_sha256": current_blue.manifest_digest,
+            "transport": "broker",
+            "protocol_version": 2,
+            "lane_generation": 0,
+        }
         with mock.patch.object(
-            self.client, "_load_legacy_broker_lane", return_value=current_blue
+            self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selector
-        ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
-        ) as green_loader, mock.patch.object(
-            self.client, "BROKER_GREEN_PROMOTION_SUPPORTED", True
-        ):
+            self.client, "_load_selector_v2_lane", side_effect=(green, current_blue)
+        ) as loader:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, current_blue))
         self.assertIsNone(error)
-        green_loader.assert_called_once()
+        self.assertEqual(loader.call_count, 2)
 
     def test_handshake_client_accepts_committed_green_with_blue_fallback(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1510,18 +1934,24 @@ print(json.dumps({{
             label="com.agent-collab.provider-dispatcher.test",
             socket_path=self.root / "green.sock",
         )
-        selector = self._selector_document(selected_lane="green", generation=2)
+        selector = self._selector_v2_document()
+        selector["candidate"] = None
+        selector["retained"] = {
+            "artifact_sha256": blue.artifact_digest,
+            "manifest_sha256": blue.manifest_digest,
+            "transport": "broker",
+            "protocol_version": 2,
+            "lane_generation": 0,
+        }
         with mock.patch.object(
-            self.client, "_load_legacy_broker_lane", return_value=blue
+            self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selector
-        ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
-        ) as green_loader:
+            self.client, "_load_selector_v2_lane", side_effect=(green, blue)
+        ) as loader:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, blue))
         self.assertIsNone(error)
-        green_loader.assert_called_once()
+        self.assertEqual(loader.call_count, 2)
 
     def test_inflight_lane_snapshot_stays_blue_while_next_request_selects_green(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1545,16 +1975,24 @@ print(json.dumps({{
             label="com.agent-collab.provider-dispatcher.test",
             socket_path=self.root / "green.sock",
         )
-        blue_selected = self._selector_document(selected_lane="blue", generation=1)
-        green_selected = self._selector_document(selected_lane="green", generation=2)
+        blue_selected = self._selector_v2_document(selected={
+            "artifact_sha256": blue.artifact_digest,
+            "manifest_sha256": blue.manifest_digest,
+            "transport": "broker",
+            "protocol_version": 2,
+            "lane_generation": 0,
+        })
+        blue_selected["candidate"] = None
+        blue_selected["lifecycle"] = None
+        green_selected = self._selector_v2_document()
+        green_selected["candidate"] = None
+        green_selected["retained"] = dict(blue_selected["selected"])
         with mock.patch.object(
-            self.client, "_load_legacy_broker_lane", return_value=blue
-        ), mock.patch.object(
             self.client,
-            "_read_broker_selector",
+            "_read_broker_selector_view",
             side_effect=(blue_selected, green_selected),
         ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
+            self.client, "_load_selector_v2_lane", side_effect=(blue, green, blue)
         ):
             inflight_lanes, inflight_error = self.client._capture_broker_lanes(
                 resolution
@@ -1569,7 +2007,7 @@ print(json.dumps({{
 
     def test_green_bridge_document_binds_lane_and_deadlines_without_path_input(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="selected",
             generation=2,
             artifact_digest="c" * 64,
             manifest_digest="d" * 64,
@@ -1578,6 +2016,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
             ),
             socket_path=self.root / "green.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         request = {
             "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
@@ -1603,6 +2044,9 @@ print(json.dumps({{
                 "deadline_monotonic_ms",
                 "handshake_deadline_monotonic_ms",
                 "request",
+                "execution_key",
+                "request_size",
+                "request_sha256",
             },
         )
         self.assertNotIn("socket", encoded.decode("ascii"))
@@ -1622,8 +2066,11 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
             ),
             socket_path=self.root / "green.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
-        selector = self._selector_document(selected_lane="blue", generation=4)
+        selector = self._selector_v2_document()
 
         def bridge(*, lane, request, deadline, handshake_deadline):
             self.assertIs(lane, green)
@@ -1644,9 +2091,9 @@ print(json.dumps({{
         with mock.patch.object(
             self.client, "_broker_root", return_value=self.root
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selector
+            self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
+            self.client, "_load_selector_v2_lane", return_value=green
         ), mock.patch.object(
             self.client, "_invoke_dispatcher_bridge", side_effect=bridge
         ):
@@ -1669,7 +2116,7 @@ print(json.dumps({{
         self.assertEqual(failure.error, typed_failure["error"])
 
         swapped_success = {
-            "protocol_version": self.client.PROTOCOL_VERSION,
+            "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
             "request_id": request_id,
             "status": "ok",
             "result": {"ready": True},
@@ -1688,7 +2135,7 @@ print(json.dumps({{
 
         swapped_failure = {
             **typed_failure,
-            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+            "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
         }
         rejected_failure = self.client._dispatcher_ping_response(
             swapped_failure, request_id=request_id
@@ -1713,7 +2160,7 @@ print(json.dumps({{
 
     def test_lock_probe_uses_staged_bridge_and_returns_closed_namespace_proof(self) -> None:
         green = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="candidate",
             generation=4,
             artifact_digest="c" * 64,
             manifest_digest="d" * 64,
@@ -1722,8 +2169,11 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
             ),
             socket_path=self.root / "green.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
-        selector = self._selector_document(selected_lane="blue", generation=4)
+        selector = self._selector_v2_document()
 
         def bridge(*, lane, request, deadline, handshake_deadline):
             self.assertIs(lane, green)
@@ -1749,9 +2199,9 @@ print(json.dumps({{
         with mock.patch.object(
             self.client, "_broker_root", return_value=self.root
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=selector
+            self.client, "_read_broker_selector_v2", return_value=selector
         ), mock.patch.object(
-            self.client, "_load_dispatcher_broker_lane", return_value=green
+            self.client, "_load_selector_v2_lane", return_value=green
         ), mock.patch.object(
             self.client, "_invoke_dispatcher_bridge", side_effect=bridge
         ):
@@ -1786,7 +2236,7 @@ print(json.dumps({{
         self.assertEqual(failure.error, typed_failure["error"])
 
         swapped_success = {
-            "protocol_version": self.client.PROTOCOL_VERSION,
+            "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
             "request_id": request_id,
             "status": "ok",
             "result": {
@@ -1809,7 +2259,7 @@ print(json.dumps({{
 
         swapped_failure = {
             **typed_failure,
-            "protocol_version": self.client.DISPATCHER_PROTOCOL_VERSION,
+            "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
         }
         rejected_failure = self.client._dispatcher_lock_probe_response(
             swapped_failure, request_id=request_id, provider="opencode"
@@ -1870,7 +2320,7 @@ print(json.dumps({{
 
     def test_bridge_exit_phase_controls_fallback_eligibility(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
-            name="green",
+            name="selected",
             generation=2,
             artifact_digest="c" * 64,
             manifest_digest="d" * 64,
@@ -1879,6 +2329,9 @@ print(json.dumps({{
                 + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
             ),
             socket_path=self.root / "green.sock",
+            transport="dispatcher",
+            protocol_version=2,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         bundle = self.root / "bundle"
         bundle.mkdir()
@@ -1905,7 +2358,7 @@ print(json.dumps({{
             ), mock.patch.object(
                 self.client,
                 "_verify_published_version",
-                return_value=(bundle, runtime, self.root / "manifest"),
+                return_value=(bundle, runtime, self.root / "manifest", lane.anchor),
             ), mock.patch.object(
                 self.client.subprocess, "Popen", return_value=process
             ) as popen, mock.patch.object(
@@ -1922,7 +2375,7 @@ print(json.dumps({{
                     )
             self.assertEqual(
                 popen.call_args.args[0],
-                [str(runtime), "dispatcher-client", "--protocol", "1"],
+                [str(runtime), "dispatcher-client", "--protocol", "2"],
             )
 
         process = mock.Mock(returncode=0)
@@ -1931,7 +2384,7 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client,
             "_verify_published_version",
-            return_value=(bundle, runtime, self.root / "manifest"),
+            return_value=(bundle, runtime, self.root / "manifest", lane.anchor),
         ), mock.patch.object(
             self.client.subprocess, "Popen", return_value=process
         ) as popen, mock.patch.object(
@@ -1948,7 +2401,7 @@ print(json.dumps({{
                 )
         self.assertEqual(
             popen.call_args.args[0],
-            [str(runtime), "dispatcher-client", "--protocol", "1"],
+            [str(runtime), "dispatcher-client", "--protocol", "2"],
         )
 
     def test_client_upgrade_uses_one_captured_blue_tuple(self) -> None:
@@ -1971,6 +2424,7 @@ print(json.dumps({{
             manifest_digest="d" * 64,
             label=self.client.BROKER_LABEL,
             socket_path=socket_path,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
 
         def server() -> None:
@@ -2567,6 +3021,7 @@ print(json.dumps({{
             manifest_digest="b" * 64,
             label=self.client.BROKER_LABEL,
             socket_path=socket_path,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
         )
         with mock.patch.object(
             self.client, "_capture_broker_lanes", return_value=((lane,), None)
@@ -2605,6 +3060,7 @@ print(json.dumps({{
                         "error": "provider broker request was rejected",
                     },
                     envelope,
+                    self.client.RuntimeContractAnchor("2.0.0", 2),
                 )
                 self.assertEqual(result.status, runtime_status)
                 self.assertNotIn("/", result.error)
@@ -2717,24 +3173,97 @@ print(json.dumps({{
         return bootstrap
 
     def _install_legacy_blue(self, root: Path, *, body: str) -> tuple[bytes, bytes, dict]:
-        self._fixture(body=body)
+        self._fixture(body=body, schema_version=2)
         patches = self._broker_lifecycle_patches(root)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client,
+            "_committed_legacy_package_role",
+            return_value=("selected", "broker", None),
+        ), patches[0], patches[1], patches[2], patches[3], patches[4]:
             installed = self.client.install_broker()
         self.assertEqual(installed.status, self.client.RuntimeStatus.OK, installed.error)
+        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        selector = {
+            "schema_version": 1,
+            "generation": 1,
+            "selected_lane": "blue",
+            "blue": {
+                "artifact_sha256": state["artifact_sha256"],
+                "manifest_sha256": state["manifest_sha256"],
+            },
+            "green": None,
+        }
+        (root / self.client.BROKER_SELECTOR_FILENAME).write_bytes(
+            self.client._selector_bytes(selector)
+        )
+        (root / self.client.BROKER_SELECTOR_FILENAME).chmod(0o600)
         return (
             (root / "state.json").read_bytes(),
             (root / "broker.plist").read_bytes(),
-            json.loads((root / "state.json").read_text(encoding="utf-8")),
+            state,
         )
 
     def _install_protocol_v1_blue(
         self, root: Path, *, body: str
     ) -> tuple[bytes, bytes, dict]:
-        with mock.patch.object(self.client, "PROTOCOL_VERSION", 1):
-            return self._install_legacy_blue(root, body=body)
+        self._fixture(
+            body=body,
+            schema_version=2,
+            runtime_protocol_version=1,
+        )
+        patches = self._broker_lifecycle_patches(root)
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client,
+            "_committed_legacy_package_role",
+            return_value=("lifecycle", "broker", None),
+        ), patches[0], patches[1], patches[2], patches[3], patches[4]:
+            resolution = self.client.resolve_runtime()
+            self.assertEqual(
+                resolution.status, self.client.RuntimeStatus.OK, resolution.error
+            )
+            self.assertIsNone(resolution.anchor)
+            installed_root = self.client._ensure_broker_layout()
+            _bundle, runtime, _manifest, anchor = self.client._publish_broker_version(
+                installed_root,
+                resolution=resolution,
+                role="lifecycle",
+                transport="broker",
+                dispatcher_protocol_version=None,
+            )
+            self.assertIsNone(anchor)
+            plist_raw = self.client._plist_bytes(
+                self.client._broker_plist_document(
+                    runtime_path=runtime,
+                    socket_path=root / self.client.BROKER_SOCKET_FILENAME,
+                    tmpdir=root / "tmp",
+                    home=Path(self.client._operator_home()),
+                    uid=os.getuid(),
+                )
+            )
+            state = self.client._record_for(
+                root=root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+                plist_digest=hashlib.sha256(plist_raw).hexdigest(),
+                previous=None,
+                runtime_protocol_version=1,
+            )
+            self.client._write_private_atomic(
+                root / "broker.plist", plist_raw, mode=0o600
+            )
+            self.client._write_private_atomic(
+                root / "state.json", self.client._state_bytes(state), mode=0o600
+            )
+            self.assertTrue(self.client._bootstrap_broker(root / "broker.plist"))
+        return (
+            (root / "state.json").read_bytes(),
+            (root / "broker.plist").read_bytes(),
+            state,
+        )
 
     def _stage_green(self, root: Path, *, body: str):
         self._fixture(body=body)
@@ -2764,7 +3293,119 @@ print(json.dumps({{
         self.assertEqual(staged.status, self.client.RuntimeStatus.OK, staged.error)
         return staged
 
-    def test_protocol_v2_lifecycle_accepts_exact_v1_blue_without_routing_to_it(
+    def _install_modern_selected(self, root: Path, *, body: str):
+        self._fixture(body=body)
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            installed = self.client.install_broker()
+        self.assertEqual(installed.status, self.client.RuntimeStatus.OK, installed.error)
+        return json.loads(
+            (root / self.client.BROKER_SELECTOR_V2_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def _install_legacy_dispatcher1_without_blue(self, root: Path):
+        self._fixture(schema_version=2, runtime_protocol_version=2)
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client,
+            "_committed_legacy_package_role",
+            return_value=("selected", "dispatcher", 1),
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            resolution = self.client.resolve_runtime()
+            self.assertEqual(resolution.status, self.client.RuntimeStatus.OK)
+            installed_root = self.client._ensure_broker_layout()
+            self.client._publish_broker_version(
+                installed_root,
+                resolution=resolution,
+                role="selected",
+                transport="dispatcher",
+                dispatcher_protocol_version=1,
+            )
+            lane = self.client._dispatcher_lane_snapshot(
+                root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+                generation=4,
+                name="selected",
+                protocol_version=1,
+                anchor=resolution.anchor,
+            )
+            self.client._provision_dispatcher_lane(root, lane)
+        reference = {
+            "artifact_sha256": lane.artifact_digest,
+            "manifest_sha256": lane.manifest_digest,
+        }
+        selector = {
+            "schema_version": 1,
+            "generation": 4,
+            "selected_lane": "green",
+            "blue": dict(reference),
+            "green": dict(reference),
+        }
+        (root / self.client.BROKER_SELECTOR_FILENAME).write_bytes(
+            self.client._selector_bytes(selector)
+        )
+        (root / self.client.BROKER_SELECTOR_FILENAME).chmod(0o600)
+        return selector, lane
+
+    def _commit_staged_dispatcher(self, root: Path):
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            committed = self.client.commit_dispatcher_selector()
+        self.assertEqual(
+            committed.status, self.client.RuntimeStatus.OK, committed.error
+        )
+        return committed
+
+    def test_protocol_v2_lifecycle_accepts_exact_v1_blue_only_for_lifecycle(
         self,
     ) -> None:
         root = self.root / "broker-state"
@@ -2787,11 +3428,6 @@ print(json.dumps({{
         )
         (root / "selector.json").chmod(0o600)
 
-        resolution = self.client.RuntimeResolution(
-            self.client.RuntimeStatus.OK,
-            artifact_digest="e" * 64,
-            manifest_digest="f" * 64,
-        )
         with mock.patch.object(
             self.client, "_broker_root", return_value=root
         ), mock.patch.object(
@@ -2799,23 +3435,60 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ):
-            status = self.client.dispatcher_status()
-            lanes, route_error = self.client._capture_broker_lanes(resolution)
+            lifecycle = self.client._load_lifecycle_blue_lane(root)
+            with self.assertRaisesRegex(ValueError, "contract mismatch|not migratable"):
+                self.client._read_broker_selector_view(root)
 
-        self.assertEqual(status.status, self.client.RuntimeStatus.OK, status.error)
-        self.assertEqual(status.result["selected_lane"], "blue")
-        self.assertEqual(status.result["blue"], {**selector["blue"], "available": True})
-        self.assertEqual(lanes, ())
-        self.assertIsNotNone(route_error)
-        self.assertEqual(route_error.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+        self.assertIsNotNone(lifecycle)
+        self.assertEqual(lifecycle.transport, "broker")
+        self.assertEqual(lifecycle.protocol_version, 1)
+        self.assertIsNone(lifecycle.anchor)
 
-    def test_stage_dispatcher_bridges_v1_blue_to_v2_green_without_rewriting_blue(
+    def test_v1_green_derivation_accepts_already_drained_blue_plane(self) -> None:
+        root = self.root / "broker-state"
+        selector_v1, lane = self._install_legacy_dispatcher1_without_blue(root)
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ):
+            derived = self.client._read_broker_selector_view(root)
+
+        self.assertEqual(derived["selected"]["transport"], "dispatcher")
+        self.assertEqual(derived["selected"]["protocol_version"], 1)
+        self.assertEqual(derived["selected"]["artifact_sha256"], lane.artifact_digest)
+        self.assertIsNone(derived["lifecycle"])
+        self.assertEqual(
+            derived["selector_v1_sha256"],
+            hashlib.sha256(
+                (root / self.client.BROKER_SELECTOR_FILENAME).read_bytes()
+            ).hexdigest(),
+        )
+        self.assertEqual(selector_v1["selected_lane"], "green")
+
+    def test_stage_dispatcher_rejects_runtime_v1_as_selected_routing_state(
         self,
     ) -> None:
         root = self.root / "broker-state"
         blue_state_raw, blue_plist_raw, blue = self._install_protocol_v1_blue(
             root, body="#!/bin/sh\nexit 0\n"
         )
+        selector = {
+            "schema_version": 1,
+            "generation": 4,
+            "selected_lane": "blue",
+            "blue": {
+                "artifact_sha256": blue["artifact_sha256"],
+                "manifest_sha256": blue["manifest_sha256"],
+            },
+            "green": None,
+        }
+        (root / "selector.json").write_bytes(
+            self.client._selector_bytes(selector)
+        )
+        (root / "selector.json").chmod(0o600)
         self._fixture(body="#!/bin/sh\nexit 7\n")
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
@@ -2842,7 +3515,7 @@ print(json.dumps({{
         ):
             staged = self.client.stage_dispatcher()
 
-        self.assertEqual(staged.status, self.client.RuntimeStatus.OK, staged.error)
+        self.assertEqual(staged.status, self.client.RuntimeStatus.PROVIDER_ERROR)
         self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
         self.assertEqual((root / "broker.plist").read_bytes(), blue_plist_raw)
         selector = json.loads((root / "selector.json").read_text(encoding="utf-8"))
@@ -2851,30 +3524,9 @@ print(json.dumps({{
             "artifact_sha256": blue["artifact_sha256"],
             "manifest_sha256": blue["manifest_sha256"],
         })
-        green_lane = self.client._dispatcher_lane_snapshot(
-            root,
-            artifact_digest=selector["green"]["artifact_sha256"],
-            manifest_digest=selector["green"]["manifest_sha256"],
-            generation=selector["generation"],
-        )
-        green_state_path = self.client._dispatcher_mutable_path(
-            root,
-            green_lane,
-            "json",
-        )
-        green_state = json.loads(green_state_path.read_text(encoding="utf-8"))
-        self.assertEqual(green_state["runtime_protocol_version"], 2)
+        self.assertIsNone(selector["green"])
+        self.assertFalse((root / "selector-v2.json").exists())
         bootout.assert_not_called()
-
-        green_state["runtime_protocol_version"] = 1
-        green_state_path.write_bytes(self.client._state_bytes(green_state))
-        green_state_path.chmod(0o600)
-        with mock.patch.object(
-            self.client, "_verify_macos_signature", return_value=(True, "")
-        ), self.assertRaises(ValueError):
-            self.client._load_dispatcher_broker_lane(
-                root, selector["green"], selector["generation"]
-            )
 
     def test_lifecycle_bridge_rejects_every_unlisted_protocol_version(self) -> None:
         self._fixture()
@@ -2932,28 +3584,13 @@ print(json.dumps({{
             )
         )
 
-    def test_recovery_derives_and_preserves_v1_blue_protocol_from_manifest(
+    def test_lifecycle_loader_derives_v1_protocol_from_published_manifest(
         self,
     ) -> None:
         root = self.root / "broker-state"
         blue_state_raw, _blue_plist_raw, blue = self._install_protocol_v1_blue(
             root, body="#!/bin/sh\nexit 0\n"
         )
-        selector = {
-            "schema_version": 1,
-            "generation": 4,
-            "selected_lane": "blue",
-            "blue": {
-                "artifact_sha256": blue["artifact_sha256"],
-                "manifest_sha256": blue["manifest_sha256"],
-            },
-            "green": None,
-        }
-        (root / "selector.json").write_text(
-            json.dumps(selector, sort_keys=True, separators=(",", ":")),
-            encoding="ascii",
-        )
-        (root / "selector.json").chmod(0o600)
         corrupted = dict(blue)
         corrupted["runtime_protocol_version"] = 2
         (root / "state.json").write_bytes(self.client._state_bytes(corrupted))
@@ -2966,14 +3603,14 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_job_loaded", return_value=True
         ):
-            recovered = self.client.recover_last_committed_control_plane()
+            with self.assertRaisesRegex(ValueError, "contract mismatch"):
+                self.client._load_lifecycle_blue_lane(root)
+            (root / "state.json").write_bytes(blue_state_raw)
+            (root / "state.json").chmod(0o600)
+            lifecycle = self.client._load_lifecycle_blue_lane(root)
 
-        self.assertEqual(
-            recovered.status, self.client.RuntimeStatus.OK, recovered.error
-        )
-        self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
-        observed = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(observed["runtime_protocol_version"], 1)
+        self.assertEqual(lifecycle.protocol_version, 1)
+        self.assertIsNone(lifecycle.anchor)
 
     def test_stage_dispatcher_is_make_before_break_and_keeps_blue_selected(self) -> None:
         root = self.root / "broker-state"
@@ -3020,10 +3657,15 @@ print(json.dumps({{
                 "manifest_sha256": blue["manifest_sha256"],
             },
         )
-        self.assertEqual(selector["green"], staged.result["green"])
+        self.assertIsNone(selector["green"])
+        selector_v2 = json.loads(
+            (root / "selector-v2.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(selector_v2["candidate"], staged.result["candidate"])
+        self.assertEqual(selector_v2["selected"]["transport"], "broker")
         token = self.client._dispatcher_lane_token(
-            selector["green"]["artifact_sha256"],
-            selector["green"]["manifest_sha256"],
+            selector_v2["candidate"]["artifact_sha256"],
+            selector_v2["candidate"]["manifest_sha256"],
         )
         self.assertTrue((root / f"provider-dispatcher-{token}.json").is_file())
         self.assertTrue((root / f"provider-dispatcher-{token}.plist").is_file())
@@ -3111,14 +3753,14 @@ print(json.dumps({{
         with common[0], common[1], common[2], common[3], common[4], common[5], common[6], common[7]:
             staged = self.client.stage_dispatcher()
             self.assertEqual(staged.status, self.client.RuntimeStatus.OK, staged.error)
-            before = json.loads((root / "selector.json").read_text(encoding="utf-8"))
+            before = json.loads((root / "selector-v2.json").read_text(encoding="utf-8"))
             committed = self.client.commit_dispatcher_selector()
         self.assertEqual(committed.status, self.client.RuntimeStatus.OK, committed.error)
-        after = json.loads((root / "selector.json").read_text(encoding="utf-8"))
+        after = json.loads((root / "selector-v2.json").read_text(encoding="utf-8"))
         self.assertEqual(after["generation"], before["generation"] + 1)
-        self.assertEqual(after["selected_lane"], "green")
-        self.assertEqual(after["blue"], before["blue"])
-        self.assertEqual(after["green"], before["green"])
+        self.assertEqual(after["selected"], before["candidate"])
+        self.assertEqual(after["retained"], before["selected"])
+        self.assertIsNone(after["candidate"])
         bootout.assert_not_called()
 
     def test_selector_write_failure_leaves_blue_selection_byte_identical(self) -> None:
@@ -3146,11 +3788,11 @@ print(json.dumps({{
             self.client, "invoke_dispatcher_ping", return_value=ping
         ):
             self.assertEqual(self.client.stage_dispatcher().status, self.client.RuntimeStatus.OK)
-            before = (root / "selector.json").read_bytes()
+            before = (root / "selector-v2.json").read_bytes()
             original = self.client._write_private_atomic
 
             def fail_selector(path, content, *, mode):
-                if Path(path).name == self.client.BROKER_SELECTOR_FILENAME:
+                if Path(path).name == self.client.BROKER_SELECTOR_V2_FILENAME:
                     raise OSError("fixture selector write denied")
                 return original(path, content, mode=mode)
 
@@ -3159,7 +3801,7 @@ print(json.dumps({{
             ):
                 failed = self.client.commit_dispatcher_selector()
         self.assertEqual(failed.status, self.client.RuntimeStatus.PROVIDER_ERROR)
-        self.assertEqual((root / "selector.json").read_bytes(), before)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), before)
 
     def test_abort_candidate_removes_only_green_and_keeps_blue_byte_identical(self) -> None:
         root = self.root / "broker-state"
@@ -3168,7 +3810,7 @@ print(json.dumps({{
         )
         staged = self._stage_green(root, body="#!/bin/sh\nexit 7\n")
         selector_before = json.loads(
-            (root / "selector.json").read_text(encoding="utf-8")
+            (root / "selector-v2.json").read_text(encoding="utf-8")
         )
         with mock.patch.object(
             self.client, "_broker_root", return_value=root
@@ -3183,15 +3825,15 @@ print(json.dumps({{
         self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
         self.assertEqual((root / "broker.plist").read_bytes(), blue_plist_raw)
         selector_after = json.loads(
-            (root / "selector.json").read_text(encoding="utf-8")
+            (root / "selector-v2.json").read_text(encoding="utf-8")
         )
         self.assertEqual(selector_after["generation"], selector_before["generation"] + 1)
-        self.assertEqual(selector_after["selected_lane"], "blue")
-        self.assertEqual(selector_after["blue"], selector_before["blue"])
-        self.assertIsNone(selector_after["green"])
+        self.assertEqual(selector_after["selected"], selector_before["selected"])
+        self.assertEqual(selector_after["retained"], selector_before["retained"])
+        self.assertIsNone(selector_after["candidate"])
         token = self.client._dispatcher_lane_token(
-            staged.result["green"]["artifact_sha256"],
-            staged.result["green"]["manifest_sha256"],
+            staged.result["candidate"]["artifact_sha256"],
+            staged.result["candidate"]["manifest_sha256"],
         )
         self.assertFalse((root / f"provider-dispatcher-{token}.json").exists())
         self.assertFalse((root / f"provider-dispatcher-{token}.plist").exists())
@@ -3204,36 +3846,9 @@ print(json.dumps({{
             root, body="#!/bin/sh\nexit 0\n"
         )
         staged = self._stage_green(root, body="#!/bin/sh\nexit 7\n")
-        green = staged.result["green"]
-        with mock.patch.object(
-            self.client, "_broker_root", return_value=root
-        ), mock.patch.object(
-            self.client, "_verify_macos_signature", return_value=(True, "")
-        ):
-            _bundle, green_runtime, _manifest = self.client._verify_published_version(
-                root,
-                artifact_digest=green["artifact_sha256"],
-                manifest_digest=green["manifest_sha256"],
-            )
-        candidate_plist_raw = self.client._plist_bytes(
-            self.client._broker_plist_document(
-                runtime_path=green_runtime,
-                socket_path=root / self.client.BROKER_SOCKET_FILENAME,
-                tmpdir=root / "tmp",
-                home=Path(pwd.getpwuid(os.getuid()).pw_dir),
-                uid=os.getuid(),
-            )
-        )
-        candidate_state = self.client._record_for(
-            root=root,
-            artifact_digest=green["artifact_sha256"],
-            manifest_digest=green["manifest_sha256"],
-            plist_digest=hashlib.sha256(candidate_plist_raw).hexdigest(),
-            previous=blue,
-        )
         fixtures = (
-            (self.client._state_bytes(candidate_state), blue_plist_raw),
-            (blue_state_raw, candidate_plist_raw),
+            (b"{}\n", blue_plist_raw),
+            (blue_state_raw, b"not-a-plist"),
         )
         for state_raw, plist_raw in fixtures:
             with self.subTest(
@@ -3258,7 +3873,215 @@ print(json.dumps({{
                 self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
                 self.assertEqual((root / "broker.plist").read_bytes(), blue_plist_raw)
 
-    def test_drain_retiring_boots_out_blue_only_after_green_is_committed_and_idle(self) -> None:
+    def test_recover_blue_second_write_failure_preserves_rollback_bytes(self) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        previous = self.client._record_for(
+            root=root,
+            artifact_digest="d" * 64,
+            manifest_digest="e" * 64,
+            plist_digest="f" * 64,
+            previous=None,
+            runtime_protocol_version=2,
+        )
+        blue_with_previous = dict(blue)
+        blue_with_previous["previous"] = previous
+        (root / "state.json").write_bytes(
+            self.client._state_bytes(blue_with_previous)
+        )
+        (root / "state.json").chmod(0o600)
+        state_before = (root / "state.json").read_bytes()
+        plist_before = (root / "broker.plist").read_bytes()
+        write_count = 0
+        original_write = self.client._write_private_atomic
+
+        def fail_second_write(path, content, *, mode):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("fixture broker plist write failed")
+            return original_write(path, content, mode=mode)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout, mock.patch.object(
+            self.client, "_write_private_atomic", side_effect=fail_second_write
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootout.assert_not_called()
+        self.assertEqual(
+            json.loads((root / "state.json").read_text(encoding="utf-8"))[
+                "previous"
+            ],
+            previous,
+        )
+
+    def test_recover_failure_boots_out_only_job_started_by_recovery(self) -> None:
+        root = self.root / "broker-state"
+        state_before, plist_before, _blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        original_read_state = self.client._read_current_broker_state
+        read_count = 0
+
+        def fail_recovery_readback(*args, **kwargs):
+            nonlocal read_count
+            read_count += 1
+            if read_count == 2:
+                raise RuntimeError("fixture post-bootstrap readback failed")
+            return original_read_state(*args, **kwargs)
+
+        loaded = iter((False, True, False))
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=lambda _label: next(loaded)
+        ), mock.patch.object(
+            self.client, "_bootstrap_broker", return_value=True
+        ) as bootstrap, mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout, mock.patch.object(
+            self.client,
+            "_read_current_broker_state",
+            side_effect=fail_recovery_readback,
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootstrap.assert_called_once_with(root / "broker.plist")
+        bootout.assert_called_once_with(root / "broker.plist")
+
+    def test_recover_partial_bootstrap_is_detected_and_booted_out(self) -> None:
+        root = self.root / "broker-state"
+        state_before, plist_before, _blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        loaded = iter((False, True, False))
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=lambda _label: next(loaded)
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=RuntimeError("fixture partial bootstrap"),
+        ) as bootstrap, mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout:
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootstrap.assert_called_once_with(root / "broker.plist")
+        bootout.assert_called_once_with(root / "broker.plist")
+
+    def test_recover_blue_success_preserves_valid_previous_record(self) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        previous = self.client._record_for(
+            root=root,
+            artifact_digest="d" * 64,
+            manifest_digest="e" * 64,
+            plist_digest="f" * 64,
+            previous=None,
+            runtime_protocol_version=2,
+        )
+        blue_with_previous = dict(blue)
+        blue_with_previous["previous"] = previous
+        (root / "state.json").write_bytes(
+            self.client._state_bytes(blue_with_previous)
+        )
+        (root / "state.json").chmod(0o600)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(
+            json.loads((root / "state.json").read_text(encoding="utf-8"))[
+                "previous"
+            ],
+            previous,
+        )
+
+    def test_recover_dispatcher_second_write_failure_preserves_exact_bytes(self) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        selected = selector["selected"]
+        lane = self.client._dispatcher_lane_snapshot(
+            root,
+            artifact_digest=selected["artifact_sha256"],
+            manifest_digest=selected["manifest_sha256"],
+            generation=selected["lane_generation"],
+            name="selected",
+            protocol_version=selected["protocol_version"],
+        )
+        state_path = self.client._dispatcher_mutable_path(root, lane, "json")
+        plist_path = self.client._dispatcher_mutable_path(root, lane, "plist")
+        state_document = json.loads(state_path.read_text(encoding="utf-8"))
+        state_path.write_text(
+            json.dumps(state_document, sort_keys=True, indent=2) + "\n",
+            encoding="ascii",
+        )
+        state_path.chmod(0o600)
+        state_before = state_path.read_bytes()
+        plist_before = plist_path.read_bytes()
+        write_count = 0
+        original_write = self.client._write_private_atomic
+
+        def fail_second_write(path, content, *, mode):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("fixture dispatcher plist write failed")
+            return original_write(path, content, mode=mode)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_write_private_atomic", side_effect=fail_second_write
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual(state_path.read_bytes(), state_before)
+        self.assertEqual(plist_path.read_bytes(), plist_before)
+
+    def test_drain_retiring_clears_retained_and_projection_only_after_idle(self) -> None:
         root = self.root / "broker-state"
         self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
         self._stage_green(root, body="#!/bin/sh\nexit 7\n")
@@ -3307,33 +4130,107 @@ print(json.dumps({{
             drained = self.client.drain_retiring_dispatcher()
 
         self.assertEqual(drained.status, self.client.RuntimeStatus.OK, drained.error)
-        self.assertEqual(drained.result["selected_lane"], "green")
-        self.assertTrue(drained.result["blue_retired"])
+        self.assertEqual(drained.result["selected"]["transport"], "dispatcher")
+        self.assertTrue(drained.result["retained_drained"])
+        self.assertTrue(drained.result["projection_retired"])
         bootout_call.assert_called_once_with(root / "broker.plist")
         self.assertFalse((root / "state.json").exists())
         self.assertFalse((root / "broker.plist").exists())
         self.assertFalse((root / self.client.BROKER_SOCKET_FILENAME).exists())
-        selector = json.loads((root / "selector.json").read_text(encoding="utf-8"))
-        self.assertEqual(selector["selected_lane"], "green")
+        self.assertFalse((root / "selector.json").exists())
+        selector = json.loads(
+            (root / "selector-v2.json").read_text(encoding="utf-8")
+        )
+        self.assertIsNone(selector["retained"])
+        self.assertIsNone(selector["selector_v1_sha256"])
 
-    def test_install_broker_publishes_exact_version_and_socket_activated_state(self) -> None:
+    def test_drain_failure_after_projection_unlink_restores_both_selectors(self) -> None:
+        root = self.root / "broker-state"
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        self._commit_staged_dispatcher(root)
+        v1_raw = (root / "selector.json").read_bytes()
+        v2_raw = (root / "selector-v2.json").read_bytes()
+        selected = json.loads(v2_raw)["selected"]
+        token = self.client._dispatcher_lane_token(
+            selected["artifact_sha256"], selected["manifest_sha256"]
+        )
+        selected_plist = root / f"provider-dispatcher-{token}.plist"
+        selected_plist_raw = selected_plist.read_bytes()
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+        original_unlink = self.client._unlink_private_durable
+        injected = {"done": False}
+
+        def unlink(path):
+            original_unlink(path)
+            if path == root / "selector.json" and not injected["done"]:
+                injected["done"] = True
+                raise RuntimeError("injected after projection unlink")
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_observe_job_quiescent", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_unlink_private_durable", side_effect=unlink
+        ):
+            result = self.client.drain_retiring_dispatcher()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "selector.json").read_bytes(), v1_raw)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), v2_raw)
+        self.assertEqual(selected_plist.read_bytes(), selected_plist_raw)
+
+    def test_fresh_schema3_install_bootstraps_selected_dispatcher2_without_legacy_plane(self) -> None:
         self._fixture()
         root = self.root / "broker-state"
         expected_artifact = json.loads(
             (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
         )["artifacts"][0]["sha256"]
-        patches = self._broker_lifecycle_patches(root)
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_bootstrap_broker", side_effect=self._dispatcher_bootstrap(root)
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
             result = self.client.install_broker()
         self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertTrue(result.result["fresh_bootstrap"])
         self.assertFalse(result.result["persistent_process"])
-        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        selector = json.loads((root / "selector-v2.json").read_text(encoding="utf-8"))
+        self.assertIsNone(selector["selector_v1_sha256"])
+        self.assertIsNone(selector["lifecycle"])
+        self.assertEqual(selector["selected"]["transport"], "dispatcher")
+        self.assertEqual(selector["selected"]["protocol_version"], 2)
+        token = self.client._dispatcher_lane_token(
+            selector["selected"]["artifact_sha256"],
+            selector["selected"]["manifest_sha256"],
+        )
+        state = json.loads(
+            (root / f"provider-dispatcher-{token}.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(state["artifact_sha256"], expected_artifact)
-        self.assertIsNone(state["previous"])
-        self.assertEqual(stat.S_IMODE((root / "broker.plist").stat().st_mode), 0o600)
-        version = Path(state["bundle_path"]).parent
+        plist_path = root / f"provider-dispatcher-{token}.plist"
+        self.assertEqual(stat.S_IMODE(plist_path.stat().st_mode), 0o600)
+        version = root / "versions" / f"{expected_artifact}-{state['manifest_sha256']}"
         self.assertEqual(
             version.name,
             f"{expected_artifact}-{state['manifest_sha256']}",
@@ -3345,10 +4242,51 @@ print(json.dumps({{
             ),
             expected_artifact,
         )
-        plist = plistlib.loads((root / "broker.plist").read_bytes())
-        self.assertEqual(plist["Label"], self.client.BROKER_LABEL)
+        plist = plistlib.loads(plist_path.read_bytes())
+        self.assertEqual(plist["Label"], f"com.agent-collab.provider-dispatcher.{token}")
         self.assertNotIn("KeepAlive", plist)
         self.assertNotIn("RunAtLoad", plist)
+
+    def test_fresh_schema3_install_failure_restores_empty_selector_and_lane(self) -> None:
+        self._fixture()
+        root = self.root / "broker-state"
+        manifest = json.loads(
+            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+        token = self.client._dispatcher_lane_token(
+            manifest["artifacts"][0]["sha256"],
+            hashlib.sha256(
+                (self.root / "runtime-manifest.json").read_bytes()
+            ).hexdigest(),
+        )
+        failed_ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.PROVIDER_ERROR,
+            error="injected ping failure",
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=failed_ping
+        ):
+            result = self.client.install_broker()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertFalse((root / "selector-v2.json").exists())
+        for suffix in ("json", "plist", "sock"):
+            self.assertFalse((root / f"provider-dispatcher-{token}.{suffix}").exists())
 
     def test_missing_broker_root_is_uninstalled_not_an_integrity_failure(self) -> None:
         root = self.root / "never-installed"
@@ -3363,181 +4301,463 @@ print(json.dumps({{
             {"installed": False, "versions_retained": True},
         )
 
-    def test_broker_update_records_one_verified_rollback_and_rollback_switches(self) -> None:
-        self._fixture(body="#!/bin/sh\nexit 0\n")
-        first_digest = json.loads(
-            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
-        )["artifacts"][0]["sha256"]
+    def test_selector_v2_rollback_swaps_selected_and_retained_lanes(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        initial = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        committed = self._commit_staged_dispatcher(root)
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
         with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            self._fixture(body="#!/bin/sh\nexit 7\n")
-            second_digest = json.loads(
-                (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
-            )["artifacts"][0]["sha256"]
-            updated = self.client.install_broker()
-            self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
-            state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-            self.assertEqual(state["artifact_sha256"], second_digest)
-            self.assertEqual(state["previous"]["artifact_sha256"], first_digest)
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
             rolled_back = self.client.rollback_broker()
+
         self.assertEqual(rolled_back.status, self.client.RuntimeStatus.OK, rolled_back.error)
-        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(state["artifact_sha256"], first_digest)
-        self.assertEqual(state["previous"]["artifact_sha256"], second_digest)
+        selector = json.loads((root / "selector-v2.json").read_text(encoding="utf-8"))
+        self.assertEqual(selector["selected"], initial["selected"])
+        self.assertEqual(selector["retained"], committed.result["selected"])
+        self.assertEqual(selector["generation"], committed.result["generation"] + 1)
 
-    def test_failed_broker_update_restores_the_full_prior_rollback_state(self) -> None:
-        first = self._fixture(body="#!/bin/sh\nexit 0\n")
+    def test_selector_v2_rollback_readback_failure_restores_prior_bytes(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        self._commit_staged_dispatcher(root)
+        selector_raw = (root / "selector-v2.json").read_bytes()
+        selected = json.loads(selector_raw)["selected"]
+        token = self.client._dispatcher_lane_token(
+            selected["artifact_sha256"], selected["manifest_sha256"]
+        )
+        selected_plist = root / f"provider-dispatcher-{token}.plist"
+        selected_plist_raw = selected_plist.read_bytes()
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+        original_read = self.client._read_broker_selector_v2
+        reads = {"count": 0}
+
+        def read(root_path):
+            reads["count"] += 1
+            if reads["count"] == 2:
+                raise RuntimeError("injected rollback readback failure")
+            return original_read(root_path)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=read
+        ):
+            result = self.client.rollback_broker()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), selector_raw)
+        self.assertEqual(selected_plist.read_bytes(), selected_plist_raw)
+
+    def test_new_cycle_requires_retained_lane_drain_before_stage_or_commit(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        self._commit_staged_dispatcher(root)
+        committed_raw = (root / "selector-v2.json").read_bytes()
+
+        self._fixture(body="#!/bin/sh\nexit 9\n")
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            self._fixture(body="#!/bin/sh\nexit 7\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
-            self.assertIsNotNone(prior["previous"])
-            self._fixture(body="#!/bin/sh\nexit 9\n")
-            with mock.patch.object(
-                self.client, "_bootstrap_broker", side_effect=[False, True]
-            ):
-                failed = self.client.install_broker()
-        self.assertEqual(failed.status, self.client.RuntimeStatus.PROVIDER_ERROR)
-        self.assertTrue(failed.result["restored_previous"])
-        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(state, prior)
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ):
+            staged = self.client.stage_dispatcher()
+        self.assertEqual(staged.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), committed_raw)
 
-    def test_legacy_restore_writes_committed_state_before_prior_plist_and_bootstrap(self) -> None:
-        self._fixture(body="#!/bin/sh\nexit 0\n")
+        selector = json.loads(committed_raw)
+        selector["candidate"] = {
+            "artifact_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "transport": "dispatcher",
+            "protocol_version": 2,
+            "lane_generation": max(
+                selector["selected"]["lane_generation"],
+                selector["retained"]["lane_generation"],
+            )
+            + 1,
+        }
+        candidate_raw = self.client._selector_v2_bytes(selector)
+        (root / "selector-v2.json").write_bytes(candidate_raw)
+        (root / "selector-v2.json").chmod(0o600)
+        with mock.patch.object(self.client, "_broker_root", return_value=root):
+            committed = self.client.commit_dispatcher_selector()
+        self.assertEqual(committed.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), candidate_raw)
+
+    def test_abort_of_initial_v1_stage_allows_new_digest_without_rewriting_v1(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        first = self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        selector_v1_raw = (root / "selector.json").read_bytes()
+        first_candidate = dict(first.result["candidate"])
         with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ):
+            aborted = self.client.abort_dispatcher_candidate()
+        self.assertEqual(aborted.status, self.client.RuntimeStatus.OK, aborted.error)
+        after_abort = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertIsNone(after_abort["candidate"])
+        self.assertIsNotNone(after_abort["selector_v1_sha256"])
 
-        self._fixture(body="#!/bin/sh\nexit 7\n")
-        writes: list[str] = []
-        bootstraps: list[str] = []
-        original_write = self.client._write_private_atomic
+        second = self._stage_green(root, body="#!/bin/sh\nexit 9\n")
+        after_restage = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual((root / "selector.json").read_bytes(), selector_v1_raw)
+        self.assertEqual(after_restage["selected"], after_abort["selected"])
+        self.assertEqual(after_restage["candidate"], second.result["candidate"])
+        self.assertNotEqual(after_restage["candidate"], first_candidate)
 
-        def write(path, content, *, mode):
-            writes.append(Path(path).name)
-            return original_write(path, content, mode=mode)
+    def test_modern_commit_drain_then_next_daily_stage_is_live(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        committed = self._commit_staged_dispatcher(root)
+        selected = dict(committed.result["selected"])
+        retained = dict(committed.result["retained"])
+        selected_token = self.client._dispatcher_lane_token(
+            selected["artifact_sha256"], selected["manifest_sha256"]
+        )
+        retained_token = self.client._dispatcher_lane_token(
+            retained["artifact_sha256"], retained["manifest_sha256"]
+        )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
 
-        def bootstrap(path):
-            bootstraps.append(Path(path).name)
-            return len(bootstraps) > 1
+        def job_loaded(label):
+            return label.endswith(selected_token) and not label.endswith(retained_token)
 
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=job_loaded
+        ), mock.patch.object(
+            self.client, "_observe_job_quiescent", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            drained = self.client.drain_retiring_dispatcher()
+        self.assertEqual(drained.status, self.client.RuntimeStatus.OK, drained.error)
+        drained_selector = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual(drained_selector["selected"], selected)
+        self.assertIsNone(drained_selector["retained"])
+        self.assertIsNone(drained_selector["selector_v1_sha256"])
+
+        staged = self._stage_green(root, body="#!/bin/sh\nexit 9\n")
+        next_selector = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual(next_selector["selected"], selected)
+        self.assertEqual(next_selector["candidate"], staged.result["candidate"])
+
+    def test_idempotent_stage_failure_preserves_existing_candidate_bytes(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        selector_raw = (root / "selector-v2.json").read_bytes()
+        candidate = json.loads(selector_raw)["candidate"]
+        token = self.client._dispatcher_lane_token(
+            candidate["artifact_sha256"], candidate["manifest_sha256"]
+        )
+        mutable = {
+            suffix: (root / f"provider-dispatcher-{token}.{suffix}").read_bytes()
+            for suffix in ("json", "plist")
+        }
+        failed_ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.PROVIDER_ERROR, error="injected ping failure"
+        )
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
             self.client, "_broker_root", return_value=root
         ), mock.patch.object(
-            self.client, "_bootout_broker", return_value=True
-        ), mock.patch.object(
-            self.client, "_bootstrap_broker", side_effect=bootstrap
-        ), mock.patch.object(
-            self.client, "_broker_job_loaded", return_value=True
-        ), mock.patch.object(
-            self.client, "_write_private_atomic", side_effect=write
+            self.client, "invoke_dispatcher_ping", return_value=failed_ping
         ):
-            failed = self.client.install_broker()
+            result = self.client.stage_dispatcher()
 
-        self.assertEqual(failed.status, self.client.RuntimeStatus.PROVIDER_ERROR)
-        self.assertTrue(failed.result["restored_previous"])
-        self.assertEqual(writes[-2:], ["state.json", "broker.plist"])
-        self.assertEqual(bootstraps, ["broker.plist", "broker.plist"])
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), selector_raw)
+        for suffix, raw in mutable.items():
+            self.assertEqual(
+                (root / f"provider-dispatcher-{token}.{suffix}").read_bytes(), raw
+            )
 
-    def test_noop_broker_install_preserves_existing_rollback_target(self) -> None:
+    def test_stage_failure_cannot_restore_v2_over_newer_projection_drain(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ):
+            self.assertEqual(
+                self.client.abort_dispatcher_candidate().status,
+                self.client.RuntimeStatus.OK,
+            )
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertIsNotNone(baseline["selector_v1_sha256"])
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "selector_v1_sha256": None,
+            "lifecycle": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector.json").unlink()
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        self._fixture(body="#!/bin/sh\nexit 9\n")
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self._fixture(body="#!/bin/sh\nexit 0\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            self._fixture(body="#!/bin/sh\nexit 7\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            prior = json.loads((root / "state.json").read_text(encoding="utf-8"))
-            self.assertIsNotNone(prior["previous"])
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client,
+            "_publish_broker_version",
+            side_effect=RuntimeError("injected stage failure"),
+        ):
+            result = self.client.stage_dispatcher()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertFalse((root / "selector.json").exists())
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
+        with mock.patch.object(self.client, "_broker_root", return_value=root):
+            self.assertEqual(self.client._read_broker_selector_view(root), newer)
+
+    def test_commit_failure_cannot_clobber_newer_abort_transition(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "candidate": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        original_read = self.client._read_broker_selector_v2
+        reads = {"count": 0}
+
+        def read(root_path):
+            reads["count"] += 1
+            if reads["count"] == 2:
+                raise RuntimeError("injected commit readback failure")
+            return original_read(root_path)
+
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=read
+        ):
+            result = self.client.commit_dispatcher_selector()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
+
+    def test_abort_failure_cannot_clobber_newer_commit_transition(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "selected": baseline["candidate"],
+            "retained": baseline["selected"],
+            "candidate": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        original_read = self.client._read_broker_selector_v2
+        reads = {"count": 0}
+
+        def read(root_path):
+            reads["count"] += 1
+            if reads["count"] == 2:
+                raise RuntimeError("injected abort readback failure")
+            return original_read(root_path)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=read
+        ):
+            result = self.client.abort_dispatcher_candidate()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
+
+    def test_noop_schema3_install_preserves_selected_selector_bytes(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        prior = (root / "selector-v2.json").read_bytes()
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(self.client, "_job_loaded", return_value=True):
             repeated = self.client.install_broker()
 
         self.assertEqual(repeated.status, self.client.RuntimeStatus.OK, repeated.error)
-        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(state, prior)
+        self.assertFalse(repeated.result["fresh_bootstrap"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), prior)
 
-    def test_same_artifact_with_new_manifest_gets_a_distinct_immutable_version(self) -> None:
-        self._fixture()
-        artifact_digest = json.loads(
-            (self.root / "runtime-manifest.json").read_text(encoding="utf-8")
-        )["artifacts"][0]["sha256"]
+    def test_same_artifact_with_new_manifest_requires_staged_update(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        prior = (root / "selector-v2.json").read_bytes()
+        manifest_path = self.root / "runtime-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            first = json.loads((root / "state.json").read_text(encoding="utf-8"))
-            manifest_path = self.root / "runtime-manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(self.client, "_job_loaded", return_value=True):
             updated = self.client.install_broker()
 
-        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
-        second = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(second["artifact_sha256"], artifact_digest)
-        self.assertNotEqual(second["manifest_sha256"], first["manifest_sha256"])
-        self.assertNotEqual(second["bundle_path"], first["bundle_path"])
-        self.assertEqual(second["previous"]["manifest_sha256"], first["manifest_sha256"])
-        self.assertEqual(len(tuple((root / "versions").iterdir())), 2)
+        self.assertEqual(updated.status, self.client.RuntimeStatus.CONFIG_ERROR)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), prior)
+        self.assertEqual(len(tuple((root / "versions").iterdir())), 1)
 
-    def test_unverified_current_version_is_not_recorded_as_rollback(self) -> None:
+    def test_unverified_selected_version_blocks_noop_install(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        prior = (root / "selector-v2.json").read_bytes()
+        selected = selector["selected"]
+        version = root / "versions" / (
+            f"{selected['artifact_sha256']}-{selected['manifest_sha256']}"
+        )
+        (version / "runtime-manifest.json").chmod(0o600)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self._fixture(body="#!/bin/sh\nexit 0\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            current = json.loads((root / "state.json").read_text(encoding="utf-8"))
-            Path(current["manifest_path"]).chmod(0o600)
-            self._fixture(body="#!/bin/sh\nexit 7\n")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ):
             updated = self.client.install_broker()
 
-        self.assertEqual(updated.status, self.client.RuntimeStatus.OK, updated.error)
-        state = json.loads((root / "state.json").read_text(encoding="utf-8"))
-        self.assertIsNone(state["previous"])
+        self.assertEqual(updated.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+        self.assertEqual((root / "selector-v2.json").read_bytes(), prior)
 
     def test_uninstall_removes_mutable_state_but_retains_versions(self) -> None:
-        self._fixture()
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        token = self.client._dispatcher_lane_token(
+            selector["selected"]["artifact_sha256"],
+            selector["selected"]["manifest_sha256"],
+        )
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+        ), mock.patch.object(self.client, "_broker_root", return_value=root), mock.patch.object(
+            self.client, "_observe_job_quiescent", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ), mock.patch.object(self.client, "_job_loaded", return_value=False):
             result = self.client.uninstall_broker()
         self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
         self.assertTrue(result.result["versions_retained"])
         self.assertTrue(any((root / "versions").iterdir()))
-        self.assertFalse((root / "state.json").exists())
-        self.assertFalse((root / "broker.plist").exists())
-        self.assertFalse((root / self.client.BROKER_SOCKET_FILENAME).exists())
+        self.assertFalse((root / "selector-v2.json").exists())
+        for suffix in ("json", "plist", "sock"):
+            self.assertFalse((root / f"provider-dispatcher-{token}.{suffix}").exists())
 
-    def test_foreign_or_malformed_broker_plist_blocks_update(self) -> None:
-        self._fixture()
+    def test_foreign_or_malformed_dispatcher_plist_blocks_noop_install(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        token = self.client._dispatcher_lane_token(
+            selector["selected"]["artifact_sha256"],
+            selector["selected"]["manifest_sha256"],
+        )
+        (root / f"provider-dispatcher-{token}.plist").chmod(0o644)
         with mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            (root / "broker.plist").chmod(0o644)
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ):
             result = self.client.install_broker()
         self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
 
@@ -3564,30 +4784,29 @@ print(json.dumps({{
 
     def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
         root = self.root / "broker-state"
-        patches = self._broker_lifecycle_patches(root)
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        self._commit_staged_dispatcher(root)
         with mock.patch.object(
-            self.client, "_verify_macos_signature", return_value=(True, "")
-        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), patches[0], patches[1], patches[2], patches[3], patches[4]:
-            self._fixture(body="#!/bin/sh\nexit 0\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
-            self._fixture(body="#!/bin/sh\nexit 7\n")
-            self.assertEqual(self.client.install_broker().status, self.client.RuntimeStatus.OK)
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=RuntimeError("timeout")
+        ):
+            status = self.client.broker_status()
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=RuntimeError("timeout")
+        ):
+            rolled_back = self.client.rollback_broker()
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_observe_job_quiescent", side_effect=RuntimeError("timeout")
+        ):
+            uninstalled = self.client.uninstall_broker()
 
-            with mock.patch.object(
-                self.client, "_broker_job_loaded", side_effect=RuntimeError("timeout")
-            ):
-                status = self.client.broker_status()
-            with mock.patch.object(
-                self.client, "_activate_broker_record", side_effect=RuntimeError("timeout")
-            ):
-                installed = self.client.install_broker()
-                rolled_back = self.client.rollback_broker()
-            with mock.patch.object(
-                self.client, "_bootout_broker", side_effect=RuntimeError("timeout")
-            ):
-                uninstalled = self.client.uninstall_broker()
-
-        for result in (status, installed, rolled_back, uninstalled):
+        for result in (status, rolled_back, uninstalled):
             with self.subTest(status=result.status):
                 self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
 

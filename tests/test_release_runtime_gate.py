@@ -92,7 +92,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
             }
         ]
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
@@ -107,6 +107,8 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     "entrypoint": "agent-collab-runtime",
                     "size": binary.stat().st_size,
                     "sha256": self.gate.runtime_bundle.compute_bundle_identity(records),
+                    "provider_runtime_version": "2.0.0",
+                    "route_contract_version": 2,
                     "signing": {
                         "mode": "developer_id",
                         "identity": "Developer ID Application: Test Operator (TESTTEAM01)",
@@ -129,7 +131,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
 
     def test_empty_manifest_blocks_activation(self) -> None:
         (self.plugin / "runtime-manifest.json").write_text(
-            '{"schema_version":2,"protocol_version":2,"contract_version":3,"broker_protocol_version":2,"channel":"production","artifacts":[]}'
+            '{"schema_version":3,"protocol_version":2,"contract_version":3,"broker_protocol_version":2,"channel":"production","artifacts":[]}'
         )
         ok, _, errors = self.gate.verify_release(self.root, git_sha="abc")
         self.assertFalse(ok)

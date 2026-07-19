@@ -322,11 +322,17 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             ),
         }
 
-    def _parse(self, response: dict[str, object], envelope):
+    def _anchor(
+        self, runtime_version: str = "2.0.0", contract_version: int = 2
+    ):
+        return self.client.RuntimeContractAnchor(runtime_version, contract_version)
+
+    def _parse(self, response: dict[str, object], envelope, *, anchor=None):
         return self.client._parse_response(
             json.dumps(response, separators=(",", ":")).encode("utf-8"),
             envelope,
             0,
+            anchor=self._anchor() if anchor is None else anchor,
         )
 
     def test_execute_requires_complete_artifact_bound_broker_proof(self) -> None:
@@ -408,6 +414,42 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         result = self._parse(response, envelope)
         self.assertEqual(
             result.status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+    def test_governance_proof_uses_the_authenticated_answering_lane_anchor(
+        self,
+    ) -> None:
+        envelope = self._envelope()
+        current = self._anchor("2.0.0", 2)
+        retained = self._anchor("1.2.0", 2)
+        current_response = self._response(
+            envelope,
+            runtime_version="2.0.0",
+            contract_version=2,
+            provenance_host_runtime="agent-collab-provider-runtime/2.0.0",
+        )
+        retained_response = self._response(
+            envelope,
+            runtime_version="1.2.0",
+            contract_version=2,
+            provenance_host_runtime="agent-collab-provider-runtime/1.2.0",
+        )
+
+        self.assertEqual(
+            self._parse(current_response, envelope, anchor=current).status,
+            self.client.RuntimeStatus.OK,
+        )
+        self.assertEqual(
+            self._parse(retained_response, envelope, anchor=retained).status,
+            self.client.RuntimeStatus.OK,
+        )
+        self.assertEqual(
+            self._parse(current_response, envelope, anchor=retained).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+        self.assertEqual(
+            self._parse(retained_response, envelope, anchor=current).status,
             self.client.RuntimeStatus.PROTOCOL_ERROR,
         )
 
