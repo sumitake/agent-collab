@@ -3873,6 +3873,214 @@ print(json.dumps({{
                 self.assertEqual((root / "state.json").read_bytes(), blue_state_raw)
                 self.assertEqual((root / "broker.plist").read_bytes(), blue_plist_raw)
 
+    def test_recover_blue_second_write_failure_preserves_rollback_bytes(self) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        previous = self.client._record_for(
+            root=root,
+            artifact_digest="d" * 64,
+            manifest_digest="e" * 64,
+            plist_digest="f" * 64,
+            previous=None,
+            runtime_protocol_version=2,
+        )
+        blue_with_previous = dict(blue)
+        blue_with_previous["previous"] = previous
+        (root / "state.json").write_bytes(
+            self.client._state_bytes(blue_with_previous)
+        )
+        (root / "state.json").chmod(0o600)
+        state_before = (root / "state.json").read_bytes()
+        plist_before = (root / "broker.plist").read_bytes()
+        write_count = 0
+        original_write = self.client._write_private_atomic
+
+        def fail_second_write(path, content, *, mode):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("fixture broker plist write failed")
+            return original_write(path, content, mode=mode)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout, mock.patch.object(
+            self.client, "_write_private_atomic", side_effect=fail_second_write
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootout.assert_not_called()
+        self.assertEqual(
+            json.loads((root / "state.json").read_text(encoding="utf-8"))[
+                "previous"
+            ],
+            previous,
+        )
+
+    def test_recover_failure_boots_out_only_job_started_by_recovery(self) -> None:
+        root = self.root / "broker-state"
+        state_before, plist_before, _blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        original_read_state = self.client._read_current_broker_state
+        read_count = 0
+
+        def fail_recovery_readback(*args, **kwargs):
+            nonlocal read_count
+            read_count += 1
+            if read_count == 2:
+                raise RuntimeError("fixture post-bootstrap readback failed")
+            return original_read_state(*args, **kwargs)
+
+        loaded = iter((False, True, False))
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=lambda _label: next(loaded)
+        ), mock.patch.object(
+            self.client, "_bootstrap_broker", return_value=True
+        ) as bootstrap, mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout, mock.patch.object(
+            self.client,
+            "_read_current_broker_state",
+            side_effect=fail_recovery_readback,
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootstrap.assert_called_once_with(root / "broker.plist")
+        bootout.assert_called_once_with(root / "broker.plist")
+
+    def test_recover_partial_bootstrap_is_detected_and_booted_out(self) -> None:
+        root = self.root / "broker-state"
+        state_before, plist_before, _blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        loaded = iter((False, True, False))
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=lambda _label: next(loaded)
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=RuntimeError("fixture partial bootstrap"),
+        ) as bootstrap, mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ) as bootout:
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual((root / "state.json").read_bytes(), state_before)
+        self.assertEqual((root / "broker.plist").read_bytes(), plist_before)
+        bootstrap.assert_called_once_with(root / "broker.plist")
+        bootout.assert_called_once_with(root / "broker.plist")
+
+    def test_recover_blue_success_preserves_valid_previous_record(self) -> None:
+        root = self.root / "broker-state"
+        _state_raw, _plist_raw, blue = self._install_legacy_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        previous = self.client._record_for(
+            root=root,
+            artifact_digest="d" * 64,
+            manifest_digest="e" * 64,
+            plist_digest="f" * 64,
+            previous=None,
+            runtime_protocol_version=2,
+        )
+        blue_with_previous = dict(blue)
+        blue_with_previous["previous"] = previous
+        (root / "state.json").write_bytes(
+            self.client._state_bytes(blue_with_previous)
+        )
+        (root / "state.json").chmod(0o600)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(
+            json.loads((root / "state.json").read_text(encoding="utf-8"))[
+                "previous"
+            ],
+            previous,
+        )
+
+    def test_recover_dispatcher_second_write_failure_preserves_exact_bytes(self) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        selected = selector["selected"]
+        lane = self.client._dispatcher_lane_snapshot(
+            root,
+            artifact_digest=selected["artifact_sha256"],
+            manifest_digest=selected["manifest_sha256"],
+            generation=selected["lane_generation"],
+            name="selected",
+            protocol_version=selected["protocol_version"],
+        )
+        state_path = self.client._dispatcher_mutable_path(root, lane, "json")
+        plist_path = self.client._dispatcher_mutable_path(root, lane, "plist")
+        state_document = json.loads(state_path.read_text(encoding="utf-8"))
+        state_path.write_text(
+            json.dumps(state_document, sort_keys=True, indent=2) + "\n",
+            encoding="ascii",
+        )
+        state_path.chmod(0o600)
+        state_before = state_path.read_bytes()
+        plist_before = plist_path.read_bytes()
+        write_count = 0
+        original_write = self.client._write_private_atomic
+
+        def fail_second_write(path, content, *, mode):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("fixture dispatcher plist write failed")
+            return original_write(path, content, mode=mode)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_write_private_atomic", side_effect=fail_second_write
+        ):
+            recovered = self.client.recover_last_committed_control_plane()
+
+        self.assertEqual(recovered.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual(state_path.read_bytes(), state_before)
+        self.assertEqual(plist_path.read_bytes(), plist_before)
+
     def test_drain_retiring_clears_retained_and_projection_only_after_idle(self) -> None:
         root = self.root / "broker-state"
         self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
@@ -4203,6 +4411,77 @@ print(json.dumps({{
         self.assertEqual(committed.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual((root / "selector-v2.json").read_bytes(), candidate_raw)
 
+    def test_abort_of_initial_v1_stage_allows_new_digest_without_rewriting_v1(self) -> None:
+        root = self.root / "broker-state"
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        first = self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        selector_v1_raw = (root / "selector.json").read_bytes()
+        first_candidate = dict(first.result["candidate"])
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ):
+            aborted = self.client.abort_dispatcher_candidate()
+        self.assertEqual(aborted.status, self.client.RuntimeStatus.OK, aborted.error)
+        after_abort = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertIsNone(after_abort["candidate"])
+        self.assertIsNotNone(after_abort["selector_v1_sha256"])
+
+        second = self._stage_green(root, body="#!/bin/sh\nexit 9\n")
+        after_restage = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual((root / "selector.json").read_bytes(), selector_v1_raw)
+        self.assertEqual(after_restage["selected"], after_abort["selected"])
+        self.assertEqual(after_restage["candidate"], second.result["candidate"])
+        self.assertNotEqual(after_restage["candidate"], first_candidate)
+
+    def test_modern_commit_drain_then_next_daily_stage_is_live(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        committed = self._commit_staged_dispatcher(root)
+        selected = dict(committed.result["selected"])
+        retained = dict(committed.result["retained"])
+        selected_token = self.client._dispatcher_lane_token(
+            selected["artifact_sha256"], selected["manifest_sha256"]
+        )
+        retained_token = self.client._dispatcher_lane_token(
+            retained["artifact_sha256"], retained["manifest_sha256"]
+        )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+
+        def job_loaded(label):
+            return label.endswith(selected_token) and not label.endswith(retained_token)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=job_loaded
+        ), mock.patch.object(
+            self.client, "_observe_job_quiescent", return_value=True
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            drained = self.client.drain_retiring_dispatcher()
+        self.assertEqual(drained.status, self.client.RuntimeStatus.OK, drained.error)
+        drained_selector = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual(drained_selector["selected"], selected)
+        self.assertIsNone(drained_selector["retained"])
+        self.assertIsNone(drained_selector["selector_v1_sha256"])
+
+        staged = self._stage_green(root, body="#!/bin/sh\nexit 9\n")
+        next_selector = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertEqual(next_selector["selected"], selected)
+        self.assertEqual(next_selector["candidate"], staged.result["candidate"])
+
     def test_idempotent_stage_failure_preserves_existing_candidate_bytes(self) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
@@ -4234,6 +4513,163 @@ print(json.dumps({{
             self.assertEqual(
                 (root / f"provider-dispatcher-{token}.{suffix}").read_bytes(), raw
             )
+
+    def test_stage_failure_cannot_restore_v2_over_newer_projection_drain(self) -> None:
+        root = self.root / "broker-state"
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ):
+            self.assertEqual(
+                self.client.abort_dispatcher_candidate().status,
+                self.client.RuntimeStatus.OK,
+            )
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        self.assertIsNotNone(baseline["selector_v1_sha256"])
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "selector_v1_sha256": None,
+            "lifecycle": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector.json").unlink()
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        self._fixture(body="#!/bin/sh\nexit 9\n")
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client,
+            "_publish_broker_version",
+            side_effect=RuntimeError("injected stage failure"),
+        ):
+            result = self.client.stage_dispatcher()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertFalse((root / "selector.json").exists())
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
+        with mock.patch.object(self.client, "_broker_root", return_value=root):
+            self.assertEqual(self.client._read_broker_selector_view(root), newer)
+
+    def test_commit_failure_cannot_clobber_newer_abort_transition(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "candidate": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        original_read = self.client._read_broker_selector_v2
+        reads = {"count": 0}
+
+        def read(root_path):
+            reads["count"] += 1
+            if reads["count"] == 2:
+                raise RuntimeError("injected commit readback failure")
+            return original_read(root_path)
+
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"ready": True}
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=read
+        ):
+            result = self.client.commit_dispatcher_selector()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
+
+    def test_abort_failure_cannot_clobber_newer_commit_transition(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        self._stage_green(root, body="#!/bin/sh\nexit 7\n")
+        baseline = json.loads((root / "selector-v2.json").read_bytes())
+        newer = {
+            **baseline,
+            "generation": baseline["generation"] + 1,
+            "selected": baseline["candidate"],
+            "retained": baseline["selected"],
+            "candidate": None,
+        }
+        newer_raw = self.client._selector_v2_bytes(newer)
+
+        class InterleavingLock:
+            def __enter__(self_inner):
+                return None
+
+            def __exit__(self_inner, *_exc):
+                (root / "selector-v2.json").write_bytes(newer_raw)
+                (root / "selector-v2.json").chmod(0o600)
+                return False
+
+        original_read = self.client._read_broker_selector_v2
+        reads = {"count": 0}
+
+        def read(root_path):
+            reads["count"] += 1
+            if reads["count"] == 2:
+                raise RuntimeError("injected abort readback failure")
+            return original_read(root_path)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_broker_control_lock", return_value=InterleavingLock()
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", side_effect=read
+        ):
+            result = self.client.abort_dispatcher_candidate()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertTrue(result.result["restored_previous"])
+        self.assertEqual((root / "selector-v2.json").read_bytes(), newer_raw)
 
     def test_noop_schema3_install_preserves_selected_selector_bytes(self) -> None:
         root = self.root / "broker-state"

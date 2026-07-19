@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 try:
     import fcntl as _fcntl
@@ -1592,6 +1592,40 @@ def _read_broker_selector_view(root: Path) -> dict[str, Any] | None:
             None if lifecycle is None else _selector_v2_lane_document(lifecycle)
         ),
     }
+
+
+def _selector_v1_projection_matches_selected(
+    root: Path, selector_v2: Mapping[str, Any]
+) -> bool:
+    selector_v1, selector_v1_raw = _read_selector_snapshot(root)
+    if (
+        selector_v1 is None
+        or selector_v1_raw is None
+        or selector_v2.get("selector_v1_sha256")
+        != hashlib.sha256(selector_v1_raw).hexdigest()
+        or not isinstance(selector_v2.get("selected"), dict)
+    ):
+        return False
+    selected = selector_v2["selected"]
+    reference = {
+        "artifact_sha256": selected.get("artifact_sha256"),
+        "manifest_sha256": selected.get("manifest_sha256"),
+    }
+    if selector_v1["selected_lane"] == "blue":
+        return bool(
+            selected.get("transport") == "broker"
+            and selected.get("protocol_version") == BROKER_PROTOCOL_VERSION
+            and selected.get("lane_generation") == 0
+            and selector_v1["blue"] == reference
+        )
+    return bool(
+        selector_v1["selected_lane"] == "green"
+        and selected.get("transport") == "dispatcher"
+        and selected.get("protocol_version")
+        == LEGACY_DISPATCHER_PROTOCOL_VERSION
+        and selected.get("lane_generation") == selector_v1["generation"]
+        and selector_v1["green"] == reference
+    )
 
 
 def _selector_v2_lane_document(lane: BrokerLaneSnapshot) -> dict[str, Any]:
@@ -3431,6 +3465,41 @@ def _broker_control_lock(root: Path) -> Iterator[None]:
             os.close(descriptor)
 
 
+class _BrokerMutationFailure(RuntimeError):
+    def __init__(self, *, restored_previous: bool) -> None:
+        super().__init__("provider control mutation failed")
+        self.restored_previous = restored_previous
+
+
+@contextmanager
+def _broker_control_transaction(
+    root: Path, *, rollback: Callable[[], bool]
+) -> Iterator[None]:
+    """Run rollback before releasing the shared lifecycle-writer lock."""
+
+    with _broker_control_lock(root):
+        try:
+            yield
+        except (
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            try:
+                restored = rollback()
+            except (
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+                TypeError,
+                ValueError,
+            ):
+                restored = False
+            raise _BrokerMutationFailure(restored_previous=restored) from exc
+
+
 def _copy_regular_nofollow(source: Path, target: Path, *, limit: int, mode: int) -> None:
     raw, identity = _read_regular_nofollow(source, limit=limit)
     if raw is None or identity is None:
@@ -3715,6 +3784,66 @@ def _restore_selector_v2_snapshot(root: Path, raw: bytes | None) -> bool:
         return observed_raw == raw
     except (OSError, TypeError, ValueError, RecursionError):
         return False
+
+
+def _snapshot_private_mutable(path: Path, *, limit: int) -> bytes | None:
+    """Capture an absent or exact private regular file before a locked rewrite."""
+
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return None
+    if _exact_mode(path, expected_type=stat.S_IFREG, mode=0o600) is None:
+        raise ValueError("provider mutable control identity is unsafe")
+    raw, opened = _read_regular_nofollow(path, limit=limit)
+    if raw is None or opened is None:
+        raise ValueError("provider mutable control snapshot is unavailable")
+    return raw
+
+
+def _restore_private_mutable(path: Path, raw: bytes | None, *, limit: int) -> bool:
+    """Restore a locked mutable-file snapshot and prove the exact result."""
+
+    try:
+        if raw is None:
+            _unlink_private_durable(path)
+        else:
+            _write_private_atomic(path, raw, mode=0o600)
+        return _snapshot_private_mutable(path, limit=limit) == raw
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _preserved_broker_previous(
+    raw: bytes | None,
+    root: Path,
+    reference: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Retain rollback metadata only from the selected valid broker record."""
+
+    if raw is None:
+        return None
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_broker_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError):
+        return None
+    if (
+        not _broker_record_valid(
+            document,
+            root,
+            allow_previous=True,
+            runtime_protocol_version=PROTOCOL_VERSION,
+        )
+        or document.get("artifact_sha256") != reference.get("artifact_sha256")
+        or document.get("manifest_sha256") != reference.get("manifest_sha256")
+    ):
+        return None
+    previous = document.get("previous")
+    return None if previous is None else dict(previous)
 
 
 def _dispatcher_state_document(
@@ -4486,9 +4615,23 @@ def stage_dispatcher() -> RuntimeResult:
     selector_snapshot_captured = False
     lane: BrokerLaneSnapshot | None = None
     lane_owned = False
+    root: Path | None = None
+
+    def rollback_stage() -> bool:
+        if root is None:
+            return False
+        restored = (
+            _restore_selector_v2_snapshot(root, selector_before_raw)
+            if selector_snapshot_captured
+            else True
+        )
+        if lane is not None and lane_owned:
+            restored = _cleanup_dispatcher_candidate(root, lane) and restored
+        return restored
+
     try:
         root = _ensure_broker_layout()
-        with _broker_control_lock(root):
+        with _broker_control_transaction(root, rollback=rollback_stage):
             selector_before, selector_before_raw = _read_selector_v2_snapshot(root)
             selector_snapshot_captured = True
             baseline = (
@@ -4515,9 +4658,18 @@ def stage_dispatcher() -> RuntimeResult:
                     raise RuntimeError("staged provider dispatcher is not ready")
                 return _staged_dispatcher_result(selector=baseline, lane=lane)
 
+            projection_restage = bool(
+                selector_before is not None
+                and baseline.get("retained") is None
+                and baseline.get("selector_v1_sha256") is not None
+                and _selector_v1_projection_matches_selected(root, baseline)
+            )
             if selector_before is not None and (
                 baseline.get("retained") is not None
-                or baseline.get("selector_v1_sha256") is not None
+                or (
+                    baseline.get("selector_v1_sha256") is not None
+                    and not projection_restage
+                )
             ):
                 return RuntimeResult(
                     RuntimeStatus.UNAVAILABLE,
@@ -4618,19 +4770,19 @@ def stage_dispatcher() -> RuntimeResult:
                 root, selector["candidate"], role="candidate"
             )
             return _staged_dispatcher_result(selector=selector, lane=lane)
+    except _BrokerMutationFailure as failure:
+        restored = failure.restored_previous
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher staging failed; committed lanes were preserved"
+                if restored
+                else "provider dispatcher staging failed; candidate cleanup is unproven"
+            ),
+        )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
-        try:
-            root = _broker_root()
-            restored = (
-                _restore_selector_v2_snapshot(root, selector_before_raw)
-                if selector_snapshot_captured
-                else True
-            )
-            if lane is not None and lane_owned:
-                restored = _cleanup_dispatcher_candidate(root, lane) and restored
-        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
-            restored = False
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
             result={"restored_previous": restored},
@@ -4650,9 +4802,20 @@ def commit_dispatcher_selector() -> RuntimeResult:
         return blocked
     selector_raw: bytes | None = None
     selector_snapshot_captured = False
+    root: Path | None = None
+
+    def rollback_commit() -> bool:
+        if root is None:
+            return False
+        return (
+            _restore_selector_v2_snapshot(root, selector_raw)
+            if selector_snapshot_captured
+            else True
+        )
+
     try:
         root = _broker_root()
-        with _broker_control_lock(root):
+        with _broker_control_transaction(root, rollback=rollback_commit):
             selector, selector_raw = _read_selector_v2_snapshot(root)
             selector_snapshot_captured = True
             if selector is None or selector.get("candidate") is None:
@@ -4701,16 +4864,19 @@ def commit_dispatcher_selector() -> RuntimeResult:
                     "retained": dict(candidate["retained"]),
                 },
             )
+    except _BrokerMutationFailure as failure:
+        restored = failure.restored_previous
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher selector commit failed; prior generation restored"
+                if restored
+                else "provider dispatcher selector commit failed; control metadata is unproven"
+            ),
+        )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
-        try:
-            restored = (
-                _restore_selector_v2_snapshot(_broker_root(), selector_raw)
-                if selector_snapshot_captured
-                else True
-            )
-        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
-            restored = False
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
             result={"restored_previous": restored},
@@ -4730,9 +4896,20 @@ def abort_dispatcher_candidate() -> RuntimeResult:
         return blocked
     selector_raw: bytes | None = None
     selector_snapshot_captured = False
+    root: Path | None = None
+
+    def rollback_abort() -> bool:
+        if root is None:
+            return False
+        return (
+            _restore_selector_v2_snapshot(root, selector_raw)
+            if selector_snapshot_captured
+            else True
+        )
+
     try:
         root = _broker_root()
-        with _broker_control_lock(root):
+        with _broker_control_transaction(root, rollback=rollback_abort):
             selector, selector_raw = _read_selector_v2_snapshot(root)
             selector_snapshot_captured = True
             if selector is None or selector.get("candidate") is None:
@@ -4776,16 +4953,19 @@ def abort_dispatcher_candidate() -> RuntimeResult:
                     "candidate_cleanup": True,
                 },
             )
+    except _BrokerMutationFailure as failure:
+        restored = failure.restored_previous
+        return RuntimeResult(
+            RuntimeStatus.PROVIDER_ERROR,
+            result={"restored_previous": restored},
+            error=(
+                "provider dispatcher abort failed; prior selector restored"
+                if restored
+                else "provider dispatcher abort failed; selector is unproven"
+            ),
+        )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
-        try:
-            restored = (
-                _restore_selector_v2_snapshot(_broker_root(), selector_raw)
-                if selector_snapshot_captured
-                else True
-            )
-        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
-            restored = False
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
             result={"restored_previous": restored},
@@ -4849,6 +5029,35 @@ def _rebuild_legacy_blue_files(
     return state, plist_raw
 
 
+def _rollback_recovery_mutation(
+    *,
+    bootstrap_attempted: bool,
+    job_label: str,
+    job_was_loaded: bool,
+    plist_path: Path,
+    plist_before: bytes | None,
+    state_path: Path,
+    state_before: bytes | None,
+) -> bool:
+    """Undo only recovery-owned job state and restore both mutable files."""
+
+    job_restored = True
+    if bootstrap_attempted and not job_was_loaded:
+        try:
+            if _job_loaded(job_label):
+                booted_out = _bootout_broker(plist_path)
+                job_restored = booted_out and not _job_loaded(job_label)
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+            job_restored = False
+    state_restored = _restore_private_mutable(
+        state_path, state_before, limit=BROKER_STATE_MAX_BYTES
+    )
+    plist_restored = _restore_private_mutable(
+        plist_path, plist_before, limit=1024 * 1024
+    )
+    return job_restored and state_restored and plist_restored
+
+
 def recover_last_committed_control_plane() -> RuntimeResult:
     """Repair mutable control files from the committed selector reference."""
 
@@ -4870,6 +5079,16 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                 "manifest_sha256": selected["manifest_sha256"],
             }
             if selected["transport"] == "broker":
+                state_path = root / "state.json"
+                plist_path = root / "broker.plist"
+                state_before = _snapshot_private_mutable(
+                    state_path, limit=BROKER_STATE_MAX_BYTES
+                )
+                plist_before = _snapshot_private_mutable(
+                    plist_path, limit=1024 * 1024
+                )
+                job_was_loaded = _job_loaded(BROKER_LABEL)
+                bootstrap_attempted = False
                 _bundle, runtime, _manifest, anchor = _verify_published_version(
                     root,
                     artifact_digest=reference["artifact_sha256"],
@@ -4897,26 +5116,46 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                     artifact_digest=reference["artifact_sha256"],
                     manifest_digest=reference["manifest_sha256"],
                     plist_digest=hashlib.sha256(plist_raw).hexdigest(),
-                    previous=None,
+                    previous=_preserved_broker_previous(
+                        state_before, root, reference
+                    ),
                     runtime_protocol_version=PROTOCOL_VERSION,
                 )
-                # State first is deliberate.  If the second write is interrupted,
-                # the committed selector still identifies blue and the next
-                # recovery deterministically rebuilds the plist.  The inverse
-                # order recreates the observed old-plist/candidate-state split.
-                _write_private_atomic(
-                    root / "state.json", _state_bytes(state), mode=0o600
-                )
-                _write_private_atomic(
-                    root / "broker.plist", plist_raw, mode=0o600
-                )
-                if not _job_loaded(BROKER_LABEL):
-                    if not _bootstrap_broker(root / "broker.plist"):
-                        raise RuntimeError("committed blue job could not be restored")
-                observed = _read_current_broker_state(root)
-                if observed != state:
-                    raise RuntimeError("committed blue state was not restored")
-                _verify_plist_against_state(root, state)
+                try:
+                    _write_private_atomic(
+                        state_path, _state_bytes(state), mode=0o600
+                    )
+                    _write_private_atomic(plist_path, plist_raw, mode=0o600)
+                    if not job_was_loaded:
+                        bootstrap_attempted = True
+                        if not _bootstrap_broker(plist_path):
+                            raise RuntimeError(
+                                "committed blue job could not be restored"
+                            )
+                    observed = _read_current_broker_state(root)
+                    if observed != state:
+                        raise RuntimeError("committed blue state was not restored")
+                    _verify_plist_against_state(root, state)
+                except (
+                    OSError,
+                    RuntimeError,
+                    subprocess.SubprocessError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    if not _rollback_recovery_mutation(
+                        bootstrap_attempted=bootstrap_attempted,
+                        job_label=BROKER_LABEL,
+                        job_was_loaded=job_was_loaded,
+                        plist_path=plist_path,
+                        plist_before=plist_before,
+                        state_path=state_path,
+                        state_before=state_before,
+                    ):
+                        raise RuntimeError(
+                            "committed blue recovery rollback failed"
+                        ) from exc
+                    raise
             else:
                 lane = _dispatcher_lane_snapshot(
                     root,
@@ -4926,6 +5165,16 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                     name="selected",
                     protocol_version=selected["protocol_version"],
                 )
+                state_path = _dispatcher_mutable_path(root, lane, "json")
+                plist_path = _dispatcher_mutable_path(root, lane, "plist")
+                state_before = _snapshot_private_mutable(
+                    state_path, limit=BROKER_STATE_MAX_BYTES
+                )
+                plist_before = _snapshot_private_mutable(
+                    plist_path, limit=1024 * 1024
+                )
+                job_was_loaded = _job_loaded(lane.label)
+                bootstrap_attempted = False
                 _bundle, runtime, _manifest, anchor = _verify_published_version(
                     root,
                     artifact_digest=lane.artifact_digest,
@@ -4955,28 +5204,44 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                     plist_digest=hashlib.sha256(plist_raw).hexdigest(),
                     dispatcher_protocol_version=lane.protocol_version,
                 )
-                _write_private_atomic(
-                    _dispatcher_mutable_path(root, lane, "json"),
-                    _state_bytes(state),
-                    mode=0o600,
-                )
-                _write_private_atomic(
-                    _dispatcher_mutable_path(root, lane, "plist"),
-                    plist_raw,
-                    mode=0o600,
-                )
-                if not _job_loaded(lane.label):
-                    if not _bootstrap_broker(
-                        _dispatcher_mutable_path(root, lane, "plist")
+                try:
+                    _write_private_atomic(
+                        state_path, _state_bytes(state), mode=0o600
+                    )
+                    _write_private_atomic(plist_path, plist_raw, mode=0o600)
+                    if not job_was_loaded:
+                        bootstrap_attempted = True
+                        if not _bootstrap_broker(plist_path):
+                            raise RuntimeError(
+                                "committed green job could not be restored"
+                            )
+                    _load_dispatcher_broker_lane(
+                        root,
+                        reference,
+                        lane.generation,
+                        name="selected",
+                        protocol_version=lane.protocol_version,
+                    )
+                except (
+                    OSError,
+                    RuntimeError,
+                    subprocess.SubprocessError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    if not _rollback_recovery_mutation(
+                        bootstrap_attempted=bootstrap_attempted,
+                        job_label=lane.label,
+                        job_was_loaded=job_was_loaded,
+                        plist_path=plist_path,
+                        plist_before=plist_before,
+                        state_path=state_path,
+                        state_before=state_before,
                     ):
-                        raise RuntimeError("committed green job could not be restored")
-                _load_dispatcher_broker_lane(
-                    root,
-                    reference,
-                    lane.generation,
-                    name="selected",
-                    protocol_version=lane.protocol_version,
-                )
+                        raise RuntimeError(
+                            "committed dispatcher recovery rollback failed"
+                        ) from exc
+                    raise
             return RuntimeResult(
                 RuntimeStatus.OK,
                 result={
