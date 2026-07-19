@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.0.5). It gives
+This repository distributes one package: **agent-collab** (v4.1.0). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,20 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.0.5 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.1.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.0.5
+## What's new - v4.1.0
+
+- Bind every schema-3 runtime artifact to its signed provider-runtime and route-
+  contract anchor. Gemini governance proof and provenance must match the exact
+  selected or retained lane that answered.
+- Add selector-v2 roles for selected, retained, candidate, and lifecycle. The
+  dispatcher-2 READY reserves the canonical request digest, size, and execution
+  key and consumes fallback eligibility.
+- Preserve exact committed schema-2/runtime-2 continuity for dispatcher-1 and
+  historical broker-2 transports. Runtime-1 broker remains lifecycle-only.
+
+## v4.0.5 highlights
 
 - Accept the exact Gemini governance proof version emitted by provider runtime
   2.0.0 while keeping that proof contract separate from the public bundle

@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.0.5**
+Current: **4.1.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -40,7 +40,8 @@ archives, which contain none of the corresponding runtime components.
 
 The package may contain a privately built signed native standalone bundle only
 at the platform path declared by `runtime-manifest.json`. Native manifest schema
-2 and contract 3 close the bundle path, entrypoint, sorted member list,
+3 and contract 3 close the bundle path, entrypoint, signed provider-runtime and
+route-contract anchor, sorted member list,
 per-member role/mode/size/hash/Mach-O facts, signing profile, and
 domain-separated whole-bundle identity. `runtime_client.py` rejects overrides,
 links, aliases, extra members, parent traversal, writable modes, wrong
@@ -50,7 +51,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.0.5 package.
+identify this same 4.1.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -63,13 +64,12 @@ traffic. A missing or stale broker is a typed failure—these routes never fall
 back to the direct entrypoint path. Only local runtime management retains fixed
 direct exact-entrypoint execution.
 
-The client also understands one strict, private blue/green selector. During the
-v1-to-v2 transition, lifecycle control may prove the exact protocol-v1 blue
-broker solely to observe it, stage protocol-v2 green, or recover selector-bound
-mutable files. Normal protocol-v2 invocation never sends a provider request to
-that v1 lane and still rejects v1 responses. Existing v1 host sessions remain
-on independently proven blue while candidate v2 clients prove green; after the
-selector commit, new v2 sessions use green and old sessions drain on blue.
+The client preserves selector-v1 bytes and maintains a parallel selector-v2
+document with independent selected, retained, candidate, and lifecycle roles.
+Normal routing tries selected and then retained; candidate is never a normal
+route. Exact committed schema-2/runtime-2 dispatcher-1 and historical broker-2
+lanes remain viable, while schema-2/runtime-1 broker is lifecycle-only. New
+candidates require schema 3, runtime 2, and dispatcher 2.
 Lifecycle ping and lock-probe requests, and their successful replies, use the
 closed dispatcher control protocol v1. Typed lifecycle failures remain on the
 runtime protocol v2. Each response shape is validated against its own protocol,
@@ -82,10 +82,14 @@ boundary is rejected.
 Green label,
 socket, state, and plist paths are derived from its signed artifact and manifest
 digests; callers cannot supply them. Missing, malformed, unsafe, unproven, or
-unreachable green state leaves a proven blue lane usable until a
-request-bearing frame is sent. Green first proves Darwin peer credentials, the
+unreachable selected state leaves a proven retained lane usable through the
+protocol-specific pre-consumption boundary: dispatcher 2 until authenticated
+READY is accepted, and historical dispatcher 1 until a request-bearing frame
+is sent. Dispatcher protocol 2 proves Darwin peer credentials, the
 exact published dispatcher executable, and a request-free
-nonce/deadline/lane-bound hello/ready exchange. Its local I/O bound preserves
+nonce/deadline/lane-bound hello/ready exchange that reserves the canonical
+request digest, size, and execution key. An accepted READY consumes fallback
+eligibility. Its local I/O bound preserves
 time for blue without shortening the original request deadline. A failure at
 or after request send never retries another lane. The selector remains
 legacy-blue by default;

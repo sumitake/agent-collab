@@ -197,7 +197,7 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
             "channel",
             "artifacts",
         }
-        or not _exact_int(data.get("schema_version"), 2)
+        or not _exact_int(data.get("schema_version"), 3)
         or not _exact_int(data.get("protocol_version"), 2)
         or not _exact_int(data.get("contract_version"), 3)
         or not _exact_int(data.get("broker_protocol_version"), 2)
@@ -358,12 +358,19 @@ def verify_release(
         "entrypoint",
         "size",
         "sha256",
+        "provider_runtime_version",
+        "route_contract_version",
         "signing",
         "files",
         "contracts",
     }
     if not isinstance(item, dict) or set(item) != expected_fields:
         return False, {}, ["runtime artifact manifest shape is invalid"]
+    if (
+        item.get("provider_runtime_version") != "2.0.0"
+        or item.get("route_contract_version") != 2
+    ):
+        errors.append("runtime artifact contract anchor is invalid")
 
     signing = item.get("signing")
     if not _TEAM_ID_RE.fullmatch(EXPECTED_DEVELOPER_ID_TEAM):

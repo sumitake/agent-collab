@@ -150,7 +150,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
             ("composer", "codegen"),
         )
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
@@ -167,6 +167,8 @@ class ReleaseEvidenceTests(unittest.TestCase):
                     "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                         records
                     ),
+                    "provider_runtime_version": "2.0.0",
+                    "route_contract_version": 2,
                     "signing": {
                         "mode": "developer_id",
                         "identity": (

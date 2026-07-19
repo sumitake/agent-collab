@@ -465,7 +465,7 @@ class PublicExportSafetyTests(unittest.TestCase):
             }
         ]
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "protocol_version": 2,
             "contract_version": 3,
             "broker_protocol_version": 2,
@@ -480,6 +480,8 @@ class PublicExportSafetyTests(unittest.TestCase):
                     "entrypoint": "agent-collab-runtime",
                     "size": len(b"compiled-binary"),
                     "sha256": self.audit.runtime_bundle.compute_bundle_identity(records),
+                    "provider_runtime_version": "2.0.0",
+                    "route_contract_version": 2,
                     "signing": {
                         "require_notarization": True,
                         "hardened_runtime": True,
