@@ -520,6 +520,28 @@ finding 14) rather than as isolated patches to a module under redesign:
   the stale file is removed by hand. Fix: a collision-resistant temp name (`mkstemp`), so
   crash residue can never collide with a future writer. (Verified against `406639f`.)
 
+- **F5 — a symlinked journal ROOT is accepted.** `_atomic_write` does
+  `parent.mkdir(exist_ok=True)`, which happily accepts a symlink-to-directory, and
+  `O_NOFOLLOW` guards only the FINAL component. **Verified:** a write through a symlinked
+  root landed outside the intended directory. So a tampered or corrupted journal root
+  redirects `save()` writes and lets `load()` accept data from outside the git common dir.
+  Fix: resolve and validate the root (O_DIRECTORY + `O_NOFOLLOW` on each component, or
+  verify `realpath(root)` is inside `git-common-dir`) before any file operation.
+- **F6 — opening a FIFO journal/lock path BLOCKS FOREVER.** `_read_nofollow` opens
+  `O_RDONLY` and only then `fstat`s to reject non-regular files — but on a FIFO the *open*
+  blocks waiting for a writer, so the non-regular guard **can never fire**. `load()` and lock
+  acquisition hang instead of raising the promised fatal `JournalError`. Fix: add
+  `O_NONBLOCK` to the open, then validate the descriptor type.
+
+  *Verification note worth keeping:* my first probe reported "guard fired" and was WRONG. The
+  error carried `errno None / strerror None` — not a real filesystem error. It was
+  `InterruptedError` from the `SIGALRM` I used as a timeout, and `InterruptedError` subclasses
+  `OSError`, so the `except OSError` handler swallowed the interrupted block and disguised it
+  as the guard working. A clean subprocess test times out. The probe had the same defect class
+  as the code under test — a guard that cannot fire because control never reaches it
+  ([[guard.defeats.its.own.precondition]]). Lesson: when a probe reports a guard firing,
+  check that the exception is the one the guard raises, not a look-alike.
+
 Both are mechanical, both have known fixes, and both need the same crash/fault-injection
 tests, so they belong to the v3 durability component, not to five more commits on the frozen
 module.
