@@ -77,7 +77,10 @@ object that says what this release is *supposed* to be, and that object must be
 or references a signed intent blob by digest from the tag — an **open question**
 (§ Open questions Q1). The intent binds, at minimum:
 
-- `repository` — `owner/name`. Closes signature-replay from another repo (finding 8, A5).
+- `repository` — the **stable numeric repository id** (GitHub's `repository.id`), NOT
+  `owner/name`, which is rename/transfer-mutable. Binding the mutable name would let a rename
+  or a same-name repo elsewhere satisfy the check. Closes signature-replay from another repo
+  (finding 8, A5; sharpened by the PR-bot on `2ce37a5` — stable id, not name).
 - `version` — the tag name; the tag *is* the version.
 - `release_commit` — the peeled commit OID the tag points at. Binds the tree that
   ships. (finding 7: tag-object OID **vs** peeled commit OID are distinct facts.)
