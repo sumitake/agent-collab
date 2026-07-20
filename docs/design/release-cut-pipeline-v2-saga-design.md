@@ -437,3 +437,52 @@ operator-required class), so implementation is blocked on it:
 
 The directionally-correct v2 mechanisms are retained under **either** fork; the fork decides
 only what the pipeline is allowed to *claim* and what infrastructure backs it.
+
+---
+
+## PREMISE CORRECTION — the repo is PUBLIC with `main` already protected (verified)
+
+The round-2 review and my fork analysis both rested on "GitHub Free **private** repo," which
+is **false**. Verified against `sumitake/agent-collab`:
+
+- **Visibility: PUBLIC.** Repository rulesets and branch protection are therefore free and
+  available — the operator additionally subscribes to GitHub Pro, but public-repo rulesets
+  are the actual enabler and need no paid tier.
+- **`main` already carries an active ruleset**: `deletion` blocked, `non_fast_forward`
+  blocked, `required_linear_history`, **`required_signatures`**, `pull_request`,
+  `required_status_checks`, 1 bypass actor. So a revocation/burn record committed to `main`
+  is **already** protected against A2 deletion or history rewrite, and commits to `main`
+  must be signed and PR-reviewed.
+- **No tag ruleset yet.** Tags can currently be force-updated/deleted by a writer. Adding a
+  `v*` tag ruleset (block update + deletion) is a **free config change**, not a spend, and
+  makes the signed tag a real immutable fence (§5).
+- **A2 surface = 1 collaborator** (public repos still restrict *write* to collaborators),
+  not the anonymous public.
+
+**Consequences for the review's 13 findings.** The infrastructure-infeasibility findings
+(6, 12) and much of 5 and 8 were arguing against a tier this repo is not on:
+
+- **5 / 6 (tag fence, immutability)** — achievable now via a free `v*` tag ruleset on a
+  public repo. Not a fork, a config add (this is the parent design's D9).
+- **8 (signer policy not out of band)** — a signer policy committed to the *already-protected*
+  `main` (deletion-blocked, non-fast-forward-blocked, signature-required, PR-gated) is
+  tamper-resistant against A2. Effectively out of band.
+- **12 (burn deletion)** — the burn set on protected `main` cannot be deleted or reset by
+  A2 today. Revocation is achievable, not infeasible.
+
+**The honest residual** — what stays consumer-side per V0 and is NOT closed by rulesets:
+the **draft release + assets between CI-verify and CI-publish**. GitHub *immutable releases*
+as a distinct feature is Enterprise-Cloud; on this tier a writer can still mutate a draft in
+that window. This is exactly V0's already-approved concession: prevention there is
+consumer-side (fail closed until `ATTESTED` + verify the receipt), not producer-side.
+
+**So there is no A/B fork.** The strong posture — A2-resistance for the tag and revocation
+layers — is available now with a free tag-ruleset config; the one genuinely Enterprise-gated
+gap (immutable draft *releases*) is the pre-existing, operator-approved consumer-side window.
+v3 targets the strong posture. The remaining review findings that are NOT premise-dependent
+(2 observation-history/ABA, 4 attempt-id authorship, 7 compensation-ordering, 10/11
+receipt-authenticity) are real and must still be resolved in v3 on their merits.
+
+**Operator action (not agent-performed — repo security config):** add a `v*` tag ruleset
+(block deletion + update) so the signed-tag fence is enforced. This is a repo-settings /
+security change, operator domain.
