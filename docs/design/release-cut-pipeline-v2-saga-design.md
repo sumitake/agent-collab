@@ -681,3 +681,74 @@ Until (a)–(c) are decided, the tag ruleset remains as-created (WITH the admin 
 fence currently protects only against a *non-admin* write token, which is a smaller set than
 the design targets). The rest of v3 (R3-1..R3-4, R3-7) is unaffected and ready to implement
 once the identity/anchor decisions land.
+
+---
+
+## R3-6 status + the revocation anchor (decisions resolved / recommended)
+
+**(a) DONE — tag-ruleset bypass removed.** Ruleset `19198252` now has `bypass_actors: []`
+(verified). `v*` tags are immutable for **every** actor — admin, any PAT, the cutter —
+while creation stays allowed. R3-6's ruleset half is closed: no identity can delete or
+overwrite a release tag without first removing the ruleset (an admin act, and
+admin-compromise is out of scope per V0).
+
+**(b) BLOCKED BY PLATFORM — a scoped release PAT cannot be created programmatically.**
+Verified: `POST user/personal_access_tokens` → 404 (no such endpoint); GitHub PATs, classic
+and fine-grained, are **UI-only**. `repos/*/installation` returns 401 "JSON web token could
+not be decoded" — App installation tokens *are* API-mintable but require an App private key,
+and no App is installed on this repo. (The programmatic token-minting capability available to
+this agent is Cloudflare's, which does not transfer to GitHub.) Options, in order of
+preference:
+
+1. **Operator creates a fine-grained PAT** (~2 min, UI): *Repository access* = only
+   `sumitake/agent-collab`; *Permissions* = **Contents: Read and write** (creates tags,
+   releases, uploads assets) and **Actions: Read and write** (dispatch the verify workflow);
+   **no Administration**. Leak blast radius shrinks to "can cut a release, cannot remove the
+   fence."
+2. **Move the post-tag steps into CI**, where the workflow's `GITHUB_TOKEN` with an explicit
+   `permissions:` block is a scoped, non-admin, non-bypass identity **by construction** — no
+   PAT at all. The tag push must stay local (the GPG key is local), but draft-create,
+   asset-upload and dispatch need not be. Architecturally the cleanest answer to R3-6.
+3. **Accept the existing admin PAT.** With (a) done it *functions* correctly — it cannot
+   delete or overwrite tags. The residual is leak blast radius only: that PAT carries
+   `admin` + `delete_repo`, so a leak lets the attacker delete the ruleset and then the tag.
+
+**(c) RECOMMENDED — the revocation/burn record lives in a SIGNED TAG, not Issues or
+Discussions.** Proposal: `refs/tags/revoked-vX.Y.Z`, an annotated **GPG-signed** tag whose
+domain-separated payload binds `{repository id, revoked version, reason, timestamp}`,
+protected by a second ruleset (`refs/tags/revoked-*`, block `deletion` +
+`non_fast_forward`, no bypass).
+
+*Why not Issues / Discussions* — they fail the property the anchor exists for:
+- **Mutable.** Issue/discussion bodies and comments are editable by author and maintainers. A
+  revocation record must be immutable or at minimum non-removable.
+- **Deletable.** Issues can be deleted by an admin, discussions by maintainers, comments by
+  their author — which is exactly review finding 12's failure ("a fresh cutter concludes the
+  missing burn never existed").
+- **Unsigned.** No cryptographic binding; you would embed a signature in the body, at which
+  point the surface is only transport — and it is still deletable.
+- **API-read fragility.** Preflight would read them over the API, reintroducing the
+  404-vs-rate-limit-vs-deleted ambiguity that R3-1's four-valued observation exists to handle.
+  A ref read is far more robust.
+They remain excellent as a **human-visible notification** surface — just not as the
+authoritative anchor.
+
+*Why a signed revocation tag* —
+- **Reuses the immutability primitive already deployed and verified** in (a); one mechanism,
+  one verifier, one mental model.
+- **Append-only by construction** — every revocation is a new distinct ref; nothing is ever
+  modified in place.
+- **Signed with the same trust root** as release intent, so revocation verification is the
+  same code path (verify signature → signer policy → bound repo id + version).
+- **Fast** — a single `git push`, no PR gate, which is what R3-4 needs for a durable
+  record *before* destructive compensation. (This is precisely what protected `main` could
+  not give us, since `main` requires pull_request.)
+- **Robustly readable** — `git ls-remote --tags 'refs/tags/revoked-*'`.
+- Flat `revoked-` prefix, **not** `revoked/`, because ruleset glob `*` does not cross `/`
+  (R3-7); a flat prefix guarantees the pattern covers every revocation ref.
+
+*Honest residual:* this is the best available **in-repo** anchor and it does not survive
+admin-compromise (an admin can delete the ruleset, then the tag) — consistent with V0. A
+genuinely non-rollbackable anchor would need an external transparency log; GitHub's artifact
+attestations write to one for public repos, but that surface is for artifacts, not arbitrary
+revocation records.
