@@ -230,3 +230,76 @@ narrow and mechanical, but it belongs with the durability work rather than as a
 sixth reactive commit to this file.
 
 Both are work items for the post-convergence implementation, not inline patches.
+
+---
+
+## Adversarial design review round 1 — VERDICT: RECONSIDER (HIGH), 10 blocking
+
+Full text: `docs/design/reviews/reconciliation-plan-adversarial-review-1.md`.
+Reviewer: Codex (distinct family from the author; Grok was rate-limited). This is
+the review the directive required *before* any of this code was written.
+
+**The plan does not survive it, and the architecture is the reason.** Finding 10 is
+the one that governs the rest: *a fully attacker-writable journal cannot be the
+authority that selects weaker guards; at most it is a progress hint.* The matrix
+(R1) is a derived invariant specification — useful, but it cannot repair an
+authoritative mutable journal. The right shape is a **resumable, idempotent release
+saga** whose authorization comes from **signed intent** and whose progress is
+established by **attempt-bound remote receipts**.
+
+So the four rounds of patching were not merely under-specified; they were hardening
+a structure that patching cannot make correct.
+
+**The never-asked column I asked the reviewer to find (finding 2):
+`indeterminate-as-absent`.** A GitHub 404, a permission mask, a timeout, a rate
+limit, incomplete pagination, a stale cache, and a genuine deletion must not
+collapse into "absent". Every predicate needs at least `PRESENT / ABSENT / UNKNOWN /
+CONFLICT`, and only an *authoritative* ABSENT may satisfy a forbidden-evidence rule.
+This is [[falsey.is.not.absent]] generalized to the network layer — the same defect
+class a third time, now at the observation boundary.
+
+**Findings that invalidate specific plan items:**
+
+- **R5 is wrong as written (5).** `flock` protects an inode, not a pathname. If an
+  operator "clears" the lockfile while holder A retains the old inode, B creates and
+  locks a new inode and *both* hold valid locks. The lockfile must be persistent and
+  "clear" must mean acquiring the lock, never unlinking it. A local `flock` also does
+  nothing against a cutter in another clone or host — cross-host serialization needs
+  remote fencing/CAS.
+- **R2 delegates the dangerous decision to an undefined `--recover` (6).** An
+  implementer could reproduce silent adoption behind an explicit flag.
+- **R3/R4 specify presence and identity but not semantic agreement (7).** Tag-object
+  OID versus peeled commit, release ID versus tag name, asset ID plus digest plus
+  size, expected draft/published state.
+- **A flat matrix cannot express the protocol (3).** Concurrent cutters and
+  sequential API calls can yield a combination that never existed simultaneously.
+  Needs a temporal saga spec: precondition, attempt ID, effect, durable receipt,
+  postcondition, compensation, retry rule, revalidation point.
+- **Pending states are not executable as written (4).** "May or may not have landed"
+  must decompose into confirmed-not-started / completed-by-this-attempt /
+  completed-by-another-attempt / ambiguous / conflicting, with an attempt-bound
+  idempotency key — otherwise an implementer replays uploads or adopts another
+  attempt's effects.
+- **The attacker model is not closed (8).** Capabilities compose; missing are a
+  concurrent honest cutter, signature replay from another repository/release
+  context, local trust-anchor or git-config substitution, and a signing-oracle
+  attack that steers the legitimate cutter into signing attacker-chosen intent.
+  "Cannot forge a signature" is weaker than the plan assumed.
+- **Consistency is conflated with authorization and causality (9).** Three mutually
+  agreeing sources can consistently describe the wrong release, wrong channel, or a
+  replayed signed tag. Needs an immutable release-intent identifier binding
+  repository, version, commit, channel, expected artifacts, and signer policy.
+  Without it, reconciliation proves coincidence, not ownership or authorization.
+- **My own arithmetic was wrong (1).** 9 + 3 + 1 = 13 states, plus absent = 14 rows;
+  the plan said "twelve plus absent". A specification that cannot count its own rows
+  is not yet enumerable.
+- **The verification obligation overclaims (11, non-blocking).** "Deleting one row
+  must fail exactly one subtest" is brittle — a sound invariant may legitimately
+  affect several scenarios. Require schema-level completeness and per-rule mutation
+  detection, plus property tests over observation outcomes and scheduled
+  concurrency/fault traces.
+
+**Status: v2 of this design is required before any implementation.** It is a
+re-architecture (saga + signed intent + attempt receipts + four-valued observation),
+not an edit. That is a bigger piece of work than the remaining scope of PR #27, and
+should be scoped deliberately rather than started at the tail of a session.
