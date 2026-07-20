@@ -508,3 +508,41 @@ finding 14) rather than as isolated patches to a module under redesign:
 Both are mechanical, both have known fixes, and both need the same crash/fault-injection
 tests, so they belong to the v3 durability component, not to five more commits on the frozen
 module.
+
+---
+
+## Infrastructure now ENFORCED — tag immutability live (D9 done)
+
+The `v*` tag-immutability ruleset is created and active on `sumitake/agent-collab`
+(ruleset id 19198252, verified):
+
+- **target: tag**, condition `refs/tags/v*`, enforcement **active**.
+- rules: **`deletion`** blocked, **`non_fast_forward`** blocked → a pushed `v*` tag cannot be
+  overwritten or deleted. Creation is *not* blocked, so `git tag -s vX.Y.Z && git push` still
+  works — the release path is unaffected.
+- bypass: admin role (`actor_id 5`, `always`) — an operator escape hatch for emergencies; a
+  **write-scoped token cannot bypass**, so the realistic A2 (a leaked CI/bot token) cannot
+  rewrite or delete a release tag.
+
+So §5's "signed-tag global fence" is no longer aspirational: a pushed signed tag is an
+**immutable anchor** against the realistic A2. Combined with the already-live `main`
+protection (the burn set cannot be deleted/reset by a write token), the two rulesets give the
+strong posture the round-2 review wrongly assumed was infeasible.
+
+### Design refinement forced by tag immutability — resolves finding 7
+
+Round-2 finding 7 was: *rollback deletes the signed tag before burn is durable → a crash
+destroys the recovery root while the version is unburned.* Under an immutable tag this
+**cannot happen**: rollback can no longer delete the tag (a write token is blocked; only an
+admin bypass could, and admin-compromise is out of scope per V0). So the saga's rollback
+compensation is refined:
+
+- Rollback deletes the **draft release and asset(s)** (both require authoritative-ABSENT
+  afterward), then **burns the version** on the protected `main`. It **never deletes the
+  tag** — the immutable signed tag remains as a permanent **tombstone**.
+- The recovery root (signed tag) is therefore indestructible by the realistic attacker, and a
+  crash mid-rollback leaves the tag intact + the burn either durable-on-`main` or re-driven on
+  resume. Finding 7's ordering hazard is structurally removed, not merely ordered around.
+
+This is a case where getting the *verified* infrastructure into the design improved it: the
+fence the review said we couldn't have turns out to also close a logic finding.
