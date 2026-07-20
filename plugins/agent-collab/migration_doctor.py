@@ -327,6 +327,7 @@ class DoctorReport:
     inventory_errors: tuple[str, ...]
     host_profile: Mapping[str, object]
     native_runtime: str
+    broker_runtime: str
     provider_routing: str
     actions: tuple[str, ...]
 
@@ -510,6 +511,18 @@ def _runtime_state() -> str:
     return f"invalid: {resolution.status.value}"
 
 
+def _broker_runtime_state() -> str:
+    client = _load_runtime_client()
+    status = client.broker_status()
+    if status.status == client.RuntimeStatus.OK:
+        return "ready"
+    if status.status == client.RuntimeStatus.UNAVAILABLE:
+        return "unavailable"
+    if status.status == client.RuntimeStatus.INTEGRITY_ERROR:
+        return "integrity_error"
+    return "unproven"
+
+
 def build_report(
     *, home: Path, explicit_config: Mapping[str, str] | None
 ) -> DoctorReport:
@@ -517,6 +530,7 @@ def build_report(
     policy = _load_policy()
     profile = policy.resolve_profile(explicit_config)
     runtime = _runtime_state()
+    broker_runtime = _broker_runtime_state()
     blocked = bool(
         inventory.active_packages or inventory.installed_packages or inventory.errors
     )
@@ -566,7 +580,9 @@ def build_report(
                 f"MANUAL: remove {package}@agent-collab from the active "
                 f"{observed_host} plugin selection"
             )
-    routing_ready = not blocked and runtime == "available"
+    routing_ready = (
+        not blocked and runtime == "available" and broker_runtime == "ready"
+    )
     return DoctorReport(
         active_legacy_packages=inventory.active_packages,
         installed_legacy_packages=inventory.installed_packages,
@@ -575,6 +591,7 @@ def build_report(
         inventory_errors=inventory.errors,
         host_profile=asdict(profile),
         native_runtime=runtime,
+        broker_runtime=broker_runtime,
         provider_routing="READY" if routing_ready else "BLOCKED",
         actions=tuple(actions),
     )
@@ -596,6 +613,7 @@ def render_report(report: DoctorReport) -> str:
         *(f"INVENTORY ERROR: {error}" for error in report.inventory_errors),
         f"HOST PROFILE: {report.host_profile['primary_id']} / {report.host_profile['primary_family']}",
         f"NATIVE RUNTIME: {report.native_runtime}",
+        f"BROKER RUNTIME: {report.broker_runtime}",
         *report.actions,
     ]
     return "\n".join(lines)

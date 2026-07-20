@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.1.0**
+Current: **4.1.1**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -19,6 +19,14 @@ configuration may fill signals the host cannot observe, but conflicting
 current-session and explicit identity is a configuration error for every
 route. Partial or unknown identity is allowed only for non-governance work and
 always carries an independence warning.
+
+Codex Desktop may expose a thread identifier without an active model. For an
+exact lowercase-UUID thread, the policy reads one same-owner, non-writable,
+non-linked rollout from the fixed Codex sessions tree with bounded no-follow
+I/O, validates its session metadata, and accepts only the newest complete,
+internally consistent OpenAI turn model. Ambiguous, unsafe, malformed, or
+conflicting rollout evidence fails governance closed instead of inventing
+model metadata.
 
 ## License
 
@@ -51,7 +59,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.1.0 package.
+identify this same 4.1.1 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -98,7 +106,9 @@ does not select it for normal traffic. That operation binds one exact
 provider/candidate/worker/generation/route tuple and is not a public policy
 route or model selector. Mutating broker lifecycle commands are unavailable from
 the Codex seatbelt at both packaged entrypoints; read-only `broker-status`
-remains available.
+remains available and reports ready only after the canonical selected lane,
+immutable artifact and manifest, launchd job, socket, and a closed liveness
+exchange are all proven stable.
 The broker strips the Codex Desktop outer-Seatbelt marker before dispatch:
 socket activation does not inherit that client sandbox, so every brokered Grok
 and Composer attempt independently validates its own nested read-only sandbox.
@@ -252,9 +262,10 @@ Run `/agent-collab:migration-doctor` after install/update. It uses no provider:
 it inventories installed and cache-selected old packages, including enabled or
 installed-disabled Codex entries under `~/.codex/config.toml`; records the
 source host for each observation; resolves the current host profile; checks the
-runtime manifest; blocks routing while any retired package remains installed or
-active; and prints exact manager-specific install, verify, and uninstall
-actions.
+runtime manifest; proves the selected broker lane with a closed liveness
+exchange; blocks routing while any retired package remains installed or active
+or the executable broker path is unproven; and prints exact manager-specific
+install, verify, and uninstall actions.
 
 ## Signed runtime setup
 

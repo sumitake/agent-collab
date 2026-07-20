@@ -22,11 +22,17 @@ import json
 import os
 import re
 import secrets
+import stat
 import sys
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+try:
+    import pwd as _pwd
+except ImportError:  # pragma: no cover - non-POSIX hosts cannot prove Codex state
+    _pwd = None
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
@@ -103,6 +109,15 @@ MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
 MAX_DOCUMENTS = 64
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_CODEX_THREAD_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+_CODEX_YEAR_RE = re.compile(r"^[0-9]{4}$")
+_CODEX_MONTH_DAY_RE = re.compile(r"^[0-9]{2}$")
+_CODEX_ROLLOUT_ENTRY_LIMIT = 100_000
+_CODEX_ROLLOUT_LINE_LIMIT = 4 * 1024 * 1024
+_CODEX_ROLLOUT_SCAN_LIMIT = 64 * 1024 * 1024
+_CODEX_ROLLOUT_SCAN_CHUNK = 64 * 1024
 _SEAL_KEY = secrets.token_bytes(32)
 _PROVIDER_FAMILIES = {
     "anthropic": "anthropic",
@@ -268,6 +283,279 @@ def _overlay_profile_values(
     return base
 
 
+def _codex_sessions_root() -> Path | None:
+    if _pwd is None or not hasattr(os, "getuid"):
+        return None
+    try:
+        home = _pwd.getpwuid(os.getuid()).pw_dir
+    except (KeyError, OSError):
+        return None
+    if (
+        type(home) is not str
+        or not home
+        or "\0" in home
+        or len(home) > 4096
+        or not Path(home).is_absolute()
+    ):
+        return None
+    return Path(home) / ".codex" / "sessions"
+
+
+def _safe_codex_directory(path: Path) -> bool:
+    try:
+        identity = path.lstat()
+    except OSError:
+        return False
+    return bool(
+        stat.S_ISDIR(identity.st_mode)
+        and not stat.S_ISLNK(identity.st_mode)
+        and identity.st_uid == os.getuid()
+        and identity.st_mode & 0o022 == 0
+    )
+
+
+def _safe_codex_rollout_identity(identity: os.stat_result) -> bool:
+    return bool(
+        stat.S_ISREG(identity.st_mode)
+        and not stat.S_ISLNK(identity.st_mode)
+        and identity.st_uid == os.getuid()
+        and identity.st_nlink == 1
+        and identity.st_mode & 0o022 == 0
+    )
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("duplicate JSON key")
+        document[key] = value
+    return document
+
+
+def _decode_codex_rollout_line(raw: bytes) -> Mapping[str, object]:
+    if not raw or len(raw) > _CODEX_ROLLOUT_LINE_LIMIT:
+        raise ValueError("Codex rollout line is outside the size bound")
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_json_object,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+        )
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("Codex rollout line is malformed") from exc
+    if not isinstance(document, Mapping):
+        raise ValueError("Codex rollout record is not an object")
+    return document
+
+
+def _codex_rollout_candidates(root: Path, thread_id: str) -> list[tuple[Path, os.stat_result]]:
+    if not _safe_codex_directory(root):
+        raise ValueError("Codex sessions root identity is unsafe")
+    entry_count = 0
+    candidates: list[tuple[Path, os.stat_result]] = []
+    suffix = f"-{thread_id}.jsonl"
+
+    def entries(path: Path) -> list[os.DirEntry[str]]:
+        nonlocal entry_count
+        observed: list[os.DirEntry[str]] = []
+        try:
+            with os.scandir(path) as iterator:
+                for entry in iterator:
+                    entry_count += 1
+                    # Count incrementally and abort AS SOON AS the cumulative
+                    # bound is exceeded, so a single oversized directory cannot
+                    # be fully materialized into memory (unbounded memory /
+                    # stall) before the limit is enforced.
+                    if entry_count > _CODEX_ROLLOUT_ENTRY_LIMIT:
+                        raise ValueError(
+                            "Codex sessions tree exceeds the entry bound"
+                        )
+                    observed.append(entry)
+        except OSError as exc:
+            raise ValueError("Codex sessions directory is unreadable") from exc
+        return observed
+
+    year_directories: list[Path] = []
+    for entry in entries(root):
+        if _CODEX_YEAR_RE.fullmatch(entry.name) is None:
+            continue
+        path = Path(entry.path)
+        if not _safe_codex_directory(path):
+            raise ValueError("Codex sessions year identity is unsafe")
+        year_directories.append(path)
+
+    month_directories: list[Path] = []
+    for year in year_directories:
+        for entry in entries(year):
+            if _CODEX_MONTH_DAY_RE.fullmatch(entry.name) is None:
+                continue
+            path = Path(entry.path)
+            if not _safe_codex_directory(path):
+                raise ValueError("Codex sessions month identity is unsafe")
+            month_directories.append(path)
+
+    day_directories: list[Path] = []
+    for month in month_directories:
+        for entry in entries(month):
+            if _CODEX_MONTH_DAY_RE.fullmatch(entry.name) is None:
+                continue
+            path = Path(entry.path)
+            if not _safe_codex_directory(path):
+                raise ValueError("Codex sessions day identity is unsafe")
+            day_directories.append(path)
+
+    for day in day_directories:
+        for entry in entries(day):
+            if not entry.name.endswith(suffix):
+                continue
+            try:
+                identity = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise ValueError("Codex rollout identity is unreadable") from exc
+            if not _safe_codex_rollout_identity(identity):
+                raise ValueError("Codex rollout identity is unsafe")
+            candidates.append((Path(entry.path), identity))
+    return candidates
+
+
+def _codex_rollout_window(fd: int, captured_size: int) -> bytes:
+    lower = max(0, captured_size - _CODEX_ROLLOUT_SCAN_LIMIT)
+    cursor = captured_size
+    chunks: list[bytes] = []
+    while cursor > lower:
+        offset = max(lower, cursor - _CODEX_ROLLOUT_SCAN_CHUNK)
+        chunk = os.pread(fd, cursor - offset, offset)
+        if len(chunk) != cursor - offset:
+            raise ValueError("Codex rollout changed during bounded read")
+        chunks.append(chunk)
+        cursor = offset
+    window = b"".join(reversed(chunks))
+    if lower:
+        boundary = window.find(b"\n")
+        if boundary < 0:
+            raise ValueError("Codex rollout has no bounded record boundary")
+        window = window[boundary + 1 :]
+    # A nonempty snapshot whose final record is not newline-terminated is an
+    # incomplete tail (a concurrent writer mid-append, or a permanently
+    # truncated final record). Trimming it and trusting the PRECEDING record
+    # would let a stale, superseded model-changing context be read as
+    # governance-ready identity. Fail closed instead: the caller treats this as
+    # an unavailable identity (unknown model, not governance-ready), and the
+    # next read after the writer completes the line succeeds.
+    if captured_size and (not window or not window.endswith(b"\n")):
+        raise ValueError("Codex rollout snapshot tail is incomplete")
+    return window
+
+
+def _codex_model_from_rollout(path: Path, observed: os.stat_result, thread_id: str) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(os.fspath(path), flags)
+    try:
+        opened = os.fstat(fd)
+        if (
+            not _safe_codex_rollout_identity(opened)
+            or (opened.st_dev, opened.st_ino) != (observed.st_dev, observed.st_ino)
+        ):
+            raise ValueError("Codex rollout changed before open")
+        captured_size = opened.st_size
+        first = os.pread(fd, _CODEX_ROLLOUT_LINE_LIMIT + 1, 0)
+        newline = first.find(b"\n")
+        if newline < 0 or newline > _CODEX_ROLLOUT_LINE_LIMIT:
+            raise ValueError("Codex rollout session metadata is unbounded")
+        metadata = _decode_codex_rollout_line(first[:newline])
+        payload = metadata.get("payload")
+        if (
+            metadata.get("type") != "session_meta"
+            or not isinstance(payload, Mapping)
+            or payload.get("id") != thread_id
+            or payload.get("model_provider") != "openai"
+        ):
+            raise ValueError("Codex rollout session metadata does not match")
+
+        model = ""
+        for raw in reversed(_codex_rollout_window(fd, captured_size).splitlines()):
+            record = _decode_codex_rollout_line(raw)
+            if record.get("type") != "turn_context":
+                continue
+            context = record.get("payload")
+            if not isinstance(context, Mapping):
+                raise ValueError("Codex turn context is malformed")
+            candidate = context.get("model")
+            if type(candidate) is not str or _model_family_signals(candidate) != {
+                "openai"
+            }:
+                raise ValueError("Codex turn model identity is unproven")
+            collaboration = context.get("collaboration_mode")
+            if collaboration is not None:
+                if not isinstance(collaboration, Mapping):
+                    raise ValueError("Codex collaboration model is malformed")
+                settings = collaboration.get("settings")
+                if settings is not None:
+                    if not isinstance(settings, Mapping):
+                        raise ValueError("Codex collaboration settings are malformed")
+                    nested_model = settings.get("model")
+                    if nested_model is not None and (
+                        type(nested_model) is not str
+                        or nested_model.strip().casefold()
+                        != candidate.strip().casefold()
+                    ):
+                        raise ValueError("Codex model identities disagree")
+            model = candidate.strip()
+            break
+        if not model:
+            raise ValueError("Codex rollout has no bounded turn identity")
+        completed = os.fstat(fd)
+        if (
+            not _safe_codex_rollout_identity(completed)
+            or (
+                completed.st_dev,
+                completed.st_ino,
+                completed.st_uid,
+                stat.S_IFMT(completed.st_mode),
+                completed.st_mode & 0o777,
+                completed.st_nlink,
+            )
+            != (
+                opened.st_dev,
+                opened.st_ino,
+                opened.st_uid,
+                stat.S_IFMT(opened.st_mode),
+                opened.st_mode & 0o777,
+                opened.st_nlink,
+            )
+            or completed.st_size != captured_size
+        ):
+            raise ValueError("Codex rollout changed during identity proof")
+        return model
+    finally:
+        os.close(fd)
+
+
+def _codex_rollout_model(thread_id: str) -> tuple[str, str]:
+    if _CODEX_THREAD_ID_RE.fullmatch(thread_id) is None:
+        return "absent", ""
+    root = _codex_sessions_root()
+    if root is None:
+        return "absent", ""
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        return "absent", ""
+    except OSError:
+        return "invalid", ""
+    try:
+        candidates = _codex_rollout_candidates(root, thread_id)
+        if not candidates:
+            return "absent", ""
+        if len(candidates) != 1:
+            raise ValueError("Codex rollout identity is ambiguous")
+        path, identity = candidates[0]
+        return "ok", _codex_model_from_rollout(path, identity, thread_id)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return "invalid", ""
+
+
 def _environment_profile() -> dict[str, str]:
     env = os.environ
     overrides = {
@@ -290,13 +578,29 @@ def _environment_profile() -> dict[str, str]:
             }
         )
     if env.get("CODEX_THREAD_ID"):
+        thread_id = env.get("CODEX_THREAD_ID", "")
+        environment_model = env.get("CODEX_ACTIVE_MODEL", "").strip()
+        rollout_state, rollout_model = _codex_rollout_model(thread_id)
+        conflict = rollout_state == "invalid"
+        if rollout_state == "ok":
+            active_model = rollout_model
+            if (
+                environment_model
+                and environment_model.casefold() != rollout_model.casefold()
+            ):
+                conflict = True
+        elif rollout_state == "invalid":
+            active_model = "unknown"
+        else:
+            active_model = environment_model
         detected.append(
             {
                 "primary_id": "codex",
                 "primary_family": "openai",
-                "active_model": env.get("CODEX_ACTIVE_MODEL", ""),
+                "active_model": active_model,
                 "host_runtime": "codex",
-                "session_identifier": env.get("CODEX_THREAD_ID", ""),
+                "session_identifier": thread_id,
+                "_identity_conflict": "1" if conflict else "",
             }
         )
     if env.get("ANTIGRAVITY_SESSION_ID"):

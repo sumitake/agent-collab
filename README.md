@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.1.0). It gives
+This repository distributes one package: **agent-collab** (v4.1.1). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,7 +24,18 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.1.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.1.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.1.1
+
+- Make broker status prove the canonical selected selector lane, its immutable
+  artifact and manifest, launchd job, socket, and a successful closed liveness
+  exchange before reporting the route executable.
+- Make migration readiness fail closed unless both the signed runtime and the
+  broker execution path are proven, eliminating manifest-only `READY` results.
+- Recover Codex Desktop's active OpenAI model from its exact current rollout
+  when the host does not export model metadata, with bounded no-follow reads,
+  identity checks, and conflict detection against any exported model.
 
 ## What's new - v4.1.0
 
@@ -466,18 +477,21 @@ python3 "<plugin-root>/runtime_setup.py" uninstall-broker
 ```
 
 `broker-status` is read-only and value-free: it reports only installation,
-job/socket state, artifact/manifest digests, rollback availability, and the
-fact that no persistent process is configured. Lifecycle commands accept no
-caller-selected path, label, socket, environment, provider, model, or raw
-argument.
+the canonical selected lane, job/socket state, artifact/manifest digests,
+closed liveness readiness, rollback availability, and the fact that no
+persistent process is configured. It never invokes a provider. Lifecycle
+commands accept no caller-selected path, label, socket, environment, provider,
+model, or raw argument.
 
 Remove every old package reported by the doctor, then run the doctor again.
 The doctor reads filesystem/registry state and Codex
 `[plugins."name@marketplace"]` entries from `~/.codex/config.toml`, distinguishes
 enabled from installed-disabled state, preserves the observed source host, and
-prints uninstall commands for that host's package manager. Provider routing
-stays blocked while a retired package remains installed or active. Cached but
-unselected residue is reported separately.
+prints uninstall commands for that host's package manager. It also requires
+the signed runtime and canonical broker path to pass a provider-free closed
+liveness exchange. Provider routing stays blocked while a retired package
+remains installed or active or executable broker readiness is unproven. Cached
+but unselected residue is reported separately.
 
 For an unknown/custom primary, explicitly configure:
 
@@ -499,6 +513,11 @@ detection relies on strong session signals
 (`CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID`/entrypoint,
 `ANTIGRAVITY_SESSION_ID`, or `ZCODE_SESSION_ID`), never ambient installation
 paths such as `CODEX_HOME` or `OPENCODE_CONFIG`.
+When Codex Desktop omits `CODEX_ACTIVE_MODEL`, the policy resolves the exact
+lowercase-UUID thread's same-owner rollout file from the fixed Codex sessions
+tree and uses its newest complete, internally consistent OpenAI turn context.
+Ambiguous, linked, writable, malformed, oversized, or conflicting evidence
+fails governance closed; no model is guessed from configuration or defaults.
 The OpenCode model is selected on every request in this order: a strong live
 OpenCode or ZCode active-model observation, explicit central
 `primary.opencode_model` configuration, then the fixed current preset

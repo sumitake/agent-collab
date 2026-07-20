@@ -1906,11 +1906,69 @@ print(json.dumps({{
             self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(green, current_blue)
-        ) as loader:
+        ) as loader, mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, current_blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
+        job_loaded.assert_called_once_with(current_blue.label, deadline=mock.ANY)
+
+    def test_capture_omits_retained_lane_with_unloaded_job(self) -> None:
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=29,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.selected",
+            socket_path=self.root / "selected.sock",
+        )
+        retained = self.client.BrokerLaneSnapshot(
+            name="retained",
+            generation=28,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label="com.agent-collab.provider-dispatcher.retained",
+            socket_path=self.root / "retained.sock",
+        )
+        selector = self._selector_v2_document(
+            selected={
+                "artifact_sha256": selected.artifact_digest,
+                "manifest_sha256": selected.manifest_digest,
+                "transport": "dispatcher",
+                "protocol_version": 2,
+                "lane_generation": selected.generation,
+            },
+            retained={
+                "artifact_sha256": retained.artifact_digest,
+                "manifest_sha256": retained.manifest_digest,
+                "transport": "dispatcher",
+                "protocol_version": 1,
+                "lane_generation": retained.generation,
+            },
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=(selected, retained),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=False
+        ) as job_loaded:
+            lanes, error = self.client._capture_broker_lanes(resolution)
+
+        self.assertEqual(lanes, (selected,))
+        self.assertIsNone(error)
+        job_loaded.assert_called_once_with(retained.label, deadline=mock.ANY)
 
     def test_handshake_client_accepts_committed_green_with_blue_fallback(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1947,11 +2005,14 @@ print(json.dumps({{
             self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(green, blue)
-        ) as loader:
+        ) as loader, mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
+        job_loaded.assert_called_once_with(blue.label, deadline=mock.ANY)
 
     def test_inflight_lane_snapshot_stays_blue_while_next_request_selects_green(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1993,7 +2054,9 @@ print(json.dumps({{
             side_effect=(blue_selected, green_selected),
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(blue, green, blue)
-        ):
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             inflight_lanes, inflight_error = self.client._capture_broker_lanes(
                 resolution
             )
@@ -2004,6 +2067,7 @@ print(json.dumps({{
         self.assertEqual(next_lanes, (green, blue))
         self.assertIsNone(next_error)
         self.assertEqual(inflight_lanes, (blue,))
+        job_loaded.assert_called_once_with(blue.label, deadline=mock.ANY)
 
     def test_green_bridge_document_binds_lane_and_deadlines_without_path_input(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
@@ -2115,6 +2179,16 @@ print(json.dumps({{
         self.assertEqual(failure.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
         self.assertEqual(failure.error, typed_failure["error"])
 
+        legacy_lane_failure = self.client._dispatcher_ping_response(
+            typed_failure,
+            request_id=request_id,
+            dispatcher_protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+        )
+        self.assertEqual(
+            legacy_lane_failure.status, self.client.RuntimeStatus.PROTOCOL_ERROR
+        )
+        self.assertEqual(legacy_lane_failure.error, typed_failure["error"])
+
         swapped_success = {
             "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
             "request_id": request_id,
@@ -2157,6 +2231,53 @@ print(json.dumps({{
             malformed.error,
             "provider dispatcher ping failure was rejected",
         )
+
+    def test_ping_uses_selected_legacy_lane_protocol_during_upgrade(self) -> None:
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "selected.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        selector = self._selector_v2_document()
+
+        def bridge(*, lane, request, deadline, handshake_deadline):
+            self.assertIs(lane, selected)
+            self.assertEqual(
+                request["protocol_version"],
+                self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            )
+            self.assertEqual(request["operation"], "dispatcher_ping")
+            self.assertLessEqual(handshake_deadline, deadline)
+            return {
+                "protocol_version": self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+                "request_id": request["request_id"],
+                "status": "ok",
+                "result": {"ready": True},
+                "provenance": {"operation": "dispatcher_ping"},
+            }
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_selector_v2_lane", return_value=selected
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", side_effect=bridge
+        ):
+            result = self.client.invoke_dispatcher_ping(timeout_ms=5_000)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertEqual(result.result, {"ready": True})
 
     def test_lock_probe_uses_staged_bridge_and_returns_closed_namespace_proof(self) -> None:
         green = self.client.BrokerLaneSnapshot(
@@ -2378,6 +2499,34 @@ print(json.dumps({{
                 [str(runtime), "dispatcher-client", "--protocol", "2"],
             )
 
+        timeout = self.client.RuntimeResult(
+            self.client.RuntimeStatus.TIMEOUT,
+            error="native runtime timed out",
+        )
+        process = mock.Mock(returncode=-9)
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client,
+            "_verify_published_version",
+            return_value=(bundle, runtime, self.root / "manifest", lane.anchor),
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ), mock.patch.object(
+            self.client,
+            "_collect_bounded_output",
+            return_value=(b"", b"", timeout),
+        ), self.assertRaises(
+            self.client._DispatcherPostRequestError
+        ) as raised:
+            self.client._invoke_dispatcher_bridge(
+                lane=lane,
+                request=request,
+                deadline=now + 5,
+                handshake_deadline=now + 2,
+            )
+        self.assertIs(raised.exception.result, timeout)
+
         process = mock.Mock(returncode=0)
         with self.subTest(collection_exception=True), mock.patch.object(
             self.client, "_broker_root", return_value=self.root
@@ -2470,7 +2619,7 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(observed["artifact_sha256"], "c" * 64)
         self.assertEqual(observed["manifest_sha256"], "d" * 64)
-        capture.assert_called_once_with(client_resolution)
+        capture.assert_called_once_with(client_resolution, deadline=mock.ANY)
 
     def test_green_connect_refusal_falls_back_before_blue_send(self) -> None:
         self._fixture()
@@ -2547,7 +2696,7 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(observed["artifact_sha256"], "a" * 64)
         self.assertEqual(observed["manifest_sha256"], "b" * 64)
-        capture.assert_called_once_with(resolution)
+        capture.assert_called_once_with(resolution, deadline=mock.ANY)
 
     def test_green_connect_timeout_falls_back_with_blue_deadline_remaining(self) -> None:
         self._fixture()
@@ -2803,6 +2952,284 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
         bridge.assert_called_once()
         socket_factory.assert_not_called()
+
+    def test_accepted_dispatcher_timeout_remains_typed_without_blue_retry(
+        self,
+    ) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="accepted-timeout-1"
+        )
+        payload = self.client._native_document(envelope)
+        green = self.client.BrokerLaneSnapshot(
+            name="green",
+            generation=2,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "accepted-timeout.sock",
+        )
+        blue = self.client.BrokerLaneSnapshot(
+            name="blue",
+            generation=2,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label=self.client.BROKER_LABEL,
+            socket_path=self.root / "unused-timeout-blue.sock",
+        )
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        timeout = self.client.RuntimeResult(
+            self.client.RuntimeStatus.TIMEOUT,
+            error="native runtime timed out",
+        )
+        accepted = self.client._DispatcherPostRequestError(
+            "accepted request deadline expired",
+            result=timeout,
+        )
+        with mock.patch.object(
+            self.client,
+            "_capture_broker_lanes",
+            return_value=((green, blue), None),
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", side_effect=accepted
+        ) as bridge, mock.patch.object(
+            self.client.socket, "socket"
+        ) as socket_factory:
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(result.error, "native runtime timed out")
+        bridge.assert_called_once()
+        socket_factory.assert_not_called()
+
+    def test_legacy_dispatcher_response_waits_for_one_shot_job_idle(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="legacy-idle-1"
+        )
+        payload = self.client._native_document(envelope)
+        legacy = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "legacy-idle.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        response = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((legacy,), None)
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", return_value=response
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ) as wait_for_idle:
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=mock.ANY)
+
+    def test_legacy_dispatcher_idle_proof_reuses_absolute_broker_deadline(
+        self,
+    ) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="legacy-idle-deadline-1"
+        )
+        payload = self.client._native_document(envelope)
+        legacy = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "legacy-idle-deadline.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        response = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((legacy,), None)
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", return_value=response
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
+
+    def test_legacy_dispatcher_response_fails_closed_when_idle_is_unproven(
+        self,
+    ) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="grok", action="architecture", request_id="legacy-idle-2"
+        )
+        payload = self.client._native_document(envelope)
+        legacy = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "legacy-idle.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        response = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((legacy,), None)
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", return_value=response
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=False
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TEARDOWN_ERROR)
+        self.assertEqual(
+            result.error, "legacy provider dispatcher did not return idle"
+        )
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
+
+    def test_legacy_dispatcher_accepted_failure_requires_idle_before_return(
+        self,
+    ) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="composer", action="codegen", request_id="legacy-idle-3"
+        )
+        payload = self.client._native_document(envelope)
+        legacy = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "legacy-idle.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        timeout = self.client.RuntimeResult(
+            self.client.RuntimeStatus.TIMEOUT,
+            error="native runtime timed out",
+        )
+        accepted = self.client._DispatcherPostRequestError(
+            "accepted request deadline expired",
+            result=timeout,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((legacy,), None)
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", side_effect=accepted
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=False
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TEARDOWN_ERROR)
+        self.assertEqual(
+            result.error, "legacy provider dispatcher did not return idle"
+        )
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
 
     def test_codex_seatbelt_blocks_mutating_lifecycle_before_any_read(self) -> None:
         for function_name in ("install_broker", "rollback_broker", "uninstall_broker"):
@@ -3382,6 +3809,76 @@ print(json.dumps({{
         (root / self.client.BROKER_SELECTOR_FILENAME).chmod(0o600)
         return selector, lane
 
+    def _install_v1_selected_green_with_lifecycle_blue(self, root: Path):
+        _state_raw, _plist_raw, blue = self._install_protocol_v1_blue(
+            root, body="#!/bin/sh\nexit 0\n"
+        )
+        self._fixture(
+            body="#!/bin/sh\nexit 7\n",
+            schema_version=2,
+            runtime_protocol_version=2,
+        )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client,
+            "_committed_legacy_package_role",
+            return_value=("selected", "dispatcher", 1),
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            resolution = self.client.resolve_runtime()
+            self.assertEqual(resolution.status, self.client.RuntimeStatus.OK)
+            installed_root = self.client._ensure_broker_layout()
+            self.client._publish_broker_version(
+                installed_root,
+                resolution=resolution,
+                role="selected",
+                transport="dispatcher",
+                dispatcher_protocol_version=1,
+            )
+            lane = self.client._dispatcher_lane_snapshot(
+                root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+                generation=28,
+                name="selected",
+                protocol_version=1,
+                anchor=resolution.anchor,
+            )
+            self.client._provision_dispatcher_lane(root, lane)
+        selector = {
+            "schema_version": 1,
+            "generation": 28,
+            "selected_lane": "green",
+            "blue": {
+                "artifact_sha256": blue["artifact_sha256"],
+                "manifest_sha256": blue["manifest_sha256"],
+            },
+            "green": {
+                "artifact_sha256": lane.artifact_digest,
+                "manifest_sha256": lane.manifest_digest,
+            },
+        }
+        (root / self.client.BROKER_SELECTOR_FILENAME).write_bytes(
+            self.client._selector_bytes(selector)
+        )
+        (root / self.client.BROKER_SELECTOR_FILENAME).chmod(0o600)
+        return selector, lane
+
     def _commit_staged_dispatcher(self, root: Path):
         ping = self.client.RuntimeResult(
             self.client.RuntimeStatus.OK,
@@ -3443,6 +3940,196 @@ print(json.dumps({{
         self.assertEqual(lifecycle.transport, "broker")
         self.assertEqual(lifecycle.protocol_version, 1)
         self.assertIsNone(lifecycle.anchor)
+
+    def test_broker_status_accepts_live_v1_selected_green_projection(self) -> None:
+        root = self.root / "broker-state"
+        _selector, lane = self._install_v1_selected_green_with_lifecycle_blue(root)
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ):
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertTrue(result.result["active"])
+        self.assertTrue(result.result["dispatcher_ready"])
+        self.assertFalse(result.result["rollback_available"])
+        self.assertEqual(
+            result.result["selected"]["artifact_sha256"], lane.artifact_digest
+        )
+
+    def test_broker_status_rejects_selectorless_live_legacy_broker(self) -> None:
+        root = self.root / "broker-state"
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        (root / self.client.BROKER_SELECTOR_FILENAME).unlink()
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_broker_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_broker_ping", return_value=True
+        ) as broker_ping:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertTrue(result.result["installed"])
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertEqual(result.error, "provider broker selector is unavailable")
+        broker_ping.assert_not_called()
+
+    def test_broker_status_requires_stable_selected_dispatcher_ping(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        unavailable = self.client.RuntimeResult(
+            self.client.RuntimeStatus.UNAVAILABLE,
+            error="provider dispatcher ping is unavailable",
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=unavailable
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ):
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+
+    def test_broker_status_requires_dispatcher_to_return_idle(self) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=False
+        ) as wait_for_idle:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertTrue(result.result["persistent_process"])
+        wait_for_idle.assert_called_once()
+
+    def test_broker_status_rejects_invalid_retained_lane(self) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        selector["retained"] = dict(selector["selected"])
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            selected_lane = self.client._load_selector_v2_lane(
+                root, selector["selected"], role="selected"
+            )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=(selected_lane, ValueError("retained lane is invalid")),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ):
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+        self.assertEqual(result.error, "provider broker status could not be proven")
+
+    def test_broker_status_does_not_advertise_unloaded_retained_job(self) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        selector["retained"] = dict(selector["selected"])
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=29,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.selected",
+            socket_path=root / "selected.sock",
+        )
+        retained = replace(
+            selected,
+            name="retained",
+            generation=28,
+            label="com.agent-collab.provider-dispatcher.retained",
+            socket_path=root / "retained.sock",
+        )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=(selected, retained),
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=(True, False)
+        ) as job_loaded, mock.patch.object(
+            self.client, "_exact_mode", return_value=object()
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ):
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertTrue(result.result["active"])
+        self.assertTrue(result.result["dispatcher_ready"])
+        self.assertFalse(result.result["rollback_available"])
+        self.assertEqual(
+            job_loaded.call_args_list,
+            [mock.call(selected.label), mock.call(retained.label)],
+        )
 
     def test_v1_green_derivation_accepts_already_drained_blue_plane(self) -> None:
         root = self.root / "broker-state"
@@ -4782,6 +5469,220 @@ print(json.dumps({{
             {"HOME", "PATH", "LANG", "LC_ALL"},
         )
 
+    def test_launchctl_absolute_deadline_bounds_collection_and_preflight(
+        self,
+    ) -> None:
+        process = mock.Mock(returncode=0)
+        arguments = ["print", f"gui/{os.getuid()}/{self.client.BROKER_LABEL}"]
+        with mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.client,
+            "_collect_bounded_output",
+            return_value=(b"state = not running\n", b"", None),
+        ) as collect, mock.patch.object(
+            self.client.time, "monotonic", side_effect=(100.0, 100.25)
+        ):
+            result = self.client._launchctl(arguments, deadline=101.0)
+
+        self.assertEqual(result.returncode, 0)
+        collect.assert_called_once_with(process, timeout_ms=750.0)
+        popen.assert_called_once()
+
+        with mock.patch.object(
+            self.client.subprocess, "Popen"
+        ) as expired_popen, mock.patch.object(
+            self.client.time, "monotonic", return_value=101.0
+        ):
+            with self.assertRaises(RuntimeError):
+                self.client._launchctl(arguments, deadline=101.0)
+        expired_popen.assert_not_called()
+
+    def test_job_loaded_forwards_deadline_to_launchctl(self) -> None:
+        # The retained-lane availability probe on the request-dispatch path must
+        # be bounded by the caller deadline, not launchctl's independent 20s
+        # default, so a small-timeout request cannot block ~20s before dispatch.
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as lc:
+            self.assertTrue(
+                self.client._job_loaded(self.client.BROKER_LABEL, deadline=123.0)
+            )
+        self.assertEqual(lc.call_args.kwargs.get("deadline"), 123.0)
+
+    def test_job_loaded_default_deadline_is_none(self) -> None:
+        # Lifecycle/status callers (no request timeout) keep the default bound.
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as lc:
+            self.client._job_loaded(self.client.BROKER_LABEL)
+        self.assertIsNone(lc.call_args.kwargs.get("deadline"))
+
+    def test_capture_broker_lanes_bounds_retained_probe_by_deadline(self) -> None:
+        # _capture_broker_lanes threads the request deadline into the retained
+        # lane's _job_loaded probe.
+        resolution = mock.Mock(
+            spec=self.client.RuntimeResolution,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+        )
+        selected = mock.Mock(label="com.agent-collab.provider-broker")
+        retained = mock.Mock(
+            label="com.agent-collab.provider-dispatcher." + "c" * 32
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client,
+            "_read_broker_selector_view",
+            return_value={"selected": {"x": 1}, "retained": {"y": 2}},
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=[selected, retained],
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as jl:
+            self.client._capture_broker_lanes(resolution, deadline=456.0)
+        # The retained-lane probe received the deadline.
+        self.assertTrue(
+            any(c.kwargs.get("deadline") == 456.0 for c in jl.call_args_list)
+        )
+
+    def test_wait_for_job_idle_propagates_deadline_and_caps_sleep(self) -> None:
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time,
+            "monotonic",
+            side_effect=(100.0, 100.04, 100.05),
+        ), mock.patch.object(
+            self.client, "_job_process_idle", return_value=False
+        ) as idle, mock.patch.object(
+            self.client.time, "sleep"
+        ) as sleep:
+            result = self.client._wait_for_job_idle(label, deadline=100.05)
+
+        self.assertFalse(result)
+        idle.assert_called_once_with(label, deadline=100.05)
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.01)
+
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=RuntimeError("launchctl deadline expired"),
+        ) as failed_idle:
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+        failed_idle.assert_called_once_with(label, deadline=101.0)
+
+    def test_wait_for_job_idle_fails_closed_on_probe_spawn_errors(self) -> None:
+        # An accepted-request idle probe can fail with OSError (launchctl spawn
+        # failure) or subprocess.SubprocessError; these must be treated as a
+        # failed idle proof (return False -> TEARDOWN_ERROR at the accepted
+        # boundary), not escape and become PROTOCOL_ERROR.
+        label = self.client.BROKER_LABEL
+        for exc in (
+            OSError("launchctl could not be spawned"),
+            self.client.subprocess.SubprocessError("launchctl crashed"),
+        ):
+            with self.subTest(exc=type(exc).__name__):
+                with mock.patch.object(
+                    self.client.time, "monotonic", return_value=100.0
+                ), mock.patch.object(
+                    self.client, "_operator_home", return_value=str(self.root)
+                ), mock.patch.object(
+                    self.client, "_job_process_idle", side_effect=exc
+                ):
+                    self.assertFalse(
+                        self.client._wait_for_job_idle(label, deadline=101.0)
+                    )
+
+    def test_wait_for_job_idle_fails_closed_when_operator_home_unavailable(self) -> None:
+        # Operator-home-unavailable is an environmental condition, pre-checked
+        # OUT of the probe loop: fail closed to not-idle without ever invoking
+        # the probe.
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=None
+        ), mock.patch.object(
+            self.client, "_job_process_idle"
+        ) as probe:
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+        probe.assert_not_called()
+
+    def test_wait_for_job_idle_fails_closed_on_home_failure_inside_loop(self) -> None:
+        # _launchctl re-resolves operator-home on every call, so a transient
+        # getpwuid failure AFTER the entry pre-check passed makes an in-loop
+        # probe raise ValueError("operator home is unavailable"). That
+        # environmental failure must fail closed (not escape as PROTOCOL_ERROR).
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=self.client._OperatorHomeUnavailable(
+                "operator home is unavailable"
+            ),
+        ):
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+
+    def test_launchctl_raises_typed_operator_home_unavailable(self) -> None:
+        # _launchctl raises the typed subclass (not a bare ValueError) so the
+        # idle loop can distinguish this environmental case race-free.
+        with mock.patch.object(self.client, "_operator_home", return_value=None):
+            with self.assertRaises(self.client._OperatorHomeUnavailable):
+                self.client._launchctl(["print", "gui/0/x"])
+        # It remains a ValueError subclass for backward compatibility.
+        self.assertTrue(
+            issubclass(self.client._OperatorHomeUnavailable, ValueError)
+        )
+
+    def test_wait_for_job_idle_reraises_a_genuine_code_bug_value_error(self) -> None:
+        # A ValueError that is NOT the environmental operator-home case (home
+        # still resolves) is a code bug and must propagate, not be masked as a
+        # failed idle proof.
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=ValueError("provider job label is invalid"),
+        ):
+            with self.assertRaises(ValueError):
+                self.client._wait_for_job_idle(label, deadline=101.0)
+
+    def test_wait_for_job_idle_rejects_invalid_label_before_probe(self) -> None:
+        # Label validation is hoisted to entry: an invalid label is a caller
+        # bug that must raise, not be swallowed by the fail-closed loop.
+        with mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client, "_job_process_idle"
+        ) as probe:
+            with self.assertRaises(ValueError):
+                self.client._wait_for_job_idle("not-a-valid-label", deadline=101.0)
+        probe.assert_not_called()
+
     def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
@@ -5835,6 +6736,112 @@ time.sleep(10)
         self.assertEqual(len(created), 1)
         self.assertFalse(created[0].exists())
         self.assertFalse(str(created[0]).startswith(str(self.root) + os.sep))
+
+    def test_terminate_and_reap_is_deadline_bounded(self) -> None:
+        # A child that never exits must NOT block the two fixed 5s waits past
+        # the caller deadline: with an already-expired deadline the call does
+        # one non-blocking poll and returns False promptly (teardown unproven).
+        client = self.client
+
+        class _NeverExits:
+            pid = 999999
+
+            def __init__(self) -> None:
+                self.wait_calls = 0
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.wait_calls += 1
+                raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+
+            def kill(self):
+                pass
+
+        stub = _NeverExits()
+        with mock.patch.object(client.os, "killpg") as killpg:
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic())
+        self.assertFalse(reaped)
+        # An already-expired deadline must NOT make a blocking wait(timeout>0)
+        # call (the old two fixed 5s waits); a non-blocking poll pass instead.
+        self.assertEqual(stub.wait_calls, 0)
+        killpg.assert_called_once()
+        args = killpg.call_args.args
+        self.assertEqual(args[0], stub.pid)
+        self.assertEqual(args[1], signal.SIGKILL)
+
+    def test_terminate_and_reap_returns_false_on_leader_only_fallback(self) -> None:
+        # killpg failing with a non-ESRCH OSError means the whole-group kill is
+        # unproven; killing+reaping only the leader must return False so the
+        # caller types TEARDOWN_ERROR, never a false "teardown proven".
+        client = self.client
+
+        class _LeaderReaps:
+            pid = 999998
+
+            def poll(self):
+                return 0
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        stub = _LeaderReaps()
+        with mock.patch.object(
+            client.os, "killpg", side_effect=PermissionError("cannot signal group")
+        ):
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic() + 5)
+        self.assertFalse(reaped)
+
+    def test_terminate_and_reap_treats_group_gone_as_success(self) -> None:
+        # killpg raising ProcessLookupError (ESRCH) means the group already
+        # exited; reaping the (already-gone) leader is a proven teardown.
+        client = self.client
+
+        class _AlreadyGone:
+            pid = 999997
+
+            def poll(self):
+                return 0
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        stub = _AlreadyGone()
+        with mock.patch.object(
+            client.os, "killpg", side_effect=ProcessLookupError("no such group")
+        ):
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic() + 5)
+        self.assertTrue(reaped)
+
+    def test_collect_bounded_output_teardown_respects_caller_deadline(self) -> None:
+        # A real child holding its pipes open past a short timeout must be torn
+        # down without the collection running ~10s past timeout_ms.
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            started = time.monotonic()
+            out, err, result = self.client._collect_bounded_output(
+                process, timeout_ms=200
+            )
+            elapsed = time.monotonic() - started
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertLess(elapsed, 3.0)  # bounded, not 200ms + 2x5s
 
     def test_unexpected_collector_errors_terminate_and_reap_child(self) -> None:
         for failure_point in ("select", "read"):

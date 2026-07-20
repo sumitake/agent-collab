@@ -75,6 +75,41 @@ class MigrationPolicyTests(unittest.TestCase):
         ):
             return self.policy.startup_preflight(**kwargs)
 
+    def _write_codex_rollout(
+        self,
+        *,
+        thread_id: str,
+        model: str = "gpt-5.6-sol",
+        day: str = "19",
+    ) -> Path:
+        sessions = self.home / "codex-sessions"
+        directory = sessions / "2026" / "07" / day
+        directory.mkdir(parents=True, mode=0o755, exist_ok=True)
+        path = directory / f"rollout-2026-07-{day}T00-00-00-{thread_id}.jsonl"
+        records = (
+            {
+                "type": "session_meta",
+                "payload": {"id": thread_id, "model_provider": "openai"},
+            },
+            {
+                "type": "turn_context",
+                "payload": {
+                    "model": model,
+                    "collaboration_mode": {"settings": {"model": model}},
+                },
+            },
+        )
+        path.write_text(
+            "\n".join(
+                json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in records
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o644)
+        return sessions
+
     def test_inventory_and_duplicate_state_block_provider_routing(self) -> None:
         legacy = self.home / ".codex" / "plugins" / "codex-collab"
         legacy.mkdir(parents=True)
@@ -445,6 +480,204 @@ enabled = true
         self.assertEqual(profile.host_runtime, "codex")
         self.assertEqual(profile.session_identifier, "thread-1")
 
+    def test_codex_profile_uses_safe_rollout_model_without_env(self) -> None:
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self._write_codex_rollout(thread_id=thread_id)
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertEqual(profile.primary_id, "codex")
+        self.assertEqual(profile.primary_family, "openai")
+        self.assertEqual(profile.active_model, "gpt-5.6-sol")
+        self.assertEqual(profile.session_identifier, thread_id)
+        self.assertTrue(profile.governance_ready)
+        self.assertFalse(profile.identity_conflict)
+
+    def test_codex_rollout_entry_limit_aborts_during_scan(self) -> None:
+        # A single oversized sessions directory must not be fully materialized
+        # before the entry-limit check: counting is incremental and aborts as
+        # soon as the cumulative bound is exceeded (bounded memory / no stall).
+        policy = self.policy
+        consumed = {"n": 0}
+
+        class _Entry:
+            def __init__(self, name: str) -> None:
+                self.name = name
+                self.path = f"/fake/{name}"
+
+        class _Scan:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def __iter__(self):
+                # Far more entries than the (patched) limit; each pull is
+                # counted so the test can prove the scan stops early.
+                i = 0
+                while True:
+                    consumed["n"] += 1
+                    i += 1
+                    yield _Entry(f"e{i}")
+
+        safe_root = self.home / "codex-sessions"
+        safe_root.mkdir(parents=True, mode=0o755, exist_ok=True)
+        with mock.patch.object(policy, "_CODEX_ROLLOUT_ENTRY_LIMIT", 5), mock.patch.object(
+            policy, "_safe_codex_directory", return_value=True
+        ), mock.patch.object(
+            policy.os, "scandir", return_value=_Scan()
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                policy._codex_rollout_candidates(safe_root, "tid")
+        self.assertIn("entry bound", str(ctx.exception))
+        # Early abort: consumed at most limit+1, NOT an unbounded drain.
+        self.assertLessEqual(consumed["n"], 6)
+
+    def test_codex_profile_fails_closed_on_incomplete_rollout_tail(self) -> None:
+        # A complete turn_context(model A) followed by a PARTIAL, non-newline-
+        # terminated turn_context(model B) — as a concurrent writer produces
+        # mid-append — must NOT resolve the stale preceding model A. It fails
+        # closed (active_model "unknown", not governance-ready) so a paused
+        # writer cannot yield a stale governance-ready identity.
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self.home / "codex-sessions"
+        directory = sessions / "2026" / "07" / "19"
+        directory.mkdir(parents=True, mode=0o755, exist_ok=True)
+        path = directory / f"rollout-2026-07-19T00-00-00-{thread_id}.jsonl"
+        complete = (
+            {
+                "type": "session_meta",
+                "payload": {"id": thread_id, "model_provider": "openai"},
+            },
+            {
+                "type": "turn_context",
+                "payload": {"model": "gpt-5.6-sol"},
+            },
+        )
+        partial = {"type": "turn_context", "payload": {"model": "openai/o3"}}
+        body = (
+            "\n".join(
+                json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in complete
+            )
+            + "\n"
+            + json.dumps(partial, sort_keys=True, separators=(",", ":"))
+        )  # NOTE: no trailing newline — the tail record is incomplete.
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o644)
+
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertNotEqual(profile.active_model, "gpt-5.6-sol")
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_codex_profile_rejects_env_rollout_model_conflict(self) -> None:
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self._write_codex_rollout(thread_id=thread_id)
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CODEX_THREAD_ID": thread_id,
+                "CODEX_ACTIVE_MODEL": "openai/o3",
+            },
+            clear=True,
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
+        self.assertEqual(profile.active_model, "gpt-5.6-sol")
+
+    def test_codex_profile_rejects_rollout_growth_during_model_proof(self) -> None:
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self._write_codex_rollout(thread_id=thread_id)
+        rollout = next(sessions.rglob(f"*-{thread_id}.jsonl"))
+        real_fstat = os.fstat
+        calls = 0
+
+        def growing_fstat(fd: int) -> os.stat_result:
+            nonlocal calls
+            calls += 1
+            observed = real_fstat(fd)
+            if calls == 2:
+                fields = list(observed)
+                fields[6] = observed.st_size + 1
+                return os.stat_result(fields)
+            return observed
+
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ), mock.patch.object(
+            self.policy.os, "fstat", side_effect=growing_fstat
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertEqual(calls, 2)
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertTrue(rollout.is_file())
+
+    def test_codex_profile_rejects_ambiguous_or_unsafe_rollout(self) -> None:
+        thread_ids = {
+            "duplicate": "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad",
+            "writable": "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ae",
+        }
+        for failure, thread_id in thread_ids.items():
+            with self.subTest(failure=failure):
+                sessions = self._write_codex_rollout(thread_id=thread_id)
+                matches = list(sessions.rglob(f"*-{thread_id}.jsonl"))
+                if failure == "duplicate":
+                    self._write_codex_rollout(thread_id=thread_id, day="20")
+                else:
+                    matches[0].chmod(0o666)
+                with mock.patch.dict(
+                    os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+                ), mock.patch.object(
+                    self.policy,
+                    "_codex_sessions_root",
+                    return_value=sessions,
+                    create=True,
+                ):
+                    profile = self.policy.resolve_profile(None)
+
+                try:
+                    self.assertTrue(profile.identity_conflict)
+                    self.assertFalse(profile.governance_ready)
+                    self.assertEqual(profile.active_model, "unknown")
+                finally:
+                    for path in sorted(
+                        sessions.rglob(f"*-{thread_id}.jsonl")
+                    ):
+                        path.unlink()
+
     def test_partial_primary_overlay_preserves_observed_host_identity(self) -> None:
         with mock.patch.dict(
             "os.environ",
@@ -700,6 +933,29 @@ enabled = true
             )
         )
         self.assertNotIn("codex plugin install", "\n".join(report.actions))
+
+    def test_doctor_never_reports_ready_when_broker_status_is_unproven(self) -> None:
+        with mock.patch.object(
+            self.doctor, "_runtime_state", return_value="available"
+        ), mock.patch.object(
+            self.doctor,
+            "_broker_runtime_state",
+            return_value="integrity_error",
+            create=True,
+        ):
+            report = self.doctor.build_report(
+                home=self.home,
+                explicit_config={
+                    "primary_id": "codex",
+                    "active_model": "openai/codex",
+                    "host_runtime": "codex",
+                    "session_identifier": "thread-1",
+                },
+            )
+
+        self.assertEqual(report.native_runtime, "available")
+        self.assertEqual(report.broker_runtime, "integrity_error")
+        self.assertEqual(report.provider_routing, "BLOCKED")
 
     def test_doctor_inventories_codex_config_with_observed_host_provenance(self) -> None:
         config = self.home / ".codex" / "config.toml"

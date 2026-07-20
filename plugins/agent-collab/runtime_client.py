@@ -235,6 +235,9 @@ BROKER_STATE_KEYS = frozenset(
 )
 _BROKER_HEADER = struct.Struct(">Q")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_JOB_LABEL_RE = re.compile(
+    r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})"
+)
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _DEVELOPER_ID_RE = re.compile(
     r"^Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)$"
@@ -499,6 +502,29 @@ class _DispatcherPreRequestError(RuntimeError):
 
 class _DispatcherPostRequestError(RuntimeError):
     """Green failed at or after request send, so another lane is prohibited."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        result: RuntimeResult | None = None,
+    ) -> None:
+        if result is not None and (
+            not isinstance(result, RuntimeResult)
+            or result.status
+            not in {
+                RuntimeStatus.SPAWN_ERROR,
+                RuntimeStatus.TIMEOUT,
+                RuntimeStatus.OUTPUT_LIMIT,
+                RuntimeStatus.TEARDOWN_ERROR,
+            }
+            or result.result is not None
+            or result.provenance is not None
+            or not result.error
+        ):
+            raise TypeError("dispatcher post-request result is invalid")
+        super().__init__(message)
+        self.result = result
 
 
 class _DarwinProcBSDInfo(ctypes.Structure):
@@ -1302,6 +1328,17 @@ def classify_host_context() -> str:
     if all(os.environ.get(key) == value for key, value in CODEX_DESKTOP_TUPLE.items()):
         return "codex_desktop"
     return "generic"
+
+
+class _OperatorHomeUnavailable(ValueError):
+    """Operator-home could not be resolved at a launchctl call site.
+
+    A ValueError subclass (backward-compatible with existing `except ValueError`
+    callers) that lets the idle-probe loop distinguish this ENVIRONMENTAL
+    failure — including a transient `getpwuid` failure on `_launchctl`'s
+    per-call re-resolution — from a genuine code-bug ValueError, without a racy
+    re-check of `_operator_home()`.
+    """
 
 
 def _operator_home() -> str | None:
@@ -2819,6 +2856,8 @@ def _load_dispatcher_broker_lane(
 
 def _capture_broker_lanes(
     resolution: RuntimeResolution,
+    *,
+    deadline: float | None = None,
 ) -> tuple[tuple[BrokerLaneSnapshot, ...], RuntimeResult | None]:
     if (
         not isinstance(resolution, RuntimeResolution)
@@ -2846,7 +2885,12 @@ def _capture_broker_lanes(
         for role in ("selected", "retained"):
             document = selector.get(role)
             if document is not None:
-                lanes.append(_load_selector_v2_lane(root, document, role=role))
+                lane = _load_selector_v2_lane(root, document, role=role)
+                if role == "retained" and not _job_loaded(
+                    lane.label, deadline=deadline
+                ):
+                    continue
+                lanes.append(lane)
         if not lanes:
             raise ValueError("provider dispatcher has no committed normal lane")
         return tuple(lanes), None
@@ -3111,7 +3155,8 @@ def _invoke_dispatcher_bridge(
                 )
                 if collection_error is not None:
                     raise _DispatcherPostRequestError(
-                        "provider dispatcher bridge completion was unproven"
+                        "provider dispatcher bridge completion was unproven",
+                        result=collection_error,
                     )
                 returncode = process.returncode if process.returncode is not None else -1
                 if err:
@@ -3173,14 +3218,19 @@ def _launch_broker(
         request = json.loads(payload.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="sealed broker request is invalid")
-    lanes, error = _capture_broker_lanes(resolution)
+    # Start the request deadline BEFORE capturing lanes: the retained-lane
+    # availability probe inside _capture_broker_lanes runs launchctl, and must
+    # be bounded by this request's timeout rather than launchctl's independent
+    # ~20s default (otherwise a small-timeout request could block ~20s before
+    # dispatch even begins).
+    started = time.monotonic()
+    deadline = started + timeout_ms / 1000
+    deadline_monotonic_ms = int(started * 1000) + timeout_ms
+    lanes, error = _capture_broker_lanes(resolution, deadline=deadline)
     if error is not None or not lanes:
         return error or RuntimeResult(
             RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
         )
-    started = time.monotonic()
-    deadline = started + timeout_ms / 1000
-    deadline_monotonic_ms = int(started * 1000) + timeout_ms
     try:
         for index, lane in enumerate(lanes):
             if lane.transport == "dispatcher":
@@ -3207,9 +3257,28 @@ def _launch_broker(
                         continue
                     raise ValueError("provider dispatcher bridge preflight failed")
                 except _DispatcherPostRequestError as exc:
+                    if (
+                        lane.protocol_version
+                        == LEGACY_DISPATCHER_PROTOCOL_VERSION
+                        and not _wait_for_job_idle(lane.label, deadline=deadline)
+                    ):
+                        return RuntimeResult(
+                            RuntimeStatus.TEARDOWN_ERROR,
+                            error="legacy provider dispatcher did not return idle",
+                        )
+                    if exc.result is not None:
+                        return exc.result
                     raise ValueError(
                         "provider dispatcher failed after request acceptance"
                     ) from exc
+                if (
+                    lane.protocol_version == LEGACY_DISPATCHER_PROTOCOL_VERSION
+                    and not _wait_for_job_idle(lane.label, deadline=deadline)
+                ):
+                    return RuntimeResult(
+                        RuntimeStatus.TEARDOWN_ERROR,
+                        error="legacy provider dispatcher did not return idle",
+                    )
                 return _parse_broker_response(response, envelope, lane.anchor)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 remaining = deadline - time.monotonic()
@@ -3937,10 +4006,34 @@ def _without_previous(document: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _launchctl(arguments: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
+def _launchctl(
+    arguments: list[str],
+    *,
+    timeout: int | float = 20,
+    deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(float(timeout))
+        or timeout <= 0
+    ):
+        raise ValueError("launchctl timeout is invalid")
+    timeout_ms: int | float = timeout * 1000
+    if deadline is not None:
+        if (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(float(deadline))
+        ):
+            raise ValueError("launchctl deadline is invalid")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("launchctl deadline expired")
+        timeout_ms = min(timeout_ms, remaining * 1000)
     home = _operator_home()
     if home is None:
-        raise ValueError("operator home is unavailable")
+        raise _OperatorHomeUnavailable("operator home is unavailable")
     command = ["/bin/launchctl", *arguments]
     process = subprocess.Popen(
         command,
@@ -3957,8 +4050,14 @@ def _launchctl(arguments: list[str], *, timeout: int = 20) -> subprocess.Complet
         start_new_session=True,
         close_fds=True,
     )
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _terminate_and_reap(process, deadline=deadline)
+            raise RuntimeError("launchctl deadline expired")
+        timeout_ms = min(timeout_ms, remaining * 1000)
     out, err, collection_error = _collect_bounded_output(
-        process, timeout_ms=timeout * 1000
+        process, timeout_ms=timeout_ms
     )
     if collection_error is not None:
         raise RuntimeError(collection_error.error)
@@ -3987,18 +4086,14 @@ def _bootstrap_broker(plist_path: Path) -> bool:
     ).returncode == 0
 
 
-def _job_loaded(label: str) -> bool:
-    if (
-        not isinstance(label, str)
-        or re.fullmatch(
-            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
-            label,
-        )
-        is None
-    ):
+def _job_loaded(label: str, *, deadline: float | None = None) -> bool:
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
         raise ValueError("provider job label is invalid")
+    # deadline bounds the probe on the request-dispatch path so a small-timeout
+    # request cannot block launchctl's independent default before dispatch;
+    # lifecycle/status callers pass None and keep the default bound.
     return _launchctl(
-        ["print", f"gui/{os.getuid()}/{label}"]
+        ["print", f"gui/{os.getuid()}/{label}"], deadline=deadline
     ).returncode == 0
 
 
@@ -4015,6 +4110,16 @@ def _broker_job_loaded() -> bool:
 # ("activation ping failed") and fall through to the restore path, which
 # skips the ping and so silently masked the miscalibration.
 BROKER_COLD_START_TIMEOUT_SECONDS = 30.0
+# Upper bound on how long teardown may poll to reap a SIGKILLed leader when no
+# caller deadline is supplied (preserves the pre-existing wait bound). When a
+# deadline is supplied, teardown polls at most REAP_GRACE_SECONDS past it.
+REAP_BOUND_SECONDS = 5.0
+# Minimal grace for a just-posted SIGKILL to be delivered and the leader
+# reaped, even when the caller deadline is already expired. Small enough that
+# the worst-case deadline overrun is a fraction of a second (not the old ~10s),
+# large enough that an ordinary killable process is not mistyped as a teardown
+# failure.
+REAP_GRACE_SECONDS = 0.25
 
 
 def _broker_ping(socket_path: Path) -> bool:
@@ -4039,17 +4144,15 @@ def _broker_ping(socket_path: Path) -> bool:
         return False
 
 
-def _job_process_idle(label: str) -> bool:
-    if (
-        not isinstance(label, str)
-        or re.fullmatch(
-            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
-            label,
-        )
-        is None
-    ):
+def _job_process_idle(label: str, *, deadline: float | None = None) -> bool:
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
         raise ValueError("provider job label is invalid")
-    result = _launchctl(["print", f"gui/{os.getuid()}/{label}"])
+    arguments = ["print", f"gui/{os.getuid()}/{label}"]
+    result = (
+        _launchctl(arguments)
+        if deadline is None
+        else _launchctl(arguments, deadline=deadline)
+    )
     if result.returncode != 0:
         return False
     # launchctl prints a `state = active` line for each listening socket
@@ -4077,13 +4180,51 @@ def _broker_process_idle() -> bool:
     return _job_process_idle(BROKER_LABEL)
 
 
-def _wait_for_job_idle(label: str) -> bool:
-    deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if _job_process_idle(label):
+def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
+    if deadline is None:
+        deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
+    elif (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not math.isfinite(float(deadline))
+    ):
+        raise ValueError("provider job idle deadline is invalid")
+    # Validate the label at entry (hoisted out of the probe loop): an invalid
+    # label is a caller bug and must raise, not be swallowed by the fail-closed
+    # loop below. _JOB_LABEL_RE mirrors the check inside _job_process_idle.
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
+        raise ValueError("provider job label is invalid")
+    # Pre-check operator-home once as an early-out for the common
+    # not-yet-configured case.
+    if _operator_home() is None:
+        return False
+    while True:
+        if time.monotonic() >= deadline:
+            return False
+        try:
+            idle = _job_process_idle(label, deadline=deadline)
+        except (
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+            _OperatorHomeUnavailable,
+        ):
+            # An accepted-request idle probe that cannot be completed is a
+            # failed idle proof -> not idle. The accepted-request boundary then
+            # types this as TEARDOWN_ERROR, not PROTOCOL_ERROR. This covers a
+            # launchctl spawn failure, deadline expiry, subprocess error, and
+            # (via the typed _OperatorHomeUnavailable) _launchctl's per-call
+            # operator-home re-resolution failing after the entry pre-check —
+            # without a racy re-check. A plain ValueError (a genuine code bug;
+            # label is pre-validated and timeout/deadline are fixed/pre-checked)
+            # is deliberately NOT caught and still surfaces.
+            return False
+        if idle:
             return True
-        time.sleep(0.05)
-    return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(max(0.0, min(0.05, remaining)))
 
 
 def _wait_for_broker_exit() -> bool:
@@ -4228,9 +4369,20 @@ def _prove_legacy_blue(root: Path) -> dict[str, Any]:
 
 
 def _dispatcher_ping_response(
-    response: object, *, request_id: str
+    response: object,
+    *,
+    request_id: str,
+    dispatcher_protocol_version: int = DISPATCHER_PROTOCOL_VERSION,
 ) -> RuntimeResult:
-    if not isinstance(response, dict) or response.get("request_id") != request_id:
+    if (
+        dispatcher_protocol_version
+        not in {
+            LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            DISPATCHER_PROTOCOL_VERSION,
+        }
+        or not isinstance(response, dict)
+        or response.get("request_id") != request_id
+    ):
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
             error="provider dispatcher ping response was rejected",
@@ -4256,7 +4408,7 @@ def _dispatcher_ping_response(
     if (
         set(response)
         != {"protocol_version", "request_id", "status", "result", "provenance"}
-        or response.get("protocol_version") != DISPATCHER_PROTOCOL_VERSION
+        or response.get("protocol_version") != dispatcher_protocol_version
         or response.get("result") != {"ready": True}
         or response.get("provenance") != {"operation": "dispatcher_ping"}
     ):
@@ -4300,7 +4452,7 @@ def invoke_dispatcher_ping(
             lane = _load_selector_v2_lane(root, selected, role=role)
         request_id = "dispatcher-ping-" + os.urandom(16).hex()
         request = {
-            "protocol_version": DISPATCHER_PROTOCOL_VERSION,
+            "protocol_version": lane.protocol_version,
             "request_id": request_id,
             "operation": "dispatcher_ping",
             "timeout_ms": timeout_ms,
@@ -4315,13 +4467,19 @@ def invoke_dispatcher_ping(
                 deadline, time.monotonic() + DISPATCHER_MAX_HANDSHAKE_SECONDS
             ),
         )
-        return _dispatcher_ping_response(response, request_id=request_id)
+        return _dispatcher_ping_response(
+            response,
+            request_id=request_id,
+            dispatcher_protocol_version=lane.protocol_version,
+        )
     except _DispatcherPreRequestError:
         return RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
             error="staged provider dispatcher ping bridge is unproven",
         )
-    except _DispatcherPostRequestError:
+    except _DispatcherPostRequestError as exc:
+        if exc.result is not None:
+            return exc.result
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
             error="staged provider dispatcher ping completion is unproven",
@@ -4433,7 +4591,9 @@ def invoke_dispatcher_lock_probe(
             RuntimeStatus.INTEGRITY_ERROR,
             error="staged provider dispatcher lock probe bridge is unproven",
         )
-    except _DispatcherPostRequestError:
+    except _DispatcherPostRequestError as exc:
+        if exc.result is not None:
+            return exc.result
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
             error="staged provider dispatcher lock probe completion is unproven",
@@ -5685,10 +5845,14 @@ def broker_status() -> RuntimeResult:
     try:
         root = _broker_root()
         if not root.exists():
-            return RuntimeResult(RuntimeStatus.UNAVAILABLE, result={"installed": False}, error="provider broker is not installed")
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"installed": False},
+                error="provider broker is not installed",
+            )
         if _exact_mode(root, expected_type=stat.S_IFDIR, mode=0o700) is None:
             raise ValueError("unsafe provider broker root")
-        selector = _read_broker_selector_v2(root)
+        selector = _read_broker_selector_view(root)
         if selector is not None:
             lane = _load_selector_v2_lane(
                 root, selector["selected"], role="selected"
@@ -5697,31 +5861,54 @@ def broker_status() -> RuntimeResult:
             socket_valid = _exact_mode(
                 lane.socket_path, expected_type=stat.S_IFSOCK, mode=0o600
             ) is not None
-            status = (
-                RuntimeStatus.OK
-                if loaded and socket_valid
-                else RuntimeStatus.UNAVAILABLE
-            )
+            ready = False
+            persistent_process = False
+            if loaded and socket_valid:
+                if lane.transport == "dispatcher":
+                    ping = invoke_dispatcher_ping(lane=lane)
+                    live = ping.status is RuntimeStatus.OK
+                else:
+                    live = _broker_ping(lane.socket_path)
+                idle = _wait_for_job_idle(lane.label)
+                ready = live and idle
+                persistent_process = not idle
+
+            rollback_available = False
+            retained = selector.get("retained")
+            if retained is not None:
+                retained_lane = _load_selector_v2_lane(
+                    root, retained, role="retained"
+                )
+                rollback_available = _job_loaded(retained_lane.label)
+
+            if _read_broker_selector_view(root) != selector:
+                raise ValueError("provider broker selector changed during status proof")
+            status = RuntimeStatus.OK if ready else RuntimeStatus.UNAVAILABLE
             return RuntimeResult(
                 status,
                 result={
                     "installed": True,
-                    "active": loaded and socket_valid,
+                    "active": ready,
                     "launchd_job": loaded,
                     "socket": socket_valid,
                     "selected": dict(selector["selected"]),
-                    "rollback_available": selector["retained"] is not None,
-                    "persistent_process": False,
+                    "rollback_available": rollback_available,
+                    "dispatcher_ready": ready and lane.transport == "dispatcher",
+                    "persistent_process": persistent_process,
                 },
                 error=(
                     ""
                     if status is RuntimeStatus.OK
-                    else "provider dispatcher is installed but inactive"
+                    else "provider selected lane is installed but not executable"
                 ),
             )
         state = _read_current_broker_state(root)
         if state is None:
-            return RuntimeResult(RuntimeStatus.UNAVAILABLE, result={"installed": False}, error="provider broker is not installed")
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"installed": False},
+                error="provider broker is not installed",
+            )
         _verify_published_version(
             root,
             artifact_digest=state["artifact_sha256"],
@@ -5737,23 +5924,58 @@ def broker_status() -> RuntimeResult:
             mode=0o600,
         ) is not None
         loaded = _broker_job_loaded()
-        status = RuntimeStatus.OK if loaded and socket_valid else RuntimeStatus.UNAVAILABLE
+        if _read_current_broker_state(root) != state:
+            raise ValueError("provider broker state changed during status proof")
+        rollback_available = False
+        previous = state.get("previous")
+        if isinstance(previous, Mapping):
+            try:
+                _verify_published_version(
+                    root,
+                    artifact_digest=previous["artifact_sha256"],
+                    manifest_digest=previous["manifest_sha256"],
+                    runtime_protocol_version=previous["runtime_protocol_version"],
+                    role="retained",
+                    transport="broker",
+                    dispatcher_protocol_version=None,
+                )
+            except (
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+                TypeError,
+                ValueError,
+            ):
+                rollback_available = False
+            else:
+                rollback_available = True
         return RuntimeResult(
-            status,
+            RuntimeStatus.UNAVAILABLE,
             result={
                 "installed": True,
-                "active": loaded and socket_valid,
+                "active": False,
                 "launchd_job": loaded,
                 "socket": socket_valid,
                 "artifact_sha256": state["artifact_sha256"],
                 "manifest_sha256": state["manifest_sha256"],
-                "rollback_available": state["previous"] is not None,
+                "rollback_available": rollback_available,
+                "dispatcher_ready": False,
                 "persistent_process": False,
             },
-            error="" if status is RuntimeStatus.OK else "provider broker is installed but inactive",
+            error="provider broker selector is unavailable",
         )
-    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
-        return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker status could not be proven")
+    except (
+        KeyError,
+        OSError,
+        RuntimeError,
+        subprocess.SubprocessError,
+        TypeError,
+        ValueError,
+    ):
+        return RuntimeResult(
+            RuntimeStatus.INTEGRITY_ERROR,
+            error="provider broker status could not be proven",
+        )
 
 
 def rollback_broker() -> RuntimeResult:
@@ -6429,25 +6651,54 @@ def _parse_response(
     return RuntimeResult(RuntimeStatus.OK, result=response["result"], provenance=provenance)
 
 
-def _terminate_and_reap(process: subprocess.Popen[bytes]) -> bool:
+def _terminate_and_reap(
+    process: subprocess.Popen[bytes], *, deadline: float | None = None
+) -> bool:
+    # Post SIGKILL to the whole session group (process.pid is the session-group
+    # leader: every launch uses start_new_session=True). group_killed records
+    # whether the WHOLE-group kill is proven so the return can stay honest.
+    group_killed = True
     try:
         os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        # ESRCH: the group already exited. The whole-group teardown is proven.
+        group_killed = True
     except OSError:
+        # The group kill could not be posted; fall back to killing only the
+        # leader. Sibling members may survive, so the whole-group teardown is
+        # NOT proven and the return below must reflect that.
+        group_killed = False
         if process.poll() is None:
             try:
                 process.kill()
             except OSError:
                 pass
-    try:
-        process.wait(timeout=5)
-        return True
-    except subprocess.TimeoutExpired:
-        try:
-            process.kill()
-            process.wait(timeout=5)
-            return True
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+    now = time.monotonic()
+    if deadline is None:
+        reap_deadline = now + REAP_BOUND_SECONDS
+    else:
+        # Honor the caller deadline as the primary bound, but always allow a
+        # minimal grace for the just-posted SIGKILL to be delivered and the
+        # leader reaped: a normal (non-D-state) process reaps in milliseconds,
+        # so a strictly-zero budget at an already-expired deadline would
+        # mistype an ordinary timeout as TEARDOWN_ERROR. The grace caps the
+        # worst-case overrun at REAP_GRACE_SECONDS past the deadline (vs the
+        # old ~10s of two fixed 5s waits), and is itself capped by the
+        # no-deadline bound.
+        reap_deadline = min(
+            now + REAP_BOUND_SECONDS, max(deadline, now + REAP_GRACE_SECONDS)
+        )
+    # Reap the leader by polling, bounded above (never the old two fixed 5s
+    # waits). A D-state child that outlives the bound yields reaped=False ->
+    # TEARDOWN_ERROR (the documented accepted residual), never a false success.
+    reaped = process.poll() is not None
+    while not reaped and time.monotonic() < reap_deadline:
+        time.sleep(min(0.02, max(0.0, reap_deadline - time.monotonic())))
+        reaped = process.poll() is not None
+    # "Teardown proven" requires BOTH the leader reaped AND the whole-group kill
+    # posted; a leader-only fallback returns False so the caller types
+    # TEARDOWN_ERROR rather than a false success.
+    return reaped and group_killed
 
 
 def _collect_bounded_output(
@@ -6471,7 +6722,7 @@ def _collect_bounded_output(
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                reaped = _terminate_and_reap(process)
+                reaped = _terminate_and_reap(process, deadline=deadline)
                 status = RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR
                 error = (
                     "native runtime timed out"
@@ -6495,7 +6746,7 @@ def _collect_bounded_output(
                     continue
                 buffers[name].extend(chunk)
                 if len(buffers[name]) > MAX_RESPONSE_BYTES:
-                    reaped = _terminate_and_reap(process)
+                    reaped = _terminate_and_reap(process, deadline=deadline)
                     status = (
                         RuntimeStatus.OUTPUT_LIMIT
                         if reaped
@@ -6518,7 +6769,7 @@ def _collect_bounded_output(
         try:
             process.wait(timeout=max(remaining, 0.001))
         except subprocess.TimeoutExpired:
-            reaped = _terminate_and_reap(process)
+            reaped = _terminate_and_reap(process, deadline=deadline)
             status = RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR
             return b"", b"", RuntimeResult(
                 status,
@@ -6530,7 +6781,7 @@ def _collect_bounded_output(
             )
         return bytes(buffers["stdout"]), bytes(buffers["stderr"]), None
     except (OSError, ValueError):
-        reaped = _terminate_and_reap(process)
+        reaped = _terminate_and_reap(process, deadline=deadline)
         return b"", b"", RuntimeResult(
             RuntimeStatus.TEARDOWN_ERROR,
             error=(
@@ -6540,7 +6791,7 @@ def _collect_bounded_output(
             ),
         )
     except BaseException:
-        _terminate_and_reap(process)
+        _terminate_and_reap(process, deadline=deadline)
         raise
     finally:
         selector.close()
@@ -6788,7 +7039,9 @@ def invoke_adoption_canary(*, request: object) -> RuntimeResult:
             RuntimeStatus.INTEGRITY_ERROR,
             error="staged provider dispatcher bridge is unproven",
         )
-    except _DispatcherPostRequestError:
+    except _DispatcherPostRequestError as exc:
+        if exc.result is not None:
+            return exc.result
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
             error="staged provider dispatcher failed after canary acceptance",
