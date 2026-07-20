@@ -168,6 +168,39 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                 expected_artifact=dict(self.ARTIFACT, sha256="d" * 64),
                 parent_mode="100644", release_mode="100644")
 
+    def test_json_scalar_TYPES_are_part_of_the_delta(self) -> None:
+        """`==` type-puns JSON scalars, so a real change reads as no change.
+
+        3 == 3.0, 1 == True and 0 == False in Python, so a release-only commit
+        rewriting schema_version from 3 to 3.0 (or 1 to true) passed a gate whose
+        job is to prove nothing but `artifacts` changed. Consumers requiring real
+        integers then reject the manifest the gate approved.
+
+        This is the CLASS of the size_bytes bool-is-int bug fixed one round
+        earlier: fixing that single leaf left every other field exposed, because
+        the containing comparison was still `==`.
+        """
+        for label, before_val, after_val in (("int->float", 3, 3.0),
+                                             ("int->bool", 1, True),
+                                             ("zero->false", 0, False)):
+            base = {"schema_version": before_val, "channel": "production", "artifacts": []}
+            after = {"schema_version": after_val, "channel": "production",
+                     "artifacts": [self.ARTIFACT]}
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(self.rtc.TagContractError, "other than 'artifacts'"):
+                    self.rtc.assert_release_commit_delta(
+                        [self.rtc.MANIFEST_PATH], parent_manifest=json.dumps(base),
+                        release_manifest=json.dumps(after), expected_artifact=self.ARTIFACT,
+                        parent_mode="100644", release_mode="100644")
+        # The artifact comparison is type-strict too — same helper, same class.
+        typed = dict(self.ARTIFACT, size_bytes=1234)
+        before, after = self._manifests(artifact=typed)
+        with self.assertRaisesRegex(self.rtc.TagContractError, "does not match"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=dict(self.ARTIFACT, size_bytes=1234.0),
+                parent_mode="100644", release_mode="100644")
+
     def test_manifest_file_mode_is_part_of_the_topology(self) -> None:
         """An executable-bit flip must not ride along with a release.
 

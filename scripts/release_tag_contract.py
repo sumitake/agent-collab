@@ -139,6 +139,30 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
     }
 
 
+def _type_strict_equal(left, right) -> bool:
+    """Deep equality that also requires matching TYPES.
+
+    Python's `==` is type-punning on JSON scalars: `3 == 3.0`, `1 == True`, and
+    `0 == False` are all true. A plain `before_rest != after_rest` therefore
+    approves a release-only commit that rewrites `schema_version: 3` to `3.0` or
+    `1` to `true` — a real manifest change the gate reports as no change, which
+    downstream consumers requiring actual integers then reject.
+
+    This closes the CLASS. The same defect was fixed one level down for
+    `size_bytes` last round; fixing only the leaf left every other field exposed,
+    because the containing comparison was still `==`.
+    """
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return (left.keys() == right.keys()
+                and all(_type_strict_equal(left[k], right[k]) for k in left))
+    if isinstance(left, list):
+        return (len(left) == len(right)
+                and all(_type_strict_equal(a, b) for a, b in zip(left, right)))
+    return left == right
+
+
 def _strict_json(text: str, which: str) -> dict:
     """Parse a manifest, refusing constructs that other JSON readers disagree on.
 
@@ -261,7 +285,7 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
     # REQUIRED, not optional. An optional pin is one the wiring can simply omit,
     # and a well-formed artifact describing the wrong archive would then sail
     # through — the gate would be satisfied by a caller that never used it.
-    if entry != expected_artifact:
+    if not _type_strict_equal(entry, expected_artifact):
         raise TagContractError(
             "activation artifact does not match the artifact derived from the built "
             "archive; refusing to bind a tag digest to a manifest describing something else"
@@ -269,10 +293,10 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
 
     before_rest = {k: v for k, v in before.items() if k != "artifacts"}
     after_rest = {k: v for k, v in after.items() if k != "artifacts"}
-    if before_rest != after_rest:
+    if not _type_strict_equal(before_rest, after_rest):
         differing = sorted(
             k for k in set(before_rest) | set(after_rest)
-            if before_rest.get(k) != after_rest.get(k)
+            if not _type_strict_equal(before_rest.get(k), after_rest.get(k))
         )
         raise TagContractError(
             "release-only commit changed manifest field(s) other than 'artifacts': "
