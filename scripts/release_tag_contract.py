@@ -102,9 +102,19 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
     required fields, uppercase or malformed digests, unsafe asset names,
     non-ASCII, and any trailing material after the field block.
     """
-    if not isinstance(message, str) or not message.strip():
+    if not isinstance(message, str):
         raise TagContractError("tag message is empty")
-    # Bound BEFORE strip/split so oversized input is cheap to reject.
+    # FIRST, and non-allocating: len() on a str is O(1), and a UTF-8 encoding is
+    # always at least as many bytes as characters — so a character count over the
+    # byte bound is definitely over the byte bound. This must precede BOTH strip()
+    # and encode(): strip() scans the whole object (an oversized all-whitespace
+    # message would otherwise exit through the "empty" branch without the bound
+    # ever being consulted), and encode() allocates a full copy.
+    if len(message) > _MAX_MESSAGE_BYTES:
+        raise TagContractError(f"tag message exceeds {_MAX_MESSAGE_BYTES} bytes")
+    if not message.strip():
+        raise TagContractError("tag message is empty")
+    # Precise byte check, now bounded to at most _MAX_MESSAGE_BYTES characters.
     if len(message.encode("utf-8", "surrogateescape")) > _MAX_MESSAGE_BYTES:
         raise TagContractError(f"tag message exceeds {_MAX_MESSAGE_BYTES} bytes")
     if not message.isascii():

@@ -214,6 +214,12 @@ class TagGrammarTests(unittest.TestCase):
         huge = self._message().rstrip("\n") + "\nAsset-Name: " + "a" * 8000 + "\n"
         with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
             self.rtc.parse_tag_message(huge, tag="v4.1.0")
+        # ORDERING: the bound must be consulted BEFORE strip(). An oversized
+        # all-whitespace message previously exited via the "empty" branch, having
+        # scanned the whole object without the limit ever being applied — so the
+        # error message here is the property, not incidental.
+        with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
+            self.rtc.parse_tag_message(" " * (self.rtc._MAX_MESSAGE_BYTES + 1), tag="v4.1.0")
 
 
     def test_asset_names_reject_characters_github_rewrites(self) -> None:
