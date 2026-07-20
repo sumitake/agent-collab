@@ -3849,6 +3849,29 @@ print(json.dumps({{
             result.result["selected"]["artifact_sha256"], lane.artifact_digest
         )
 
+    def test_broker_status_rejects_selectorless_live_legacy_broker(self) -> None:
+        root = self.root / "broker-state"
+        self._install_legacy_blue(root, body="#!/bin/sh\nexit 0\n")
+        (root / self.client.BROKER_SELECTOR_FILENAME).unlink()
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_broker_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_broker_ping", return_value=True
+        ) as broker_ping:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertTrue(result.result["installed"])
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertEqual(result.error, "provider broker selector is unavailable")
+        broker_ping.assert_not_called()
+
     def test_broker_status_requires_stable_selected_dispatcher_ping(self) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")

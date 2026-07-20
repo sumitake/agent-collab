@@ -5824,7 +5824,6 @@ def broker_status() -> RuntimeResult:
             mode=0o600,
         ) is not None
         loaded = _broker_job_loaded()
-        ready = loaded and socket_valid and _broker_ping(root / BROKER_SOCKET_FILENAME)
         if _read_current_broker_state(root) != state:
             raise ValueError("provider broker state changed during status proof")
         rollback_available = False
@@ -5850,12 +5849,11 @@ def broker_status() -> RuntimeResult:
                 rollback_available = False
             else:
                 rollback_available = True
-        status = RuntimeStatus.OK if ready else RuntimeStatus.UNAVAILABLE
         return RuntimeResult(
-            status,
+            RuntimeStatus.UNAVAILABLE,
             result={
                 "installed": True,
-                "active": ready,
+                "active": False,
                 "launchd_job": loaded,
                 "socket": socket_valid,
                 "artifact_sha256": state["artifact_sha256"],
@@ -5864,11 +5862,7 @@ def broker_status() -> RuntimeResult:
                 "dispatcher_ready": False,
                 "persistent_process": False,
             },
-            error=(
-                ""
-                if status is RuntimeStatus.OK
-                else "provider broker is installed but not executable"
-            ),
+            error="provider broker selector is unavailable",
         )
     except (
         KeyError,
