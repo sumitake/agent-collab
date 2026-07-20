@@ -268,12 +268,17 @@ means *acquire* it (the previous holder's FD is gone, so `flock` succeeds); it n
 means `unlink`. The inode is never removed while a cut may hold it — removing it is
 what lets two holders lock two different inodes under one name.
 
-*Confirming instance (PR-bot on `e1bbcc2`):* the current pathname-token `release_lock`
-clears `_lock_token` even when `os.unlink` fails, so a transient unlink error strands the
-lockfile AND drops the instance's ownership — blocking every future cut for the tag. The
-FD-`flock` design removes this class: release is closing the descriptor (auto-released on
-process exit), the lockfile is never unlinked on release, so no unlink-fail-clears-token
-state exists. This is why R5 replaces the primitive rather than patching its unlink path.
+*Confirming instances (PR-bot, `e1bbcc2` + `95657a27`):* the pathname-token lock has
+lifecycle bugs on BOTH ends. **Release:** `release_lock` clears `_lock_token` even when
+`os.unlink` fails, so a transient error strands the lockfile and drops ownership.
+**Acquire:** `acquire_lock` creates the file with `O_EXCL`, then if the token write/close
+fails (ENOSPC/IO) the file is orphaned — every later cut hits `FileExistsError` → "already in
+progress". Both block all future cuts for the tag until manual cleanup. The FD-`flock` design
+removes the whole class: the FD *is* the lock (no separate token file to half-create or
+half-remove), release is closing the descriptor (auto-released on process exit), and the
+persistent lockfile is never `O_EXCL`-created-per-acquire nor unlinked-on-release. This is
+why R5 replaces the primitive wholesale rather than patching each failure path — the bot is
+systematically enumerating the failure modes of a design that is being discarded.
 
 **Cross-host / cross-clone.** A local `flock` is silent about a cutter in another clone
 or on another machine. The **global fence is the signed-tag push itself**: pushing
