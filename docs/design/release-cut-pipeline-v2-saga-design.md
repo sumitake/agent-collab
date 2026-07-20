@@ -1,0 +1,366 @@
+# Release-cut PIPELINE — v2 architecture (release saga + signed intent)
+
+**Status:** design, v2 draft. **Scope: the whole cut pipeline**, not the reconciliation
+function alone (operator direction 2026-07-20: "broader scope — the whole cut pipeline /
+pieces 2–4 together; expand before designing"). v2 re-architects, as one coherent saga,
+every piece split out of the original PR-4: the durable journal + reconciliation
+(`require_consistent`), burn / revocation, dispatch verification, and the CLI integration
+seam. It supersedes both the matrix approach in `reconciliation-contract-correction.md`
+(which adversarial design review round 1 rejected at the architecture level — RECONSIDER /
+HIGH, 10 blocking, `reviews/reconciliation-plan-adversarial-review-1.md`) and the
+step-scoped V0–V10 in `pr4-cut-release-activation-design.md` where they conflict. No code
+is written against this until it converges through its own distinct-family adversarial
+review.
+
+**Why pipeline scope is the right frame.** Review finding #10 — the journal is a progress
+hint, authority comes from signed intent and attempt-bound receipts — is not a property of
+one function. It is the shape of the *entire cut*: every effect (tag, draft, asset,
+dispatch, and the compensations rollback + burn) is a saga step with the same eight-part
+contract. Designing reconciliation in isolation, as v1 did, is what produced a matrix that
+could not express the protocol. The pieces were never independent; they are steps of one
+saga sharing one intent and one observation model.
+
+**Author model + effort (directive #7):** design authored by Claude (`claude-opus-4-8`,
+frontier tier — architecture reasoning is frontier work and stays with the primary per
+directive #8). Implementation, once this converges, is delegated to a worker tier against
+the converged spec. (A `claude-fable-5` session drafted an earlier reconciliation-only
+cut of this doc; the pipeline-scope expansion is authored on `claude-opus-4-8`.)
+
+**Step-0 note.** The operator disambiguated scope directly via a structured question
+("broader scope") and re-issued the task; the intent-drift check flags SIGNIFICANT_DRIFT
+because a four-word context-referential prompt cannot literally contain this architecture,
+and the check is context-blind. Proceeding is on the operator's explicit selection, not on
+inference — recorded here as a visible decision, not a silent bypass.
+
+## What round 1 established, and why the matrix was the wrong object
+
+The reviewer's governing finding: *a fully attacker-writable journal cannot be the
+authority that selects weaker guards; at most it is a progress hint.* The state ×
+evidence matrix I had been building is a **derived invariant specification** — worth
+keeping as a checkable artifact — but it cannot repair an authoritative mutable
+journal, and a flat matrix cannot express a protocol whose interleavings are
+unbounded. So the four rounds of patching were hardening the wrong structure.
+
+v2 inverts the trust relationship:
+
+- **Authorization comes from signed intent**, never from the journal.
+- **Progress comes from attempt-bound remote receipts**, never from the journal.
+- **The journal is a resume hint only** — a performance optimization that says "look
+  here first." Every decision it might inform is re-established from signed intent +
+  authoritatively observed remote state. A journal that is absent, stale, or tampered
+  changes latency, never correctness.
+
+## Terminology
+
+- **Release intent** — the immutable, signed description of *what this release IS*:
+  repository, version, release-commit OID, channel, the exact expected artifact set,
+  and the signer policy. It is the root of authority.
+- **Effect** — a remote side effect: push the signed tag, create the draft release,
+  upload the asset, dispatch CI. Effects are the saga steps.
+- **Receipt** — durable, remotely-observable proof that a specific effect landed,
+  bound to *this* attempt where the API permits: tag object OID, release id, asset id
+  + digest + size, dispatch run id.
+- **Observation** — a four-valued read of one remote predicate (below).
+- **Epoch** — one coherent batch of observations. Facts compared against each other
+  must share an epoch; cross-epoch comparison stops.
+
+## 1. Release intent — the root of authority (findings 6, 9)
+
+Consistency is not authorization. Three mutually-agreeing sources can consistently
+describe the *wrong* release — a replayed signed tag from another repo, a different
+channel, artifacts from another attempt. So reconciliation must be anchored to an
+object that says what this release is *supposed* to be, and that object must be
+**signed** and **bound** so it cannot be replayed into a different context.
+
+**Carrier.** The GPG-signed annotated tag is already the signed root (grammar
+`agent-collab-release/1`). v2 extends the signed tag message to bind the full intent,
+or references a signed intent blob by digest from the tag — an **open question**
+(§ Open questions Q1). The intent binds, at minimum:
+
+- `repository` — `owner/name`. Closes signature-replay from another repo (finding 8, A5).
+- `version` — the tag name; the tag *is* the version.
+- `release_commit` — the peeled commit OID the tag points at. Binds the tree that
+  ships. (finding 7: tag-object OID **vs** peeled commit OID are distinct facts.)
+- `channel` — production/beta/…; closes cross-channel replay.
+- `artifacts` — the exact expected set, each carrying the real schema's identifying
+  fields (§ 8). Not a count, not a partial shape.
+- `signer_policy` — the set of key fingerprints permitted to authorize this release,
+  pinned **out of band** (in-repo config that is itself in the release-commit tree, or
+  operator-provisioned), never taken from the tag being verified. Closes the
+  trust-anchor-substitution and signing-oracle classes (finding 8, A6/A7).
+
+**Authorization check** (before any effect is trusted or resumed): the tag signature
+verifies **and** the signer fingerprint is in `signer_policy` **and** the bound
+`repository`/`release_commit` match the actual repo and the tag's peeled commit. Fail
+any → STOP. A valid signature over the wrong context is a CONFLICT, not a pass.
+
+## 2. Four-valued observation — the never-asked column (finding 2)
+
+Every remote predicate is read as one of:
+
+- **PRESENT** — authoritatively observed to exist, with its attributes.
+- **ABSENT** — authoritatively observed *not* to exist (a definitive 404 on an
+  authenticated, un-rate-limited, complete read).
+- **UNKNOWN** — could not be authoritatively determined: transport timeout, HTTP 403/429
+  (permission mask or rate limit), incomplete pagination, malformed body, stale-cache
+  suspicion. UNKNOWN is not absence.
+- **CONFLICT** — present but with attributes that disagree with intent/receipt (wrong
+  digest, wrong commit, wrong channel, duplicate matches).
+
+Rules that make this load-bearing:
+
+- Only **authoritative ABSENT** satisfies a forbidden-evidence rule. UNKNOWN read as
+  "not there yet" is exactly what would license replaying a landed effect (F3 × finding 2).
+- Only **PRESENT with matching attributes** satisfies a required-evidence rule.
+- **UNKNOWN always stops** — never selects a weaker path, never resumes. It is a retry
+  point, not a decision.
+- **CONFLICT always stops** — it is the tamper/replay signal.
+- Observations feeding one decision must share an **epoch**; if the tag read and the
+  release read cannot be shown coherent (e.g. one predates a known mutation), stop.
+
+This is `falsey-is-not-absent` ([[falsey.is.not.absent]]) lifted to the network layer,
+where the collapse `UNKNOWN → ABSENT` is the specific bug.
+
+## 3. The saga — steps, not states (findings 3, 4, 10)
+
+The cut is an ordered saga. Each step is specified by eight parts, per the reviewer:
+
+| part | meaning |
+|---|---|
+| precondition | what must hold (from intent + observation) before attempting |
+| attempt-id | this cut's identifier, bound into the effect where the API allows |
+| effect | the remote mutation |
+| receipt | the durable, attempt-bound proof it landed |
+| postcondition | what must hold after (required PRESENT + forbidden ABSENT) |
+| compensation | how to undo it during rollback |
+| retry rule | what is safe to re-attempt, and under what observation |
+| revalidation | when resuming, how this step's true status is re-established |
+
+**Steps** (the forward effects; compensations — rollback and burn — are §3b, first-class
+saga steps with the same eight-part contract, not an afterthought):
+
+1. **push-signed-tag** — effect: push the annotated signed tag. receipt: remote tag
+   object OID == local, signature valid, signer in policy. This step *is* the global
+   fence (§ 5). revalidation: re-read remote tag; PRESENT+match ⇒ done, ABSENT ⇒
+   not-started, CONFLICT ⇒ stop.
+2. **create-draft** — precondition: tag receipt holds. effect: create the draft
+   release for the tag. attempt-id bound into the release body/name. receipt: release
+   id + isDraft==true + tagName==version.
+3. **upload-asset** — precondition: draft receipt holds. effect: upload the archive.
+   receipt: asset id + digest==intent + size==intent. retry: a re-upload must reconcile
+   asset **identity**, not just digest — a deleted-and-recreated asset with the same
+   digest is a different id (finding 7; the `substitution-under-a-stable-name` class).
+4. **dispatch-CI** — precondition: asset receipt holds. effect: `workflow run` with the
+   tag ref + attempt-id input. receipt: a run whose head is the tag AND whose input
+   carries this attempt-id (closes the substitution the earlier `_dispatch_exists` had).
+
+**Per-effect status resolution** (finding 4) — every step, on resume, resolves to
+exactly one of: `confirmed-not-started` (authoritative ABSENT of its receipt) /
+`completed-by-this-attempt` (PRESENT + attempt-id matches) / `completed-by-another-attempt`
+(PRESENT + attempt-id differs → STOP, not adopt) / `ambiguous` (UNKNOWN → retry/stop) /
+`conflicting` (CONFLICT → STOP). Only `confirmed-not-started` re-runs the effect; only
+`completed-by-this-attempt` advances past it.
+
+The **forbidden column is symmetric** (F3): before step N's PENDING, step N's receipt
+must be authoritative-ABSENT; at PENDING it is legitimately ambiguous; after, PRESENT.
+
+## 3b. Compensations — rollback and burn as saga steps (pieces 2 & 3 of the split)
+
+Rollback and burn are not a separate subsystem; they are the saga's compensating steps,
+governed by the same eight-part contract, the same signed intent, and the same four-valued
+observation. Folding them in here is the pipeline-scope point: the earlier PR-4 split
+treated burn/revocation as its own piece, but under the saga it is just compensation with
+a receipt.
+
+**Rollback (compensation for a not-yet-published cut).** Precondition: the target release
+is still a draft (`isDraft==true`, authoritative PRESENT) and every deletable object's
+identity matches the signed intent + attempt-id — never the checkout's manifest (the v1
+"rollback targets the tag, not the checkout" fix, generalized: rollback resolves its target
+from the **signed tag**, so a policy-only checkout can never mis-route an activation tag's
+rollback into the legacy tag-deleting path). Effect: delete asset(s) by id, then the draft
+release, then — only if intent says so — the tag. Receipt: each deleted object re-observes
+to **authoritative ABSENT** (not UNKNOWN — a 404 under rate-limit is not proof of deletion,
+the residue-as-success trap F1/F3). Postcondition: no residual draft or asset (finding
+`residue-as-success`). A published release is never rolled back by the cutter — publication
+is CI's terminal state and immutable (operator D6); attempting it is a STOP.
+
+**Burn (terminal compensation — a version is spent).** After a completed rollback, the
+version is burned so a later cut of the same version refuses. The burn record must be:
+
+- **SIGNED** — a burn is an authorization statement ("this version is void"), so it carries
+  the same signer-policy check as intent. `is_version_burned` as an `is_file()` check was
+  the free-tier DoS: any repo writer pushes `revocations/<v>.json` and blocks a version.
+  Reachability is not authenticity (the round-1 finding). The read side verifies a **signed,
+  committed, `origin/main`-reachable** burn commit, and an unsigned or unreachable burn does
+  not count.
+- **committed and durably persisted** — write-ahead like any other effect; the directory
+  fsync must persist the parent entry (F2), and the clean-tree / HEAD guards run **before**
+  the file is written ([[guard.defeats.its.own.precondition]] — the original ordering bug).
+- **its own receipt** — the burn's presence is itself observed four-valued; an UNKNOWN read
+  of the revocation set stops a re-cut rather than allowing it.
+
+**Open question Q6:** burns live on `main`, which on a free-tier repo has no branch
+protection, so an attacker can also *delete* a legitimate burn. Signing proves a present
+burn is authentic but does not make a burn's *absence* trustworthy. Does the burn set need
+an append-only / signed-log structure (each entry chaining the prior) so deletion is
+detectable, or is that out of scope for v2?
+
+## 3c. Orchestration and the CLI seam (piece 4 of the split)
+
+The CLI entry (`cut_release.py`) is the saga's orchestrator, and its v1 defects were all
+"the seam was never designed" (the parent PR-4 correction). Under v2:
+
+- **Release-manifest builder, derived not passed.** `build_release_manifest(committed,
+  archive, runtime_identity)` derives the release manifest from the **built archive's own
+  digest/size** and the **schema-valid** artifact shape (§8, against
+  `runtime-manifest.schema.json` — the premise-error fix), so the topology gate has a real
+  parent→release delta and the tag's `Manifest-SHA256` binds to the bytes actually shipped.
+  `runtime_identity` is derived from the verified runtime, never operator input (closes the
+  A7 signing-oracle path at the manifest layer).
+- **Gate ordering, applicability-split.** Universal cut gates (changelog compiled, version
+  consistency, canonical archive verification) run **before** the mode branch; the
+  mode-conditional gate (signed-runtime verification, activation only) runs inside it;
+  rollback has its **own** gates (target resolvable from the signed tag, signature/identity
+  anchored, still a draft) and the cut gates do not apply. A path cannot skip a gate by
+  being selected earlier (the v1 "gates before the branch" fix, made precise).
+- **Mode from the committed manifest, never a flag.** `--archive` on a policy-only manifest
+  is refused; an unclassifiable tree reaches neither path.
+- **policy-only is unchanged.** The whole saga is gated behind
+  `classify_package()=="activation"`; today's policy-only releases keep their exact behavior
+  (this is the compatibility constraint from `pr4-cut-release-activation-design.md`).
+
+## 3d. Piece 1 (already in PR #27) as saga primitives
+
+The sound, reviewed pieces in PR #27 are the saga's building blocks, unchanged: the signed
+**tag grammar** (`agent-collab-release/1`) is the intent carrier (§1); the **release-commit
+topology gate** (type-strict semantic delta + file-mode) validates the create-release-commit
+sub-step; **strict JSON** and **type-strict comparison** back every manifest comparison; the
+**transition graph's forward order** becomes the saga's step order; **path validation**
+guards the journal-cache and burn-record file names. v2 adds nothing that invalidates them —
+it replaces only `require_consistent` and the journal's *authority*.
+
+## 4. The journal is a hint, provably (finding 10)
+
+The journal records `{attempt-id, last-observed-step, receipts}` as a *cache*. On any
+run: load the journal if present, but **re-observe** every step's receipt from the
+remote and re-verify intent from the signed tag before acting. Formal property to test:
+*for every reachable state, the decision `require_resume/refuse/stop` is identical
+whether the journal is present-and-correct, absent, stale, or adversarially rewritten.*
+If any journal content can change a decision, the design has failed and the test
+catches it. This is the executable form of "at most a progress hint."
+
+## 5. Locking and fencing (finding 5)
+
+**Local (single host).** A persistent lockfile with an advisory `flock` on the open
+descriptor. Ownership is the held FD, never a pathname token. "Clear a stale lock"
+means *acquire* it (the previous holder's FD is gone, so `flock` succeeds); it never
+means `unlink`. The inode is never removed while a cut may hold it — removing it is
+what lets two holders lock two different inodes under one name.
+
+**Cross-host / cross-clone.** A local `flock` is silent about a cutter in another clone
+or on another machine. The **global fence is the signed-tag push itself**: pushing
+`refs/tags/vX.Y.Z` to a repo with tag-immutability (operator D9 ruleset) is the atomic
+compare-and-set — it succeeds for exactly one cutter; a second observes the tag PRESENT
+and either resolves to `completed-by-another-attempt` (STOP) or routes to recover. No
+GitHub-native CAS on *releases* exists, so all global serialization is anchored to the
+tag ref being the one atomic, immutable fence. **Open question Q2:** whether tag
+immutability is enforceable on this free-tier repo, and the fallback if not.
+
+## 6. Recovery protocol (finding 6)
+
+`--recover` is a separate, authenticated decision — never a fall-through, never the
+journal-absent default silently adopting remote state.
+
+1. Fetch and verify the signed tag: signature valid, signer in policy, bound repo +
+   commit match. Fail → refuse.
+2. Reconstruct intent **from the verified tag only** (not the journal, not caller
+   input — closes the signing-oracle/confused-deputy adoption path).
+3. Observe every step's receipt four-valued under one epoch.
+4. Resume **only** if every completed step is `completed-by-this-attempt` (attempt-id in
+   the tag-bound intent) and every not-yet step is authoritative-ABSENT. Any UNKNOWN,
+   CONFLICT, or `completed-by-another-attempt` → refuse with the specific discrepancy.
+5. Recovery never *mutates* to reconcile; it only decides resume/refuse.
+
+## 7. Attacker model, closed further (finding 8)
+
+- **A1 local-state** (edit journal/lock files) — defeated by "journal is a hint" (§4)
+  and FD-lock ownership (§5).
+- **A2 repo-writer** (no branch protection; create/delete/recreate remote objects) —
+  defeated by intent binding + attempt-bound receipts + CONFLICT-stops.
+- **A3 confused-deputy caller** — defeated by deriving intent/evidence from git objects
+  and the schema, never from caller-supplied data.
+- **A1 ∧ A2 composition** — capabilities compose; every guard must hold assuming both.
+- **A4 concurrent honest cutter** — the tag-push fence (§5) serializes; the loser stops.
+- **A5 signature replay from another repo/release context** — intent binds
+  repository + version + release_commit, so a valid signature over a different context
+  is CONFLICT.
+- **A6 trust-anchor / git-config substitution** — signer policy is pinned out of band,
+  not read from the artifact under verification.
+- **A7 signing oracle** (cannot extract the key, but steers the cutter into signing
+  attacker-chosen intent) — the cutter constructs intent from verified repo/commit/
+  schema inputs and shows the operator the exact intent before signing; it never signs
+  caller-opaque bytes. **Open question Q3:** the human-confirmation surface for what is
+  being signed.
+
+## 8. Artifact identity — rebuilt against the real contract (premise-error fix)
+
+`REQUIRED_ARTIFACT_FIELDS` was invented. The source of truth is
+`plugins/agent-collab/runtime-manifest.schema.json` (13 required fields incl. a
+`signing` sub-object) and the incumbent validator in `build_plugin_archive.py`. v2:
+validate the artifact **against the schema file**, reuse the incumbent validator rather
+than parallel it, and derive at least one test fixture from a schema-valid example so a
+premise error fails a test instead of passing every test.
+([[validator.built.from.prose.not.from.existing.contract]])
+
+## 9. Verification obligations (finding 11, corrected)
+
+- **Schema-level completeness**: every saga step has all eight parts filled; a blank is
+  a visible gap.
+- **Per-rule mutation detection** (not "exactly one failing subtest" — that is brittle):
+  deleting any single rule fails *at least one* targeted test, and no rule is
+  covered only by a test that also covers another.
+- **Property tests over the observation space**: for each step, over
+  PRESENT/ABSENT/UNKNOWN/CONFLICT × attempt-id-match, assert the resolved status.
+- **The journal-irrelevance property** (§4): decisions invariant to journal
+  content.
+- **Scheduled concurrency / fault traces**: two-cutter interleavings and injected
+  transport faults (timeout/429/partial-page) assert UNKNOWN-stops rather than adopt.
+
+## 10. Scope — the whole pipeline, and what carries over
+
+v2 owns the entire cut: intent + observation + the forward saga (§3) + the compensations
+rollback and burn (§3b) + orchestration and the CLI seam (§3c). That is the four PR-4
+split pieces unified. Carried over **unchanged** from PR #27 as saga primitives (§3d): the
+tag grammar, the release-commit topology gate, strict JSON, type-strict comparison, and the
+transition graph's forward order. What v2 **replaces**: `require_consistent`, the journal's
+authority, the invented artifact contract, and the piecemeal burn/dispatch/CLI designs that
+the earlier split treated as independent.
+
+**Sequencing.** The design converges first (this doc → adversarial review → converge). Then
+implementation is delegated worker-tier (directive #8) and lands incrementally — plausibly
+still as separably-reviewable PRs, but each built against *this* converged whole-pipeline
+spec rather than designed in isolation, which is the mistake that produced the v1 matrix and
+the piece-by-piece findings.
+
+## Open questions for the adversarial review to resolve
+
+- **Q1** — Does intent live *in* the signed tag message (extending
+  `agent-collab-release/1`) or in a separate signed blob referenced by digest from the
+  tag? Trade-off: message size / grammar complexity vs an extra signed object.
+- **Q2** — Is tag-ref immutability enforceable on this free-tier repo (operator D9)? If
+  not, the global fence weakens and needs a fallback (e.g. first-writer receipt in an
+  append-only location).
+- **Q3** — The human-confirmation surface for signing intent (A7): what exactly is
+  shown, and is it mandatory in CI-less local cuts.
+- **Q4** — Attempt-id binding for effects whose GitHub API has no free-form input to
+  carry it (does asset upload let us bind attempt-id, or only infer via draft body?).
+- **Q5** — Epoch coherence: how is "these observations share an epoch" established
+  against an API with no global snapshot? (ETags? sequential-read ordering assumptions?)
+- **Q6** — Burn-set deletion (§3b): signing proves a *present* burn authentic but does not
+  make a burn's *absence* trustworthy on an unprotected `main`. Does the revocation set need
+  an append-only / chained-signature structure so deletion is detectable, or is that out of
+  scope for v2?
+- **Q7** — Incremental delivery: given pipeline scope, what is the right PR decomposition of
+  the *implementation* so each PR is separately reviewable yet built against this one
+  converged spec — and does any piece have a hard ordering dependency (e.g. intent carrier
+  before any receipt logic)?
