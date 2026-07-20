@@ -142,11 +142,13 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                 with self.assertRaisesRegex(self.rtc.TagContractError, expected):
                     self.rtc.assert_release_commit_delta(
                         [self.rtc.MANIFEST_PATH],
-                        parent_manifest=before, release_manifest=after)
+                        parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
         _, after = self._manifests(artifact="attacker-controlled")
         with self.assertRaisesRegex(self.rtc.TagContractError, "must be a JSON object"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after)
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
 
     def test_artifact_must_equal_the_one_derived_from_the_archive(self) -> None:
         # A well-formed artifact describing a DIFFERENT archive must not pass.
@@ -172,17 +174,19 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                '"channel": "beta", "artifacts": []}')
         with self.assertRaisesRegex(self.rtc.TagContractError, "duplicate key"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest=dup, release_manifest=dup)
+                [self.rtc.MANIFEST_PATH], parent_manifest=dup, release_manifest=dup,
+                expected_artifact=self.ARTIFACT)
         nan = '{"schema_version": NaN, "artifacts": []}'
         with self.assertRaisesRegex(self.rtc.TagContractError, "non-standard constant"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest=nan, release_manifest=before)
+                [self.rtc.MANIFEST_PATH], parent_manifest=nan, release_manifest=before,
+                expected_artifact=self.ARTIFACT)
 
     def test_exact_artifacts_insertion_is_accepted(self) -> None:
         before, after = self._manifests()
         self.rtc.assert_release_commit_delta(
-            [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after
-        )
+            [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
 
     def test_forbidden_paths_hit_their_own_rule_not_the_generic_one(self) -> None:
         # The forbidden-prefix gate must be INDEPENDENT of the exact-match gate.
@@ -198,7 +202,7 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                     self.rtc.assert_release_commit_delta(
                         [self.rtc.MANIFEST_PATH, extra],
                         parent_manifest=before, release_manifest=after,
-                    )
+                expected_artifact=self.ARTIFACT)
 
     def test_any_other_extra_path_is_rejected_by_the_exact_match_gate(self) -> None:
         before, after = self._manifests()
@@ -206,14 +210,14 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
             self.rtc.assert_release_commit_delta(
                 [self.rtc.MANIFEST_PATH, "README.md"],
                 parent_manifest=before, release_manifest=after,
-            )
+                expected_artifact=self.ARTIFACT)
 
     def test_empty_diff_is_rejected(self) -> None:
         before, after = self._manifests()
         with self.assertRaises(self.rtc.TagContractError):
             self.rtc.assert_release_commit_delta(
-                [], parent_manifest=before, release_manifest=after
-            )
+                [], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
 
     def test_parent_already_carrying_artifacts_is_rejected(self) -> None:
         # main must NEVER carry activation artifacts (per-release, not per-branch).
@@ -221,8 +225,8 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
         after = json.dumps({"schema_version": 2, "artifacts": [{"platform": "darwin"}]})
         with self.assertRaisesRegex(self.rtc.TagContractError, "main must never carry"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after
-            )
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
 
     def test_semantic_gate_catches_a_smuggled_field_change(self) -> None:
         # The whole point of a SEMANTIC delta: the path list is identical, so a
@@ -231,8 +235,8 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
         before, after = self._manifests(extra_change=True)
         with self.assertRaisesRegex(self.rtc.TagContractError, "other than 'artifacts'"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after
-            )
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT)
 
     def test_must_add_exactly_one_artifact(self) -> None:
         for count in (0, 2):
@@ -242,13 +246,13 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                     self.rtc.assert_release_commit_delta(
                         [self.rtc.MANIFEST_PATH],
                         parent_manifest=before, release_manifest=after,
-                    )
+                expected_artifact=self.ARTIFACT)
 
     def test_malformed_manifest_json_fails_closed(self) -> None:
         with self.assertRaisesRegex(self.rtc.TagContractError, "not valid JSON"):
             self.rtc.assert_release_commit_delta(
-                [self.rtc.MANIFEST_PATH], parent_manifest="{", release_manifest="{}"
-            )
+                [self.rtc.MANIFEST_PATH], parent_manifest="{", release_manifest="{}",
+                expected_artifact=self.ARTIFACT)
 
 
 if __name__ == "__main__":

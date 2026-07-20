@@ -164,10 +164,41 @@ class CutJournalTests(unittest.TestCase):
         # walks straight out of the root. The validator living in a sibling
         # module protects nothing unless construction actually calls it.
         for bad in ("../../../escaped", "v1.0.0/../../etc/passwd", "not-a-tag",
-                    "v1.0", "v1.0.0.json", ""):
+                    "v1.0", "v1.0.0.json", "",
+                    # `$` matches before a trailing newline, so a second copy of
+                    # the regex written with ^...$ accepted this and produced a
+                    # filename containing a newline.
+                    "v1.0.0\n",
+                    # Two names for one release is itself a hazard.
+                    "v01.0.0"):
             with self.subTest(bad=bad):
                 with self.assertRaises(self.cj.JournalError):
                     self.cj.CutJournal(tag=bad, root=self.cj.journal_root(self.repo))
+
+    def test_tag_validation_is_the_SAME_validator_as_the_tag_contract(self) -> None:
+        """One validator, not two agreeing-by-luck copies.
+
+        A second regex here drifted from the contract's immediately and in both
+        directions (`v01.0.0` accepted by one, `v1.0.0\\n` by the other). This
+        pins the delegation itself: the journal must accept exactly what the tag
+        contract accepts, so the two can never disagree about what a tag is.
+        """
+        contract = self.cj._tag_contract()
+        for candidate in ("v1.0.0", "v0.0.0", "v10.20.30", "v01.0.0", "v1.0.0\n",
+                          "v1.0", "not-a-tag", "../escape", ""):
+            journal_ok = True
+            try:
+                self.cj.validate_tag_name(candidate)
+            except self.cj.JournalError:
+                journal_ok = False
+            contract_ok = True
+            try:
+                contract.validate_tag_name(candidate)
+            except Exception:
+                contract_ok = False
+            with self.subTest(candidate=candidate):
+                self.assertEqual(journal_ok, contract_ok,
+                                 "journal and tag contract must not disagree about tag validity")
 
     def test_transition_graph_is_enforced_in_every_direction(self) -> None:
         root = self.cj.journal_root(self.repo)

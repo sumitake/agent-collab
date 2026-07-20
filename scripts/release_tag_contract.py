@@ -24,7 +24,10 @@ SCHEMA = "agent-collab-release/1"
 _REQUIRED = ("schema", "Asset-Name", "Asset-SHA256", "Manifest-SHA256")
 _SHA256_RE = re.compile(r"\A[0-9a-f]{64}\Z")          # lowercase-only, canonical
 _ASSET_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._ -]{0,127}\Z")
-_TAG_RE = re.compile(r"\Av[0-9]+\.[0-9]+\.[0-9]+\Z")
+_TAG_RE = re.compile(r"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
+# \A/\Z, never ^/$: `$` also matches BEFORE a trailing newline, so "v1.0.0\n"
+# would pass and become a filename containing a newline. Leading zeros are
+# rejected too — "v01.0.0" and "v1.0.0" must not be two names for one release.
 
 # The ONLY path a release-only commit may touch. Everything else — and most
 # pointedly the publishing workflow and the GPG trust anchor — is forbidden.
@@ -173,7 +176,7 @@ def _strict_json(text: str, which: str) -> dict:
 
 def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: str,
                                 release_manifest: str,
-                                expected_artifact: dict | None = None) -> None:
+                                expected_artifact: dict) -> None:
     """Assert the release-only commit is EXACTLY the activation-artifacts insertion.
 
     A path-count check is not enough (design V3): the diff is validated
@@ -236,7 +239,10 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
         )
     if not isinstance(entry.get("size_bytes"), int) or entry["size_bytes"] <= 0:
         raise TagContractError("activation artifact size_bytes must be a positive integer")
-    if expected_artifact is not None and entry != expected_artifact:
+    # REQUIRED, not optional. An optional pin is one the wiring can simply omit,
+    # and a well-formed artifact describing the wrong archive would then sail
+    # through — the gate would be satisfied by a caller that never used it.
+    if entry != expected_artifact:
         raise TagContractError(
             "activation artifact does not match the artifact derived from the built "
             "archive; refusing to bind a tag digest to a manifest describing something else"

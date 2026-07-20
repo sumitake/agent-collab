@@ -24,9 +24,9 @@ Two invariants carry the security weight:
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import re
 import stat
 import subprocess
 import time
@@ -35,22 +35,38 @@ from pathlib import Path
 
 SCHEMA = "agent-collab-cut-journal/1"
 
-# A release tag, exactly. Kept here rather than imported so the journal cannot be
-# constructed with an unvalidated tag even if a caller skips the tag contract —
-# a path-safety check that depends on someone else remembering to call it is not
-# a check. `release_tag_contract.validate_tag_name` enforces the same shape for
-# the tag *grammar*; this one guards *path derivation*.
-_TAG_RE = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-
-
 def validate_tag_name(tag: str) -> str:
-    """Reject anything that is not exactly `vMAJOR.MINOR.PATCH`."""
-    if not isinstance(tag, str) or not _TAG_RE.match(tag):
+    """Reject anything that is not exactly `vMAJOR.MINOR.PATCH`, before path use.
+
+    Delegates to the tag contract's validator ON PURPOSE. A second copy of the
+    regex here drifted from it immediately and in both directions: the contract
+    accepted `v01.0.0` while this rejected it, and this accepted `v1.0.0\\n`
+    (because `$` matches before a trailing newline) while the contract rejected
+    it — so the path-safety check admitted a newline into a filename, which is
+    the exact hole it was added to close. Two validators for one concept is a
+    drift bug waiting to happen; there is now one.
+    """
+    try:
+        return _tag_contract().validate_tag_name(tag)
+    except Exception as exc:                    # contract's error type, re-raised as ours
         raise JournalError(
-            f"refusing to derive a journal path from an unsafe tag name: {tag!r} "
-            "(expected vMAJOR.MINOR.PATCH)"
-        )
-    return tag
+            f"refusing to derive a journal path from an unsafe tag name: {tag!r} ({exc})"
+        ) from exc
+
+
+def _tag_contract():
+    """Load the sibling tag contract by path (both ship together in scripts/)."""
+    global _TAG_CONTRACT
+    if _TAG_CONTRACT is None:
+        spec = importlib.util.spec_from_file_location(
+            "_release_tag_contract", Path(__file__).resolve().parent / "release_tag_contract.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _TAG_CONTRACT = module
+    return _TAG_CONTRACT
+
+
+_TAG_CONTRACT = None
 
 # Ordered states. `*_PENDING` are WRITE-AHEAD records: persisted BEFORE the
 # corresponding remote side effect so a crash mid-effect is always recoverable.
@@ -336,6 +352,12 @@ def require_consistent(journal: "CutJournal | None", *, tag: str, remote: dict,
         ("DRAFT_CREATED", "release_id", "remote"),
         ("DRAFT_UPLOADED", "asset_sha256", "remote"),
     ]
+    # journal is None ⇒ NO CUT HAS CLAIMED ANYTHING, so there is no claim whose
+    # evidence could be missing and the required-evidence table does not apply.
+    # (Absence-is-not-agreement governs evidence for a CLAIMED effect; it is not
+    # a demand that every call carry evidence.) The digest and publication checks
+    # below still run, so a remote that disagrees with the signed tag is caught
+    # even with no journal at all.
     reached = (
         STATES.index(journal.state)
         if journal is not None and journal.state in STATES
