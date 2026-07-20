@@ -1906,11 +1906,14 @@ print(json.dumps({{
             self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(green, current_blue)
-        ) as loader:
+        ) as loader, mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, current_blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
+        job_loaded.assert_called_once_with(current_blue.label)
 
     def test_capture_omits_retained_lane_with_unloaded_job(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -2002,11 +2005,14 @@ print(json.dumps({{
             self.client, "_read_broker_selector_view", return_value=selector
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(green, blue)
-        ) as loader:
+        ) as loader, mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             lanes, error = self.client._capture_broker_lanes(resolution)
         self.assertEqual(lanes, (green, blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
+        job_loaded.assert_called_once_with(blue.label)
 
     def test_inflight_lane_snapshot_stays_blue_while_next_request_selects_green(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -2048,7 +2054,9 @@ print(json.dumps({{
             side_effect=(blue_selected, green_selected),
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", side_effect=(blue, green, blue)
-        ):
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as job_loaded:
             inflight_lanes, inflight_error = self.client._capture_broker_lanes(
                 resolution
             )
@@ -2059,6 +2067,7 @@ print(json.dumps({{
         self.assertEqual(next_lanes, (green, blue))
         self.assertIsNone(next_error)
         self.assertEqual(inflight_lanes, (blue,))
+        job_loaded.assert_called_once_with(blue.label)
 
     def test_green_bridge_document_binds_lane_and_deadlines_without_path_input(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
