@@ -29,6 +29,8 @@ _TAG_RE = re.compile(r"\Av[0-9]+\.[0-9]+\.[0-9]+\Z")
 # The ONLY path a release-only commit may touch. Everything else — and most
 # pointedly the publishing workflow and the GPG trust anchor — is forbidden.
 MANIFEST_PATH = "plugins/agent-collab/runtime-manifest.json"
+# An artifact entry must actually describe the shipped archive, not merely exist.
+REQUIRED_ARTIFACT_FIELDS = ("platform", "sha256", "size_bytes", "runtime_identity")
 FORBIDDEN_PREFIXES = (".github/", ".gpgkeys/", "scripts/", "plugins/agent-collab/runtime/")
 
 
@@ -132,8 +134,46 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
     }
 
 
+def _strict_json(text: str, which: str) -> dict:
+    """Parse a manifest, refusing constructs that other JSON readers disagree on.
+
+    `json.loads` silently keeps the LAST of duplicate keys and accepts `NaN` /
+    `Infinity`, neither of which is standard JSON. Both are smuggling vectors
+    here: this gate compares one reading of the bytes while the consumer that
+    later trusts the tag's Manifest-SHA256 may read them differently, so a
+    manifest can pass the check and mean something else downstream. Divergence
+    between parsers is exactly what the strict grammar exists to eliminate.
+    """
+    def _no_duplicates(pairs):
+        seen: dict = {}
+        for key, value in pairs:
+            if key in seen:
+                raise TagContractError(
+                    f"{which} manifest contains a duplicate key {key!r}; JSON readers "
+                    "disagree on which wins, so this is refused rather than resolved"
+                )
+            seen[key] = value
+        return seen
+
+    try:
+        parsed = json.loads(
+            text, object_pairs_hook=_no_duplicates,
+            parse_constant=lambda c: (_ for _ in ()).throw(
+                TagContractError(f"{which} manifest contains the non-standard constant {c!r}")
+            ),
+        )
+    except TagContractError:
+        raise
+    except ValueError as exc:
+        raise TagContractError(f"{which} manifest is not valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise TagContractError(f"{which} manifest must be a JSON object")
+    return parsed
+
+
 def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: str,
-                                release_manifest: str) -> None:
+                                release_manifest: str,
+                                expected_artifact: dict | None = None) -> None:
     """Assert the release-only commit is EXACTLY the activation-artifacts insertion.
 
     A path-count check is not enough (design V3): the diff is validated
@@ -163,15 +203,10 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
             f"{MANIFEST_PATH}; it also touches: {extra or '(nothing — empty diff)'}"
         )
 
-    try:
-        before = json.loads(parent_manifest)
-        after = json.loads(release_manifest)
-    except ValueError as exc:
-        raise TagContractError("release-commit manifest is not valid JSON") from exc
-    if not isinstance(before, dict) or not isinstance(after, dict):
-        raise TagContractError("release-commit manifest must be a JSON object")
+    before = _strict_json(parent_manifest, "parent")
+    after = _strict_json(release_manifest, "release")
 
-    if before.get("artifacts"):
+    if "artifacts" in before and before["artifacts"] not in ([], None):
         raise TagContractError(
             "parent (main) commit already carries activation artifacts — "
             "main must never carry them (per-release, not per-branch)"
@@ -180,6 +215,31 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
     if not isinstance(artifacts, list) or len(artifacts) != 1:
         raise TagContractError(
             "release-only commit must add exactly one activation artifact"
+        )
+    # Counting the artifact is not verifying it: `{"artifacts": [{}]}` and
+    # `{"artifacts": ["attacker-controlled"]}` both have length 1. The entry must
+    # actually describe the artifact the tag's Manifest-SHA256 will bind to.
+    entry = artifacts[0]
+    if not isinstance(entry, dict):
+        raise TagContractError("the activation artifact must be a JSON object")
+    # Key PRESENCE, not truthiness: `size_bytes: 0` is present-and-invalid, not
+    # missing, and reporting it as missing sends the reader looking for the wrong
+    # defect. Each field's own check below says what is actually wrong with it.
+    missing = [k for k in REQUIRED_ARTIFACT_FIELDS if k not in entry]
+    if missing:
+        raise TagContractError(
+            "activation artifact is missing required field(s): " + ", ".join(sorted(missing))
+        )
+    if not _SHA256_RE.match(str(entry.get("sha256", ""))):
+        raise TagContractError(
+            "activation artifact sha256 must be 64 lowercase hex characters"
+        )
+    if not isinstance(entry.get("size_bytes"), int) or entry["size_bytes"] <= 0:
+        raise TagContractError("activation artifact size_bytes must be a positive integer")
+    if expected_artifact is not None and entry != expected_artifact:
+        raise TagContractError(
+            "activation artifact does not match the artifact derived from the built "
+            "archive; refusing to bind a tag digest to a manifest describing something else"
         )
 
     before_rest = {k: v for k, v in before.items() if k != "artifacts"}

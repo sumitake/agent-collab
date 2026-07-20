@@ -105,13 +105,78 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.rtc = _load()
 
-    def _manifests(self, *, artifacts_after=1, extra_change=False):
+    ARTIFACT = {"platform": "darwin-arm64", "sha256": "c" * 64,
+                "size_bytes": 1234, "runtime_identity": "agent-collab-runtime 4.1.0"}
+
+    def _manifests(self, *, artifacts_after=1, extra_change=False, artifact=None):
         base = {"schema_version": 2, "channel": "production", "artifacts": []}
         after = dict(base)
-        after["artifacts"] = [{"platform": "darwin"}] * artifacts_after
+        # `is not None`, not `or`: an empty-dict artifact is a case under test,
+        # and `artifact or DEFAULT` would silently swap in the valid one — the
+        # helper would then quietly test the opposite of what it claims.
+        chosen = self.ARTIFACT if artifact is None else artifact
+        after["artifacts"] = [chosen] * artifacts_after
         if extra_change:
             after["channel"] = "beta"
         return json.dumps(base), json.dumps(after)
+
+    def test_artifact_content_is_pinned_not_merely_counted(self) -> None:
+        """A length-1 list is not a described artifact.
+
+        `{"artifacts": [{}]}` and `{"artifacts": ["attacker-controlled"]}` both
+        have length one, so a count-only gate binds the tag's Manifest-SHA256 to
+        a manifest that describes nothing. Each case is rejected on its own.
+        """
+        before, _ = self._manifests()
+        cases = [
+            ({}, "missing required"),
+            ({"platform": "darwin-arm64"}, "missing required"),
+            (dict(self.ARTIFACT, sha256="C" * 64), "64 lowercase hex"),
+            (dict(self.ARTIFACT, sha256="abc"), "64 lowercase hex"),
+            (dict(self.ARTIFACT, size_bytes=0), "positive integer"),
+            (dict(self.ARTIFACT, size_bytes="1234"), "positive integer"),
+        ]
+        for artifact, expected in cases:
+            _, after = self._manifests(artifact=artifact)
+            with self.subTest(artifact=artifact):
+                with self.assertRaisesRegex(self.rtc.TagContractError, expected):
+                    self.rtc.assert_release_commit_delta(
+                        [self.rtc.MANIFEST_PATH],
+                        parent_manifest=before, release_manifest=after)
+        _, after = self._manifests(artifact="attacker-controlled")
+        with self.assertRaisesRegex(self.rtc.TagContractError, "must be a JSON object"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after)
+
+    def test_artifact_must_equal_the_one_derived_from_the_archive(self) -> None:
+        # A well-formed artifact describing a DIFFERENT archive must not pass.
+        before, after = self._manifests()
+        self.rtc.assert_release_commit_delta(
+            [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+            expected_artifact=self.ARTIFACT)
+        with self.assertRaisesRegex(self.rtc.TagContractError, "does not match"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=dict(self.ARTIFACT, sha256="d" * 64))
+
+    def test_json_parser_divergence_is_refused_not_resolved(self) -> None:
+        """Duplicate keys and NaN/Infinity are refused, not silently resolved.
+
+        `json.loads` keeps the LAST duplicate and accepts non-standard constants;
+        another reader may disagree. A downstream consumer trusts the tag's
+        Manifest-SHA256 over these same bytes, so a manifest two parsers read
+        differently must never pass — resolving the ambiguity quietly IS the bug.
+        """
+        before, _ = self._manifests()
+        dup = ('{"schema_version": 2, "channel": "production", '
+               '"channel": "beta", "artifacts": []}')
+        with self.assertRaisesRegex(self.rtc.TagContractError, "duplicate key"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=dup, release_manifest=dup)
+        nan = '{"schema_version": NaN, "artifacts": []}'
+        with self.assertRaisesRegex(self.rtc.TagContractError, "non-standard constant"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=nan, release_manifest=before)
 
     def test_exact_artifacts_insertion_is_accepted(self) -> None:
         before, after = self._manifests()

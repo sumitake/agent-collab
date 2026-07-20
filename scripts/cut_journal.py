@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 import time
@@ -33,6 +34,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SCHEMA = "agent-collab-cut-journal/1"
+
+# A release tag, exactly. Kept here rather than imported so the journal cannot be
+# constructed with an unvalidated tag even if a caller skips the tag contract —
+# a path-safety check that depends on someone else remembering to call it is not
+# a check. `release_tag_contract.validate_tag_name` enforces the same shape for
+# the tag *grammar*; this one guards *path derivation*.
+_TAG_RE = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def validate_tag_name(tag: str) -> str:
+    """Reject anything that is not exactly `vMAJOR.MINOR.PATCH`."""
+    if not isinstance(tag, str) or not _TAG_RE.match(tag):
+        raise JournalError(
+            f"refusing to derive a journal path from an unsafe tag name: {tag!r} "
+            "(expected vMAJOR.MINOR.PATCH)"
+        )
+    return tag
 
 # Ordered states. `*_PENDING` are WRITE-AHEAD records: persisted BEFORE the
 # corresponding remote side effect so a crash mid-effect is always recoverable.
@@ -85,8 +103,15 @@ def _fsync_dir(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         os.fsync(descriptor)
-    except OSError:
-        pass
+    except OSError as exc:
+        # Swallowing this silently would let the module keep claiming durability
+        # it did not achieve — the write-ahead record is the only thing standing
+        # between a crash and an unrecoverable cut, so a failure to make it
+        # durable must be loud.
+        raise JournalError(
+            f"could not fsync the journal directory {path} ({exc.strerror}); "
+            "the write-ahead record may not survive a crash"
+        ) from exc
     finally:
         os.close(descriptor)
 
@@ -150,6 +175,14 @@ class CutJournal:
     state: str = "PREPARED"
     data: dict = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # The tag is interpolated into filesystem paths below. Validate it HERE,
+        # at construction, rather than trusting the caller: an unvalidated tag
+        # such as "../../../escaped" walks straight out of the journal root, and
+        # the validator living in the sibling module is no protection if nothing
+        # calls it. Fail closed before any path is derived.
+        validate_tag_name(self.tag)
+
     @property
     def path(self) -> Path:
         return self.root / f"{self.tag}.json"
@@ -187,9 +220,43 @@ class CutJournal:
         _atomic_write(self.path, json.dumps(document, indent=2, sort_keys=True).encode("utf-8"))
 
     def advance(self, state: str, **fields) -> None:
-        """Record a state transition. PENDING states are written BEFORE the effect."""
+        """Record a state transition, enforcing the transition GRAPH.
+
+        Accepting any known state name is not a state machine: it permitted
+        skipping a write-ahead PENDING record (the one thing that makes a crash
+        recoverable), moving backwards to re-open a settled state, and writing
+        CI-authored states locally — so a local process could claim PUBLISHED.
+        Transitions are therefore checked, and the local cutter cannot mint
+        CI-only states at all.
+        """
         if state not in STATES and state not in CI_STATES and state not in TERMINAL_STATES:
             raise JournalError(f"refusing to record an unknown state: {state!r}")
+        if state in CI_STATES:
+            raise JournalError(
+                f"{state!r} is written by CI, not by the local cutter; refusing to "
+                "forge a CI-authored state locally"
+            )
+        if self.state in TERMINAL_STATES:
+            raise JournalError(
+                f"cut for {self.tag} is terminal ({self.state}); refusing to reopen it"
+            )
+        if state in STATES:
+            if self.state in CI_STATES:
+                raise JournalError(
+                    f"refusing to move a CI-advanced cut ({self.state}) back to {state!r}"
+                )
+            current = STATES.index(self.state) if self.state in STATES else -1
+            target = STATES.index(state)
+            if target < current:
+                raise JournalError(
+                    f"refusing to move the journal backwards: {self.state} -> {state}"
+                )
+            if target > current + 1:
+                skipped = ", ".join(STATES[current + 1:target])
+                raise JournalError(
+                    f"refusing to skip {skipped} on the way to {state} — a skipped "
+                    "write-ahead record is exactly what makes a crash unrecoverable"
+                )
         self.state = state
         self.data.update(fields)
         self.save()
@@ -213,14 +280,32 @@ class CutJournal:
                 f"another cut is in progress for {self.tag} (lock held by: {holder}). "
                 f"If that process is gone, remove {self.lock_path} deliberately."
             ) from None
+        self._lock_token = f"pid={os.getpid()} at={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}"
         with os.fdopen(descriptor, "w") as handle:
-            handle.write(f"pid={os.getpid()} at={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n")
+            handle.write(self._lock_token + "\n")
 
     def release_lock(self) -> None:
+        """Release only a lock THIS instance holds.
+
+        An unconditional unlink deletes whichever lock happens to be there —
+        including one a different process acquired after ours was cleaned up,
+        which silently hands two cutters concurrent access to the same tag. The
+        token check makes release a no-op unless we are the holder.
+        """
+        token = getattr(self, "_lock_token", None)
+        if token is None:
+            return                      # we never acquired it; nothing to release
+        try:
+            held = (_read_nofollow(self.lock_path) or b"").decode("utf-8", "replace").strip()
+        except JournalError:
+            return                      # unreadable: leave it alone, never force
+        if held != token:
+            return                      # someone else's lock — not ours to remove
         try:
             os.unlink(self.lock_path)
         except OSError:
             pass
+        self._lock_token = None
 
 
 def require_consistent(journal: "CutJournal | None", *, tag: str, remote: dict,
@@ -231,8 +316,41 @@ def require_consistent(journal: "CutJournal | None", *, tag: str, remote: dict,
     manifest digests; remote API state is the anchor for object identity; the
     journal is only a resumption hint. This function never mutates anything and
     never "repairs" — an inconsistent cut must be understood by a human.
+
+    ABSENCE IS NOT AGREEMENT. Every comparison here used to require both sides to
+    be truthy, so a call with no signed-tag fields and no remote evidence passed
+    silently — the function whose whole purpose is to fail closed failed OPEN, and
+    the "signed tag wins" invariant was documentation rather than enforcement.
+    Required evidence is therefore **state-dependent**: once the journal says an
+    effect landed, the evidence for that effect MUST be observable, and missing
+    evidence is itself an inconsistency.
     """
     problems: list[str] = []
+
+    # What must be observable, given how far the journal claims the cut got.
+    # (journal state that implies it, evidence key, where the evidence lives)
+    required: list[tuple[str, str, str]] = [
+        ("TAGGED", "tag_object_id", "remote"),
+        ("TAGGED", "asset_sha256", "tag"),
+        ("TAGGED", "manifest_sha256", "tag"),
+        ("DRAFT_CREATED", "release_id", "remote"),
+        ("DRAFT_UPLOADED", "asset_sha256", "remote"),
+    ]
+    reached = (
+        STATES.index(journal.state)
+        if journal is not None and journal.state in STATES
+        else (len(STATES) if journal is not None else -1)   # CI/terminal ⇒ past every local state
+    )
+    for at_state, key, where in required:
+        if reached < STATES.index(at_state):
+            continue
+        present = (tag_fields or {}).get(key) if where == "tag" else remote.get(key)
+        if not present:
+            problems.append(
+                f"{key}: journal claims the cut reached {journal.state}, but no {where} "
+                f"evidence for it is observable — absent evidence is an inconsistency, "
+                f"not agreement"
+            )
 
     if tag_fields:
         for key in ("asset_sha256", "manifest_sha256"):

@@ -122,15 +122,95 @@ class CutJournalTests(unittest.TestCase):
 
     # ---------- truth precedence (the security-carrying part) ----------
 
+    def _walk_to(self, journal, target: str, **fields) -> None:
+        """Advance through every intermediate state, as the graph now requires."""
+        for state in self.cj.STATES[self.cj.STATES.index(journal.state) + 1:]:
+            journal.advance(state, **(fields if state == target else {}))
+            if state == target:
+                return
+
     def test_signed_tag_wins_over_a_tampered_journal(self) -> None:
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
-        j.advance("DRAFT_UPLOADED", asset_sha256="b" * 64)   # journal (tamperable)
+        self._walk_to(j, "DRAFT_UPLOADED", asset_sha256="b" * 64)  # journal (tamperable)
         with self.assertRaisesRegex(self.cj.JournalError, "the signed tag wins"):
             self.cj.require_consistent(
                 j, tag="v1.0.0",
-                remote={"asset_sha256": "a" * 64},
-                tag_fields={"asset_sha256": "a" * 64},      # signed tag = anchor
+                remote={"tag_object_id": "abc", "release_id": "111",
+                        "asset_sha256": "a" * 64},
+                tag_fields={"asset_sha256": "a" * 64,
+                            "manifest_sha256": "f" * 64},      # signed tag = anchor
             )
+
+    def test_absent_evidence_is_an_inconsistency_not_agreement(self) -> None:
+        """The fail-CLOSED property, pinned.
+
+        Every comparison in require_consistent used to require both sides to be
+        truthy, so a call carrying no signed-tag fields and no remote evidence
+        passed silently — the function whose entire purpose is to stop on
+        divergence failed OPEN, and "the signed tag wins" was a comment rather
+        than a control. Once the journal claims an effect landed, the evidence
+        for it must be observable.
+        """
+        j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
+        self._walk_to(j, "TAGGED")
+        with self.assertRaisesRegex(self.cj.JournalError, "absent evidence"):
+            self.cj.require_consistent(j, tag="v1.0.0", remote={}, tag_fields=None)
+        # ... and a cut that has not claimed anything yet is legitimately quiet.
+        fresh = self.cj.CutJournal(tag="v1.0.1", root=self.cj.journal_root(self.repo))
+        self.cj.require_consistent(fresh, tag="v1.0.1", remote={}, tag_fields=None)
+
+    def test_journal_path_cannot_escape_the_journal_root(self) -> None:
+        # The tag is interpolated into a filesystem path; an unvalidated one
+        # walks straight out of the root. The validator living in a sibling
+        # module protects nothing unless construction actually calls it.
+        for bad in ("../../../escaped", "v1.0.0/../../etc/passwd", "not-a-tag",
+                    "v1.0", "v1.0.0.json", ""):
+            with self.subTest(bad=bad):
+                with self.assertRaises(self.cj.JournalError):
+                    self.cj.CutJournal(tag=bad, root=self.cj.journal_root(self.repo))
+
+    def test_transition_graph_is_enforced_in_every_direction(self) -> None:
+        root = self.cj.journal_root(self.repo)
+        j = self.cj.CutJournal(tag="v1.0.0", root=root)
+        # forward skip — the skipped write-ahead record is what breaks resume
+        with self.assertRaisesRegex(self.cj.JournalError, "refusing to skip"):
+            j.advance("DRAFT_UPLOADED")
+        # backwards — reopening a settled state
+        self._walk_to(j, "TAGGED")
+        with self.assertRaisesRegex(self.cj.JournalError, "backwards"):
+            j.advance("PREPARED")
+        # CI-authored states cannot be minted locally
+        for ci_state in self.cj.CI_STATES:
+            with self.subTest(ci_state=ci_state):
+                with self.assertRaisesRegex(self.cj.JournalError, "written by CI"):
+                    j.advance(ci_state)
+        # a legal single step still works — the graph must not block progress
+        j.advance("DRAFT_CREATE_PENDING")
+        self.assertEqual(j.state, "DRAFT_CREATE_PENDING")
+
+    def test_release_lock_will_not_remove_a_lock_it_does_not_hold(self) -> None:
+        # An unconditional unlink deletes whoever's lock is present, handing two
+        # cutters concurrent access to the same tag.
+        root = self.cj.journal_root(self.repo)
+        first = self.cj.CutJournal(tag="v1.0.0", root=root)
+        first.acquire_lock()
+        # A non-holder that never acquired is a no-op — but that is a DIFFERENT
+        # guard, so it cannot stand in for the ownership check.
+        self.cj.CutJournal(tag="v1.0.0", root=root).release_lock()
+        self.assertTrue(first.lock_path.exists())
+
+        # The real hazard: a STALE holder. `first` legitimately releases, `second`
+        # acquires, and then `first` releases again — a double-release that an
+        # unconditional unlink turns into two cutters holding the same tag at once.
+        first.release_lock()
+        second = self.cj.CutJournal(tag="v1.0.0", root=root)
+        second.acquire_lock()
+        first._lock_token = "pid=99999 at=1970-01-01T00:00:00Z"   # stale token
+        first.release_lock()
+        self.assertTrue(second.lock_path.exists(),
+                        "a stale holder must not be able to release the current lock")
+        second.release_lock()
+        self.assertFalse(second.lock_path.exists())
 
     def test_remote_asset_digest_must_match_the_signed_tag(self) -> None:
         with self.assertRaisesRegex(self.cj.JournalError, "remote asset is"):
@@ -142,7 +222,7 @@ class CutJournalTests(unittest.TestCase):
 
     def test_object_identity_divergence_stops(self) -> None:
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
-        j.advance("TAGGED", tag_object_id="deadbeef", release_id="111")
+        self._walk_to(j, "TAGGED", tag_object_id="deadbeef", release_id="111")
         with self.assertRaisesRegex(self.cj.JournalError, "tag_object_id"):
             self.cj.require_consistent(j, tag="v1.0.0",
                                        remote={"tag_object_id": "feedface"}, tag_fields=None)
@@ -150,30 +230,33 @@ class CutJournalTests(unittest.TestCase):
     def test_published_without_ever_dispatching_is_anomalous(self) -> None:
         # Published while we never dispatched CI = published outside the pipeline.
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
-        j.advance("DRAFT_UPLOADED")
+        self._walk_to(j, "DRAFT_UPLOADED")
         with self.assertRaisesRegex(self.cj.JournalError, "outside the pipeline"):
             self.cj.require_consistent(j, tag="v1.0.0",
                                        remote={"published": True}, tag_fields=None)
+
+    # A fully-evidenced cut: what a real DISPATCHED/DRAFT_UPLOADED state looks
+    # like once the required-evidence rule applies.
+    FULL_REMOTE = {"tag_object_id": "abc", "release_id": "111",
+                   "asset_sha256": "a" * 64}
+    FULL_TAG = {"asset_sha256": "a" * 64, "manifest_sha256": "f" * 64}
 
     def test_published_after_dispatch_is_the_normal_outcome(self) -> None:
         # CI runs on GitHub and cannot write the operator's local journal, so a
         # completed cut rests at DISPATCHED forever. Publication after that is
         # success — flagging it would mark EVERY published release inconsistent.
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
-        j.advance("DISPATCHED")
-        self.cj.require_consistent(j, tag="v1.0.0",
-                                   remote={"published": True}, tag_fields=None)
+        self._walk_to(j, "DISPATCHED", **self.FULL_REMOTE)
+        self.cj.require_consistent(
+            j, tag="v1.0.0",
+            remote={**self.FULL_REMOTE, "published": True}, tag_fields=self.FULL_TAG)
 
     def test_consistent_state_passes(self) -> None:
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
-        j.advance("DRAFT_UPLOADED", tag_object_id="abc", release_id="111",
-                  asset_sha256="a" * 64)
+        self._walk_to(j, "DRAFT_UPLOADED", **self.FULL_REMOTE)
         self.cj.require_consistent(
             j, tag="v1.0.0",
-            remote={"tag_object_id": "abc", "release_id": "111",
-                    "asset_sha256": "a" * 64, "published": False},
-            tag_fields={"asset_sha256": "a" * 64},
-        )
+            remote={**self.FULL_REMOTE, "published": False}, tag_fields=self.FULL_TAG)
 
 
 if __name__ == "__main__":
