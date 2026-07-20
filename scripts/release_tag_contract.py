@@ -34,6 +34,8 @@ _TAG_RE = re.compile(r"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 MANIFEST_PATH = "plugins/agent-collab/runtime-manifest.json"
 # An artifact entry must actually describe the shipped archive, not merely exist.
 REQUIRED_ARTIFACT_FIELDS = ("platform", "sha256", "size_bytes", "runtime_identity")
+# A regular non-executable file. The release commit must not change it.
+EXPECTED_MANIFEST_MODE = "100644"
 FORBIDDEN_PREFIXES = (".github/", ".gpgkeys/", "scripts/", "plugins/agent-collab/runtime/")
 
 
@@ -176,7 +178,8 @@ def _strict_json(text: str, which: str) -> dict:
 
 def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: str,
                                 release_manifest: str,
-                                expected_artifact: dict) -> None:
+                                expected_artifact: dict,
+                                parent_mode: str, release_mode: str) -> None:
     """Assert the release-only commit is EXACTLY the activation-artifacts insertion.
 
     A path-count check is not enough (design V3): the diff is validated
@@ -206,6 +209,20 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
             f"{MANIFEST_PATH}; it also touches: {extra or '(nothing — empty diff)'}"
         )
 
+    # The manifest's FILE MODE is part of the topology this gate claims to pin.
+    # Comparing only paths and JSON lets a commit flip 100644 -> 100755 while
+    # inserting the artifact and still pass — an executable-bit change riding
+    # along with a release, which is exactly the smuggling the semantic delta
+    # exists to stop.
+    if parent_mode != release_mode:
+        raise TagContractError(
+            f"release-only commit changed the manifest file mode "
+            f"({parent_mode} -> {release_mode}); a release must not alter file modes"
+        )
+    if release_mode != EXPECTED_MANIFEST_MODE:
+        raise TagContractError(
+            f"manifest file mode must be {EXPECTED_MANIFEST_MODE}, got {release_mode}"
+        )
     before = _strict_json(parent_manifest, "parent")
     after = _strict_json(release_manifest, "release")
 

@@ -116,7 +116,18 @@ def _fsync_dir(path: Path) -> None:
     though the file content was fsynced — which defeats the entire point of
     persisting intent before a remote side effect.
     """
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    # Opening a directory can itself fail (Windows, some restricted or networked
+    # filesystems). That must NOT silently return: a caller that cannot fsync the
+    # directory has not achieved the durability this module's write-ahead
+    # guarantee is built on. It is surfaced as our own typed error rather than a
+    # raw OSError so callers see one failure mode, not two.
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError as exc:
+        raise JournalError(
+            f"could not open the journal directory {path} to fsync it "
+            f"({exc.strerror}); the write-ahead record may not survive a crash"
+        ) from exc
     try:
         os.fsync(descriptor)
     except OSError as exc:
