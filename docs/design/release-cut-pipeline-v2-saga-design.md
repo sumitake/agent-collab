@@ -752,3 +752,63 @@ admin-compromise (an admin can delete the ruleset, then the tag) — consistent 
 genuinely non-rollbackable anchor would need an external transparency log; GitHub's artifact
 attestations write to one for public repos, but that surface is for artifacts, not arbitrary
 revocation records.
+
+---
+
+## Operator decisions taken (2026-07-20): signed-tag anchor + CI-side post-tag steps
+
+### Anchor — LIVE
+
+`revocation-record-immutability` ruleset **created and active** (id `19245299`): target tag,
+`refs/tags/revoked-*`, rules `deletion` + `non_fast_forward` + **`required_signatures`**,
+`bypass_actors: []`. Signature enforcement is deliberate here and stronger than the `v*`
+ruleset: an *unsigned forged* revocation would be a denial-of-service against a version
+(block a release that was never revoked), so the ruleset refuses unsigned revocation refs at
+push time rather than relying solely on reader-side verification.
+
+**Record format.** `refs/tags/revoked-vX.Y.Z`, annotated + GPG-signed, message is a
+domain-separated payload binding `{schema, repository_id, revoked_version, reason,
+timestamp}` — domain-separated so a revocation can never be replayed as a release intent or
+into another repository. Read path: `git ls-remote --tags 'refs/tags/revoked-*'`, then verify
+signature → signer policy → bound repo id + version. Same trust root and same verifier as
+release intent (§1); preflight refuses to cut any version with a valid revocation ref.
+
+### CI-side post-tag steps — adopted, with an honest limit
+
+**What moves to CI** (triggered by the tag push, `on: push: tags: ['v*']`): **verification,
+publication, and attestation** — the trust-critical authority. CI runs as `GITHUB_TOKEN`
+with an explicit minimal `permissions:` block, which is **non-admin, non-bypass, ephemeral,
+and per-run auditable by construction**. This is the strongest part of the decision: the
+authority that makes a release *consumable* is no longer a long-lived operator credential.
+
+**What cannot move, and why.** The signed + notarized runtime bundle is built **locally** —
+the Developer ID signing and notarization credentials are local-only, and CI cannot produce
+those bytes. So the *producer* steps (push the signed tag, create the draft, upload the
+archive) must originate locally. Therefore **this decision shrinks the local credential's job
+but does not eliminate it**: a local write-capable token is still required.
+
+Concretely, after this decision the local credential needs only:
+- `Contents: read and write` on `sumitake/agent-collab` — tag push (the remote is HTTPS, so
+  the push itself uses a token), draft create, asset upload.
+- **No `Administration`** (so it cannot touch rulesets).
+- **No `Actions`** — CI is triggered by the tag push, not by `workflow_dispatch`, so the
+  producer never needs dispatch permission. This is a simplification the CI move buys us.
+
+*Optional further reduction:* switching `origin` to SSH moves the tag push onto an SSH key,
+leaving the PAT used only for draft-create + asset-upload.
+
+*Residual, stated plainly:* a `Contents: RW` token can technically publish a release, so
+"only CI publishes" is a convention plus a CI check, not an enforced boundary — enforcing it
+would need Enterprise immutable releases. This is exactly V0's already-accepted window, and
+the claim remains consumer-side: conforming consumers fail closed until `ATTESTED` and verify
+the CI attestation. The CI move does not change that claim; it narrows who holds durable
+credentials.
+
+### Net effect on R3-6
+
+- Ruleset half: **closed** (no actor bypasses `v*` or `revoked-*`).
+- Authority half: **closed for the trust-critical steps** (verify/publish/attest are CI's
+  scoped `GITHUB_TOKEN`).
+- Producer half: **reduced, not eliminated** — still needs a minimal fine-grained
+  `Contents: RW` PAT, which remains an operator-provisioning step (GitHub has no API to mint
+  one).
