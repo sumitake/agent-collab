@@ -303,3 +303,42 @@ class a third time, now at the observation boundary.
 re-architecture (saga + signed intent + attempt receipts + four-valued observation),
 not an edit. That is a bigger piece of work than the remaining scope of PR #27, and
 should be scoped deliberately rather than started at the tail of a session.
+
+---
+
+## F3 — forbidden-evidence is SYMMETRIC, not a terminal-state special case
+
+Codex bot on `b1d7d23`. Verified: a journal still at `PREPARED` — nothing performed —
+alongside a fully landed remote cut (tag, release, asset) is **accepted**, because
+every required-evidence row is skipped at that state and nothing asks whether those
+effects should exist yet. A resume then proceeds from the recorded earlier state and
+replays operations that already landed.
+
+This sharpens R3 rather than adding to it, and the correction is worth stating
+plainly because I got the framing wrong: I introduced forbidden-evidence as a
+`ROLLED_BACK` concern — "after a rollback, these must be gone." It is actually
+**symmetric across the whole timeline**. Every effect has a state *before* which it
+must NOT exist and a state *after* which it MUST exist, with the matching `*_PENDING`
+row as the only legitimately ambiguous cell:
+
+| relative to effect E | constraint |
+|---|---|
+| before `E_PENDING` | E's remote evidence MUST NOT exist (this finding) |
+| at `E_PENDING` | ambiguous by construction — may or may not have landed |
+| after E completed | E's remote evidence MUST exist (already covered) |
+| after rollback | E's remote evidence MUST be gone (R3 as originally framed) |
+
+So R1's per-state answers are three columns, not two, and the forbidden column is
+populated on *most* rows rather than one. Framing it as a terminal-state rule is
+what left the early rows empty.
+
+This also compounds with review finding 2: "MUST NOT exist" can only be satisfied by
+an **authoritative** ABSENT. A 404 from a rate-limited or permission-masked call must
+not be read as "the effect has not happened yet" — that reading is what would license
+replaying a landed remote operation.
+
+Not patched: `require_consistent` is in the design stop, and its architecture was
+rejected by review round 1 in favour of a saga with signed intent and attempt-bound
+receipts. Under that architecture this constraint is expressed as a saga
+precondition, not a matrix cell — which is further evidence the matrix framing was
+the symptom rather than the cure.
