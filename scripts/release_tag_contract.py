@@ -237,7 +237,9 @@ def assert_release_commit_delta(changed_paths: list[str], *, parent_manifest: st
         raise TagContractError(
             "activation artifact sha256 must be 64 lowercase hex characters"
         )
-    if not isinstance(entry.get("size_bytes"), int) or entry["size_bytes"] <= 0:
+    # `type(...) is int`, not isinstance: bool subclasses int, so `size_bytes: true`
+    # would otherwise satisfy an isinstance check and compare equal to 1.
+    if type(entry.get("size_bytes")) is not int or entry["size_bytes"] <= 0:
         raise TagContractError("activation artifact size_bytes must be a positive integer")
     # REQUIRED, not optional. An optional pin is one the wiring can simply omit,
     # and a well-formed artifact describing the wrong archive would then sail

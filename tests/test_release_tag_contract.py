@@ -135,6 +135,9 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
             (dict(self.ARTIFACT, sha256="abc"), "64 lowercase hex"),
             (dict(self.ARTIFACT, size_bytes=0), "positive integer"),
             (dict(self.ARTIFACT, size_bytes="1234"), "positive integer"),
+            # bool subclasses int, so `size_bytes: true` satisfies an
+            # isinstance check and compares equal to 1.
+            (dict(self.ARTIFACT, size_bytes=True), "positive integer"),
         ]
         for artifact, expected in cases:
             _, after = self._manifests(artifact=artifact)

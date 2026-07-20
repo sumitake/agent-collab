@@ -211,6 +211,11 @@ class CutJournal:
 
     @classmethod
     def load(cls, repo_root: Path, tag: str) -> "CutJournal | None":
+        # FIRST line, before any path is derived. __post_init__ guards the
+        # constructor, but load() builds `root / f"{tag}.json"` itself and returns
+        # None for an absent file — so a traversal attempt read out of root and
+        # reported "no journal" instead of firing the guard.
+        validate_tag_name(tag)
         root = journal_root(repo_root)
         raw = _read_nofollow(root / f"{tag}.json")
         if raw is None:
@@ -256,6 +261,22 @@ class CutJournal:
             raise JournalError(
                 f"cut for {self.tag} is terminal ({self.state}); refusing to reopen it"
             )
+        if state in TERMINAL_STATES:
+            # A terminal target is NOT exempt from the graph. Nesting every check
+            # under `state in STATES` left ROLLED_BACK reachable from anywhere —
+            # including PREPARED (nothing to roll back) and PUBLISHED (a released
+            # version cannot be locally un-released). Adding the graph is what
+            # created this hole, so the terminal target gets its own rule.
+            if self.state in CI_STATES:
+                raise JournalError(
+                    f"refusing to mark {self.state} (CI-advanced) as {state}; a published "
+                    "release cannot be rolled back by the local cutter"
+                )
+            if self.state not in STATES or STATES.index(self.state) < STATES.index("TAGGED"):
+                raise JournalError(
+                    f"refusing to roll back from {self.state}: nothing was pushed yet, so "
+                    "there is no remote effect to undo"
+                )
         if state in STATES:
             if self.state in CI_STATES:
                 raise JournalError(
@@ -358,6 +379,16 @@ def require_consistent(journal: "CutJournal | None", *, tag: str, remote: dict,
     # a demand that every call carry evidence.) The digest and publication checks
     # below still run, so a remote that disagrees with the signed tag is caught
     # even with no journal at all.
+    # A ROLLED_BACK cut deliberately DELETED its draft and asset, so demanding the
+    # forward evidence would make every legitimate rollback unresumable. Adding the
+    # required-evidence table is what broke this; terminal cuts get their own rule.
+    if journal is not None and journal.state in TERMINAL_STATES:
+        if remote.get("published"):
+            raise JournalError(
+                f"cut for {tag} is recorded {journal.state} but the remote release is "
+                "PUBLISHED; a rolled-back version must never appear published"
+            )
+        return
     reached = (
         STATES.index(journal.state)
         if journal is not None and journal.state in STATES

@@ -123,11 +123,19 @@ class CutJournalTests(unittest.TestCase):
     # ---------- truth precedence (the security-carrying part) ----------
 
     def _walk_to(self, journal, target: str, **fields) -> None:
-        """Advance through every intermediate state, as the graph now requires."""
+        """Advance through every intermediate state, as the graph now requires.
+
+        Asserts it ARRIVED. Returning quietly when the target precedes the
+        current state would let a test believe it set up a state it never
+        reached — a helper that silently no-ops fakes its own precondition.
+        """
+        assert target in self.cj.STATES, f"{target} is not a forward state"
         for state in self.cj.STATES[self.cj.STATES.index(journal.state) + 1:]:
             journal.advance(state, **(fields if state == target else {}))
             if state == target:
-                return
+                break
+        self.assertEqual(journal.state, target,
+                         f"_walk_to failed to reach {target} (stuck at {journal.state})")
 
     def test_signed_tag_wins_over_a_tampered_journal(self) -> None:
         j = self.cj.CutJournal(tag="v1.0.0", root=self.cj.journal_root(self.repo))
@@ -203,6 +211,50 @@ class CutJournalTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(self.cj.JournalError):
                     self.cj.CutJournal(tag=bad, root=self.cj.journal_root(self.repo))
+
+    def test_rollback_is_governed_by_the_graph_not_exempt_from_it(self) -> None:
+        """Terminal targets are reachable only from states that have something to undo.
+
+        Nesting every transition check under `state in STATES` left ROLLED_BACK
+        reachable from anywhere — the graph added in the previous round created
+        this hole rather than closing it.
+        """
+        root = self.cj.journal_root(self.repo)
+        # Nothing pushed yet ⇒ nothing to roll back.
+        early = self.cj.CutJournal(tag="v3.0.0", root=root)
+        with self.assertRaisesRegex(self.cj.JournalError, "nothing was pushed yet"):
+            early.advance("ROLLED_BACK")
+        # A tagged cut legitimately rolls back.
+        tagged = self.cj.CutJournal(tag="v3.0.1", root=root)
+        self._walk_to(tagged, "TAGGED")
+        tagged.advance("ROLLED_BACK")
+        self.assertEqual(tagged.state, "ROLLED_BACK")
+        # ... and a terminal cut cannot be reopened.
+        with self.assertRaisesRegex(self.cj.JournalError, "terminal"):
+            tagged.advance("DISPATCHED")
+
+    def test_load_validates_the_tag_before_deriving_any_path(self) -> None:
+        # __post_init__ guards the constructor, but load() derives the path
+        # itself and returns None for an absent file — so a traversal attempt
+        # read out of root and reported "no journal" instead of failing closed.
+        for bad in ("../../../escaped", "v1.0.0/../../etc/passwd", "v1.0.0\n"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(self.cj.JournalError):
+                    self.cj.CutJournal.load(self.repo, bad)
+
+    def test_a_rolled_back_cut_is_not_asked_for_evidence_it_deleted(self) -> None:
+        # Rollback deletes the draft and asset ON PURPOSE. Demanding the forward
+        # evidence would make every legitimate rollback unresumable — a fail-closed
+        # rule applied to the one state where absence is the expected outcome.
+        root = self.cj.journal_root(self.repo)
+        j = self.cj.CutJournal(tag="v3.0.2", root=root)
+        self._walk_to(j, "TAGGED")
+        j.advance("ROLLED_BACK")
+        self.cj.require_consistent(j, tag="v3.0.2", remote={}, tag_fields=None)
+        # But a rolled-back version that shows up PUBLISHED is still anomalous.
+        with self.assertRaisesRegex(self.cj.JournalError, "must never appear published"):
+            self.cj.require_consistent(j, tag="v3.0.2", remote={"published": True},
+                                       tag_fields=None)
 
     def test_tag_validation_is_the_SAME_validator_as_the_tag_contract(self) -> None:
         """One validator, not two agreeing-by-luck copies.
