@@ -159,6 +159,35 @@ class CutJournalTests(unittest.TestCase):
         fresh = self.cj.CutJournal(tag="v1.0.1", root=self.cj.journal_root(self.repo))
         self.cj.require_consistent(fresh, tag="v1.0.1", remote={}, tag_fields=None)
 
+    def test_each_required_evidence_row_is_pinned_individually(self) -> None:
+        """One row per assertion — an all-absent test is too coarse to be a check.
+
+        Supplying NO evidence makes several rows fire at once with the same
+        message, so that test still passes when any single row is deleted, and it
+        never reaches the later-state rows at all. Each row is therefore withheld
+        on its own, against otherwise-complete evidence, and the error must name
+        the specific key. Deleting any one row now fails exactly one subtest.
+        """
+        root = self.cj.journal_root(self.repo)
+        full_remote = {"tag_object_id": "abc", "release_id": "111",
+                       "asset_sha256": "a" * 64}
+        full_tag = {"asset_sha256": "a" * 64, "manifest_sha256": "f" * 64}
+        # (journal state that must require it, withheld key, which side holds it)
+        rows = [("TAGGED", "tag_object_id", "remote"),
+                ("TAGGED", "asset_sha256", "tag"),
+                ("TAGGED", "manifest_sha256", "tag"),
+                ("DRAFT_CREATED", "release_id", "remote"),
+                ("DRAFT_UPLOADED", "asset_sha256", "remote")]
+        for index, (state, key, where) in enumerate(rows):
+            journal = self.cj.CutJournal(tag=f"v2.0.{index}", root=root)
+            self._walk_to(journal, state, **full_remote)
+            remote = {k: v for k, v in full_remote.items() if not (where == "remote" and k == key)}
+            tag_fields = {k: v for k, v in full_tag.items() if not (where == "tag" and k == key)}
+            with self.subTest(state=state, key=key, where=where):
+                with self.assertRaisesRegex(self.cj.JournalError, key):
+                    self.cj.require_consistent(journal, tag=f"v2.0.{index}",
+                                               remote=remote, tag_fields=tag_fields)
+
     def test_journal_path_cannot_escape_the_journal_root(self) -> None:
         # The tag is interpolated into a filesystem path; an unvalidated one
         # walks straight out of the root. The validator living in a sibling
