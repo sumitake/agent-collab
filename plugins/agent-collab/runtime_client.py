@@ -3234,7 +3234,7 @@ def _launch_broker(
                     if (
                         lane.protocol_version
                         == LEGACY_DISPATCHER_PROTOCOL_VERSION
-                        and not _wait_for_job_idle(lane.label)
+                        and not _wait_for_job_idle(lane.label, deadline=deadline)
                     ):
                         return RuntimeResult(
                             RuntimeStatus.TEARDOWN_ERROR,
@@ -3247,7 +3247,7 @@ def _launch_broker(
                     ) from exc
                 if (
                     lane.protocol_version == LEGACY_DISPATCHER_PROTOCOL_VERSION
-                    and not _wait_for_job_idle(lane.label)
+                    and not _wait_for_job_idle(lane.label, deadline=deadline)
                 ):
                     return RuntimeResult(
                         RuntimeStatus.TEARDOWN_ERROR,
@@ -4120,8 +4120,9 @@ def _broker_process_idle() -> bool:
     return _job_process_idle(BROKER_LABEL)
 
 
-def _wait_for_job_idle(label: str) -> bool:
-    deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
+def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
+    if deadline is None:
+        deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if _job_process_idle(label):
             return True

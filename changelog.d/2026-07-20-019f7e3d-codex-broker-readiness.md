@@ -23,6 +23,8 @@
 - Wait for a selected dispatcher-v1 one-shot job to return idle before exposing
   its response to the next caller, closing the launchd teardown window without
   serializing the concurrent dispatcher-v2 scheduler.
+- Bound that dispatcher-v1 idle proof by the request's existing absolute broker
+  deadline, so teardown verification cannot silently start a fresh timeout.
 - Resolve Codex Desktop's active OpenAI model from its exact current rollout
   when `CODEX_ACTIVE_MODEL` is absent. The reader is fixed-root, bounded,
   no-follow, same-owner, single-file, and fail-closed on ambiguous, writable,
@@ -34,5 +36,6 @@
   liveness, selectorless legacy false-positive rejection, one-shot idle
   completion, invalid retained-lane rejection,
   accepted-request timeout typing and no-fallback behavior, legacy one-shot
-  response teardown, failed dispatcher ping, manifest-only doctor readiness,
-  safe Codex rollout identity, and ambiguous or unsafe rollout rejection.
+  response teardown and deadline reuse, failed dispatcher ping, manifest-only
+  doctor readiness, safe Codex rollout identity, and ambiguous or unsafe
+  rollout rejection.

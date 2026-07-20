@@ -2998,7 +2998,60 @@ print(json.dumps({{
             )
 
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
-        wait_for_idle.assert_called_once_with(legacy.label)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=mock.ANY)
+
+    def test_legacy_dispatcher_idle_proof_reuses_absolute_broker_deadline(
+        self,
+    ) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini", action="advisory", request_id="legacy-idle-deadline-1"
+        )
+        payload = self.client._native_document(envelope)
+        legacy = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=28,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token("c" * 64, "d" * 64)
+            ),
+            socket_path=self.root / "legacy-idle-deadline.sock",
+            transport="dispatcher",
+            protocol_version=self.client.LEGACY_DISPATCHER_PROTOCOL_VERSION,
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        response = {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": envelope.request_id,
+            "status": "unavailable",
+            "error": "fixture route unavailable",
+        }
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        with mock.patch.object(
+            self.client, "_capture_broker_lanes", return_value=((legacy,), None)
+        ), mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", return_value=response
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
+            result = self.client._launch_broker(
+                resolution=resolution,
+                payload=payload,
+                timeout_ms=30_000,
+                envelope=envelope,
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
 
     def test_legacy_dispatcher_response_fails_closed_when_idle_is_unproven(
         self,
@@ -3040,7 +3093,9 @@ print(json.dumps({{
             self.client, "_invoke_dispatcher_bridge", return_value=response
         ), mock.patch.object(
             self.client, "_wait_for_job_idle", return_value=False
-        ) as wait_for_idle:
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
             result = self.client._launch_broker(
                 resolution=resolution,
                 payload=payload,
@@ -3052,7 +3107,7 @@ print(json.dumps({{
         self.assertEqual(
             result.error, "legacy provider dispatcher did not return idle"
         )
-        wait_for_idle.assert_called_once_with(legacy.label)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
 
     def test_legacy_dispatcher_accepted_failure_requires_idle_before_return(
         self,
@@ -3096,7 +3151,9 @@ print(json.dumps({{
             self.client, "_invoke_dispatcher_bridge", side_effect=accepted
         ), mock.patch.object(
             self.client, "_wait_for_job_idle", return_value=False
-        ) as wait_for_idle:
+        ) as wait_for_idle, mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ):
             result = self.client._launch_broker(
                 resolution=resolution,
                 payload=payload,
@@ -3108,7 +3165,7 @@ print(json.dumps({{
         self.assertEqual(
             result.error, "legacy provider dispatcher did not return idle"
         )
-        wait_for_idle.assert_called_once_with(legacy.label)
+        wait_for_idle.assert_called_once_with(legacy.label, deadline=130.0)
 
     def test_codex_seatbelt_blocks_mutating_lifecycle_before_any_read(self) -> None:
         for function_name in ("install_broker", "rollback_broker", "uninstall_broker"):
