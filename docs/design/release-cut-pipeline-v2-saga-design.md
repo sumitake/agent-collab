@@ -268,6 +268,13 @@ means *acquire* it (the previous holder's FD is gone, so `flock` succeeds); it n
 means `unlink`. The inode is never removed while a cut may hold it — removing it is
 what lets two holders lock two different inodes under one name.
 
+*Confirming instance (PR-bot on `e1bbcc2`):* the current pathname-token `release_lock`
+clears `_lock_token` even when `os.unlink` fails, so a transient unlink error strands the
+lockfile AND drops the instance's ownership — blocking every future cut for the tag. The
+FD-`flock` design removes this class: release is closing the descriptor (auto-released on
+process exit), the lockfile is never unlinked on release, so no unlink-fail-clears-token
+state exists. This is why R5 replaces the primitive rather than patching its unlink path.
+
 **Cross-host / cross-clone.** A local `flock` is silent about a cutter in another clone
 or on another machine. The **global fence is the signed-tag push itself**: pushing
 `refs/tags/vX.Y.Z` to a repo with tag-immutability (operator D9 ruleset) is the atomic
