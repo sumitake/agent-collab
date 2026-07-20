@@ -358,14 +358,22 @@ def _codex_rollout_candidates(root: Path, thread_id: str) -> list[tuple[Path, os
 
     def entries(path: Path) -> list[os.DirEntry[str]]:
         nonlocal entry_count
+        observed: list[os.DirEntry[str]] = []
         try:
             with os.scandir(path) as iterator:
-                observed = list(iterator)
+                for entry in iterator:
+                    entry_count += 1
+                    # Count incrementally and abort AS SOON AS the cumulative
+                    # bound is exceeded, so a single oversized directory cannot
+                    # be fully materialized into memory (unbounded memory /
+                    # stall) before the limit is enforced.
+                    if entry_count > _CODEX_ROLLOUT_ENTRY_LIMIT:
+                        raise ValueError(
+                            "Codex sessions tree exceeds the entry bound"
+                        )
+                    observed.append(entry)
         except OSError as exc:
             raise ValueError("Codex sessions directory is unreadable") from exc
-        entry_count += len(observed)
-        if entry_count > _CODEX_ROLLOUT_ENTRY_LIMIT:
-            raise ValueError("Codex sessions tree exceeds the entry bound")
         return observed
 
     year_directories: list[Path] = []

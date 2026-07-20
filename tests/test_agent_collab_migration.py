@@ -500,6 +500,47 @@ enabled = true
         self.assertTrue(profile.governance_ready)
         self.assertFalse(profile.identity_conflict)
 
+    def test_codex_rollout_entry_limit_aborts_during_scan(self) -> None:
+        # A single oversized sessions directory must not be fully materialized
+        # before the entry-limit check: counting is incremental and aborts as
+        # soon as the cumulative bound is exceeded (bounded memory / no stall).
+        policy = self.policy
+        consumed = {"n": 0}
+
+        class _Entry:
+            def __init__(self, name: str) -> None:
+                self.name = name
+                self.path = f"/fake/{name}"
+
+        class _Scan:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def __iter__(self):
+                # Far more entries than the (patched) limit; each pull is
+                # counted so the test can prove the scan stops early.
+                i = 0
+                while True:
+                    consumed["n"] += 1
+                    i += 1
+                    yield _Entry(f"e{i}")
+
+        safe_root = self.home / "codex-sessions"
+        safe_root.mkdir(parents=True, mode=0o755, exist_ok=True)
+        with mock.patch.object(policy, "_CODEX_ROLLOUT_ENTRY_LIMIT", 5), mock.patch.object(
+            policy, "_safe_codex_directory", return_value=True
+        ), mock.patch.object(
+            policy.os, "scandir", return_value=_Scan()
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                policy._codex_rollout_candidates(safe_root, "tid")
+        self.assertIn("entry bound", str(ctx.exception))
+        # Early abort: consumed at most limit+1, NOT an unbounded drain.
+        self.assertLessEqual(consumed["n"], 6)
+
     def test_codex_profile_fails_closed_on_incomplete_rollout_tail(self) -> None:
         # A complete turn_context(model A) followed by a PARTIAL, non-newline-
         # terminated turn_context(model B) — as a concurrent writer produces
