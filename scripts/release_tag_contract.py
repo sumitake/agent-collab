@@ -31,7 +31,13 @@ import re
 SCHEMA = "agent-collab-release/1"
 _REQUIRED = ("schema", "Asset-Name", "Asset-SHA256", "Manifest-SHA256")
 _SHA256_RE = re.compile(r"\A[0-9a-f]{64}\Z")          # lowercase-only, canonical
-_ASSET_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._ -]{0,127}\Z")
+_ASSET_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+# NO SPACE, and no other character GitHub rewrites: GitHub normalizes special
+# characters in release-asset filenames, so an asset uploaded as "a b.plugin"
+# is stored under a different name than the one the tag SIGNED. The v3 receipt
+# check compares the stored name to the signed name, so permitting a rewritten
+# character would make a legitimate cut fail as a CONFLICT. Restrict the grammar
+# to characters GitHub preserves verbatim.
 _TAG_RE = re.compile(r"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 # Bounds, so oversized input fails cheaply and a tag can never exceed a filesystem
 # or ref component limit and then fail deep inside a path/ref operation instead.

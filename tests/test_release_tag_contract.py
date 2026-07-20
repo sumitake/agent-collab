@@ -33,7 +33,7 @@ class TagGrammarTests(unittest.TestCase):
         cls.rtc = _load()
 
     def _message(self, **over) -> str:
-        fields = {"tag": "v4.1.0", "asset_name": "agent-collab v4.1.0.plugin",
+        fields = {"tag": "v4.1.0", "asset_name": "agent-collab-v4.1.0.plugin",
                   "asset_sha256": GOOD_ASSET, "manifest_sha256": GOOD_MANIFEST}
         fields.update(over)
         tag = fields.pop("tag")
@@ -43,7 +43,7 @@ class TagGrammarTests(unittest.TestCase):
         parsed = self.rtc.parse_tag_message(self._message(), tag="v4.1.0")
         self.assertEqual(parsed["asset_sha256"], GOOD_ASSET)
         self.assertEqual(parsed["manifest_sha256"], GOOD_MANIFEST)
-        self.assertEqual(parsed["asset_name"], "agent-collab v4.1.0.plugin")
+        self.assertEqual(parsed["asset_name"], "agent-collab-v4.1.0.plugin")
         self.assertEqual(parsed["schema"], self.rtc.SCHEMA)
 
     def test_title_must_match_the_exact_tag(self) -> None:
@@ -81,11 +81,11 @@ class TagGrammarTests(unittest.TestCase):
 
     def test_unsafe_asset_names_and_non_ascii_fail_closed(self) -> None:
         for bad in ("../escape.plugin", "dir/nested.plugin", "back\\slash.plugin"):
-            message = self._message().replace("Asset-Name: agent-collab v4.1.0.plugin",
+            message = self._message().replace("Asset-Name: agent-collab-v4.1.0.plugin",
                                               f"Asset-Name: {bad}")
             with self.subTest(bad=bad), self.assertRaises(self.rtc.TagContractError):
                 self.rtc.parse_tag_message(message, tag="v4.1.0")
-        non_ascii = self._message().replace("agent-collab v4.1.0.plugin", "agent-collab-café.plugin")
+        non_ascii = self._message().replace("agent-collab-v4.1.0.plugin", "agent-collab-café.plugin")
         with self.assertRaisesRegex(self.rtc.TagContractError, "ASCII"):
             self.rtc.parse_tag_message(non_ascii, tag="v4.1.0")
 
@@ -111,7 +111,7 @@ class TagGrammarTests(unittest.TestCase):
         deleting the parse-before-return guard in format_tag_message passes silently.
         Each case here is rejected only because format re-parses its own output.
         """
-        ok = dict(asset_name="agent-collab v1.0.0.plugin",
+        ok = dict(asset_name="agent-collab-v1.0.0.plugin",
                   asset_sha256=GOOD_ASSET, manifest_sha256=GOOD_MANIFEST)
         for label, over in (
             ("traversal asset name", {"asset_name": "../evil.plugin"}),
@@ -133,7 +133,7 @@ class TagGrammarTests(unittest.TestCase):
         """
         for bad in ("foo;evil.plugin", "foo|evil.plugin", "\x00.plugin",
                     ".hidden.plugin", "", "a" * 200):
-            message = self._message().replace("Asset-Name: agent-collab v4.1.0.plugin",
+            message = self._message().replace("Asset-Name: agent-collab-v4.1.0.plugin",
                                               f"Asset-Name: {bad}")
             with self.subTest(bad=repr(bad)):
                 with self.assertRaises(self.rtc.TagContractError):
@@ -200,7 +200,7 @@ class TagGrammarTests(unittest.TestCase):
         # dot or a Windows reserved device stem silently becomes a different file.
         for bad in ("CON", "NUL.plugin", "AUX", "COM1.plugin", "LPT9.plugin",
                     "trailing.", "name.."):
-            message = self._message().replace("Asset-Name: agent-collab v4.1.0.plugin",
+            message = self._message().replace("Asset-Name: agent-collab-v4.1.0.plugin",
                                               f"Asset-Name: {bad}")
             with self.subTest(bad=bad):
                 with self.assertRaises(self.rtc.TagContractError):
@@ -214,6 +214,26 @@ class TagGrammarTests(unittest.TestCase):
         huge = self._message().rstrip("\n") + "\nAsset-Name: " + "a" * 8000 + "\n"
         with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
             self.rtc.parse_tag_message(huge, tag="v4.1.0")
+
+
+    def test_asset_names_reject_characters_github_rewrites(self) -> None:
+        """A space is not a cosmetic restriction — it breaks the receipt check.
+
+        GitHub normalizes special characters in release-asset filenames, so an
+        asset uploaded as "a b.plugin" is STORED under a different name than the
+        tag signed. The v3 design compares the stored asset name to the signed
+        one, so permitting a rewritten character would make a legitimate cut fail
+        as a CONFLICT. The grammar therefore only admits characters GitHub keeps.
+        """
+        for bad in ("agent collab.plugin", "agent-collab v4.1.0.plugin", "a b"):
+            message = self._message().replace("Asset-Name: agent-collab-v4.1.0.plugin",
+                                              f"Asset-Name: {bad}")
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(self.rtc.TagContractError, "unsafe asset name"):
+                    self.rtc.parse_tag_message(message, tag="v4.1.0")
+        # ...and the real builder's name still round-trips.
+        self.rtc.format_tag_message("v4.1.0", asset_name="agent-collab.plugin",
+                                    asset_sha256=GOOD_ASSET, manifest_sha256=GOOD_MANIFEST)
 
 
 if __name__ == "__main__":
