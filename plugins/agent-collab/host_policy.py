@@ -428,9 +428,15 @@ def _codex_rollout_window(fd: int, captured_size: int) -> bytes:
         if boundary < 0:
             raise ValueError("Codex rollout has no bounded record boundary")
         window = window[boundary + 1 :]
+    # A nonempty snapshot whose final record is not newline-terminated is an
+    # incomplete tail (a concurrent writer mid-append, or a permanently
+    # truncated final record). Trimming it and trusting the PRECEDING record
+    # would let a stale, superseded model-changing context be read as
+    # governance-ready identity. Fail closed instead: the caller treats this as
+    # an unavailable identity (unknown model, not governance-ready), and the
+    # next read after the writer completes the line succeeds.
     if captured_size and (not window or not window.endswith(b"\n")):
-        boundary = window.rfind(b"\n")
-        window = b"" if boundary < 0 else window[: boundary + 1]
+        raise ValueError("Codex rollout snapshot tail is incomplete")
     return window
 
 

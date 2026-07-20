@@ -235,6 +235,9 @@ BROKER_STATE_KEYS = frozenset(
 )
 _BROKER_HEADER = struct.Struct(">Q")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_JOB_LABEL_RE = re.compile(
+    r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})"
+)
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _DEVELOPER_ID_RE = re.compile(
     r"^Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)$"
@@ -4030,7 +4033,7 @@ def _launchctl(
     if deadline is not None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            _terminate_and_reap(process)
+            _terminate_and_reap(process, deadline=deadline)
             raise RuntimeError("launchctl deadline expired")
         timeout_ms = min(timeout_ms, remaining * 1000)
     out, err, collection_error = _collect_bounded_output(
@@ -4091,6 +4094,16 @@ def _broker_job_loaded() -> bool:
 # ("activation ping failed") and fall through to the restore path, which
 # skips the ping and so silently masked the miscalibration.
 BROKER_COLD_START_TIMEOUT_SECONDS = 30.0
+# Upper bound on how long teardown may poll to reap a SIGKILLed leader when no
+# caller deadline is supplied (preserves the pre-existing wait bound). When a
+# deadline is supplied, teardown polls at most REAP_GRACE_SECONDS past it.
+REAP_BOUND_SECONDS = 5.0
+# Minimal grace for a just-posted SIGKILL to be delivered and the leader
+# reaped, even when the caller deadline is already expired. Small enough that
+# the worst-case deadline overrun is a fraction of a second (not the old ~10s),
+# large enough that an ordinary killable process is not mistyped as a teardown
+# failure.
+REAP_GRACE_SECONDS = 0.25
 
 
 def _broker_ping(socket_path: Path) -> bool:
@@ -4116,14 +4129,7 @@ def _broker_ping(socket_path: Path) -> bool:
 
 
 def _job_process_idle(label: str, *, deadline: float | None = None) -> bool:
-    if (
-        not isinstance(label, str)
-        or re.fullmatch(
-            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
-            label,
-        )
-        is None
-    ):
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
         raise ValueError("provider job label is invalid")
     arguments = ["print", f"gui/{os.getuid()}/{label}"]
     result = (
@@ -4167,12 +4173,32 @@ def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
         or not math.isfinite(float(deadline))
     ):
         raise ValueError("provider job idle deadline is invalid")
+    # Validate the label at entry (hoisted out of the probe loop): an invalid
+    # label is a caller bug and must raise, not be swallowed by the fail-closed
+    # loop below. _JOB_LABEL_RE mirrors the check inside _job_process_idle.
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
+        raise ValueError("provider job label is invalid")
+    # Pre-check operator-home OUT of the loop: its absence is an environmental
+    # condition (not a caller bug), so fail closed to "not idle" here rather
+    # than catching the resulting ValueError inside the loop. This keeps the
+    # loop's except narrow (spawn/probe failures only) so a genuine code-bug
+    # ValueError still propagates instead of being masked as a failed idle
+    # proof.
+    if _operator_home() is None:
+        return False
     while True:
         if time.monotonic() >= deadline:
             return False
         try:
             idle = _job_process_idle(label, deadline=deadline)
-        except RuntimeError:
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            # An accepted-request idle probe that cannot be completed
+            # (launchctl spawn failure, deadline expiry, subprocess error) is a
+            # failed idle proof -> not idle. The accepted-request boundary then
+            # types this as TEARDOWN_ERROR, not PROTOCOL_ERROR. ValueError is
+            # deliberately NOT caught: label and operator-home (the only
+            # environmental ValueError sources) are handled above, so any
+            # ValueError here is a code bug that must surface.
             return False
         if idle:
             return True
@@ -6606,25 +6632,54 @@ def _parse_response(
     return RuntimeResult(RuntimeStatus.OK, result=response["result"], provenance=provenance)
 
 
-def _terminate_and_reap(process: subprocess.Popen[bytes]) -> bool:
+def _terminate_and_reap(
+    process: subprocess.Popen[bytes], *, deadline: float | None = None
+) -> bool:
+    # Post SIGKILL to the whole session group (process.pid is the session-group
+    # leader: every launch uses start_new_session=True). group_killed records
+    # whether the WHOLE-group kill is proven so the return can stay honest.
+    group_killed = True
     try:
         os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        # ESRCH: the group already exited. The whole-group teardown is proven.
+        group_killed = True
     except OSError:
+        # The group kill could not be posted; fall back to killing only the
+        # leader. Sibling members may survive, so the whole-group teardown is
+        # NOT proven and the return below must reflect that.
+        group_killed = False
         if process.poll() is None:
             try:
                 process.kill()
             except OSError:
                 pass
-    try:
-        process.wait(timeout=5)
-        return True
-    except subprocess.TimeoutExpired:
-        try:
-            process.kill()
-            process.wait(timeout=5)
-            return True
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+    now = time.monotonic()
+    if deadline is None:
+        reap_deadline = now + REAP_BOUND_SECONDS
+    else:
+        # Honor the caller deadline as the primary bound, but always allow a
+        # minimal grace for the just-posted SIGKILL to be delivered and the
+        # leader reaped: a normal (non-D-state) process reaps in milliseconds,
+        # so a strictly-zero budget at an already-expired deadline would
+        # mistype an ordinary timeout as TEARDOWN_ERROR. The grace caps the
+        # worst-case overrun at REAP_GRACE_SECONDS past the deadline (vs the
+        # old ~10s of two fixed 5s waits), and is itself capped by the
+        # no-deadline bound.
+        reap_deadline = min(
+            now + REAP_BOUND_SECONDS, max(deadline, now + REAP_GRACE_SECONDS)
+        )
+    # Reap the leader by polling, bounded above (never the old two fixed 5s
+    # waits). A D-state child that outlives the bound yields reaped=False ->
+    # TEARDOWN_ERROR (the documented accepted residual), never a false success.
+    reaped = process.poll() is not None
+    while not reaped and time.monotonic() < reap_deadline:
+        time.sleep(min(0.02, max(0.0, reap_deadline - time.monotonic())))
+        reaped = process.poll() is not None
+    # "Teardown proven" requires BOTH the leader reaped AND the whole-group kill
+    # posted; a leader-only fallback returns False so the caller types
+    # TEARDOWN_ERROR rather than a false success.
+    return reaped and group_killed
 
 
 def _collect_bounded_output(
@@ -6648,7 +6703,7 @@ def _collect_bounded_output(
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                reaped = _terminate_and_reap(process)
+                reaped = _terminate_and_reap(process, deadline=deadline)
                 status = RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR
                 error = (
                     "native runtime timed out"
@@ -6672,7 +6727,7 @@ def _collect_bounded_output(
                     continue
                 buffers[name].extend(chunk)
                 if len(buffers[name]) > MAX_RESPONSE_BYTES:
-                    reaped = _terminate_and_reap(process)
+                    reaped = _terminate_and_reap(process, deadline=deadline)
                     status = (
                         RuntimeStatus.OUTPUT_LIMIT
                         if reaped
@@ -6695,7 +6750,7 @@ def _collect_bounded_output(
         try:
             process.wait(timeout=max(remaining, 0.001))
         except subprocess.TimeoutExpired:
-            reaped = _terminate_and_reap(process)
+            reaped = _terminate_and_reap(process, deadline=deadline)
             status = RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR
             return b"", b"", RuntimeResult(
                 status,
@@ -6707,7 +6762,7 @@ def _collect_bounded_output(
             )
         return bytes(buffers["stdout"]), bytes(buffers["stderr"]), None
     except (OSError, ValueError):
-        reaped = _terminate_and_reap(process)
+        reaped = _terminate_and_reap(process, deadline=deadline)
         return b"", b"", RuntimeResult(
             RuntimeStatus.TEARDOWN_ERROR,
             error=(
@@ -6717,7 +6772,7 @@ def _collect_bounded_output(
             ),
         )
     except BaseException:
-        _terminate_and_reap(process)
+        _terminate_and_reap(process, deadline=deadline)
         raise
     finally:
         selector.close()

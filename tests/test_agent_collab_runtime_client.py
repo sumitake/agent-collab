@@ -5528,6 +5528,57 @@ print(json.dumps({{
             )
         failed_idle.assert_called_once_with(label, deadline=101.0)
 
+    def test_wait_for_job_idle_fails_closed_on_probe_spawn_errors(self) -> None:
+        # An accepted-request idle probe can fail with OSError (launchctl spawn
+        # failure) or subprocess.SubprocessError; these must be treated as a
+        # failed idle proof (return False -> TEARDOWN_ERROR at the accepted
+        # boundary), not escape and become PROTOCOL_ERROR.
+        label = self.client.BROKER_LABEL
+        for exc in (
+            OSError("launchctl could not be spawned"),
+            self.client.subprocess.SubprocessError("launchctl crashed"),
+        ):
+            with self.subTest(exc=type(exc).__name__):
+                with mock.patch.object(
+                    self.client.time, "monotonic", return_value=100.0
+                ), mock.patch.object(
+                    self.client, "_operator_home", return_value=str(self.root)
+                ), mock.patch.object(
+                    self.client, "_job_process_idle", side_effect=exc
+                ):
+                    self.assertFalse(
+                        self.client._wait_for_job_idle(label, deadline=101.0)
+                    )
+
+    def test_wait_for_job_idle_fails_closed_when_operator_home_unavailable(self) -> None:
+        # Operator-home-unavailable is an environmental condition, pre-checked
+        # OUT of the probe loop: fail closed to not-idle without ever invoking
+        # the probe.
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=None
+        ), mock.patch.object(
+            self.client, "_job_process_idle"
+        ) as probe:
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+        probe.assert_not_called()
+
+    def test_wait_for_job_idle_rejects_invalid_label_before_probe(self) -> None:
+        # Label validation is hoisted to entry: an invalid label is a caller
+        # bug that must raise, not be swallowed by the fail-closed loop.
+        with mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client, "_job_process_idle"
+        ) as probe:
+            with self.assertRaises(ValueError):
+                self.client._wait_for_job_idle("not-a-valid-label", deadline=101.0)
+        probe.assert_not_called()
+
     def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
@@ -6581,6 +6632,112 @@ time.sleep(10)
         self.assertEqual(len(created), 1)
         self.assertFalse(created[0].exists())
         self.assertFalse(str(created[0]).startswith(str(self.root) + os.sep))
+
+    def test_terminate_and_reap_is_deadline_bounded(self) -> None:
+        # A child that never exits must NOT block the two fixed 5s waits past
+        # the caller deadline: with an already-expired deadline the call does
+        # one non-blocking poll and returns False promptly (teardown unproven).
+        client = self.client
+
+        class _NeverExits:
+            pid = 999999
+
+            def __init__(self) -> None:
+                self.wait_calls = 0
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.wait_calls += 1
+                raise subprocess.TimeoutExpired(cmd="x", timeout=timeout)
+
+            def kill(self):
+                pass
+
+        stub = _NeverExits()
+        with mock.patch.object(client.os, "killpg") as killpg:
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic())
+        self.assertFalse(reaped)
+        # An already-expired deadline must NOT make a blocking wait(timeout>0)
+        # call (the old two fixed 5s waits); a non-blocking poll pass instead.
+        self.assertEqual(stub.wait_calls, 0)
+        killpg.assert_called_once()
+        args = killpg.call_args.args
+        self.assertEqual(args[0], stub.pid)
+        self.assertEqual(args[1], signal.SIGKILL)
+
+    def test_terminate_and_reap_returns_false_on_leader_only_fallback(self) -> None:
+        # killpg failing with a non-ESRCH OSError means the whole-group kill is
+        # unproven; killing+reaping only the leader must return False so the
+        # caller types TEARDOWN_ERROR, never a false "teardown proven".
+        client = self.client
+
+        class _LeaderReaps:
+            pid = 999998
+
+            def poll(self):
+                return 0
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        stub = _LeaderReaps()
+        with mock.patch.object(
+            client.os, "killpg", side_effect=PermissionError("cannot signal group")
+        ):
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic() + 5)
+        self.assertFalse(reaped)
+
+    def test_terminate_and_reap_treats_group_gone_as_success(self) -> None:
+        # killpg raising ProcessLookupError (ESRCH) means the group already
+        # exited; reaping the (already-gone) leader is a proven teardown.
+        client = self.client
+
+        class _AlreadyGone:
+            pid = 999997
+
+            def poll(self):
+                return 0
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        stub = _AlreadyGone()
+        with mock.patch.object(
+            client.os, "killpg", side_effect=ProcessLookupError("no such group")
+        ):
+            reaped = client._terminate_and_reap(stub, deadline=time.monotonic() + 5)
+        self.assertTrue(reaped)
+
+    def test_collect_bounded_output_teardown_respects_caller_deadline(self) -> None:
+        # A real child holding its pipes open past a short timeout must be torn
+        # down without the collection running ~10s past timeout_ms.
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            started = time.monotonic()
+            out, err, result = self.client._collect_bounded_output(
+                process, timeout_ms=200
+            )
+            elapsed = time.monotonic() - started
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertLess(elapsed, 3.0)  # bounded, not 200ms + 2x5s
 
     def test_unexpected_collector_errors_terminate_and_reap_child(self) -> None:
         for failure_point in ("select", "read"):

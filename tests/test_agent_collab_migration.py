@@ -500,6 +500,53 @@ enabled = true
         self.assertTrue(profile.governance_ready)
         self.assertFalse(profile.identity_conflict)
 
+    def test_codex_profile_fails_closed_on_incomplete_rollout_tail(self) -> None:
+        # A complete turn_context(model A) followed by a PARTIAL, non-newline-
+        # terminated turn_context(model B) — as a concurrent writer produces
+        # mid-append — must NOT resolve the stale preceding model A. It fails
+        # closed (active_model "unknown", not governance-ready) so a paused
+        # writer cannot yield a stale governance-ready identity.
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self.home / "codex-sessions"
+        directory = sessions / "2026" / "07" / "19"
+        directory.mkdir(parents=True, mode=0o755, exist_ok=True)
+        path = directory / f"rollout-2026-07-19T00-00-00-{thread_id}.jsonl"
+        complete = (
+            {
+                "type": "session_meta",
+                "payload": {"id": thread_id, "model_provider": "openai"},
+            },
+            {
+                "type": "turn_context",
+                "payload": {"model": "gpt-5.6-sol"},
+            },
+        )
+        partial = {"type": "turn_context", "payload": {"model": "openai/o3"}}
+        body = (
+            "\n".join(
+                json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in complete
+            )
+            + "\n"
+            + json.dumps(partial, sort_keys=True, separators=(",", ":"))
+        )  # NOTE: no trailing newline — the tail record is incomplete.
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o644)
+
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertNotEqual(profile.active_model, "gpt-5.6-sol")
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
     def test_codex_profile_rejects_env_rollout_model_conflict(self) -> None:
         thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
         sessions = self._write_codex_rollout(thread_id=thread_id)
