@@ -38,6 +38,11 @@ _TAG_RE = re.compile(r"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 
 
 
+# NOT AN AUTHORIZATION ROOT — this module is the message GRAMMAR only. It does not
+# bind repository identity, so a tag signed by the same key in another repository
+# parses here. Intent binding (repo id, release commit, channel, signer policy)
+# lands with the v3 saga; until then no caller may treat a parse result as proof
+# that this release was authorized for THIS repository.
 class TagContractError(ValueError):
     """The tag message or release commit violates the release contract."""
 

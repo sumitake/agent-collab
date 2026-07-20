@@ -102,5 +102,67 @@ class TagGrammarTests(unittest.TestCase):
             self.rtc.format_tag_message("4.1.0", asset_name="a.plugin",
                                         asset_sha256=GOOD_ASSET, manifest_sha256=GOOD_MANIFEST)
 
+    # ---- properties the cut_journal tests used to cover (orphaned by the split) ----
+
+    def test_format_refuses_to_emit_what_parse_would_reject(self) -> None:
+        """Pins "never emit what we would not accept".
+
+        The round-trip test alone does NOT pin it: it only formats VALID input, so
+        deleting the parse-before-return guard in format_tag_message passes silently.
+        Each case here is rejected only because format re-parses its own output.
+        """
+        ok = dict(asset_name="agent-collab v1.0.0.plugin",
+                  asset_sha256=GOOD_ASSET, manifest_sha256=GOOD_MANIFEST)
+        for label, over in (
+            ("traversal asset name", {"asset_name": "../evil.plugin"}),
+            ("nested asset name", {"asset_name": "dir/evil.plugin"}),
+            ("uppercase digest", {"asset_sha256": GOOD_ASSET.upper()}),
+            ("short digest", {"manifest_sha256": "a" * 63}),
+            ("non-ascii asset name", {"asset_name": "agent-collab-café.plugin"}),
+        ):
+            with self.subTest(label=label):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.format_tag_message("v1.0.0", **{**ok, **over})
+
+    def test_asset_name_charclass_is_enforced_independently(self) -> None:
+        """Isolates _ASSET_NAME_RE from the slash and ASCII checks.
+
+        Each name below is ASCII and slash-free, so it passes those two guards and
+        can only be rejected by the character-class regex itself — otherwise the
+        regex would be untested (the same overlap problem the mode guards had).
+        """
+        for bad in ("foo;evil.plugin", "foo|evil.plugin", "\x00.plugin",
+                    ".hidden.plugin", "", "a" * 200):
+            message = self._message().replace("Asset-Name: agent-collab v4.1.0.plugin",
+                                              f"Asset-Name: {bad}")
+            with self.subTest(bad=repr(bad)):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.parse_tag_message(message, tag="v4.1.0")
+
+    def test_validate_tag_name_security_properties(self) -> None:
+        """Direct cases for the properties the docstring claims.
+
+        These lived in the cut_journal tests until that module left this PR; without
+        them the \\A/\\Z choice, the leading-zero rule and the traversal/injection
+        rejections would be documented but unproven.
+        """
+        for bad, why in (
+            ("v1.0.0\n", "trailing newline — `$` would accept this, `\\Z` must not"),
+            ("v01.0.0", "leading zero — must not be a second name for v1.0.0"),
+            ("v1.0.0/..", "path traversal"),
+            ("v1.0.0:evil", "ref injection"),
+            ("../v1.0.0", "traversal prefix"),
+            ("", "empty"),
+            ("v1.0", "incomplete"),
+            (None, "non-string"),
+        ):
+            with self.subTest(why=why):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.validate_tag_name(bad)
+        self.assertEqual(self.rtc.validate_tag_name("v1.0.0"), "v1.0.0")
+        self.assertEqual(self.rtc.validate_tag_name("v0.0.0"), "v0.0.0")
+        self.assertEqual(self.rtc.validate_tag_name("v10.20.30"), "v10.20.30")
+
+
 if __name__ == "__main__":
     unittest.main()
