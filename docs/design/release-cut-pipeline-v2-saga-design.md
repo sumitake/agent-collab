@@ -147,9 +147,12 @@ saga steps with the same eight-part contract, not an afterthought):
    release for the tag. attempt-id bound into the release body/name. receipt: release
    id + isDraft==true + tagName==version.
 3. **upload-asset** — precondition: draft receipt holds. effect: upload the archive.
-   receipt: asset id + digest==intent + size==intent. retry: a re-upload must reconcile
-   asset **identity**, not just digest — a deleted-and-recreated asset with the same
-   digest is a different id (finding 7; the `substitution-under-a-stable-name` class).
+   receipt: asset id + digest==intent + size==intent + **name==signed `Asset-Name`**.
+   retry: a re-upload must reconcile asset **identity**, not just digest — a
+   deleted-and-recreated asset with the same digest is a different id, and matching bytes
+   under a *different filename* is still a CONFLICT because consumers resolve the asset by
+   the signed name (finding 7; the `substitution-under-a-stable-name` class). Asset
+   identity is the full tuple `(id, digest, size, name)`, every element matched.
 4. **dispatch-CI** — precondition: asset receipt holds. effect: `workflow run` with the
    tag ref + attempt-id input. receipt: a run whose head is the tag AND whose input
    carries this attempt-id (closes the substitution the earlier `_dispatch_exists` had).
@@ -241,9 +244,14 @@ it replaces only `require_consistent` and the journal's *authority*.
 
 ## 4. The journal is a hint, provably (finding 10)
 
-The journal records `{attempt-id, last-observed-step, receipts}` as a *cache*. On any
-run: load the journal if present, but **re-observe** every step's receipt from the
-remote and re-verify intent from the signed tag before acting. Formal property to test:
+The journal records `{attempt-id, last-observed-step, receipts}` as a *cache*, and its
+`tag` field **must match the version being cut** — a `v1.0.0` journal handed to a `v2.0.0`
+cut is a confused-deputy wiring error (A3) that must fail closed, not silently skip steps.
+Under v2 this is enforced structurally as well as by an explicit guard: the journal is
+re-observed against intent bound to *this* version, so a wrong-version journal's receipts
+cannot match the version's signed intent (→ CONFLICT). On any run: load the journal if
+present, but **re-observe** every step's receipt from the remote and re-verify intent from
+the signed tag before acting. Formal property to test:
 *for every reachable state, the decision `require_resume/refuse/stop` is identical
 whether the journal is present-and-correct, absent, stale, or adversarially rewritten.*
 If any journal content can change a decision, the design has failed and the test
