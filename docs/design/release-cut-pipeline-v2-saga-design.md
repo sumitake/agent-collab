@@ -629,3 +629,43 @@ to the tag/main rulesets. Options: (a) a dedicated fine-grained PAT / GitHub App
 admin) scope for the release job; (b) scope the ruleset bypass to a specific operator identity
 used only for manual emergencies, never by the cutter. Either is an operator/infra provisioning
 choice; the design's preflight enforces "authenticated actor must not have bypass" regardless.
+
+---
+
+## R3-6 resolution — three entangled infrastructure decisions (operator)
+
+Investigating the release-identity finding surfaced that it is not one choice but three
+coupled ones, all operator-domain:
+
+**(a) The tag ruleset needs its bypass REMOVED.** `@sumitake` is the sole admin/owner, so
+*any* token acting as that account is an admin actor and bypasses the `v*` ruleset's admin
+`always` bypass (the escape hatch I added). Ruleset bypass is by actor/role, not token scope
+(the reviewer's exact point). So the definitive fix is `bypass_actors: []` — the tag becomes
+immutable for **every** actor including the cutter; creation stays allowed, delete/overwrite
+blocked for all. Attempted via `gh api -X PUT rulesets/19198252` → **blocked by the Claude
+Code auto-mode classifier** (ruleset modification). Operator action: set the ruleset's bypass
+to empty (repo Settings → Rules → release-tag-immutability), or grant the permission.
+
+**(b) The release token should be fine-grained Contents:write, not the admin PAT.** The PAT in
+the Keychain (`antigravity-github-mcp-pat`) is a **classic `ghp_` PAT with `admin:true` and
+`delete_repo`**. With the bypass removed (a) it *functionally* works — it can create tags but
+not delete/overwrite them — but if it leaks, the attacker gets **admin**, and admin can delete
+the ruleset itself, then the tag. A fine-grained PAT scoped to **Contents: read+write on
+`agent-collab` only** (no admin) shrinks the leak blast radius to "can create a tag/release,
+cannot remove the fence". Recommended over the broad admin PAT. Preflight enforces
+"authenticated actor must not have ruleset-bypass" regardless of which token is chosen.
+
+**(c) Burn / rollback-started record vs the `main` PR requirement.** R3-4 wants a signed
+`rollback-started` (and the burn) committed to protected `main` **before** the first
+destructive compensation — fast and durable. But the `main` ruleset requires **pull_request**,
+so a direct push is rejected; a PR + review + status checks is too slow for a
+record-before-destruction step. Options: a dedicated **`revocations` ref** with its own
+ruleset (block deletion + non_fast_forward, allow direct *signed* append, no PR) as the
+append-only revocation anchor; OR a narrowly-scoped bypass for the burn path; OR git-notes/refs
+under a protected namespace. This is a design decision that depends on (a)/(b) and needs an
+operator call on the revocation anchor.
+
+Until (a)–(c) are decided, the tag ruleset remains as-created (WITH the admin bypass — so the
+fence currently protects only against a *non-admin* write token, which is a smaller set than
+the design targets). The rest of v3 (R3-1..R3-4, R3-7) is unaffected and ready to implement
+once the identity/anchor decisions land.
