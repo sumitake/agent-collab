@@ -1,6 +1,6 @@
 ---
 name: migration-doctor
-version: 4.1.0
+version: 4.1.1
 description: Use when the user says "migration doctor," "check old collaboration plugins," "verify agent-collab migration," or "/agent-collab:migration-doctor." Also offer this proactively after installing or updating agent-collab, when provider routing is blocked, or when a retired package may still be selected from an installed plugin or cache.
 ---
 
@@ -22,15 +22,19 @@ runtime or a provider CLI directly.
 ## Workflow
 
 Run the provider-free `migration_doctor.py` beside this skill's plugin root.
-It reads only local manifests, plugin directories, cache selections, Codex
-plugin tables in `~/.codex/config.toml`, the runtime manifest, and explicit
-host-profile configuration. It never invokes a provider or downloads an
-artifact.
+It reads local manifests, plugin directories, cache selections, Codex plugin
+tables in `~/.codex/config.toml`, the runtime manifest, and current host-profile
+evidence. It also verifies the canonical selected broker lane, immutable
+artifact and manifest, launchd job, socket, and one closed liveness exchange.
+That exchange never invokes a provider or returns provider output, and the
+doctor never downloads an artifact.
 
 Treat any installed or active legacy package as a hard routing conflict. Show
 each observation's source host/state and the report's exact host-manager
 install, verify, and uninstall actions. Cache-only residue is reported
 separately. After cleanup, re-run the doctor before provider selection.
+Treat `provider_routing=READY` as executable only when
+`broker_runtime=ready`; manifest availability alone is not route readiness.
 
 If the signed native artifact is absent, report native Gemini, Codex, OpenCode,
 and Grok 4.5 routes, including `composer/codegen` compatibility, as typed

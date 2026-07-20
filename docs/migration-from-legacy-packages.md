@@ -61,7 +61,8 @@ For every row below, all listed old namespaces map to the single new command.
    `[plugins."name@marketplace"]` entries from `~/.codex/config.toml`, so each
    uninstall command targets the package manager that owns the residue.
 4. Re-run the doctor; provider routing remains blocked until duplicate state is
-   absent.
+   absent, the signed runtime is available, and the canonical selected broker
+   lane passes its provider-free closed liveness proof.
 5. Configure unknown/custom primaries explicitly with primary id, family,
    active model, host runtime, and session identifier.
 

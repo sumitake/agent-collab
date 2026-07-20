@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 4.1.0
+version: 4.1.1
 defaults:
   tier: Fast
   effort: low
@@ -22,8 +22,10 @@ skill; no external repository is required.
 
 ## Workflow
 
-1. Run the migration doctor. If it reports an active retired package, routing
-   is blocked until that duplicate selection is removed.
+1. Run the migration doctor. Report its `broker_runtime` field separately from
+   native artifact availability. Routing is blocked until retired selections
+   are removed and the canonical selected broker lane passes its closed
+   liveness proof.
 2. Resolve the current primary/model/session from host evidence or explicit
    configuration. Do not infer the primary from installed CLIs.
 3. Submit a bounded `readiness` request for each exact matrix row:
@@ -50,6 +52,7 @@ agent-collab runtime:
 - package conflicts: <none | names>
 - async inbox: <observed ready | typed unavailable; readiness only>
 - native artifact: <verified | typed unavailable | invalid status>
+- broker runtime: <ready | unavailable | integrity_error | unproven>
 - gemini/advisory: <status>
 - gemini/governance: <status + artifact-bound proof readiness>
 - gemini/long_context: <status>
