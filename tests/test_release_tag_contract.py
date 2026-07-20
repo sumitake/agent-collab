@@ -164,5 +164,57 @@ class TagGrammarTests(unittest.TestCase):
         self.assertEqual(self.rtc.validate_tag_name("v10.20.30"), "v10.20.30")
 
 
+    def test_canonical_field_ORDER_is_enforced_independently(self) -> None:
+        """Isolates the order check: every field present and valid, only reordered.
+
+        Without this, deleting the canonical-order check leaves the suite green — the
+        other tests all use correctly-ordered messages, so the ordering rule was
+        advertised but unproven.
+        """
+        good = self._message().rstrip("\n").split("\n")
+        title, fields = good[0], good[1:]
+        for i in range(len(fields) - 1):
+            swapped = list(fields)
+            swapped[i], swapped[i + 1] = swapped[i + 1], swapped[i]
+            message = "\n".join([title] + swapped) + "\n"
+            with self.subTest(swap=i):
+                with self.assertRaisesRegex(self.rtc.TagContractError, "canonical order"):
+                    self.rtc.parse_tag_message(message, tag="v4.1.0")
+
+    def test_exactly_one_trailing_newline_is_enforced(self) -> None:
+        """Isolates the final-newline rule: zero and two newlines both fail.
+
+        Canonical form means one message, one byte sequence — accepting either
+        variant would make distinct byte sequences validate as the same message.
+        """
+        body = self._message().rstrip("\n")
+        for label, message in (("no trailing newline", body),
+                               ("two trailing newlines", body + "\n\n"),
+                               ("leading newline", "\n" + body + "\n")):
+            with self.subTest(label=label):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.parse_tag_message(message, tag="v4.1.0")
+
+    def test_asset_names_must_be_portable(self) -> None:
+        # A release asset may be materialized on any consumer platform: a trailing
+        # dot or a Windows reserved device stem silently becomes a different file.
+        for bad in ("CON", "NUL.plugin", "AUX", "COM1.plugin", "LPT9.plugin",
+                    "trailing.", "name.."):
+            message = self._message().replace("Asset-Name: agent-collab v4.1.0.plugin",
+                                              f"Asset-Name: {bad}")
+            with self.subTest(bad=bad):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.parse_tag_message(message, tag="v4.1.0")
+
+    def test_oversized_input_is_bounded(self) -> None:
+        # Bounds so oversized input fails cheaply, and so a tag can never exceed a
+        # filesystem/ref component limit and fail deep inside a path operation.
+        with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
+            self.rtc.validate_tag_name("v1." + "9" * 80 + ".0")
+        huge = self._message().rstrip("\n") + "\nAsset-Name: " + "a" * 8000 + "\n"
+        with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
+            self.rtc.parse_tag_message(huge, tag="v4.1.0")
+
+
 if __name__ == "__main__":
     unittest.main()

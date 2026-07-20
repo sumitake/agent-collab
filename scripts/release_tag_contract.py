@@ -4,11 +4,12 @@
 Design of record: `docs/design/release-cut-pipeline-v2-saga-design.md` (the v3
 release-saga architecture) and `pr4-cut-release-activation-design.md` V3/V9.
 
-The signed annotated tag is the release's trust anchor: CI verifies its signature
-against an out-of-tree pinned key and takes the asset/manifest digests FROM THE TAG
-(never from a dispatch payload or a local journal). That makes the tag message a
-parsing surface an attacker will probe, so the grammar is deliberately strict and
-total: exact field set, canonical order, no duplicates, no unknown fields, no extra
+In the v3 design the signed annotated tag WILL BE the release's trust anchor: CI is
+to verify its signature against an out-of-tree pinned key and take the asset/manifest
+digests FROM THE TAG (never from a dispatch payload or a local journal). Nothing
+imports this module yet, so that flow is the intended future behaviour, not current
+behaviour. It is what makes the tag message a parsing surface an attacker will probe,
+so the grammar is deliberately strict and total: exact field set, canonical order, no duplicates, no unknown fields, no extra
 material, canonical digest form, ASCII only, bare-basename asset names. Anything
 else fails closed.
 
@@ -32,6 +33,15 @@ _REQUIRED = ("schema", "Asset-Name", "Asset-SHA256", "Manifest-SHA256")
 _SHA256_RE = re.compile(r"\A[0-9a-f]{64}\Z")          # lowercase-only, canonical
 _ASSET_NAME_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._ -]{0,127}\Z")
 _TAG_RE = re.compile(r"\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
+# Bounds, so oversized input fails cheaply and a tag can never exceed a filesystem
+# or ref component limit and then fail deep inside a path/ref operation instead.
+_MAX_TAG_LEN = 64
+_MAX_MESSAGE_BYTES = 4096
+# Windows reserved device names: a file called CON or NUL.plugin is not a file.
+_RESERVED_STEMS = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+)
 # \A/\Z, never ^/$: `$` also matches BEFORE a trailing newline, so "v1.0.0\n"
 # would pass and become a filename containing a newline. Leading zeros are
 # rejected too — "v01.0.0" and "v1.0.0" must not be two names for one release.
@@ -50,12 +60,17 @@ class TagContractError(ValueError):
 def validate_tag_name(tag: str) -> str:
     """Reject any tag string before it is used in a path, ref, or command.
 
-    `refs/tags/<tag>` and `refs/tags/revoked-<tag>` both interpolate this, so a
-    traversal or ref-injection attempt must be stopped at the boundary rather
-    than deep inside a filesystem or git operation.
+    `refs/tags/<tag>` and `refs/tags/revoked-<tag>` are INTENDED to interpolate this,
+    so a traversal or ref-injection attempt is stopped at the boundary rather than
+    deep inside a filesystem or git operation. (No caller exists yet — see the scope
+    note above.)
     """
     if not isinstance(tag, str) or not _TAG_RE.match(tag):
         raise TagContractError(f"tag must be vMAJOR.MINOR.PATCH, got {tag!r}")
+    if len(tag) > _MAX_TAG_LEN:
+        raise TagContractError(
+            f"tag exceeds {_MAX_TAG_LEN} characters; refusing before it reaches a ref or path"
+        )
     return tag
 
 
@@ -83,6 +98,9 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
     """
     if not isinstance(message, str) or not message.strip():
         raise TagContractError("tag message is empty")
+    # Bound BEFORE strip/split so oversized input is cheap to reject.
+    if len(message.encode("utf-8", "surrogateescape")) > _MAX_MESSAGE_BYTES:
+        raise TagContractError(f"tag message exceeds {_MAX_MESSAGE_BYTES} bytes")
     if not message.isascii():
         raise TagContractError("tag message must be ASCII")
 
@@ -130,6 +148,15 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
         raise TagContractError(f"unsafe asset name: {fields['Asset-Name']!r}")
     if "/" in fields["Asset-Name"] or "\\" in fields["Asset-Name"]:
         raise TagContractError("asset name must be a bare basename")
+    # A release asset may be materialized on any consumer platform, so the name
+    # must be portable: a trailing dot or a Windows reserved device stem (CON,
+    # NUL, COM1, ...) can silently become a different file, or none at all.
+    if fields["Asset-Name"].endswith("."):
+        raise TagContractError("asset name must not end with a dot (not portable)")
+    if fields["Asset-Name"].split(".")[0].upper() in _RESERVED_STEMS:
+        raise TagContractError(
+            f"asset name uses a reserved device stem: {fields['Asset-Name']!r}"
+        )
     for key in ("Asset-SHA256", "Manifest-SHA256"):
         if not _SHA256_RE.match(fields[key]):
             raise TagContractError(
