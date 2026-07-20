@@ -181,6 +181,15 @@ class ReleaseCommitTopologyTests(unittest.TestCase):
                 [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
                 expected_artifact=self.ARTIFACT,
                 parent_mode="100644", release_mode="100755")
+        # ISOLATES the change-guard: 100755 -> 100644 ends at the expected mode,
+        # so the wrong-mode guard cannot catch it. Without this case the
+        # change-guard survives deletion (the other guard covers the obvious
+        # direction) and the test proves less than it appears to.
+        with self.assertRaisesRegex(self.rtc.TagContractError, "changed the manifest file mode"):
+            self.rtc.assert_release_commit_delta(
+                [self.rtc.MANIFEST_PATH], parent_manifest=before, release_manifest=after,
+                expected_artifact=self.ARTIFACT,
+                parent_mode="100755", release_mode="100644")
         # An unchanged-but-wrong mode is refused too, not just a change.
         with self.assertRaisesRegex(self.rtc.TagContractError, "must be 100644"):
             self.rtc.assert_release_commit_delta(
