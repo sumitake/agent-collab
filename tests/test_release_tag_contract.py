@@ -242,5 +242,29 @@ class TagGrammarTests(unittest.TestCase):
                                     asset_sha256=GOOD_ASSET, manifest_sha256=GOOD_MANIFEST)
 
 
+    def test_every_rejection_is_a_TagContractError(self) -> None:
+        """The parser's contract is TOTAL: no raw exception may escape.
+
+        `encode()` on a lone surrogate raises UnicodeEncodeError, which would
+        escape the contract — so ASCII is established before any encoding.
+        """
+        for bad, why in (("\ud800agent-collab v1.0.0\n", "lone surrogate"),
+                         ("caf\u00e9\n", "non-ascii"),
+                         ("\udcff" * 10 + "\n", "surrogate run")):
+            with self.subTest(why=why):
+                with self.assertRaises(self.rtc.TagContractError):
+                    self.rtc.parse_tag_message(bad, tag="v1.0.0")
+
+    def test_tag_length_bound_precedes_the_regex_scan(self) -> None:
+        """ORDERING: a bound that runs after an unbounded scan is not a bound.
+
+        An over-long AND syntactically-invalid tag must be rejected by the length
+        guard ("exceeds"), not by the regex ("must be vMAJOR...") — which is only
+        true if the length check runs first.
+        """
+        with self.assertRaisesRegex(self.rtc.TagContractError, "exceeds"):
+            self.rtc.validate_tag_name("x" * 200)
+
+
 if __name__ == "__main__":
     unittest.main()

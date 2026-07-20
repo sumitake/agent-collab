@@ -71,12 +71,16 @@ def validate_tag_name(tag: str) -> str:
     deep inside a filesystem or git operation. (No caller exists yet — see the scope
     note above.)
     """
-    if not isinstance(tag, str) or not _TAG_RE.match(tag):
+    if not isinstance(tag, str):
         raise TagContractError(f"tag must be vMAJOR.MINOR.PATCH, got {tag!r}")
+    # Length BEFORE the regex: a bound that runs after an unbounded scan is not a
+    # cheap bound. Ordering is a property, so it has its own test.
     if len(tag) > _MAX_TAG_LEN:
         raise TagContractError(
             f"tag exceeds {_MAX_TAG_LEN} characters; refusing before it reaches a ref or path"
         )
+    if not _TAG_RE.match(tag):
+        raise TagContractError(f"tag must be vMAJOR.MINOR.PATCH, got {tag!r}")
     return tag
 
 
@@ -114,12 +118,13 @@ def parse_tag_message(message: str, *, tag: str) -> dict[str, str]:
         raise TagContractError(f"tag message exceeds {_MAX_MESSAGE_BYTES} bytes")
     if not message.strip():
         raise TagContractError("tag message is empty")
-    # Precise byte check, now bounded to at most _MAX_MESSAGE_BYTES characters.
-    if len(message.encode("utf-8", "surrogateescape")) > _MAX_MESSAGE_BYTES:
-        raise TagContractError(f"tag message exceeds {_MAX_MESSAGE_BYTES} bytes")
+    # ASCII check BEFORE any encoding. encode() on a lone surrogate raises a raw
+    # UnicodeEncodeError, which would escape this parser's contract that every
+    # rejection is a TagContractError. Once ASCII is established, byte length ==
+    # character length, so the character bound above IS the byte bound and a
+    # separate encode() check would be redundant as well as unsafe.
     if not message.isascii():
         raise TagContractError("tag message must be ASCII")
-
     validate_tag_name(tag)
     # Exactly one trailing newline and no other surrounding whitespace: accepting
     # "equal after strip()" would make several distinct byte sequences validate
