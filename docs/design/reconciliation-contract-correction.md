@@ -193,3 +193,40 @@ locate and read that artifact's existing contract. "Audited execution on an unau
 premise is still wrong" is already in the project directives as a delegation rule; it
 applies to my own work identically. A premise check is one grep and it would have
 saved this entire sub-effort.
+
+---
+
+## Two further findings, both routed to the matrix rather than patched
+
+Codex bot on `84ba93d`. Confirmed, deliberately not fixed inline — the first is
+inside the design stop, and the second is recorded rather than coded because the
+lesson of this PR is that reactive fixes to this module generate the next finding.
+
+**F1 (P1) — a CI-labelled state in the local journal skips the publication check.**
+Setting the journal to `DRAFT_VERIFIED` / `PUBLISHED` / `ATTESTED` puts it outside
+`STATES`, so the publication-before-dispatch guard never runs. With otherwise
+matching evidence, `require_consistent` accepts a published release with no
+dispatch and no CI receipt. Verified: an A1 attacker edits one local file and an
+out-of-pipeline publication is reported consistent.
+
+This is **bypass class 5 (tampered-journal steering)** from the enumeration above,
+and worth noting as a positive signal: the threat model named this class before the
+bot found the instance. The matrix should therefore cover it *by construction*
+rather than as a patch — which is the entire argument for R1.
+
+The rule it implies, for the CI-state rows: a CI-labelled state is a CLAIM by the
+most-tamperable source about work only CI can perform, so it may never be *trusted*
+— it must be corroborated by authenticated external evidence (a dispatch run, a CI
+receipt) or treated as inconsistent. Concretely, the three CI rows require dispatch
+evidence and forbid "published without it", and the local cutter still cannot write
+them (already enforced in `advance()`; this closes the read side).
+
+**F2 (P2) — creating the journal directory is not durably persisted.**
+`_atomic_write` calls `mkdir` then fsyncs only the newly created directory, not the
+parent whose entry changed. Power loss can therefore remove the directory after
+`save()` returned success, destroying the write-ahead `*_PENDING` record that
+recovery exists for. The fix is to fsync the parent when the directory is created —
+narrow and mechanical, but it belongs with the durability work rather than as a
+sixth reactive commit to this file.
+
+Both are work items for the post-convergence implementation, not inline patches.
