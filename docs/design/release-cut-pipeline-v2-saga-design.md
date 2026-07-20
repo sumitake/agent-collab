@@ -372,3 +372,68 @@ the piece-by-piece findings.
   the *implementation* so each PR is separately reviewable yet built against this one
   converged spec — and does any piece have a hard ordering dependency (e.g. intent carrier
   before any receipt logic)?
+
+---
+
+## Adversarial design review round 2 — VERDICT: RECONSIDER (HIGH), 13 blocking
+
+Full text: `reviews/pipeline-v2-adversarial-review-2.md`. Reviewer: Codex (distinct family;
+Grok's managed route failed closed on two attempts). The findings are correct and converge
+on one root, which is an **operator decision**, not a design defect I can iterate away.
+
+### The root finding — authority relocated, not established
+
+v2 correctly removed authority from the tamperable local journal (finding 10, round 1). But
+it then made **remote receipts** (releases, assets, bodies, workflow inputs) the authority —
+and on this repo those are **equally attacker-writable** by an A2 repo-writer. So v2 moved
+the mutable authority from one attacker-writable place to another without adding
+authenticity or monotonicity (review findings 10, 11). Concretely, the review showed:
+
+- **Four-valued observation is not enough for a history (2).** ABSENT is transient: observe
+  ABSENT → A2 creates the object → cutter issues create. Every read was authoritative, yet
+  the sequence was not linearizable. GitHub has no server-side CAS/idempotency and no global
+  snapshot, so "epoch" has no implementable definition and ABA is undetectable.
+- **The tag-push is not a global fence (5).** Two cutters pushing the *identical* tag object
+  both succeed (`git push` reports "up to date", not a losing CAS).
+- **The immutability premise is unavailable (6, 12).** On GitHub **Free private** repos,
+  branch/tag rulesets require Pro/Team/Enterprise, and immutable releases are Enterprise
+  Cloud. §5's fence and Q6's revocation cannot be enforced on this tier at all.
+- **Signer policy in the release-commit tree is not out of band (8).** An A2 who can write
+  the tree can commit a policy naming its own key.
+- **Compensation ordering can destroy the recovery root (7).** Rollback may delete the
+  signed tag before burn is durable; a crash there leaves the version unburned with no
+  recovery anchor.
+
+### Why this is not a v3-design problem — it is V0, already decided
+
+The parent design's **V0 (operator decision (a))** already states this posture honestly:
+repo writers can manage releases; the pipeline **does not** claim a tampered artifact cannot
+be *published*; the claim is that a tampered artifact cannot be *accepted/installed by
+conforming consumers* (fail-closed until `ATTESTED` + verify the CI receipt). Authority
+isolation (a separate publication repo) is recorded there as **"the available upgrade, not
+implemented."**
+
+My v2 drifted past that approved baseline: it tried to make the *producer pipeline* prevent
+A2, which V0 had already declared out of scope and which the review proves infeasible on the
+current infrastructure. Most of the 13 findings are attacks on a prevention guarantee the
+design should never have claimed.
+
+### The fork — an operator cost-tier decision
+
+The design genuinely forks on a decision only the operator can make (cost-tier — an
+operator-required class), so implementation is blocked on it:
+
+- **Fork A — stay free-tier, align to V0.** Re-scope v2 so the producer defends **A1**
+  (local tampering), **A3** (confused-deputy/wiring), accidental corruption, and
+  crash-resume correctness; **detects** but does not claim to prevent A2; revocation is
+  best-effort → consumer rejection → higher patch (not a hard guarantee). Prevention is
+  consumer-side (PR-6, fail-closed). Honest, achievable now, salvages the directionally-
+  correct v2 work (finding 14: journal-irrelevance, FD-locking, four-valued observation,
+  schema reuse, explicit recovery, mutation tests all stay).
+- **Fork B — invest in authority isolation / paid tier.** A separate publication repo with
+  protected refs + immutable releases (Enterprise) or Pro/Team rulesets, so the pipeline can
+  actually make an A2-resistance claim and enforce hard revocation. Materially different,
+  stronger, requires operator spend + infra setup.
+
+The directionally-correct v2 mechanisms are retained under **either** fork; the fork decides
+only what the pipeline is allowed to *claim* and what infrastructure backs it.
