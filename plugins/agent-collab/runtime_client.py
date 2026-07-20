@@ -1330,6 +1330,17 @@ def classify_host_context() -> str:
     return "generic"
 
 
+class _OperatorHomeUnavailable(ValueError):
+    """Operator-home could not be resolved at a launchctl call site.
+
+    A ValueError subclass (backward-compatible with existing `except ValueError`
+    callers) that lets the idle-probe loop distinguish this ENVIRONMENTAL
+    failure — including a transient `getpwuid` failure on `_launchctl`'s
+    per-call re-resolution — from a genuine code-bug ValueError, without a racy
+    re-check of `_operator_home()`.
+    """
+
+
 def _operator_home() -> str | None:
     if _pwd is None:
         return None
@@ -4013,7 +4024,7 @@ def _launchctl(
         timeout_ms = min(timeout_ms, remaining * 1000)
     home = _operator_home()
     if home is None:
-        raise ValueError("operator home is unavailable")
+        raise _OperatorHomeUnavailable("operator home is unavailable")
     command = ["/bin/launchctl", *arguments]
     process = subprocess.Popen(
         command,
@@ -4178,12 +4189,8 @@ def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
     # loop below. _JOB_LABEL_RE mirrors the check inside _job_process_idle.
     if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
         raise ValueError("provider job label is invalid")
-    # Pre-check operator-home OUT of the loop: its absence is an environmental
-    # condition (not a caller bug), so fail closed to "not idle" here rather
-    # than catching the resulting ValueError inside the loop. This keeps the
-    # loop's except narrow (spawn/probe failures only) so a genuine code-bug
-    # ValueError still propagates instead of being masked as a failed idle
-    # proof.
+    # Pre-check operator-home once as an early-out for the common
+    # not-yet-configured case.
     if _operator_home() is None:
         return False
     while True:
@@ -4191,14 +4198,21 @@ def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
             return False
         try:
             idle = _job_process_idle(label, deadline=deadline)
-        except (OSError, RuntimeError, subprocess.SubprocessError):
-            # An accepted-request idle probe that cannot be completed
-            # (launchctl spawn failure, deadline expiry, subprocess error) is a
+        except (
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+            _OperatorHomeUnavailable,
+        ):
+            # An accepted-request idle probe that cannot be completed is a
             # failed idle proof -> not idle. The accepted-request boundary then
-            # types this as TEARDOWN_ERROR, not PROTOCOL_ERROR. ValueError is
-            # deliberately NOT caught: label and operator-home (the only
-            # environmental ValueError sources) are handled above, so any
-            # ValueError here is a code bug that must surface.
+            # types this as TEARDOWN_ERROR, not PROTOCOL_ERROR. This covers a
+            # launchctl spawn failure, deadline expiry, subprocess error, and
+            # (via the typed _OperatorHomeUnavailable) _launchctl's per-call
+            # operator-home re-resolution failing after the entry pre-check —
+            # without a racy re-check. A plain ValueError (a genuine code bug;
+            # label is pre-validated and timeout/deadline are fixed/pre-checked)
+            # is deliberately NOT caught and still surfaces.
             return False
         if idle:
             return True

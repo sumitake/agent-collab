@@ -5567,6 +5567,55 @@ print(json.dumps({{
             )
         probe.assert_not_called()
 
+    def test_wait_for_job_idle_fails_closed_on_home_failure_inside_loop(self) -> None:
+        # _launchctl re-resolves operator-home on every call, so a transient
+        # getpwuid failure AFTER the entry pre-check passed makes an in-loop
+        # probe raise ValueError("operator home is unavailable"). That
+        # environmental failure must fail closed (not escape as PROTOCOL_ERROR).
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=self.client._OperatorHomeUnavailable(
+                "operator home is unavailable"
+            ),
+        ):
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+
+    def test_launchctl_raises_typed_operator_home_unavailable(self) -> None:
+        # _launchctl raises the typed subclass (not a bare ValueError) so the
+        # idle loop can distinguish this environmental case race-free.
+        with mock.patch.object(self.client, "_operator_home", return_value=None):
+            with self.assertRaises(self.client._OperatorHomeUnavailable):
+                self.client._launchctl(["print", "gui/0/x"])
+        # It remains a ValueError subclass for backward compatibility.
+        self.assertTrue(
+            issubclass(self.client._OperatorHomeUnavailable, ValueError)
+        )
+
+    def test_wait_for_job_idle_reraises_a_genuine_code_bug_value_error(self) -> None:
+        # A ValueError that is NOT the environmental operator-home case (home
+        # still resolves) is a code bug and must propagate, not be masked as a
+        # failed idle proof.
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client, "_operator_home", return_value=str(self.root)
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=ValueError("provider job label is invalid"),
+        ):
+            with self.assertRaises(ValueError):
+                self.client._wait_for_job_idle(label, deadline=101.0)
+
     def test_wait_for_job_idle_rejects_invalid_label_before_probe(self) -> None:
         # Label validation is hoisted to entry: an invalid label is a caller
         # bug that must raise, not be swallowed by the fail-closed loop.

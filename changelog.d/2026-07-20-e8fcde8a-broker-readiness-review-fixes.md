@@ -2,9 +2,11 @@
 
 - Type an accepted-request idle-probe failure as a teardown failure, not a
   protocol error: `_wait_for_job_idle` now fails closed on the expected
-  `OSError` / `subprocess.SubprocessError` (and a pre-checked
-  operator-home-unavailable) instead of letting them escape, while still
-  raising on an invalid job label so a caller bug stays visible.
+  `OSError` / `subprocess.SubprocessError` and on a typed
+  `_OperatorHomeUnavailable` raised by `_launchctl`'s per-call operator-home
+  re-resolution (a `ValueError` subclass, so the environmental case is caught
+  race-free while a genuine code-bug `ValueError` and an invalid job label
+  still surface).
 - Bound provider teardown by the caller deadline: `_terminate_and_reap` polls
   to reap the SIGKILLed session-group leader within a small grace of the
   caller deadline rather than two fixed five-second waits, and reports a
