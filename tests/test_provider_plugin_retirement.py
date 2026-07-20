@@ -155,8 +155,10 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             codeql,
         )
         self.assertIn("if: github.event.repository.private", codeql)
-        self.assertRegex(
-            codeql, r"actions/upload-artifact@[0-9a-f]{40} # v4"
+        self.assertIn(
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a "
+            "# v7.0.1",
+            codeql,
         )
         self.assertIn("path: ${{ steps.analyze.outputs.sarif-output }}", codeql)
         self.assertIn("scripts/secret_scan.py", secret_scan)
