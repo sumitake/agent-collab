@@ -87,3 +87,62 @@ PR — tag grammar, release-commit topology, strict JSON, type-strict comparison
 transition graph, path validation — is unaffected and stays as reviewed. What must
 not happen is a fifth reactive patch to this function while its contract is still
 undefined.
+
+---
+
+## Threat model and enumerated bypass classes (added; should have come FIRST)
+
+This section is what the adversarial-architecture-review directive requires *before*
+codegen, and its absence is why this surface took four post-hoc rounds instead of one
+confirming round. The reviewer's job is to attack this enumeration and name what is
+missing, before any code is written against it.
+
+**Attacker model.** Three distinct capabilities, deliberately separated because they
+defeat different controls:
+
+- **A1 — local-state attacker.** Can write the operator-local journal and lock files
+  (they are plain files under `.git/`). Cannot forge a signed tag. This is the model
+  the "signed tag wins" invariant exists for.
+- **A2 — repo-writer attacker.** Can push commits/tags/releases to a repo with no
+  branch protection (this repo is free-tier). Can create, delete, and recreate remote
+  tags, drafts, and assets. Cannot obtain the signing key.
+- **A3 — confused-deputy caller.** Not malicious; a future wiring caller that omits an
+  argument, passes the wrong commit, or supplies caller-derived data instead of
+  git-derived data. Historically the most productive class in this PR.
+
+**Bypass classes the matrix must be shown to handle.** Illustrative, not exhaustive —
+the reviewer should add classes:
+
+1. **Absence-as-agreement.** Missing evidence read as consistent. Has now appeared
+   three times in one function (required evidence, recorded identity, `journal=None`).
+   Every cell must state what absence MEANS, never leave it implicit.
+2. **Residue-as-success.** State that should be GONE but is not — a rollback that
+   deleted the tag but not the draft, or the asset but not the release. The column
+   never asked about, and the source of P1-b.
+3. **Substitution under a stable name.** A remote object deleted and recreated with
+   the same name but a different identity (tag → different OID, asset → same digest,
+   different id). Defeats any check keyed on name rather than identity.
+4. **Adoption of unowned state.** A fresh clone, or a journal-less run, silently
+   inheriting a remote cut it never performed (P1-a). Must route to explicit verified
+   recovery, never proceed.
+5. **Tampered-journal steering.** A2 or A1 editing the local journal to select a
+   weaker path — routing an activation cut into a legacy path, or marking a live cut
+   terminal so its guards are skipped.
+6. **Type and value punning.** Python equality collapsing `3/3.0`, `1/True`, `0/False`,
+   and truthiness collapsing `0`/`""`/`[]`/`{}` with `None`. Already bit this PR twice
+   at different depths; the matrix must specify comparisons as type-strict.
+7. **TOCTOU on ownership.** Any check separated from the action it guards — the lock's
+   read-then-unlink (P2), and by extension any "verify then act" on remote state that
+   can change between the two calls.
+8. **Partial-progress ambiguity.** A `*_PENDING` state is genuinely "may or may not have
+   landed"; the matrix must distinguish that legitimate ambiguity from an inconsistency,
+   or resume either re-fires effects or refuses valid resumes.
+9. **Terminal-state escape.** Transitions into or out of terminal/CI states that bypass
+   the graph because the graph only governs the forward list (already seen once).
+10. **Caller-supplied evidence.** Anything the gate accepts as fact rather than deriving
+    from a pinned git object — paths, manifests, modes today. A3's main lever.
+
+**What the reviewer is asked to attack:** which class above is under-specified enough
+that an implementer improvises; which class is missing entirely; and whether the R1
+matrix as scoped can actually be enumerated finitely, or whether it hides an unbounded
+case space that needs a different structure.
