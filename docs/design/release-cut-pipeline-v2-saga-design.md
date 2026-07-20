@@ -549,3 +549,83 @@ compensation is refined:
 
 This is a case where getting the *verified* infrastructure into the design improved it: the
 fence the review said we couldn't have turns out to also close a logic finding.
+
+---
+
+## Adversarial design review round 3 — RECONSIDER (HIGH), 5 blocking + 3 non-blocking
+
+Full text: `reviews/pipeline-v3-adversarial-review-3.md`. Reviewer: Codex against the VERIFIED,
+ENFORCED infrastructure (Grok's managed route failed closed a third time). This is
+**convergence**: round 2's 13 architectural blockers became 5 constructive ones, and the
+former infrastructure-infeasibility findings dropped to non-blocking. Each remaining finding
+names a specific mechanism, and the two largest point at real GitHub primitives. Resolutions,
+all folded into the design:
+
+**R3-1 (ABA on drafts/assets) — idempotent create, drop "epoch".** Tag + `main` immutability
+make those two anchors monotonic, but GitHub gives no global snapshot or CAS for
+releases/assets, so `ABSENT` justifies at most ONE non-destructive create — it cannot prove
+historical "not-started". §2/§3 change from *observe-ABSENT-then-create* to **attempt the
+create and handle the response**: `201` → capture server ids; `422` (GitHub's same-name asset
+collision) → re-enumerate and validate the existing object's FULL identity against intent
+(adopt if equal, STOP if it conflicts). The unimplementable "shared epoch" abstraction is
+**removed** (it was never backed by an API primitive). The tag still fences competing intents;
+concurrent same-intent recovery is handled by idempotent-create + identity validation.
+
+**R3-2 (attempt-id = correlation, not authorship) — safe-equivalence, not an execution
+lease.** This is a conceptual correction that *simplifies* the design. The signed tag is a
+valid authorization ROOT but not an execution lease; a public attempt-id is copyable by A2, so
+`completed-by-this-attempt` was unjustifiable. Replace it with **`completed-equivalently-to-
+intent`**: a step is done iff the landed remote state matches the SIGNED INTENT (repo id,
+commit, digests, names, sizes) — regardless of which executor produced it. Safe because the
+signed intent fully determines the correct state; if the remote equals intent, it is correct
+no matter who wrote it. The whole `*-by-this-attempt` / `-by-another-attempt` distinction is
+dropped.
+
+**R3-3 (receipt authenticity) — GitHub artifact attestations.** "Run id + matching public
+input" is not an authenticated receipt. `ATTESTED` now means a **cryptographically verified
+GitHub artifact attestation** binding {repository id, tag-object OID, peeled commit,
+intent digest, release id, full asset identity, workflow identity+commit, run id, verification
+result, publication state}. Public-repo attestations are written to an **immutable
+transparency log**; PR-6 consumers verify the attestation and pin the signer workflow. This is
+the authenticated, monotonic receipt the design needed and could not get from mutable release
+metadata.
+
+**R3-4 (rollback direction-loss window) — write-ahead the rollback DECISION.** My tag-tombstone
+fix preserved the recovery ROOT but not the rollback DECISION: rollback deletes assets+draft,
+crashes before the burn, and recovery then sees an intact tag + no burn + absent forward
+effects → and could wrongly RESUME FORWARD, recreating the draft. Fix: commit a **signed
+`rollback-started` record to protected `main` BEFORE the first destructive compensation**. Once
+durable, cleanup is safely re-drivable and recovery reads the decision. Tombstone (root) +
+rollback-started (decision) together close finding 7 completely.
+
+**R3-6 (admin bypass must not be the cutter's identity) — BLOCKING, and it implicates the
+ruleset I just created.** The `v*` ruleset gives `actor_id 5` (admin) an `always` bypass as an
+operator escape hatch. But `cut_release.py` is described as a local operator tool run with the
+operator's own (admin) credentials — which means the **automated cutter would itself bypass the
+fence**, so a cutter bug or a stolen release credential could overwrite/delete protected refs.
+Fix: the cutter MUST authenticate as a **non-bypass release principal**, and **preflight fails
+closed if the authenticated actor has bypass authority** over the tag/main rulesets. The admin
+`always` bypass stays for MANUAL operator emergencies only. **This likely requires the operator
+to provision a dedicated non-admin release identity/token** — flagged as an operator decision
+below.
+
+**R3-7 (non-blocking) — ruleset operational preflight.** Before every cut, verify ruleset
+`19198252` is active, targets tags, covers the canonical tag, blocks deletion + non_fast_forward,
+and has no unexpected bypass principal. Constrain versions to the canonical `v\d+\.\d+\.\d+`
+(already enforced by `validate_tag_name`) so a `V…` or slash-containing ref cannot escape
+`refs/tags/v*` (ruleset glob `*` does not cross `/`) — defense in depth with the grammar.
+
+**R3-5, R3-8 (non-blocking, confirmed sound).** Burn records on protected `main` are sound
+against the stated A2 given a domain-separated signature under the pinned revocation policy +
+reachability from freshly-fetched protected `origin/main` (not GitHub's generic "verified
+commit" status). The CI-verify→publish window is acceptable under V0 provided consumers hash the
+bytes they downloaded, match the signed digest+name, and verify the CI **attestation** (not
+`gh release verify`, which is for Enterprise immutable releases).
+
+### New operator decision surfaced (R3-6)
+
+The automated cutter needs a **non-admin, non-bypass release identity** so it is itself subject
+to the tag/main rulesets. Options: (a) a dedicated fine-grained PAT / GitHub App with write (not
+admin) scope for the release job; (b) scope the ruleset bypass to a specific operator identity
+used only for manual emergencies, never by the cutter. Either is an operator/infra provisioning
+choice; the design's preflight enforces "authenticated actor must not have bypass" regardless.
