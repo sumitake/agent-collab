@@ -2869,7 +2869,10 @@ def _capture_broker_lanes(
         for role in ("selected", "retained"):
             document = selector.get(role)
             if document is not None:
-                lanes.append(_load_selector_v2_lane(root, document, role=role))
+                lane = _load_selector_v2_lane(root, document, role=role)
+                if role == "retained" and not _job_loaded(lane.label):
+                    continue
+                lanes.append(lane)
         if not lanes:
             raise ValueError("provider dispatcher has no committed normal lane")
         return tuple(lanes), None
@@ -5779,8 +5782,10 @@ def broker_status() -> RuntimeResult:
             rollback_available = False
             retained = selector.get("retained")
             if retained is not None:
-                _load_selector_v2_lane(root, retained, role="retained")
-                rollback_available = True
+                retained_lane = _load_selector_v2_lane(
+                    root, retained, role="retained"
+                )
+                rollback_available = _job_loaded(retained_lane.label)
 
             if _read_broker_selector_view(root) != selector:
                 raise ValueError("provider broker selector changed during status proof")

@@ -1912,6 +1912,61 @@ print(json.dumps({{
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
 
+    def test_capture_omits_retained_lane_with_unloaded_job(self) -> None:
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            manifest_digest="f" * 64,
+            artifact_digest="e" * 64,
+        )
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=29,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.selected",
+            socket_path=self.root / "selected.sock",
+        )
+        retained = self.client.BrokerLaneSnapshot(
+            name="retained",
+            generation=28,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+            label="com.agent-collab.provider-dispatcher.retained",
+            socket_path=self.root / "retained.sock",
+        )
+        selector = self._selector_v2_document(
+            selected={
+                "artifact_sha256": selected.artifact_digest,
+                "manifest_sha256": selected.manifest_digest,
+                "transport": "dispatcher",
+                "protocol_version": 2,
+                "lane_generation": selected.generation,
+            },
+            retained={
+                "artifact_sha256": retained.artifact_digest,
+                "manifest_sha256": retained.manifest_digest,
+                "transport": "dispatcher",
+                "protocol_version": 1,
+                "lane_generation": retained.generation,
+            },
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=(selected, retained),
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=False
+        ) as job_loaded:
+            lanes, error = self.client._capture_broker_lanes(resolution)
+
+        self.assertEqual(lanes, (selected,))
+        self.assertIsNone(error)
+        job_loaded.assert_called_once_with(retained.label)
+
     def test_handshake_client_accepts_committed_green_with_blue_fallback(self) -> None:
         resolution = self.client.RuntimeResolution(
             self.client.RuntimeStatus.OK,
@@ -4014,6 +4069,58 @@ print(json.dumps({{
 
         self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
         self.assertEqual(result.error, "provider broker status could not be proven")
+
+    def test_broker_status_does_not_advertise_unloaded_retained_job(self) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        selector["retained"] = dict(selector["selected"])
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=29,
+            artifact_digest="c" * 64,
+            manifest_digest="d" * 64,
+            label="com.agent-collab.provider-dispatcher.selected",
+            socket_path=root / "selected.sock",
+        )
+        retained = replace(
+            selected,
+            name="retained",
+            generation=28,
+            label="com.agent-collab.provider-dispatcher.retained",
+            socket_path=root / "retained.sock",
+        )
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=(selected, retained),
+        ), mock.patch.object(
+            self.client, "_job_loaded", side_effect=(True, False)
+        ) as job_loaded, mock.patch.object(
+            self.client, "_exact_mode", return_value=object()
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=True
+        ):
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+        self.assertTrue(result.result["active"])
+        self.assertTrue(result.result["dispatcher_ready"])
+        self.assertFalse(result.result["rollback_available"])
+        self.assertEqual(
+            job_loaded.call_args_list,
+            [mock.call(selected.label), mock.call(retained.label)],
+        )
 
     def test_v1_green_derivation_accepts_already_drained_blue_plane(self) -> None:
         root = self.root / "broker-state"

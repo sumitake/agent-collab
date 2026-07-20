@@ -11,6 +11,10 @@
 - Require the one-shot launchd job to return idle and every retained fallback
   lane to remain independently verifiable before status can claim executable
   readiness, matching the topology that request routing will actually accept.
+- Advertise a retained lane as rollback-capable, and include it as a request
+  fallback, only when its own launchd job is currently loaded. Retained job
+  availability is a point-in-time snapshot and does not deactivate a healthy
+  selected lane.
 - Treat a selectorless legacy broker as installed but unavailable even when its
   old socket responds, because current request routing cannot capture an
   executable lane without the same canonical selector proof.
@@ -35,6 +39,7 @@
 - Added RED/GREEN regressions for selector-v1 projection, legacy selected-lane
   liveness, selectorless legacy false-positive rejection, one-shot idle
   completion, invalid retained-lane rejection,
+  unloaded retained-job rollback and fallback suppression,
   accepted-request timeout typing and no-fallback behavior, legacy one-shot
   response teardown and deadline reuse, failed dispatcher ping, manifest-only
   doctor readiness, safe Codex rollout identity, and ambiguous or unsafe
