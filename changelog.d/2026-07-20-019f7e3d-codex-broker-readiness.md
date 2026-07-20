@@ -28,11 +28,13 @@
   its response to the next caller, closing the launchd teardown window without
   serializing the concurrent dispatcher-v2 scheduler.
 - Bound that dispatcher-v1 idle proof by the request's existing absolute broker
-  deadline, so teardown verification cannot silently start a fresh timeout.
+  deadline, including every `launchctl` collection and final polling sleep, so
+  teardown verification cannot silently start or overrun a fresh timeout.
 - Resolve Codex Desktop's active OpenAI model from its exact current rollout
   when `CODEX_ACTIVE_MODEL` is absent. The reader is fixed-root, bounded,
   no-follow, same-owner, single-file, and fail-closed on ambiguous, writable,
-  linked, malformed, oversized, or conflicting identity evidence.
+  linked, malformed, oversized, concurrently growing, or conflicting identity
+  evidence.
 
 #### Verification
 
@@ -41,6 +43,6 @@
   completion, invalid retained-lane rejection,
   unloaded retained-job rollback and fallback suppression,
   accepted-request timeout typing and no-fallback behavior, legacy one-shot
-  response teardown and deadline reuse, failed dispatcher ping, manifest-only
-  doctor readiness, safe Codex rollout identity, and ambiguous or unsafe
-  rollout rejection.
+  response teardown, deadline reuse, bounded launchctl collection, and capped
+  polling, failed dispatcher ping, manifest-only doctor readiness, safe Codex
+  rollout identity, and ambiguous, growing, or unsafe rollout rejection.

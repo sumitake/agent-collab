@@ -5469,6 +5469,65 @@ print(json.dumps({{
             {"HOME", "PATH", "LANG", "LC_ALL"},
         )
 
+    def test_launchctl_absolute_deadline_bounds_collection_and_preflight(
+        self,
+    ) -> None:
+        process = mock.Mock(returncode=0)
+        arguments = ["print", f"gui/{os.getuid()}/{self.client.BROKER_LABEL}"]
+        with mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.client,
+            "_collect_bounded_output",
+            return_value=(b"state = not running\n", b"", None),
+        ) as collect, mock.patch.object(
+            self.client.time, "monotonic", side_effect=(100.0, 100.25)
+        ):
+            result = self.client._launchctl(arguments, deadline=101.0)
+
+        self.assertEqual(result.returncode, 0)
+        collect.assert_called_once_with(process, timeout_ms=750.0)
+        popen.assert_called_once()
+
+        with mock.patch.object(
+            self.client.subprocess, "Popen"
+        ) as expired_popen, mock.patch.object(
+            self.client.time, "monotonic", return_value=101.0
+        ):
+            with self.assertRaises(RuntimeError):
+                self.client._launchctl(arguments, deadline=101.0)
+        expired_popen.assert_not_called()
+
+    def test_wait_for_job_idle_propagates_deadline_and_caps_sleep(self) -> None:
+        label = self.client.BROKER_LABEL
+        with mock.patch.object(
+            self.client.time,
+            "monotonic",
+            side_effect=(100.0, 100.04, 100.05),
+        ), mock.patch.object(
+            self.client, "_job_process_idle", return_value=False
+        ) as idle, mock.patch.object(
+            self.client.time, "sleep"
+        ) as sleep:
+            result = self.client._wait_for_job_idle(label, deadline=100.05)
+
+        self.assertFalse(result)
+        idle.assert_called_once_with(label, deadline=100.05)
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.01)
+
+        with mock.patch.object(
+            self.client.time, "monotonic", return_value=100.0
+        ), mock.patch.object(
+            self.client,
+            "_job_process_idle",
+            side_effect=RuntimeError("launchctl deadline expired"),
+        ) as failed_idle:
+            self.assertFalse(
+                self.client._wait_for_job_idle(label, deadline=101.0)
+            )
+        failed_idle.assert_called_once_with(label, deadline=101.0)
+
     def test_lifecycle_entrypoints_map_launchctl_runtime_errors_to_typed_failures(self) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")

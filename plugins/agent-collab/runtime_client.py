@@ -3983,7 +3983,31 @@ def _without_previous(document: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _launchctl(arguments: list[str], *, timeout: int = 20) -> subprocess.CompletedProcess[str]:
+def _launchctl(
+    arguments: list[str],
+    *,
+    timeout: int | float = 20,
+    deadline: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(float(timeout))
+        or timeout <= 0
+    ):
+        raise ValueError("launchctl timeout is invalid")
+    timeout_ms: int | float = timeout * 1000
+    if deadline is not None:
+        if (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(float(deadline))
+        ):
+            raise ValueError("launchctl deadline is invalid")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("launchctl deadline expired")
+        timeout_ms = min(timeout_ms, remaining * 1000)
     home = _operator_home()
     if home is None:
         raise ValueError("operator home is unavailable")
@@ -4003,8 +4027,14 @@ def _launchctl(arguments: list[str], *, timeout: int = 20) -> subprocess.Complet
         start_new_session=True,
         close_fds=True,
     )
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _terminate_and_reap(process)
+            raise RuntimeError("launchctl deadline expired")
+        timeout_ms = min(timeout_ms, remaining * 1000)
     out, err, collection_error = _collect_bounded_output(
-        process, timeout_ms=timeout * 1000
+        process, timeout_ms=timeout_ms
     )
     if collection_error is not None:
         raise RuntimeError(collection_error.error)
@@ -4085,7 +4115,7 @@ def _broker_ping(socket_path: Path) -> bool:
         return False
 
 
-def _job_process_idle(label: str) -> bool:
+def _job_process_idle(label: str, *, deadline: float | None = None) -> bool:
     if (
         not isinstance(label, str)
         or re.fullmatch(
@@ -4095,7 +4125,12 @@ def _job_process_idle(label: str) -> bool:
         is None
     ):
         raise ValueError("provider job label is invalid")
-    result = _launchctl(["print", f"gui/{os.getuid()}/{label}"])
+    arguments = ["print", f"gui/{os.getuid()}/{label}"]
+    result = (
+        _launchctl(arguments)
+        if deadline is None
+        else _launchctl(arguments, deadline=deadline)
+    )
     if result.returncode != 0:
         return False
     # launchctl prints a `state = active` line for each listening socket
@@ -4126,11 +4161,25 @@ def _broker_process_idle() -> bool:
 def _wait_for_job_idle(label: str, *, deadline: float | None = None) -> bool:
     if deadline is None:
         deadline = time.monotonic() + BROKER_COLD_START_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if _job_process_idle(label):
+    elif (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not math.isfinite(float(deadline))
+    ):
+        raise ValueError("provider job idle deadline is invalid")
+    while True:
+        if time.monotonic() >= deadline:
+            return False
+        try:
+            idle = _job_process_idle(label, deadline=deadline)
+        except RuntimeError:
+            return False
+        if idle:
             return True
-        time.sleep(0.05)
-    return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(max(0.0, min(0.05, remaining)))
 
 
 def _wait_for_broker_exit() -> bool:

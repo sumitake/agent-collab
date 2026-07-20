@@ -522,6 +522,41 @@ enabled = true
         self.assertFalse(profile.governance_ready)
         self.assertEqual(profile.active_model, "gpt-5.6-sol")
 
+    def test_codex_profile_rejects_rollout_growth_during_model_proof(self) -> None:
+        thread_id = "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad"
+        sessions = self._write_codex_rollout(thread_id=thread_id)
+        rollout = next(sessions.rglob(f"*-{thread_id}.jsonl"))
+        real_fstat = os.fstat
+        calls = 0
+
+        def growing_fstat(fd: int) -> os.stat_result:
+            nonlocal calls
+            calls += 1
+            observed = real_fstat(fd)
+            if calls == 2:
+                fields = list(observed)
+                fields[6] = observed.st_size + 1
+                return os.stat_result(fields)
+            return observed
+
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": thread_id}, clear=True
+        ), mock.patch.object(
+            self.policy,
+            "_codex_sessions_root",
+            return_value=sessions,
+            create=True,
+        ), mock.patch.object(
+            self.policy.os, "fstat", side_effect=growing_fstat
+        ):
+            profile = self.policy.resolve_profile(None)
+
+        self.assertEqual(calls, 2)
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertTrue(rollout.is_file())
+
     def test_codex_profile_rejects_ambiguous_or_unsafe_rollout(self) -> None:
         thread_ids = {
             "duplicate": "019f7e3d-5fb3-7f03-ba2a-795a2cc0e5ad",

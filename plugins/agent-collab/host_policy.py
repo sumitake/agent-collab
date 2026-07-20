@@ -510,7 +510,7 @@ def _codex_model_from_rollout(path: Path, observed: os.stat_result, thread_id: s
                 opened.st_mode & 0o777,
                 opened.st_nlink,
             )
-            or completed.st_size < captured_size
+            or completed.st_size != captured_size
         ):
             raise ValueError("Codex rollout changed during identity proof")
         return model
