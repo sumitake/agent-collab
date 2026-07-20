@@ -1913,7 +1913,7 @@ print(json.dumps({{
         self.assertEqual(lanes, (green, current_blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
-        job_loaded.assert_called_once_with(current_blue.label)
+        job_loaded.assert_called_once_with(current_blue.label, deadline=mock.ANY)
 
     def test_capture_omits_retained_lane_with_unloaded_job(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -1968,7 +1968,7 @@ print(json.dumps({{
 
         self.assertEqual(lanes, (selected,))
         self.assertIsNone(error)
-        job_loaded.assert_called_once_with(retained.label)
+        job_loaded.assert_called_once_with(retained.label, deadline=mock.ANY)
 
     def test_handshake_client_accepts_committed_green_with_blue_fallback(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -2012,7 +2012,7 @@ print(json.dumps({{
         self.assertEqual(lanes, (green, blue))
         self.assertIsNone(error)
         self.assertEqual(loader.call_count, 2)
-        job_loaded.assert_called_once_with(blue.label)
+        job_loaded.assert_called_once_with(blue.label, deadline=mock.ANY)
 
     def test_inflight_lane_snapshot_stays_blue_while_next_request_selects_green(self) -> None:
         resolution = self.client.RuntimeResolution(
@@ -2067,7 +2067,7 @@ print(json.dumps({{
         self.assertEqual(next_lanes, (green, blue))
         self.assertIsNone(next_error)
         self.assertEqual(inflight_lanes, (blue,))
-        job_loaded.assert_called_once_with(blue.label)
+        job_loaded.assert_called_once_with(blue.label, deadline=mock.ANY)
 
     def test_green_bridge_document_binds_lane_and_deadlines_without_path_input(self) -> None:
         lane = self.client.BrokerLaneSnapshot(
@@ -2619,7 +2619,7 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(observed["artifact_sha256"], "c" * 64)
         self.assertEqual(observed["manifest_sha256"], "d" * 64)
-        capture.assert_called_once_with(client_resolution)
+        capture.assert_called_once_with(client_resolution, deadline=mock.ANY)
 
     def test_green_connect_refusal_falls_back_before_blue_send(self) -> None:
         self._fixture()
@@ -2696,7 +2696,7 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(observed["artifact_sha256"], "a" * 64)
         self.assertEqual(observed["manifest_sha256"], "b" * 64)
-        capture.assert_called_once_with(resolution)
+        capture.assert_called_once_with(resolution, deadline=mock.ANY)
 
     def test_green_connect_timeout_falls_back_with_blue_deadline_remaining(self) -> None:
         self._fixture()
@@ -5497,6 +5497,61 @@ print(json.dumps({{
             with self.assertRaises(RuntimeError):
                 self.client._launchctl(arguments, deadline=101.0)
         expired_popen.assert_not_called()
+
+    def test_job_loaded_forwards_deadline_to_launchctl(self) -> None:
+        # The retained-lane availability probe on the request-dispatch path must
+        # be bounded by the caller deadline, not launchctl's independent 20s
+        # default, so a small-timeout request cannot block ~20s before dispatch.
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as lc:
+            self.assertTrue(
+                self.client._job_loaded(self.client.BROKER_LABEL, deadline=123.0)
+            )
+        self.assertEqual(lc.call_args.kwargs.get("deadline"), 123.0)
+
+    def test_job_loaded_default_deadline_is_none(self) -> None:
+        # Lifecycle/status callers (no request timeout) keep the default bound.
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as lc:
+            self.client._job_loaded(self.client.BROKER_LABEL)
+        self.assertIsNone(lc.call_args.kwargs.get("deadline"))
+
+    def test_capture_broker_lanes_bounds_retained_probe_by_deadline(self) -> None:
+        # _capture_broker_lanes threads the request deadline into the retained
+        # lane's _job_loaded probe.
+        resolution = mock.Mock(
+            spec=self.client.RuntimeResolution,
+            artifact_digest="a" * 64,
+            manifest_digest="b" * 64,
+        )
+        selected = mock.Mock(label="com.agent-collab.provider-broker")
+        retained = mock.Mock(
+            label="com.agent-collab.provider-dispatcher." + "c" * 32
+        )
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client,
+            "_read_broker_selector_view",
+            return_value={"selected": {"x": 1}, "retained": {"y": 2}},
+        ), mock.patch.object(
+            self.client,
+            "_load_selector_v2_lane",
+            side_effect=[selected, retained],
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ) as jl:
+            self.client._capture_broker_lanes(resolution, deadline=456.0)
+        # The retained-lane probe received the deadline.
+        self.assertTrue(
+            any(c.kwargs.get("deadline") == 456.0 for c in jl.call_args_list)
+        )
 
     def test_wait_for_job_idle_propagates_deadline_and_caps_sleep(self) -> None:
         label = self.client.BROKER_LABEL

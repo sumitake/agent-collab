@@ -2856,6 +2856,8 @@ def _load_dispatcher_broker_lane(
 
 def _capture_broker_lanes(
     resolution: RuntimeResolution,
+    *,
+    deadline: float | None = None,
 ) -> tuple[tuple[BrokerLaneSnapshot, ...], RuntimeResult | None]:
     if (
         not isinstance(resolution, RuntimeResolution)
@@ -2884,7 +2886,9 @@ def _capture_broker_lanes(
             document = selector.get(role)
             if document is not None:
                 lane = _load_selector_v2_lane(root, document, role=role)
-                if role == "retained" and not _job_loaded(lane.label):
+                if role == "retained" and not _job_loaded(
+                    lane.label, deadline=deadline
+                ):
                     continue
                 lanes.append(lane)
         if not lanes:
@@ -3214,14 +3218,19 @@ def _launch_broker(
         request = json.loads(payload.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="sealed broker request is invalid")
-    lanes, error = _capture_broker_lanes(resolution)
+    # Start the request deadline BEFORE capturing lanes: the retained-lane
+    # availability probe inside _capture_broker_lanes runs launchctl, and must
+    # be bounded by this request's timeout rather than launchctl's independent
+    # ~20s default (otherwise a small-timeout request could block ~20s before
+    # dispatch even begins).
+    started = time.monotonic()
+    deadline = started + timeout_ms / 1000
+    deadline_monotonic_ms = int(started * 1000) + timeout_ms
+    lanes, error = _capture_broker_lanes(resolution, deadline=deadline)
     if error is not None or not lanes:
         return error or RuntimeResult(
             RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
         )
-    started = time.monotonic()
-    deadline = started + timeout_ms / 1000
-    deadline_monotonic_ms = int(started * 1000) + timeout_ms
     try:
         for index, lane in enumerate(lanes):
             if lane.transport == "dispatcher":
@@ -4077,18 +4086,14 @@ def _bootstrap_broker(plist_path: Path) -> bool:
     ).returncode == 0
 
 
-def _job_loaded(label: str) -> bool:
-    if (
-        not isinstance(label, str)
-        or re.fullmatch(
-            r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})",
-            label,
-        )
-        is None
-    ):
+def _job_loaded(label: str, *, deadline: float | None = None) -> bool:
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
         raise ValueError("provider job label is invalid")
+    # deadline bounds the probe on the request-dispatch path so a small-timeout
+    # request cannot block launchctl's independent default before dispatch;
+    # lifecycle/status callers pass None and keep the default bound.
     return _launchctl(
-        ["print", f"gui/{os.getuid()}/{label}"]
+        ["print", f"gui/{os.getuid()}/{label}"], deadline=deadline
     ).returncode == 0
 
 

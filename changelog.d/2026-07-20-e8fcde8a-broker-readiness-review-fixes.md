@@ -12,6 +12,12 @@
   caller deadline rather than two fixed five-second waits, and reports a
   proven teardown only when the whole-group kill was posted AND the leader was
   reaped, so a leader-only fallback is honestly typed as a teardown failure.
+- Bound the request-dispatch path's retained-lane availability probe by the
+  request deadline: `_launch_broker` now starts the deadline before capturing
+  lanes and threads it through `_capture_broker_lanes` → `_job_loaded` →
+  `_launchctl`, so a small-`timeout_ms` request no longer blocks on
+  launchctl's ~20s default before dispatch (lifecycle/status callers keep the
+  default bound).
 - Reject an incomplete Codex rollout tail instead of trusting the preceding
   model context: `_codex_rollout_window` fails closed on a non-newline-
   terminated final record, so a concurrently written model-changing record can
