@@ -486,3 +486,25 @@ receipt-authenticity) are real and must still be resolved in v3 on their merits.
 **Operator action (not agent-performed — repo security config):** add a `v*` tag ruleset
 (block deletion + update) so the signed-tag fence is enforced. This is a repo-settings /
 security change, operator domain.
+
+---
+
+## Durability work-items for the journal-as-hint (carry into v3 impl)
+
+The journal survives v3 as a resume *hint* (§4), so its durable-write primitive
+(`_atomic_write`) carries over and must be correct. Two confirmed bugs, grouped here so
+they land together with a proper crash-residue / fault-injection test harness (review
+finding 14) rather than as isolated patches to a module under redesign:
+
+- **F2 — directory-create not persisted.** `_atomic_write` `mkdir`s the journal root then
+  fsyncs only the new directory, not the parent whose entry changed; power loss can remove
+  the directory after `save()` returned. Fix: fsync the parent when the directory is created.
+- **F4 — PID-named temp collides with crash residue.** `temp = .{name}.tmp.{pid}`. A crash
+  after `O_CREAT|O_EXCL` but before `os.replace` leaves the temp; a reused PID (especially
+  after reboot) then fails `O_EXCL` before recording write-ahead state, blocking resume until
+  the stale file is removed by hand. Fix: a collision-resistant temp name (`mkstemp`), so
+  crash residue can never collide with a future writer. (Verified against `406639f`.)
+
+Both are mechanical, both have known fixes, and both need the same crash/fault-injection
+tests, so they belong to the v3 durability component, not to five more commits on the frozen
+module.
