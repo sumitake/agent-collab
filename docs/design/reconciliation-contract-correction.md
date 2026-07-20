@@ -146,3 +146,50 @@ the reviewer should add classes:
 that an implementer improvises; which class is missing entirely; and whether the R1
 matrix as scoped can actually be enumerated finitely, or whether it hides an unbounded
 case space that needs a different structure.
+
+---
+
+## PREMISE ERROR — the artifact contract was invented, not read
+
+Found by the Codex PR bot on `f323e8b`, verified immediately. It invalidates the
+artifact-validation work in this PR and part of the plan above.
+
+`REQUIRED_ARTIFACT_FIELDS` was written as `platform, sha256, size_bytes,
+runtime_identity`. The repository's own `plugins/agent-collab/runtime-manifest.schema.json`
+requires **thirteen** fields: `platform, arch, kind, minimum_macos, path, entrypoint,
+size, sha256, provider_runtime_version, route_contract_version, signing, files,
+contracts`.
+
+Measured against the real schema:
+
+- `size_bytes` and `runtime_identity` **do not exist**. I invented both.
+- **11 of 13** genuinely required fields are not checked at all.
+- A schema-valid artifact is **REJECTED** (`missing required field(s):
+  runtime_identity, size_bytes`), so this gate would have blocked every activation
+  release while validating almost nothing.
+
+**Root cause.** The field list came from this design document's own prose ("platform,
+digest, size, and runtime identity") rather than from the schema that already existed
+in the repository being edited. Nothing verified the premise — not me, not two CLI
+review rounds, not three bot rounds. The tests all passed because they were written
+around the invented shape, so they asserted the implementation instead of the
+contract: the reward-hacking signature the project directive names explicitly.
+
+**Consequences for this plan.** The adversarial design review dispatched before this
+was found is running against a document containing the wrong artifact premise. Its
+findings on the reconciliation matrix (R1–R5) remain valid — that part does not depend
+on artifact shape — but anything it concludes about artifact validation must be
+re-derived.
+
+**Correction (design, not patch).** Do NOT hardcode the thirteen fields; a duplicated
+list drifts exactly as the tag-name regex did earlier in this PR, and for the same
+reason. Validate against `runtime-manifest.schema.json` as the single source of truth,
+so the gate cannot disagree with the schema the repository already enforces. The
+existing `_validate_activation_manifest()` is the incumbent contract and should be
+reused rather than paralleled.
+
+**Process rule this earns.** Before building a validator for an existing artifact,
+locate and read that artifact's existing contract. "Audited execution on an unaudited
+premise is still wrong" is already in the project directives as a delegation rule; it
+applies to my own work identically. A premise check is one grep and it would have
+saved this entire sub-effort.
