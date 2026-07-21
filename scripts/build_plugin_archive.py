@@ -989,10 +989,15 @@ def _read_runtime_payloads(
 
 
 def _resolve_in_tree_bundle_leaf(plugin_path: Path) -> Path:
-    """Descend runtime/<platform-arch>/<bundle> from a trusted plugin_path dir fd
-    with no followed component (O_NOFOLLOW|O_DIRECTORY rejects a symlinked or
-    non-directory component, so an intermediate swap cannot redirect the committed
-    source), and return the leaf path for `_validate_activation_bundle_tree`."""
+    """Descend runtime/<platform-arch>/<bundle> from a trusted plugin_path dir fd,
+    rejecting any symlinked or non-directory component AT WALK TIME
+    (O_NOFOLLOW|O_DIRECTORY per component), then return the leaf path for
+    `_validate_activation_bundle_tree`. This is a best-effort structural check:
+    the descriptors are closed and the returned path is re-opened path-based by the
+    validator, so a swap AFTER the walk is not caught here — but that requires
+    write on the checkout, which under trust-the-checkout already owns the builder,
+    and content is still bound by per-member SHA-256 (and git-HEAD provenance when
+    --expected-commit is set)."""
     walk_flags = (
         os.O_RDONLY
         | getattr(os, "O_DIRECTORY", 0)
