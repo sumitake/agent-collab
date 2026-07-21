@@ -561,12 +561,12 @@ class PluginArchiveTests(unittest.TestCase):
         )
         return result.stdout.strip()
 
-    def test_in_tree_head_provenance_binds_release_commit(self) -> None:
-        # --expected-commit binds the committed in-tree runtime to a release
-        # commit (Codex #4/#5): the happy path packages; a working-tree manifest
-        # that diverges from its committed 100644 blob fails closed even though the
-        # bundle digests still self-agree (which is exactly what provenance adds
-        # over the per-member sha256).
+    def test_expected_commit_binds_the_whole_worktree_to_the_release_tag(self) -> None:
+        # --expected-commit binds the ENTIRE archive to the release commit (Codex
+        # bot PR #30): the worktree must BE the tag (HEAD == commit, no modified
+        # tracked files), so neither the runtime NOR a non-runtime member (policy/
+        # client/skills/metadata) can carry non-tag bytes. Runtime-specific
+        # 100755/100644 blob provenance is layered on top in _verify_head_provenance.
         self._activate(in_tree=True)
         self._git("init", "-q")
         self._git("add", "-A")
@@ -575,19 +575,31 @@ class PluginArchiveTests(unittest.TestCase):
         )
         commit = self._git("rev-parse", "HEAD")
 
+        # happy path: clean worktree at the tag commit
         self.assertEqual(self._build_in_tree(expected_commit=commit), "activation")
 
-        # Dirty the working-tree manifest with JSON-insignificant whitespace: it
-        # still parses to the same records (so the bundle digests match), but its
-        # bytes no longer equal the committed 100644 blob -> provenance fails.
-        manifest = self.plugin / "runtime-manifest.json"
-        manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        # a modified NON-runtime tracked file fails closed — proves the binding
+        # covers the whole archive, not just the runtime members.
+        policy = self.plugin / "signing_policy.py"
+        policy.write_text(policy.read_text(encoding="utf-8") + "\n# x\n", encoding="utf-8")
         if self.archive.exists():
             self.archive.unlink()
-        with self.assertRaisesRegex(ValueError, "manifest does not match its HEAD blob"):
+        with self.assertRaisesRegex(ValueError, "uncommitted tracked changes"):
+            self._build_in_tree(expected_commit=commit)
+        self._git("checkout", "--", "plugins/agent-collab/signing_policy.py")
+
+        # HEAD != expected commit fails closed (a stale/moved worktree). Advance
+        # HEAD with an empty commit so the worktree stays clean.
+        self._git(
+            "-c", "user.email=t@t", "-c", "user.name=t",
+            "commit", "-q", "--allow-empty", "-m", "moved",
+        )
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "HEAD is not the expected commit"):
             self._build_in_tree(expected_commit=commit)
 
-        # A non-hex commit argument is rejected before any git call.
+        # a non-hex commit argument is rejected before any git call.
         with self.assertRaisesRegex(ValueError, "must be a git object id"):
             self._build_in_tree(expected_commit="--upload-pack=evil")
 

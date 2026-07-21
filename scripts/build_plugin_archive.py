@@ -1085,6 +1085,36 @@ def _verify_head_provenance(
             raise ValueError("release runtime member differs from its HEAD blob")
 
 
+def _verify_release_worktree(plugin_path: Path, expected_commit: str) -> None:
+    """Bind the ENTIRE archive to the release commit (Codex bot PR #30 P1).
+
+    Every archive member — the runtime AND the policy/client/skills/metadata read
+    from the worktree — is packaged from the working tree, so a release build must
+    run on a worktree that IS the tag commit: `HEAD == expected_commit` and no
+    modified tracked files. This covers policy-only releases too (which package no
+    runtime), so a dirtied or moved worktree cannot publish bytes that were never
+    in the release tag. `_verify_head_provenance` then adds runtime-specific
+    100755/100644 blob-type binding as defense-in-depth. Untracked files are never
+    part of `_member_plan` (which packages only canonical committed members), so
+    `--untracked-files=no` avoids brittleness against `__pycache__`/the temp
+    archive while still catching any modified/deleted tracked member.
+    """
+    if not re.fullmatch(r"[0-9a-fA-F]{7,64}", expected_commit):
+        raise ValueError("expected release commit must be a git object id")
+    repo = plugin_path.parents[1]
+    head = _git_stdout(repo, "rev-parse", "HEAD").decode("utf-8", "replace").strip()
+    want = (
+        _git_stdout(repo, "rev-parse", "--verify", f"{expected_commit}^{{commit}}")
+        .decode("utf-8", "replace")
+        .strip()
+    )
+    if not head or head != want:
+        raise ValueError("release worktree HEAD is not the expected commit")
+    dirty = _git_stdout(repo, "status", "--porcelain", "--untracked-files=no")
+    if dirty.strip():
+        raise ValueError("release worktree has uncommitted tracked changes")
+
+
 def build_archive(
     root: Path,
     *,
@@ -1102,6 +1132,11 @@ def build_archive(
     # A→B→A manifest swap on disk cannot change what gets packaged.
     frozen_manifest: bytes | None = _read_manifest_bytes(plugin_path)
     mode, records = _classify_from_manifest(plugin_path, frozen_manifest)
+    # Bind the ENTIRE archive to the release commit before packaging any member
+    # (both policy-only and activation): the worktree must be the tag commit with
+    # no modified tracked files, so no member can carry non-tag bytes.
+    if expected_commit is not None:
+        _verify_release_worktree(plugin_path, expected_commit)
     bundle_leaf: Path | None = None
     runtime_payloads: dict[str, bytes] = {}
     if mode == "policy-only":

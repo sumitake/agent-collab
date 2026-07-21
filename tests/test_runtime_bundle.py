@@ -399,7 +399,9 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                             ),
                             rb.compute_bundle_identity(records),
                         )
-                        # broker store (default strict): a non-0o500 root is rejected
+                        # broker store (default strict): a group/other-writable
+                        # root is rejected (a host-normalized 0o755 root is still
+                        # accepted — test_host_normalized_root_with_strict_members).
                         with self.assertRaises(rb.BundleContractError):
                             rb.verify_bundle_tree(
                                 root, records, inspector=self._inspector,
