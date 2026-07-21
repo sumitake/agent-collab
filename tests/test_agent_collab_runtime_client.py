@@ -520,6 +520,46 @@ print(json.dumps({{
             resolution = self.client.resolve_runtime()
         self.assertNotEqual(resolution.status, self.client.RuntimeStatus.OK)
 
+    def test_published_version_rejects_git_normalized_member(self) -> None:
+        # The BROKER store is privately extracted, so exact 0o500 IS achievable and
+        # is kept strict (_verify_published_version calls verify_bundle_tree with
+        # tolerant=False). This pins that scoping the OTHER direction from the
+        # plugin-tree test: a 0o755 member — which the tolerant plugin-tree path
+        # ACCEPTS — must be REJECTED here. It is the test that FAILS if the broker
+        # call site is flipped to tolerant=True (0o775 alone can't prove this: both
+        # modes reject group-write; only 0o755 separates strict from tolerant).
+        self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
+        (self.root / "versions").mkdir(mode=0o700)
+        (self.root / "tmp").mkdir(mode=0o700)
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            resolution = self.client.resolve_runtime()
+            self.assertEqual(
+                resolution.status, self.client.RuntimeStatus.OK, resolution.error
+            )
+            # Publish a clean version; its own tail self-verify (tolerant=False)
+            # confirms the strict path ACCEPTS a correctly-published 0o500 tree.
+            self.client._publish_broker_version(self.root, resolution=resolution)
+            version = self.client._broker_version_path(
+                self.root,
+                artifact_digest=resolution.artifact_digest,
+                manifest_digest=resolution.manifest_digest,
+            )
+            member = version / "agent-collab-runtime.bundle" / "agent-collab-runtime"
+            original = stat.S_IMODE(member.stat().st_mode)
+            self.assertEqual(original, 0o500)  # sanity: broker extracts strict
+            member.chmod(0o755)  # git-normalized; the tolerant path would accept it
+            try:
+                with self.assertRaises(ValueError):
+                    self.client._verify_published_version(
+                        self.root,
+                        artifact_digest=resolution.artifact_digest,
+                        manifest_digest=resolution.manifest_digest,
+                    )
+            finally:
+                member.chmod(original)
+
     def test_manifest_classifier_enforces_the_closed_compatibility_matrix(self) -> None:
         self._fixture()
         manifest = json.loads(
