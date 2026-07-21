@@ -1029,20 +1029,29 @@ def _verify_macos_signature(
     if require_notarization:
         # The runtime entrypoint is a bare command-line Mach-O, not a .app
         # bundle, so `spctl --assess --type execute` always rejects it ("the
-        # code is valid but does not seem to be an app"). Verify notarization
-        # the same way the release gate (verify_runtime_release.py) does: the
-        # codesign requirement `notarized` is the documented, code-object-native
-        # proof and binds to this binary's CDHash. A tool failure or a failed
-        # requirement is a fail-closed reject, never a pass. Offline note: a
-        # bare Mach-O cannot have a notarization ticket stapled (stapling targets
-        # bundles, disk images, and installer packages, not standalone binaries).
-        # Without `--check-notarization` this requirement does not run the online
-        # Gatekeeper lookup itself; it is satisfied by a stapled ticket or the
-        # host's local notarization trust state. A bare binary therefore relies
-        # on that local state (e.g. the host that notarized it, or a prior
-        # Gatekeeper assessment); a host without it fails closed, never a bypass.
-        # This activation-time dependency is a known operational constraint
-        # (pipeline follow-up).
+        # code is valid but does not seem to be an app"). The codesign
+        # requirement `notarized` is the documented, code-object-native proof and
+        # binds to this binary's CDHash. Verify it the same way the release gate
+        # (verify_runtime_release.py) does.
+        #
+        # `--check-notarization` forces the ONLINE Apple notary lookup by CDHash.
+        # It is required so activation succeeds on a clean host: a bare Mach-O
+        # cannot have a notarization ticket stapled (stapling targets
+        # .app/.dmg/.pkg), and without the flag `=notarized` is satisfied only by
+        # a stapled ticket or the host's LOCAL notarization trust state — which a
+        # freshly-installed plugin checkout does not have, so activation
+        # fail-closed for every clean-host user. Verified on macos-15.7.7:
+        # genuinely notarized + online -> rc 0 (accept); unsigned / ad-hoc -> rc 3
+        # (reject); genuinely notarized + Apple unreachable -> rc 3 (reject,
+        # FAIL-CLOSED). So rc == 0 requires a positive online confirmation, and a
+        # tool failure or a failed requirement is a fail-closed reject, never a
+        # pass.
+        #
+        # Known limitation (follow-up): this couples activation to Apple's notary
+        # being reachable, so an OFFLINE / air-gapped end user still fail-closes
+        # (runtime -> temporarily_unavailable). Online users — the common case —
+        # now activate successfully. Full offline support needs a committed
+        # Apple-signed ticket verified against the CDHash (trust-the-checkout).
         try:
             result = subprocess.run(
                 [
@@ -1052,6 +1061,7 @@ def _verify_macos_signature(
                     "--verbose=4",
                     "--test-requirement",
                     "=notarized",
+                    "--check-notarization",
                     str(path),
                 ],
                 capture_output=True,

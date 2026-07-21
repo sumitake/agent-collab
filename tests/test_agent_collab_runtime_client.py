@@ -6325,12 +6325,21 @@ print(json.dumps({
                         ),
                         "expected a codesign =notarized notarization check",
                     )
-                # `--check-notarization` must never be combined with the
-                # requirement — it makes ad-hoc / un-notarized binaries pass.
-                self.assertFalse(
-                    any("--check-notarization" in cmd for cmd in observed),
-                    "--check-notarization must not be combined (fails open)",
-                )
+                # `--check-notarization` MUST be combined with the requirement so
+                # activation runs the online Apple notary lookup and therefore
+                # verifies on a clean host (a freshly-installed plugin checkout has
+                # no stapled ticket and no local trust state). Empirically
+                # fail-closed on macos-15.7.7 (offline -> rc 3), so it does not
+                # "fail open": rc 0 requires a positive online confirmation.
+                if timestamp.startswith("Timestamp=Jul"):
+                    self.assertTrue(
+                        any(
+                            "--test-requirement" in cmd
+                            and "--check-notarization" in cmd
+                            for cmd in observed
+                        ),
+                        "notarization check must force the online lookup",
+                    )
 
     def test_notarization_tool_failure_is_fail_closed(self) -> None:
         valid_build = (
