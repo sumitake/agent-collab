@@ -703,11 +703,11 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         or stat.S_ISLNK(bundle_info.st_mode)
         # Scans the checked-out git tree (--active-tree); modes are 0o755/0o700.
         # Content is pinned by size + sha256 below.
-        or not runtime_bundle.tolerant_mode_ok(bundle_info.st_mode)
+        or not runtime_bundle.source_mode_ok(bundle_info.st_mode)
         or not stat.S_ISREG(member_info.st_mode)
         or stat.S_ISLNK(member_info.st_mode)
         or member_info.st_nlink != 1
-        or not runtime_bundle.tolerant_mode_ok(member_info.st_mode)
+        or not runtime_bundle.source_mode_ok(member_info.st_mode)
         or record["size"] != len(data)
         or record["sha256"] != hashlib.sha256(data).hexdigest()
     ):

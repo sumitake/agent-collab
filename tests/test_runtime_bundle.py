@@ -278,22 +278,47 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                         (root / record["path"]).chmod(0o700)
                     root.chmod(0o700)
 
-    def test_tolerant_still_rejects_unsafe_member_modes(self):
-        # Tolerance is a safe ENVELOPE: a group/other-writable member — the real
-        # tamper vector — stays rejected even with tolerant=True, unlike 0o755's
-        # read/execute bits, which grant nothing on a public signed binary. Only
-        # write-bit modes are exercised here: the filesystem strips setuid/setgid/
-        # sticky on chmod (measured: 0o2755 -> 0o500), so those are covered at the
-        # predicate level in test_tolerant_mode_ok_predicate instead.
-        for unsafe in (0o775, 0o757, 0o777, 0o770, 0o707):
+    def test_source_tolerant_admits_group_writable_member(self):
+        # Trust-the-checkout: a git checkout under umask 002 yields group/other-
+        # writable members (0o775). Those bits reflect the operator's umask on their
+        # OWN checkout, not a grant to an attacker (a peer who can write the checkout
+        # already owns the Python control plane), so tolerant=True ADMITS them; the
+        # SHA-256 + signature remain the integrity gate.
+        for admitted in (0o775, 0o770, 0o777, 0o750):
             with tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary) / "agent-collab-runtime.bundle"
                 root.mkdir()
                 records = self._create_bundle(root)
-                (root / records[0]["path"]).chmod(unsafe)
+                (root / records[0]["path"]).chmod(admitted)
+                root.chmod(0o775)
+                try:
+                    with self.subTest(admitted=oct(admitted)):
+                        self.assertEqual(
+                            rb.verify_bundle_tree(
+                                root, records, inspector=self._inspector, tolerant=True,
+                            ),
+                            rb.compute_bundle_identity(records),
+                        )
+                finally:
+                    for record in records:
+                        (root / record["path"]).chmod(0o700)
+                    root.chmod(0o700)
+
+    def test_source_tolerant_still_rejects_no_owner_execute_member(self):
+        # The source floor still requires owner read+execute: a member that lost its
+        # owner-execute bit (a non-Mach-O data blob, or a corrupted checkout) is
+        # rejected even with tolerant=True. Special bits (setuid/setgid/sticky) are
+        # covered at the predicate level in test_source_mode_ok_predicate because the
+        # filesystem strips them on chmod.
+        for rejected in (0o644, 0o600, 0o400):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "agent-collab-runtime.bundle"
+                root.mkdir()
+                records = self._create_bundle(root)
+                (root / records[0]["path"]).chmod(rejected)
                 root.chmod(0o755)
                 try:
-                    with self.subTest(unsafe=oct(unsafe)):
+                    with self.subTest(rejected=oct(rejected)):
                         with self.assertRaises(rb.BundleContractError):
                             rb.verify_bundle_tree(
                                 root, records, inspector=self._inspector, tolerant=True,
@@ -349,12 +374,15 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                     (root / record["path"]).chmod(0o700)
                 root.chmod(0o700)
 
-    def test_tolerant_mode_ok_predicate(self):
-        # The single shared predicate, pinned directly.
-        for ok in (0o500, 0o700, 0o755, 0o550, 0o511):
-            self.assertTrue(rb.tolerant_mode_ok(ok), oct(ok))
-        for bad in (0o775, 0o757, 0o777, 0o400, 0o644, 0o4755, 0o2755, 0o1755, 0o000):
-            self.assertFalse(rb.tolerant_mode_ok(bad), oct(bad))
+    def test_source_mode_ok_predicate(self):
+        # The trust-the-checkout SOURCE floor, pinned directly. Owner read+execute
+        # is required; group/other read/write/execute are TOLERATED (a git checkout
+        # under any umask is a trusted source); setuid/setgid/sticky and any mode
+        # lacking owner-execute are rejected.
+        for ok in (0o500, 0o700, 0o755, 0o550, 0o511, 0o775, 0o757, 0o777, 0o770, 0o707):
+            self.assertTrue(rb.source_mode_ok(ok), oct(ok))
+        for bad in (0o400, 0o644, 0o600, 0o000, 0o4755, 0o2755, 0o1755):
+            self.assertFalse(rb.source_mode_ok(bad), oct(bad))
 
     def test_symlink_hardlink_extra_missing_and_content_drift_fail_closed(self):
         mutations = ("symlink", "hardlink", "extra", "missing", "content")
@@ -391,9 +419,10 @@ class RuntimeBundleTreeTests(unittest.TestCase):
             root = Path(temporary) / "agent-collab-runtime.bundle"
             root.mkdir()
             records = self._create_bundle(root)
-            # A group-writable root is a genuinely unsafe mode and must still fail closed
-            # (0o700 / host-normalized 0o755 are now ACCEPTED by the cache-stable predicate).
-            root.chmod(0o775)
+            # A root lacking owner-execute cannot be traversed/verified and must fail
+            # closed (group/other bits are now TOLERATED on a trusted checkout, but
+            # owner read+execute is still required by the source floor).
+            root.chmod(0o600)
             with self.assertRaises(rb.BundleContractError):
                 rb.verify_bundle_tree(root, records, inspector=self._inspector)
             root.chmod(0o500)

@@ -507,27 +507,54 @@ print(json.dumps({{
                     resolution.status, self.client.RuntimeStatus.OK, resolution.error
                 )
 
-    def test_resolve_runtime_still_rejects_group_writable_member(self) -> None:
-        # Tolerance is a safe envelope even at the call site: a group-writable
-        # member is rejected (not OK), so the loosening did not become "any mode".
+    def test_resolve_runtime_admits_group_writable_member(self) -> None:
+        # Trust-the-checkout: a git clone under umask 002 yields group/other-writable
+        # members AND bundle dir (0o775). Those bits reflect the operator's umask on
+        # their own checkout, not a grant to an attacker (a peer who can write the
+        # checkout already owns the Python control plane), so resolve_runtime ADMITS
+        # them; the per-member SHA-256 + Developer-ID signature remain the integrity
+        # gate. This is the release-critical umask-0002 install case.
         bundle = (self.root / "runtime" / "darwin-arm64" / "agent-collab-runtime.bundle")
         binary = self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
-        binary.chmod(0o775)  # group-write
-        bundle.chmod(0o755)
+        binary.chmod(0o775)  # group-write member (umask 002)
+        bundle.chmod(0o775)  # group-write bundle dir (umask 002)
         with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
             self.client, "_verify_macos_signature", return_value=(True, "")
         ):
             resolution = self.client.resolve_runtime()
-        self.assertNotEqual(resolution.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(
+            resolution.status, self.client.RuntimeStatus.OK, resolution.error
+        )
+
+    def test_resolve_runtime_rejects_fifo_member(self) -> None:
+        # The source floor still rejects a non-regular member. A FIFO swapped in for
+        # a member must fail closed AND must not hang the open (O_NONBLOCK); under
+        # trust-the-checkout the tolerated modes leave this type guard load-bearing.
+        bundle = (self.root / "runtime" / "darwin-arm64" / "agent-collab-runtime.bundle")
+        binary = self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
+        bundle.chmod(0o700)
+        binary.unlink()
+        os.mkfifo(binary, 0o600)
+        bundle.chmod(0o500)
+        try:
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                self.client, "_verify_macos_signature", return_value=(True, "")
+            ):
+                resolution = self.client.resolve_runtime()
+            self.assertNotEqual(resolution.status, self.client.RuntimeStatus.OK)
+        finally:
+            bundle.chmod(0o700)
+            binary.unlink()
 
     def test_published_version_rejects_git_normalized_member(self) -> None:
         # The BROKER store is privately extracted, so exact 0o500 IS achievable and
         # is kept strict (_verify_published_version calls verify_bundle_tree with
         # tolerant=False). This pins that scoping the OTHER direction from the
-        # plugin-tree test: a 0o755 member — which the tolerant plugin-tree path
-        # ACCEPTS — must be REJECTED here. It is the test that FAILS if the broker
-        # call site is flipped to tolerant=True (0o775 alone can't prove this: both
-        # modes reject group-write; only 0o755 separates strict from tolerant).
+        # plugin-tree test: a 0o755 member — which the tolerant plugin-tree source
+        # path ACCEPTS — must be REJECTED here (the broker store requires exact
+        # 0o500). It is the test that FAILS if the broker call site is flipped to
+        # tolerant=True: 0o755 differs from 0o500, so it separates strict from the
+        # source floor.
         self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
         (self.root / "versions").mkdir(mode=0o700)
         (self.root / "tmp").mkdir(mode=0o700)
@@ -6976,23 +7003,24 @@ time.sleep(10)
             result = self.client.invoke(envelope=tampered)
         self.assertEqual(result.status, self.client.RuntimeStatus.CONFIG_ERROR)
 
-    def test_hardlinked_or_group_writable_runtime_is_rejected(self) -> None:
+    def test_hardlinked_runtime_is_rejected(self) -> None:
+        # The source floor still requires nlink == 1: a hardlinked entrypoint is
+        # rejected. (A group-writable runtime is now ADMITTED under trust-the-
+        # checkout — see test_resolve_runtime_admits_group_writable_member — so only
+        # the hardlink guard remains here.)
         binary = self._fixture()
         binary.parent.chmod(0o700)
         hardlink = binary.with_name("hardlink")
         os.link(binary, hardlink)
         binary.parent.chmod(0o500)
-        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
-            result = self.client.resolve_runtime()
-        self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
-        binary.parent.chmod(0o700)
-        hardlink.unlink()
-        binary.parent.chmod(0o500)
-
-        binary.chmod(0o775)
-        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
-            result = self.client.resolve_runtime()
-        self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
+        try:
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+                result = self.client.resolve_runtime()
+            self.assertEqual(result.status, self.client.RuntimeStatus.PATH_INVALID)
+        finally:
+            binary.parent.chmod(0o700)
+            hardlink.unlink()
+            binary.parent.chmod(0o500)
 
     def test_native_protocol_uses_exact_route_action_fields(self) -> None:
         self._fixture()

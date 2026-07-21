@@ -325,42 +325,49 @@ def _validate_inspection(value: Any, record: Mapping[str, Any]) -> None:
             _raise("runtime bundle member inspection changed")
 
 
-def tolerant_mode_ok(mode: int) -> bool:
-    """Safe-envelope mode predicate for a GIT-DISTRIBUTED source tree.
+def source_mode_ok(mode: int) -> bool:
+    """Mode floor for a TRUSTED git-checkout SOURCE tree (any umask).
+
+    Threat model — trust-the-checkout. A plugin's own code is trusted by the act
+    of installing and running it: the host loads and executes the plugin's Python
+    control plane (`runtime_client.py`, `coordinator.py`) from this same checkout
+    via `--plugin-dir`. A peer who can write the checkout therefore already owns the
+    verifier, so anyone with effective write access (POSIX mode OR ACL) to any part
+    of the checkout is OUT OF SCOPE — the whole checkout is ONE trust domain. The
+    native runtime's INTEGRITY is still fully verified (per-member SHA-256 +
+    Developer-ID signature + notarization + Mach-O inspection, all unchanged); only
+    the source PERMISSION-MODE rejection is dropped, because it is not an integrity
+    boundary here and it made a normal `git clone` unverifiable.
 
     A git checkout cannot preserve the build store's `0o500`: it yields `0o755`
-    (umask 022) or `0o700` (umask 077), and host plugin managers re-extract and
-    normalize modes on install and every autoUpdate/restart. The tamper guarantee
-    is the whole-bundle + per-member digest and Developer-ID signature — NOT the
-    mode (the root predicate has said so, operator-approved, since this bundle
-    shipped). Exact `0o500` was never a same-UID TOCTOU boundary either: the owner
-    could always chmod it, and a different UID cannot write into an owner-only tree.
+    (umask 022), `0o700` (umask 077), or `0o775`/`0o770` (umask 002 — group/other
+    bits reflect the operator's umask, not a grant to an attacker). This floor
+    therefore requires only owner read+execute (correct for the all-Mach-O members
+    and traversable directories) and rejects setuid/setgid/sticky. It intentionally
+    TOLERATES group/other read/write/execute. Version freshness (anti-rollback) is
+    delegated to the marketplace/git install channel, not to this mode check.
 
-    This predicate is the SINGLE source of that rule, shared by the bundle root,
-    the (tolerant) member check, and the release/export/archive-source gates that
-    now run against the checked-out git tree — so tolerance can never drift across
-    files. It requires owner read+execute (correct for the all-Mach-O members and
-    the traversable directories), and rejects the actual attack vectors: any
-    group/other WRITE and any setuid/setgid/sticky bit. It accepts `0o500`, `0o700`
-    and `0o755` (and other read/execute combinations in that envelope) while
-    rejecting `0o775` / `0o757` / `0o777` and special-bit modes.
+    This predicate is the SINGLE source of the source-mode rule, shared by the
+    bundle root, the (source) member check, and the release/export/archive-source
+    gates that run against the checked-out git tree — so the floor cannot drift
+    across files. It is DISTINCT from the strict broker-store check, which keeps
+    exact `0o500` (that store is privately extracted and owner-only).
 
-    NOTE (reviewer finding 7): every current member is a `0o500` Mach-O executable,
-    so requiring owner-execute is correct for all of them. A future NON-executable
-    data member would need a role-aware predicate and a manifest schema change
-    before it could be recorded — it must not silently ride this envelope.
+    NOTE: every current member is a `0o500` Mach-O executable, so requiring
+    owner-execute is correct for all of them. A future NON-executable data member
+    would need a role-aware predicate and a manifest schema change before it could
+    be recorded — it must not silently ride this floor.
     """
     perms = stat.S_IMODE(mode)
     return (
         (perms & 0o500) == 0o500  # owner read + execute present
-        and (perms & 0o022) == 0  # no group/other WRITE
         and (perms & 0o7000) == 0  # no setuid / setgid / sticky
     )
 
 
 def _bundle_root_mode_ok(mode: int) -> bool:
-    """The bundle root uses the shared safe-envelope predicate (see tolerant_mode_ok)."""
-    return tolerant_mode_ok(mode)
+    """The bundle root uses the shared source-mode floor (see source_mode_ok)."""
+    return source_mode_ok(mode)
 
 
 def verify_bundle_tree(
@@ -375,10 +382,11 @@ def verify_bundle_tree(
     `tolerant` selects the MODE check only. False (default) requires each member's
     mode to equal the manifest `install_mode` exactly — used for the privately
     extracted broker store, where the exact `0o500` is achievable and worth keeping
-    as a publication-drift invariant. True accepts the shared safe envelope
-    (`tolerant_mode_ok`) — used for the git-installed plugin tree, whose modes are
-    normalized to `0o755`/`0o700` by the checkout and cannot be `0o500`. Every other
-    check — regular-file type, no symlink, `uid == geteuid`, `nlink == 1`, size,
+    as a publication-drift invariant. True accepts the trusted-source mode floor
+    (`source_mode_ok`) — used for the git-installed plugin tree (a trust-the-checkout
+    SOURCE), whose modes reflect the operator's umask (`0o755`/`0o700`/`0o775`) and
+    cannot be `0o500`. Every other check — regular-file type, no symlink,
+    `uid == geteuid`, `nlink == 1`, size,
     stat identity, per-member SHA-256, and the Mach-O/signature inspection — is
     identical in both modes; tolerance touches nothing but the permission bits."""
 
@@ -391,6 +399,9 @@ def verify_bundle_tree(
     by_name = {record["path"]: record for record in validated}
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
+    # O_NONBLOCK so a FIFO/device swapped in for the root/member (a tolerated-mode
+    # source under trust-the-checkout) cannot block the open before the type check.
+    flags |= getattr(os, "O_NONBLOCK", 0)
 
     try:
         root_descriptor = os.open(root, flags)
@@ -423,6 +434,7 @@ def verify_bundle_tree(
             record = by_name[name]
             member_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
             member_flags |= getattr(os, "O_CLOEXEC", 0)
+            member_flags |= getattr(os, "O_NONBLOCK", 0)  # FIFO-swap hang defense
             try:
                 descriptor = os.open(name, member_flags, dir_fd=root_descriptor)
             except OSError:
@@ -441,7 +453,7 @@ def verify_bundle_tree(
                     or before.st_uid != os.geteuid()
                     or before.st_nlink != 1
                     or (
-                        not tolerant_mode_ok(before.st_mode)
+                        not source_mode_ok(before.st_mode)
                         if tolerant
                         else stat.S_IMODE(before.st_mode) != record["install_mode"]
                     )
@@ -512,7 +524,7 @@ __all__ = [
     "compute_bundle_identity",
     "encode_bundle_identity",
     "load_closed_json_object",
-    "tolerant_mode_ok",
+    "source_mode_ok",
     "validate_file_records",
     "verify_bundle_tree",
 ]
