@@ -1040,25 +1040,30 @@ def _verify_macos_signature(
         # .app/.dmg/.pkg), and without the flag `=notarized` is satisfied only by
         # a stapled ticket or the host's LOCAL notarization trust state — which a
         # freshly-installed plugin checkout does not have, so activation
-        # fail-closed for every clean-host user. Verified on macos-15.7.7:
-        # genuinely notarized + online -> rc 0 (accept); unsigned / ad-hoc -> rc 3
-        # (reject); genuinely notarized + Apple unreachable -> rc 3 (reject,
-        # FAIL-CLOSED). So rc == 0 requires a positive online confirmation, and a
-        # tool failure or a failed requirement is a fail-closed reject, never a
-        # pass.
+        # fail-closed for every clean-host user.
         #
-        # Known limitation (follow-up): --check-notarization couples activation to
-        # Apple's notary being reachable. Net effect by host state:
-        #   * clean host, online  -> now WORKS (previously broken: no local trust).
-        #   * clean host, offline -> temporarily_unavailable (also was before).
-        #   * host that already holds local notarization trust for this CDHash,
-        #     offline -> now temporarily_unavailable. This is a NARROW regression:
-        #     such a host could satisfy `=notarized` from local trust before.
-        #     Rare for a git-cloned checkout (no quarantine -> no prior Gatekeeper
-        #     assessment) but real.
-        # Online users — the common case — now activate. Full offline support needs
-        # a committed Apple-signed ticket verified against the CDHash
-        # (trust-the-checkout).
+        # Empirically (macos-14.8.7, macos-15.7.7, macOS 26):
+        #   * genuinely notarized, online                  -> rc 0 (accept)
+        #   * unsigned / ad-hoc / Dev-ID-signed-unnotarized -> rc 3 (reject)
+        #   * genuinely notarized, CLEAN/UNCACHED host, notary unreachable
+        #                                                  -> rc 3 (FAIL-CLOSED)
+        # rc == 0 requires a positive notarization result: either a live online
+        # confirmation, OR a locally-cached positive that a PRIOR successful online
+        # lookup established for this exact CDHash. Neither can exist for an
+        # unnotarized CDHash, so unnotarized code never passes; a tool failure or a
+        # failed requirement is a fail-closed reject.
+        #
+        # Offline behaviour + known limitation (follow-up): --check-notarization
+        # couples a FRESH activation to Apple's notary being reachable.
+        #   * clean/uncached host, offline -> temporarily_unavailable (fail-closed).
+        #     The common fresh-install-offline case; strictly no worse than before
+        #     (that host was already broken without a local trust state).
+        #   * host that already confirmed THIS CDHash online -> the positive is
+        #     cached, so a later offline check returns rc 0. Safe: only genuinely
+        #     notarized CDHashes ever cache a positive.
+        # Online users — the common case — now activate (previously broken). Full
+        # offline support for a fresh/uncached install needs a committed
+        # Apple-signed ticket verified against the CDHash (trust-the-checkout).
         try:
             result = subprocess.run(
                 [

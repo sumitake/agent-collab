@@ -297,16 +297,18 @@ def _verify_member_signature(
     # local-state path fail-closes there every time; that is the bug this flag
     # fixes (it is why the first release carrying a committed runtime failed).
     #
-    # Empirically verified on macos-15.7.7 (the release-CI runner OS) via throwaway
-    # probe jobs:
-    #   * genuinely notarized runtime, online          -> rc 0 (accept)
-    #   * unsigned / ad-hoc-signed control              -> rc 3 (reject)
-    #   * genuinely notarized, network to Apple BLOCKED -> rc 3 (reject; FAIL-CLOSED)
-    # So `rc == 0` requires a POSITIVE online confirmation: there is no path where a
-    # missing ticket or an unreachable notary yields rc 0. This corrects a PRIOR
-    # comment that claimed `--check-notarization` "makes ad-hoc and un-notarized
-    # binaries pass (rc 0)" — NOT reproduced on macos-15.7.7 (both reject, rc 3);
-    # that claim appears to have been specific to an older macOS.
+    # Empirically verified on macos-14.8.7 + macos-15.7.7 (release-CI runner OSes) +
+    # macOS 26 via throwaway probe jobs:
+    #   * genuinely notarized runtime, online                    -> rc 0 (accept)
+    #   * unsigned / ad-hoc / Developer-ID-signed-unnotarized     -> rc 3 (reject)
+    #   * genuinely notarized, CLEAN/UNCACHED host, notary blocked -> rc 3 (FAIL-CLOSED)
+    # So `rc == 0` requires a POSITIVE notarization result — a live online
+    # confirmation, or a cached positive a prior online lookup established for this
+    # exact CDHash; neither exists for an unnotarized CDHash. Release CI always runs
+    # on a fresh, online runner, so it takes the live-confirmation path. This
+    # corrects a PRIOR comment that claimed `--check-notarization` "makes ad-hoc and
+    # un-notarized binaries pass (rc 0)" — NOT reproduced on macos-14/15 (all reject,
+    # rc 3); that claim appears to have been specific to an older macOS.
     #
     # Availability note: this couples the release gate to Apple's notary service
     # being reachable. That is a fail-closed dependency (an outage BLOCKS the
