@@ -71,19 +71,28 @@ class PluginArchiveTests(unittest.TestCase):
         for name in THIRD_PARTY_LICENSE_FILES:
             self.assertTrue((licenses / name).is_file())
 
-    def _activate(self) -> Path:
-        """Stage an activation manifest in-tree + a signed bundle OUT-of-tree.
+    def _activate(self, *, in_tree: bool = False) -> Path:
+        """Stage an activation manifest + a signed bundle.
 
-        The runtime bundle ships as a release asset (never committed), so the
-        fixture mirrors production: the committed tree carries only the
-        manifest, and the 0o500 bundle leaf lives in an external handoff
-        directory supplied to the builder via ``bundle_source``.
+        ``in_tree=False`` (default) mirrors an EXTERNAL sealed handoff: the 0o500
+        bundle leaf lives outside the tree and is supplied via ``bundle_source``.
+        ``in_tree=True`` mirrors the git-distribution default: the bundle is
+        COMMITTED at plugins/agent-collab/runtime/darwin-arm64/… and the builder
+        selects it with no ``bundle_source``.
         """
 
         self._install_third_party_notices()
-        self.bundle_leaf = (
-            self.root / "handoff" / "agent-collab-runtime.bundle"
-        )
+        if in_tree:
+            self.bundle_leaf = (
+                self.plugin
+                / "runtime"
+                / "darwin-arm64"
+                / "agent-collab-runtime.bundle"
+            )
+        else:
+            self.bundle_leaf = (
+                self.root / "handoff" / "agent-collab-runtime.bundle"
+            )
         runtime = self.bundle_leaf / "agent-collab-runtime"
         runtime.parent.mkdir(parents=True)
         runtime.write_bytes(b"signed-runtime-fixture")
@@ -452,9 +461,23 @@ class PluginArchiveTests(unittest.TestCase):
             bundle_source=self.bundle_leaf,
         )
 
-    def test_activation_manifest_requires_bundle_source_fail_closed(self) -> None:
+    def _build_in_tree(self, *, expected_commit: str | None = None) -> str:
+        return self.builder.build_archive(
+            self.root,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=None,
+            expected_commit=expected_commit,
+        )
+
+    def test_activation_manifest_requires_a_source_fail_closed(self) -> None:
+        # No --bundle-source AND no committed in-tree runtime is a hard error,
+        # never a silent policy-only downgrade. (_activate stages the bundle
+        # out-of-tree, so with no bundle_source there is no source at all.)
         self._activate()
-        with self.assertRaisesRegex(ValueError, "requires --bundle-source"):
+        with self.assertRaisesRegex(
+            ValueError, "requires a committed in-tree runtime or --bundle-source"
+        ):
             self.builder.build_archive(
                 self.root, plugin="agent-collab", output=self.archive
             )
@@ -508,7 +531,96 @@ class PluginArchiveTests(unittest.TestCase):
             self._build_activation()
         self.assertFalse(self.archive.exists())
 
-    def test_bundle_source_rejects_mode_drift(self) -> None:
+    def test_in_tree_bundle_tolerates_git_checkout_modes(self) -> None:
+        # The git-distribution default: the bundle is committed in-tree, so its
+        # checkout modes are 0o755 (umask 022), 0o700 (umask 077), or 0o775
+        # (umask 002) — never the build store's 0o500. All must be ACCEPTED under
+        # the source floor; the emitted archive still carries the canonical 0o500.
+        self._activate(in_tree=True)
+        members = (
+            self.bundle_leaf / "libpython3.13.dylib",
+            self.bundle_leaf / "agent-collab-runtime",
+        )
+        for member_mode in (0o755, 0o700, 0o775):
+            for member in members:
+                member.chmod(member_mode)
+            self.bundle_leaf.chmod(member_mode)
+            if self.archive.exists():
+                self.archive.unlink()
+            with self.subTest(member_mode=oct(member_mode)):
+                self.assertEqual(self._build_in_tree(), "activation")  # no raise
+
+    def _git(self, *args: str) -> str:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", str(self.root), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def test_expected_commit_binds_the_whole_worktree_to_the_release_tag(self) -> None:
+        # --expected-commit binds the ENTIRE archive to the release commit (Codex
+        # bot PR #30): the worktree must BE the tag (HEAD == commit, no modified
+        # tracked files), so neither the runtime NOR a non-runtime member (policy/
+        # client/skills/metadata) can carry non-tag bytes. Runtime-specific
+        # 100755/100644 blob provenance is layered on top in _verify_head_provenance.
+        self._activate(in_tree=True)
+        self._git("init", "-q")
+        self._git("add", "-A")
+        self._git(
+            "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "release"
+        )
+        commit = self._git("rev-parse", "HEAD")
+
+        # happy path: clean worktree at the tag commit
+        self.assertEqual(self._build_in_tree(expected_commit=commit), "activation")
+
+        # a modified NON-runtime tracked file fails closed — proves the binding
+        # covers the whole archive, not just the runtime members.
+        policy = self.plugin / "signing_policy.py"
+        policy.write_text(policy.read_text(encoding="utf-8") + "\n# x\n", encoding="utf-8")
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "not clean at the expected commit"):
+            self._build_in_tree(expected_commit=commit)
+        self._git("checkout", "--", "plugins/agent-collab/signing_policy.py")
+
+        # an UNTRACKED (non-ignored) canonical member absent from the commit fails
+        # closed too — "canonical != committed" (Codex worktree-confirm). A default
+        # `git status --porcelain` sees it; --untracked-files=no would have missed
+        # it and packaged its non-tag bytes.
+        untracked = self.plugin / "skills" / "faketest" / "SKILL.md"
+        untracked.parent.mkdir(parents=True, exist_ok=True)
+        untracked.write_text("untracked non-tag bytes\n", encoding="utf-8")
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "not clean at the expected commit"):
+            self._build_in_tree(expected_commit=commit)
+        shutil.rmtree(self.plugin / "skills" / "faketest")
+
+        # HEAD != expected commit fails closed (a stale/moved worktree). Advance
+        # HEAD with an empty commit so the worktree stays clean.
+        self._git(
+            "-c", "user.email=t@t", "-c", "user.name=t",
+            "commit", "-q", "--allow-empty", "-m", "moved",
+        )
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "HEAD is not the expected commit"):
+            self._build_in_tree(expected_commit=commit)
+
+        # a non-hex commit argument is rejected before any git call.
+        with self.assertRaisesRegex(ValueError, "must be a git object id"):
+            self._build_in_tree(expected_commit="--upload-pack=evil")
+
+    def test_bundle_source_requires_exact_install_mode(self) -> None:
+        # The EXTERNAL --bundle-source is a privately-extracted sealed handoff, so
+        # it must carry the exact 0o500 install mode (Codex #6): a git-checkout
+        # mode (0o755/0o700) on the external source is REJECTED — that tolerance
+        # belongs only to the committed in-tree path.
         self._activate()
         (self.bundle_leaf / "libpython3.13.dylib").chmod(0o755)
         with self.assertRaisesRegex(ValueError, "member identity is invalid"):
@@ -516,6 +628,22 @@ class PluginArchiveTests(unittest.TestCase):
 
         (self.bundle_leaf / "libpython3.13.dylib").chmod(0o500)
         self.bundle_leaf.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "root identity is invalid"):
+            self._build_activation()
+
+    def test_bundle_source_still_rejects_unsafe_modes(self) -> None:
+        # Tolerance is a SAFE ENVELOPE, not "any mode": a group/other-writable
+        # member or root is still rejected — that is the real tamper vector,
+        # unlike 0o755's read/execute bits, which grant nothing on a public signed
+        # binary. (Special bits are stripped by chmod on macOS, so setuid/setgid
+        # rejection is pinned at the predicate level in test_runtime_bundle.)
+        self._activate()
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o775)  # group-write member
+        with self.assertRaisesRegex(ValueError, "member identity is invalid"):
+            self._build_activation()
+
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o500)
+        self.bundle_leaf.chmod(0o777)  # world-write root
         with self.assertRaisesRegex(ValueError, "root identity is invalid"):
             self._build_activation()
 

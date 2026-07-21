@@ -175,9 +175,17 @@ jobs:
           set -euo pipefail
           PLUGIN="${{ steps.meta.outputs.plugin }}"
           ARCHIVE="${{ steps.meta.outputs.archive_name }}"
+          # Re-bind the release commit HERE, immediately before packaging, so an
+          # earlier repo-controlled step that moved HEAD cannot make the builder
+          # prove provenance against the wrong commit (Codex #4). The committed
+          # in-tree runtime is then bound to the tag commit: every runtime member
+          # must be an exact 100755 blob at $COMMIT matching the frozen manifest,
+          # and runtime-manifest.json a 100644 blob matching its bytes.
+          COMMIT="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
           python3 scripts/build_plugin_archive.py \
             --plugin "$PLUGIN" \
-            --output "/tmp/$ARCHIVE"
+            --output "/tmp/$ARCHIVE" \
+            --expected-commit "$COMMIT"
           ls -la "/tmp/$ARCHIVE"
       - name: Build checksum and SPDX release evidence
         run: |

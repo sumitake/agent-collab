@@ -593,7 +593,22 @@ def _operator_uid() -> int | None:
     return value if _exact_int(value) and value >= 0 else None
 
 
-def _safe_file_identity(path: Path, *, executable: bool) -> FileIdentity | None:
+def _safe_file_identity(
+    path: Path, *, executable: bool, allow_group_other: bool = False
+) -> FileIdentity | None:
+    """Identity + safety floor for a file.
+
+    Default (``allow_group_other=False``) is the STRICT check for the private
+    broker store: rejects any group/other WRITE and setuid/setgid. ``True`` is the
+    trust-the-checkout SOURCE floor (git tree): it TOLERATES group/other read/write/
+    execute (a normal umask reflects on the operator's own checkout, not a grant to
+    an attacker — anyone who can write the checkout already owns the Python control
+    plane), while additionally rejecting the sticky bit and requiring owner-read (we
+    must be able to read the source to hash it). Owner/type/nlink/no-symlink and the
+    downstream SHA-256 + Developer-ID signature + notarization remain the integrity
+    gates. Use the strict default for broker state; use the explicit
+    ``_safe_source_identity`` wrapper for git-source reads.
+    """
     operator_uid = _operator_uid()
     if operator_uid is None:
         return None
@@ -602,12 +617,19 @@ def _safe_file_identity(path: Path, *, executable: bool) -> FileIdentity | None:
     except OSError:
         return None
     mode = info.st_mode
+    if allow_group_other:
+        forbidden = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX  # no special bits
+        needs_owner_read = not (mode & stat.S_IRUSR)  # source floor: owner-readable
+    else:
+        forbidden = stat.S_IWGRP | stat.S_IWOTH | stat.S_ISUID | stat.S_ISGID
+        needs_owner_read = False
     if (
         not stat.S_ISREG(mode)
         or stat.S_ISLNK(mode)
         or info.st_uid != operator_uid
         or info.st_nlink != 1
-        or mode & (stat.S_IWGRP | stat.S_IWOTH | stat.S_ISUID | stat.S_ISGID)
+        or mode & forbidden
+        or needs_owner_read
         or (executable and not (mode & stat.S_IXUSR))
     ):
         return None
@@ -622,13 +644,28 @@ def _safe_file_identity(path: Path, *, executable: bool) -> FileIdentity | None:
     )
 
 
-def _read_regular_nofollow(path: Path, *, limit: int) -> tuple[bytes | None, FileIdentity | None]:
-    identity = _safe_file_identity(path, executable=False)
+def _safe_source_identity(path: Path, *, executable: bool) -> FileIdentity | None:
+    """Trust-the-checkout SOURCE floor (tolerates group/other bits). See
+    _safe_file_identity; this is the only sanctioned way to admit a git-tree source
+    file, kept named + greppable so a broker-state read can never opt into it."""
+    return _safe_file_identity(path, executable=executable, allow_group_other=True)
+
+
+def _read_regular_nofollow(
+    path: Path, *, limit: int, allow_group_other: bool = False
+) -> tuple[bytes | None, FileIdentity | None]:
+    identity = _safe_file_identity(
+        path, executable=False, allow_group_other=allow_group_other
+    )
     if identity is None or identity.size > limit:
         return None, None
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    # O_NONBLOCK so a FIFO/device swapped in for a tolerated-mode source cannot
+    # block the open before the fstat (dev,ino) recheck below; harmless on the
+    # regular files this only ever reads.
+    flags |= getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
         try:
@@ -650,6 +687,14 @@ def _read_regular_nofollow(path: Path, *, limit: int) -> tuple[bytes | None, Fil
             os.close(descriptor)
     except OSError:
         return None, None
+
+
+def _read_source_regular_nofollow(
+    path: Path, *, limit: int
+) -> tuple[bytes | None, FileIdentity | None]:
+    """Read a git-tree SOURCE file under the trust-the-checkout floor (tolerates
+    group/other bits). Named wrapper so broker-state reads can never opt in."""
+    return _read_regular_nofollow(path, limit=limit, allow_group_other=True)
 
 
 def _contracts(value: object) -> frozenset[tuple[str, str]] | None:
@@ -1245,7 +1290,7 @@ def resolve_runtime() -> RuntimeResolution:
     except OSError:
         return RuntimeResolution(RuntimeStatus.PATH_INVALID, error="plugin root is unsafe")
     manifest_path = root / MANIFEST_NAME
-    raw, _manifest_identity = _read_regular_nofollow(manifest_path, limit=1024 * 1024)
+    raw, _manifest_identity = _read_source_regular_nofollow(manifest_path, limit=1024 * 1024)
     if raw is None:
         if not manifest_path.exists():
             return RuntimeResolution(RuntimeStatus.UNAVAILABLE, error="runtime manifest absent")
@@ -1278,7 +1323,7 @@ def resolve_runtime() -> RuntimeResolution:
     if bundle_path is None:
         return RuntimeResolution(RuntimeStatus.PATH_INVALID, manifest_digest=manifest_digest, error="runtime path is unsafe")
     entrypoint = bundle_path / entry["entrypoint"]
-    identity = _safe_file_identity(entrypoint, executable=True)
+    identity = _safe_source_identity(entrypoint, executable=True)
     if identity is None:
         if not entrypoint.exists() or not bundle_path.exists():
             return RuntimeResolution(RuntimeStatus.UNAVAILABLE, manifest_digest=manifest_digest, error="runtime artifact absent")
@@ -1293,6 +1338,10 @@ def resolve_runtime() -> RuntimeResolution:
                 by_name[member.name],
                 signing=entry["signing"],
             ),
+            # Plugin tree: git-installed, so member modes are host-normalized to
+            # 0o755/0o700 and can never be the build store's 0o500. Digest +
+            # signature carry the tamper guarantee; the mode is a safe envelope.
+            tolerant=True,
         )
     except _RuntimeSignatureError as exc:
         return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=str(exc))
@@ -1302,7 +1351,7 @@ def resolve_runtime() -> RuntimeResolution:
         return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime bundle identity mismatch")
     # Close the verification-to-exec window as far as path-based macOS exec
     # permits by recording the exact identity that invoke() must recheck.
-    if _safe_file_identity(entrypoint, executable=True) != identity:
+    if _safe_source_identity(entrypoint, executable=True) != identity:
         return RuntimeResolution(RuntimeStatus.INTEGRITY_ERROR, manifest_digest=manifest_digest, error="runtime identity changed during verification")
     return RuntimeResolution(
         RuntimeStatus.OK,
@@ -3569,8 +3618,16 @@ def _broker_control_transaction(
             raise _BrokerMutationFailure(restored_previous=restored) from exc
 
 
-def _copy_regular_nofollow(source: Path, target: Path, *, limit: int, mode: int) -> None:
-    raw, identity = _read_regular_nofollow(source, limit=limit)
+def _copy_regular_nofollow(
+    source: Path, target: Path, *, limit: int, mode: int, source_is_checkout: bool = False
+) -> None:
+    # The TARGET is always written strict (`mode`, typically 0o500) into the
+    # owner-only broker store. The SOURCE read tolerates group/other bits only when
+    # it is the trusted git checkout (`source_is_checkout=True`); a store→store copy
+    # keeps the strict default.
+    raw, identity = _read_regular_nofollow(
+        source, limit=limit, allow_group_other=source_is_checkout
+    )
     if raw is None or identity is None:
         raise ValueError("verified provider runtime source became unsafe")
     descriptor = os.open(
@@ -3659,6 +3716,9 @@ def _verify_published_version(
                 by_name[member.name],
                 signing=entry["signing"],
             ),
+            # Broker store: privately extracted, so exact 0o500 IS achievable and
+            # is kept as a publication-drift invariant. Explicit, not defaulted.
+            tolerant=False,
         )
     except runtime_bundle.BundleContractError as exc:
         raise ValueError("provider broker bundle identity mismatch") from exc
@@ -3682,7 +3742,7 @@ def _publish_broker_version(
         or not resolution.files
     ):
         raise ValueError("verified provider runtime is unavailable")
-    if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
+    if _safe_source_identity(resolution.path, executable=True) != resolution.identity:
         raise ValueError("verified provider runtime identity changed")
     version = _broker_version_path(
         root,
@@ -3709,6 +3769,7 @@ def _publish_broker_version(
                 staged_bundle / record["path"],
                 limit=MAX_ARTIFACT_BYTES,
                 mode=runtime_bundle.INSTALL_MODE,
+                source_is_checkout=True,  # git-tree member: tolerate umask mode bits
             )
         _fsync_directory(staged_bundle)
         os.chmod(staged_bundle, runtime_bundle.INSTALL_MODE)
@@ -3717,6 +3778,7 @@ def _publish_broker_version(
             staging / MANIFEST_NAME,
             limit=1024 * 1024,
             mode=0o400,
+            source_is_checkout=True,  # git-tree manifest: tolerate umask mode bits
         )
         _fsync_directory(staging)
         os.rename(staging, version)
@@ -6811,7 +6873,7 @@ def _launch_runtime(
 ) -> RuntimeResult:
     if resolution.path is None or resolution.identity is None:
         return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime is unavailable")
-    if _safe_file_identity(resolution.path, executable=True) != resolution.identity:
+    if _safe_source_identity(resolution.path, executable=True) != resolution.identity:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime identity changed before launch")
     command = [str(resolution.path), "invoke", "--protocol", str(PROTOCOL_VERSION)]
     try:

@@ -325,21 +325,54 @@ def _validate_inspection(value: Any, record: Mapping[str, Any]) -> None:
             _raise("runtime bundle member inspection changed")
 
 
-def _bundle_root_mode_ok(mode: int) -> bool:
-    """Cache-stable bundle-root directory predicate.
+def source_mode_ok(mode: int) -> bool:
+    """Mode floor for a TRUSTED git-checkout SOURCE tree (any umask).
 
-    Host plugin managers re-extract the installed bundle and normalize its directory
-    mode (0o755) on install AND on every autoUpdate/restart, so the build-store's exact
-    0o500 can never be preserved on the loaded copy. The real tamper guarantee is the
-    whole-bundle + per-member digest and signature verified below — NOT the root dir
-    mode — so the root predicate requires only owner read+execute, NO group/other write,
-    and NO setuid/setgid/sticky, accepting both 0o500 (build store) and host-normalized
-    0o755 while still rejecting 0o775 / 0o757 / 0o777 and special-bit modes. Accepted
-    residual (truthful): a same-UID owner CAN chmod/mutate the tree; that mutation is
-    detected at resolution by the digest/signature, and exact 0o500 was never a same-UID
-    TOCTOU boundary either (the owner could always chmod it). This matches the
-    operator-approved same-UID reliability posture.
+    Threat model — trust-the-checkout. A plugin's own code is trusted by the act
+    of installing and running it: the host loads and executes the plugin's Python
+    control plane (`runtime_client.py`, `coordinator.py`) from this same checkout
+    via `--plugin-dir`. A peer who can write the checkout therefore already owns the
+    verifier, so anyone with effective write access (POSIX mode OR ACL) to any part
+    of the checkout is OUT OF SCOPE — the whole checkout is ONE trust domain. The
+    native runtime's INTEGRITY is still fully verified (per-member SHA-256 +
+    Developer-ID signature + notarization + Mach-O inspection, all unchanged); only
+    the source PERMISSION-MODE rejection is dropped, because it is not an integrity
+    boundary here and it made a normal `git clone` unverifiable.
+
+    A git checkout cannot preserve the build store's `0o500`: it yields `0o755`
+    (umask 022), `0o700` (umask 077), or `0o775`/`0o770` (umask 002 — group/other
+    bits reflect the operator's umask, not a grant to an attacker). This floor
+    therefore requires only owner read+execute (correct for the all-Mach-O members
+    and traversable directories) and rejects setuid/setgid/sticky. It intentionally
+    TOLERATES group/other read/write/execute. Version freshness (anti-rollback) is
+    delegated to the marketplace/git install channel, not to this mode check.
+
+    This predicate is the SINGLE source of the source-mode rule, shared by the
+    bundle root, the (source) member check, and the release/export/archive-source
+    gates that run against the checked-out git tree — so the floor cannot drift
+    across files. It is DISTINCT from the strict broker-store check, which keeps
+    exact `0o500` (that store is privately extracted and owner-only).
+
+    NOTE: every current member is a `0o500` Mach-O executable, so requiring
+    owner-execute is correct for all of them. A future NON-executable data member
+    would need a role-aware predicate and a manifest schema change before it could
+    be recorded — it must not silently ride this floor.
     """
+    perms = stat.S_IMODE(mode)
+    return (
+        (perms & 0o500) == 0o500  # owner read + execute present
+        and (perms & 0o7000) == 0  # no setuid / setgid / sticky
+    )
+
+
+def _broker_root_mode_ok(mode: int) -> bool:
+    """Broker-store bundle root predicate: owner read+execute, NO group/other
+    WRITE, and no special bits. The private store is owner-managed, so a
+    group/other-writable root would let a peer rename/replace members around the
+    path-based checks and defeat the store boundary (Codex PR #30). A host that
+    normalizes the extracted bundle directory to 0o755 (no group/other write) is
+    still accepted; only writable roots (0o775/0o777/…) are rejected. Distinct
+    from the git-source `source_mode_ok`, which tolerates group/other write."""
     perms = stat.S_IMODE(mode)
     return (
         (perms & 0o500) == 0o500  # owner read + execute present
@@ -353,16 +386,33 @@ def verify_bundle_tree(
     records: Any,
     *,
     inspector: Callable[[Path], Dict[str, str]],
+    tolerant: bool = False,
 ) -> str:
-    """Verify one closed standalone bundle without following filesystem links."""
+    """Verify one closed standalone bundle without following filesystem links.
 
-    if not isinstance(root, Path) or not callable(inspector):
+    `tolerant` selects the MODE check only. False (default) requires each member's
+    mode to equal the manifest `install_mode` exactly — used for the privately
+    extracted broker store, where the exact `0o500` is achievable and worth keeping
+    as a publication-drift invariant. True accepts the trusted-source mode floor
+    (`source_mode_ok`) — used for the git-installed plugin tree (a trust-the-checkout
+    SOURCE), whose modes reflect the operator's umask (`0o755`/`0o700`/`0o775`) and
+    cannot be `0o500`. Every other check — regular-file type, no symlink,
+    `uid == geteuid`, `nlink == 1`, size,
+    stat identity, per-member SHA-256, and the Mach-O/signature inspection — is
+    identical in both modes; tolerance touches nothing but the permission bits."""
+
+    # `tolerant` selects a security predicate, so it must be a real bool — a
+    # truthy value like the string "false" must not silently relax the check.
+    if not isinstance(root, Path) or not callable(inspector) or type(tolerant) is not bool:
         _raise("runtime bundle verifier arguments are invalid")
     validated = validate_file_records(records)
     expected_names = tuple(record["path"] for record in validated)
     by_name = {record["path"]: record for record in validated}
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_CLOEXEC", 0)
+    # O_NONBLOCK so a FIFO/device swapped in for the root/member (a tolerated-mode
+    # source under trust-the-checkout) cannot block the open before the type check.
+    flags |= getattr(os, "O_NONBLOCK", 0)
 
     try:
         root_descriptor = os.open(root, flags)
@@ -379,7 +429,17 @@ def verify_bundle_tree(
             or stat.S_ISLNK(lexical_root.st_mode)
             or _stat_identity(root_before) != _stat_identity(lexical_root)
             or root_before.st_uid != os.geteuid()
-            or not _bundle_root_mode_ok(root_before.st_mode)
+            # The root mode is selected by `tolerant` exactly like the members: the
+            # git SOURCE root accepts the any-umask source floor, but the private
+            # broker store root must be NON-group/other-WRITABLE — a writable
+            # broker root would let a peer rename/replace members around the
+            # path-based checks and defeat the store boundary (Codex PR #30). Host
+            # normalization to 0o755 (no group/other write) stays accepted.
+            or (
+                not source_mode_ok(root_before.st_mode)
+                if tolerant
+                else not _broker_root_mode_ok(root_before.st_mode)
+            )
         ):
             _raise("runtime bundle root is unsafe")
         try:
@@ -395,6 +455,7 @@ def verify_bundle_tree(
             record = by_name[name]
             member_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
             member_flags |= getattr(os, "O_CLOEXEC", 0)
+            member_flags |= getattr(os, "O_NONBLOCK", 0)  # FIFO-swap hang defense
             try:
                 descriptor = os.open(name, member_flags, dir_fd=root_descriptor)
             except OSError:
@@ -412,7 +473,11 @@ def verify_bundle_tree(
                     or stat.S_ISLNK(lexical_before.st_mode)
                     or before.st_uid != os.geteuid()
                     or before.st_nlink != 1
-                    or stat.S_IMODE(before.st_mode) != record["install_mode"]
+                    or (
+                        not source_mode_ok(before.st_mode)
+                        if tolerant
+                        else stat.S_IMODE(before.st_mode) != record["install_mode"]
+                    )
                     or before.st_size != record["size"]
                     or _stat_identity(before) != _stat_identity(lexical_before)
                 ):
@@ -480,6 +545,7 @@ __all__ = [
     "compute_bundle_identity",
     "encode_bundle_identity",
     "load_closed_json_object",
+    "source_mode_ok",
     "validate_file_records",
     "verify_bundle_tree",
 ]
