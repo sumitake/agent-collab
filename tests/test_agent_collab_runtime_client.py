@@ -2197,6 +2197,11 @@ print(json.dumps({{
             handshake_deadline_monotonic_ms=109_000,
         )
         document = json.loads(encoded)
+        # The v2 bridge document is exactly the seven-key contract the receiving
+        # bridge validator accepts. The request reservation
+        # (execution_key/request_size/request_sha256) is NOT echoed here — the
+        # bridge derives it from `request` and it crosses the trust boundary only
+        # on the wire frame, so over-sending it here is a schema error.
         self.assertEqual(
             set(document),
             {
@@ -2207,11 +2212,10 @@ print(json.dumps({{
                 "deadline_monotonic_ms",
                 "handshake_deadline_monotonic_ms",
                 "request",
-                "execution_key",
-                "request_size",
-                "request_sha256",
             },
         )
+        for reserved in ("execution_key", "request_size", "request_sha256"):
+            self.assertNotIn(reserved, document)
         self.assertNotIn("socket", encoded.decode("ascii"))
         self.assertNotIn(str(self.root), encoded.decode("ascii"))
         self.assertTrue(encoded.endswith(b"\n"))
