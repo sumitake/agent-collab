@@ -365,9 +365,20 @@ def source_mode_ok(mode: int) -> bool:
     )
 
 
-def _bundle_root_mode_ok(mode: int) -> bool:
-    """The bundle root uses the shared source-mode floor (see source_mode_ok)."""
-    return source_mode_ok(mode)
+def _broker_root_mode_ok(mode: int) -> bool:
+    """Broker-store bundle root predicate: owner read+execute, NO group/other
+    WRITE, and no special bits. The private store is owner-managed, so a
+    group/other-writable root would let a peer rename/replace members around the
+    path-based checks and defeat the store boundary (Codex PR #30). A host that
+    normalizes the extracted bundle directory to 0o755 (no group/other write) is
+    still accepted; only writable roots (0o775/0o777/…) are rejected. Distinct
+    from the git-source `source_mode_ok`, which tolerates group/other write."""
+    perms = stat.S_IMODE(mode)
+    return (
+        (perms & 0o500) == 0o500  # owner read + execute present
+        and (perms & 0o022) == 0  # no group/other WRITE
+        and (perms & 0o7000) == 0  # no setuid / setgid / sticky
+    )
 
 
 def verify_bundle_tree(
@@ -418,7 +429,17 @@ def verify_bundle_tree(
             or stat.S_ISLNK(lexical_root.st_mode)
             or _stat_identity(root_before) != _stat_identity(lexical_root)
             or root_before.st_uid != os.geteuid()
-            or not _bundle_root_mode_ok(root_before.st_mode)
+            # The root mode is selected by `tolerant` exactly like the members: the
+            # git SOURCE root accepts the any-umask source floor, but the private
+            # broker store root must be NON-group/other-WRITABLE — a writable
+            # broker root would let a peer rename/replace members around the
+            # path-based checks and defeat the store boundary (Codex PR #30). Host
+            # normalization to 0o755 (no group/other write) stays accepted.
+            or (
+                not source_mode_ok(root_before.st_mode)
+                if tolerant
+                else not _broker_root_mode_ok(root_before.st_mode)
+            )
         ):
             _raise("runtime bundle root is unsafe")
         try:

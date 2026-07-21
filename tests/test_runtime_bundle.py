@@ -219,8 +219,10 @@ class RuntimeBundleTreeTests(unittest.TestCase):
         # The TAR / ASSET / BROKER install path: a mode-preserving tarball keeps
         # member FILES at 0o500 while the host normalizes the bundle DIRECTORY to
         # 0o755. verify_bundle_tree with the DEFAULT tolerant=False accepts exactly
-        # this (root-mode tolerance in _bundle_root_mode_ok + strict-0o500 members),
-        # and it stays the contract for the broker store, where 0o500 is achievable.
+        # this (the broker-root predicate allows a non-group/other-writable 0o755
+        # root + strict-0o500 members), and it stays the contract for the broker
+        # store, where 0o500 is achievable. A group/other-WRITABLE root is rejected
+        # (test_root_mode_is_gated_by_tolerant_like_the_members).
         #
         # HISTORY: an earlier comment here said "no source-mode LOOSENING is
         # warranted (unnecessary AND opens a direct-execution-of-owner-writable
@@ -373,6 +375,39 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                 for record in records:
                     (root / record["path"]).chmod(0o700)
                 root.chmod(0o700)
+
+    def test_root_mode_is_gated_by_tolerant_like_the_members(self):
+        # Regression (Codex PR #30 P1): the ROOT mode must be selected by
+        # `tolerant` exactly like the members. tolerant=True (git source) admits a
+        # group-writable root; the default/strict broker path REJECTS it — a
+        # group/other-writable broker bundle root would let a peer rename/replace
+        # members around the path-based checks and defeat the private-store boundary.
+        for root_mode in (0o775, 0o777, 0o770):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "agent-collab-runtime.bundle"
+                root.mkdir()
+                records = self._create_bundle(root)
+                for record in records:
+                    (root / record["path"]).chmod(rb.INSTALL_MODE)  # members stay strict
+                root.chmod(root_mode)
+                try:
+                    with self.subTest(root_mode=oct(root_mode)):
+                        # git source: tolerated
+                        self.assertEqual(
+                            rb.verify_bundle_tree(
+                                root, records, inspector=self._inspector, tolerant=True,
+                            ),
+                            rb.compute_bundle_identity(records),
+                        )
+                        # broker store (default strict): a non-0o500 root is rejected
+                        with self.assertRaises(rb.BundleContractError):
+                            rb.verify_bundle_tree(
+                                root, records, inspector=self._inspector,
+                            )
+                finally:
+                    for record in records:
+                        (root / record["path"]).chmod(0o700)
+                    root.chmod(0o700)
 
     def test_source_mode_ok_predicate(self):
         # The trust-the-checkout SOURCE floor, pinned directly. Owner read+execute
