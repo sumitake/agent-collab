@@ -488,6 +488,38 @@ print(json.dumps({{
             self.client.RuntimeContractAnchor("2.0.0", 2),
         )
 
+    def test_resolve_runtime_accepts_git_normalized_member_modes(self) -> None:
+        # The release-critical call-site scoping: the plugin tree is git-installed,
+        # so members are 0o755/0o700, and resolve_runtime() must resolve OK
+        # (verify_bundle_tree tolerant=True). This is the test that would FAIL if a
+        # future edit inverted the call-site tolerance flag.
+        bundle = (self.root / "runtime" / "darwin-arm64" / "agent-collab-runtime.bundle")
+        for member_mode, root_mode in ((0o755, 0o755), (0o700, 0o700)):
+            binary = self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
+            binary.chmod(member_mode)
+            bundle.chmod(root_mode)
+            with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+                self.client, "_verify_macos_signature", return_value=(True, "")
+            ):
+                resolution = self.client.resolve_runtime()
+            with self.subTest(member_mode=oct(member_mode)):
+                self.assertEqual(
+                    resolution.status, self.client.RuntimeStatus.OK, resolution.error
+                )
+
+    def test_resolve_runtime_still_rejects_group_writable_member(self) -> None:
+        # Tolerance is a safe envelope even at the call site: a group-writable
+        # member is rejected (not OK), so the loosening did not become "any mode".
+        bundle = (self.root / "runtime" / "darwin-arm64" / "agent-collab-runtime.bundle")
+        binary = self._fixture(provider_runtime_version="2.0.0", route_contract_version=2)
+        binary.chmod(0o775)  # group-write
+        bundle.chmod(0o755)
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            resolution = self.client.resolve_runtime()
+        self.assertNotEqual(resolution.status, self.client.RuntimeStatus.OK)
+
     def test_manifest_classifier_enforces_the_closed_compatibility_matrix(self) -> None:
         self._fixture()
         manifest = json.loads(

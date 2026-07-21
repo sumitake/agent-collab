@@ -304,15 +304,20 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                     root.chmod(0o700)
 
     def test_tolerance_does_not_relax_content_or_identity(self):
-        # tolerant=True touches ONLY the permission bits. A content change (digest)
-        # under a valid git mode must still fail.
+        # tolerant=True touches ONLY the permission bits. A SAME-LENGTH content
+        # change under a valid git mode must still fail — same length so the
+        # rejection comes from the SHA-256 check, not the size check (the point is
+        # to prove the digest is enforced on the TOLERANT branch specifically).
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "agent-collab-runtime.bundle"
             root.mkdir()
             records = self._create_bundle(root)
             member = root / records[0]["path"]
+            original = member.read_bytes()
+            tampered = bytes((b ^ 0xFF) for b in original)  # identical length, different bytes
+            assert len(tampered) == len(original) and tampered != original
             member.chmod(0o700)
-            member.write_bytes(b"tampered-content-different-length")  # digest + size change
+            member.write_bytes(tampered)
             member.chmod(0o755)
             root.chmod(0o755)
             try:
@@ -320,6 +325,25 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                     rb.verify_bundle_tree(
                         root, records, inspector=self._inspector, tolerant=True,
                     )
+            finally:
+                for record in records:
+                    (root / record["path"]).chmod(0o700)
+                root.chmod(0o700)
+
+    def test_tolerant_argument_must_be_a_real_bool(self):
+        # A truthy non-bool (e.g. the string "false") must NOT silently select the
+        # relaxed predicate — it is a security selector, so it fails closed.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "agent-collab-runtime.bundle"
+            root.mkdir()
+            records = self._create_bundle(root)
+            try:
+                for bad in ("false", 1, 0, None):
+                    with self.subTest(bad=repr(bad)):
+                        with self.assertRaises(rb.BundleContractError):
+                            rb.verify_bundle_tree(
+                                root, records, inspector=self._inspector, tolerant=bad,
+                            )
             finally:
                 for record in records:
                     (root / record["path"]).chmod(0o700)

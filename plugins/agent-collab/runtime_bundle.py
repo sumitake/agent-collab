@@ -382,7 +382,9 @@ def verify_bundle_tree(
     stat identity, per-member SHA-256, and the Mach-O/signature inspection — is
     identical in both modes; tolerance touches nothing but the permission bits."""
 
-    if not isinstance(root, Path) or not callable(inspector):
+    # `tolerant` selects a security predicate, so it must be a real bool — a
+    # truthy value like the string "false" must not silently relax the check.
+    if not isinstance(root, Path) or not callable(inspector) or type(tolerant) is not bool:
         _raise("runtime bundle verifier arguments are invalid")
     validated = validate_file_records(records)
     expected_names = tuple(record["path"] for record in validated)
