@@ -283,27 +283,39 @@ def _verify_member_signature(
     if not timestamp:
         errors.append("runtime code signature is missing a secure Timestamp")
     # The runtime entrypoint is a bare command-line Mach-O, not a .app bundle or
-    # an installer package, so `spctl --assess` cannot assess it: `--type execute`
-    # only assesses .app bundles (always "the code is valid but does not seem to
-    # be an app"), and `--type install` is an installer-package policy whose
-    # acceptance of a bare binary is empirical, not a documented contract. The
-    # documented, code-object-native notarization proof is the codesign
-    # requirement `notarized`, which binds to the CDHash. Empirically (exit codes):
-    # a notarized Developer-ID binary passes (0); unsigned (1), ad-hoc (3), and
-    # Developer-ID-signed-but-NOT-notarized (3) all fail. `--check-notarization`
-    # is deliberately NOT combined — with `--test-requirement` it makes ad-hoc and
-    # un-notarized binaries pass (rc 0). `spctl_source` keeps its name and its
-    # "Notarized Developer ID" value (a stable cross-job evidence-schema field);
-    # it is now populated from the codesign requirement result rather than spctl.
-    # Offline note: a bare command-line Mach-O cannot have a notarization ticket
-    # stapled (stapling targets bundles, disk images, and installer packages, not
-    # standalone binaries). Without `--check-notarization` this requirement does
-    # not run the online Gatekeeper lookup itself; it is satisfied by a stapled
-    # ticket or the host's local notarization trust state. A bare binary relies
-    # on that local state (the build host populates it at notarize time), so a
-    # clean host without it fails closed, never a bypass. A `macOS notarization
-    # verification tool failed` / requirement failure here is a fail-closed
-    # reject, never a pass.
+    # an installer package, so `spctl --assess` cannot assess it. The documented,
+    # code-object-native notarization proof is the codesign requirement
+    # `notarized`, which binds to the CDHash.
+    #
+    # `--check-notarization` forces the ONLINE Apple notary lookup by CDHash and is
+    # REQUIRED here. A bare Mach-O cannot have a notarization ticket stapled
+    # (stapling targets .app/.dmg/.pkg; `xcrun stapler staple` errors on a bare
+    # binary), and WITHOUT `--check-notarization` the `=notarized` requirement is
+    # satisfied only by a stapled ticket or the host's LOCAL notarization trust
+    # state — which only the machine that notarized the binary holds. Release CI
+    # runs on a fresh GitHub-hosted runner (a clean host with neither), so the
+    # local-state path fail-closes there every time; that is the bug this flag
+    # fixes (it is why the first release carrying a committed runtime failed).
+    #
+    # Empirically verified on macos-15.7.7 (the release-CI runner OS) via throwaway
+    # probe jobs:
+    #   * genuinely notarized runtime, online          -> rc 0 (accept)
+    #   * unsigned / ad-hoc-signed control              -> rc 3 (reject)
+    #   * genuinely notarized, network to Apple BLOCKED -> rc 3 (reject; FAIL-CLOSED)
+    # So `rc == 0` requires a POSITIVE online confirmation: there is no path where a
+    # missing ticket or an unreachable notary yields rc 0. This corrects a PRIOR
+    # comment that claimed `--check-notarization` "makes ad-hoc and un-notarized
+    # binaries pass (rc 0)" — NOT reproduced on macos-15.7.7 (both reject, rc 3);
+    # that claim appears to have been specific to an older macOS.
+    #
+    # Availability note: this couples the release gate to Apple's notary service
+    # being reachable. That is a fail-closed dependency (an outage BLOCKS the
+    # release, never ships an unverified binary) — the correct tradeoff for a
+    # release gate. `spctl_source` keeps its name + "Notarized Developer ID" value
+    # (a stable cross-job evidence-schema field), populated from the codesign
+    # requirement result. Do NOT drop `--check-notarization` "to fix flakiness":
+    # without it the gate cannot pass on a clean CI host. The regression test in
+    # tests/test_release_runtime_gate.py locks the flag in.
     spctl_source = ""
     if assess_notarization:
         try:
@@ -315,6 +327,7 @@ def _verify_member_signature(
                     "--verbose=4",
                     "--test-requirement",
                     "=notarized",
+                    "--check-notarization",
                     str(path),
                 ],
                 capture_output=True,
