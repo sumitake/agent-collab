@@ -1090,14 +1090,17 @@ def _verify_release_worktree(plugin_path: Path, expected_commit: str) -> None:
 
     Every archive member — the runtime AND the policy/client/skills/metadata read
     from the worktree — is packaged from the working tree, so a release build must
-    run on a worktree that IS the tag commit: `HEAD == expected_commit` and no
-    modified tracked files. This covers policy-only releases too (which package no
-    runtime), so a dirtied or moved worktree cannot publish bytes that were never
-    in the release tag. `_verify_head_provenance` then adds runtime-specific
-    100755/100644 blob-type binding as defense-in-depth. Untracked files are never
-    part of `_member_plan` (which packages only canonical committed members), so
-    `--untracked-files=no` avoids brittleness against `__pycache__`/the temp
-    archive while still catching any modified/deleted tracked member.
+    run on a worktree that IS the tag commit: `HEAD == expected_commit` and a fully
+    clean tree. The status check does NOT pass `--untracked-files=no`: an UNTRACKED
+    file that is a canonical member (e.g. a `SKILL.md` present locally but absent
+    from the commit) would otherwise be packaged with non-tag bytes even though
+    every tracked file matched (Codex worktree-confirm: "canonical != committed").
+    The default `git status --porcelain` honors `.gitignore`, so build artifacts
+    (`__pycache__`, the `.plugin` output, `*.pyc`) are excluded, but ANY
+    non-ignored untracked or modified file fails the build. This covers policy-only
+    releases too, so a dirtied/moved worktree cannot publish bytes never in the
+    release tag; `_verify_head_provenance` adds runtime-specific 100755/100644
+    blob-type binding as defense-in-depth.
     """
     if not re.fullmatch(r"[0-9a-fA-F]{7,64}", expected_commit):
         raise ValueError("expected release commit must be a git object id")
@@ -1110,9 +1113,11 @@ def _verify_release_worktree(plugin_path: Path, expected_commit: str) -> None:
     )
     if not head or head != want:
         raise ValueError("release worktree HEAD is not the expected commit")
-    dirty = _git_stdout(repo, "status", "--porcelain", "--untracked-files=no")
+    # No --untracked-files=no: an untracked canonical member (not in the commit)
+    # must also fail; .gitignore already excludes __pycache__/*.plugin/*.pyc.
+    dirty = _git_stdout(repo, "status", "--porcelain")
     if dirty.strip():
-        raise ValueError("release worktree has uncommitted tracked changes")
+        raise ValueError("release worktree is not clean at the expected commit")
 
 
 def build_archive(

@@ -584,9 +584,22 @@ class PluginArchiveTests(unittest.TestCase):
         policy.write_text(policy.read_text(encoding="utf-8") + "\n# x\n", encoding="utf-8")
         if self.archive.exists():
             self.archive.unlink()
-        with self.assertRaisesRegex(ValueError, "uncommitted tracked changes"):
+        with self.assertRaisesRegex(ValueError, "not clean at the expected commit"):
             self._build_in_tree(expected_commit=commit)
         self._git("checkout", "--", "plugins/agent-collab/signing_policy.py")
+
+        # an UNTRACKED (non-ignored) canonical member absent from the commit fails
+        # closed too — "canonical != committed" (Codex worktree-confirm). A default
+        # `git status --porcelain` sees it; --untracked-files=no would have missed
+        # it and packaged its non-tag bytes.
+        untracked = self.plugin / "skills" / "faketest" / "SKILL.md"
+        untracked.parent.mkdir(parents=True, exist_ok=True)
+        untracked.write_text("untracked non-tag bytes\n", encoding="utf-8")
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "not clean at the expected commit"):
+            self._build_in_tree(expected_commit=commit)
+        shutil.rmtree(self.plugin / "skills" / "faketest")
 
         # HEAD != expected commit fails closed (a stale/moved worktree). Advance
         # HEAD with an empty commit so the worktree stays clean.

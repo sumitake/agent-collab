@@ -50,10 +50,17 @@ independence warning. Policy-only safe mode preserves only validated async
 inbox/coordination seams and returns typed unavailable for every model route.
 
 The native client accepts no path or member override, resolves only the
-manifest-selected closed bundle beneath the plugin root, rejects links,
-aliases, traversal, writable or unknown members, verifies per-member
-architecture/type/size/hash/signing plus whole-bundle identity and macOS
-notarization, scrubs the environment, and uses only the fixed protocols.
+manifest-selected closed bundle beneath the plugin root, and rejects links,
+aliases, traversal, and unknown members. Member permission modes follow the
+source. The privately-extracted broker store requires exact non-writable install
+modes. A git-checkout source is admitted under a permission FLOOR — owner
+read+execute, no setuid/setgid/sticky — that tolerates the operator's umask
+group/other bits, because the whole plugin checkout is ONE trust domain: the host
+runs the plugin's Python control plane from that same checkout, so a peer who can
+write it already owns the client and the mode is not the integrity boundary
+there. Integrity is verified per-member (architecture/type/size/hash/signing)
+plus whole-bundle identity and macOS notarization; the environment is scrubbed and
+only the fixed protocols are used.
 
 ## Clean public repository invariant
 
