@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.2.0**
+Current: **4.2.1**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -59,7 +59,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.2.0 package.
+identify this same 4.2.1 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -339,9 +339,9 @@ Every request contains exactly `protocol_version`, `request_id`, `operation`,
 `{"content":"...","author_model":"..."}`; both values must be nonblank. It may
 use only a read-only governance-review contract: `gemini/governance`,
 `codex/advisory`, or `grok/governance`.
-An execute request for `opencode/build`, `composer/codegen`, `codex/build`,
+An execute request for `opencode/plan`, `opencode/build`, `composer/codegen`, `codex/build`,
 `auto/worker`, `auto/advisory`, `auto/architecture`, `auto/governance`, or an
-applicable explicit Gemini/Codex/Grok review action may
+applicable explicit Gemini/Codex/OpenCode/Grok review action may
 optionally carry that same exact `artifact` snapshot. No other
 non-governance request accepts it. The captured artifact-author family is
 excluded from every applicable review, fallback, and worker selection.

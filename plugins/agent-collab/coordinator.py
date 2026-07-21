@@ -81,6 +81,7 @@ REVIEW_CONTRACTS = frozenset(
         ("gemini", "advisory"),
         ("gemini", "governance"),
         ("codex", "advisory"),
+        ("opencode", "plan"),
         ("grok", "architecture"),
         ("grok", "governance"),
     }

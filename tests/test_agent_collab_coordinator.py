@@ -969,6 +969,39 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(captured[0].artifact_author_family, "zhipu")
         self.assertTrue(captured[0].artifact_present)
 
+    def test_non_governance_opencode_plan_accepts_exact_artifact_snapshot(self) -> None:
+        coordinator = _load(
+            "agent_collab_opencode_plan_artifact_coordinator",
+            PLUGIN / "coordinator.py",
+        )
+        request = {
+            "protocol_version": 2,
+            "request_id": "opencode-plan-artifact-1",
+            "operation": "execute",
+            "route": "opencode",
+            "action": "plan",
+            "timeout_ms": 30_000,
+            "governance": False,
+            "primary": {
+                "primary_id": "codex",
+                "primary_family": "openai",
+                "active_model": "openai/gpt-5.6-sol",
+                "host_runtime": "codex",
+                "session_identifier": "c-plan",
+            },
+            "row": {"cwd": "/tmp/work", "model": "opencode/glm-5.2"},
+            "prompt": "review the implementation plan",
+            "artifact": {
+                "content": "exact authored implementation plan",
+                "author_model": "openai/gpt-5.6-sol",
+            },
+        }
+
+        validated, _request_id, error = coordinator._validate(request)
+
+        self.assertIsNotNone(validated, error)
+        self.assertEqual(validated["artifact"], request["artifact"])
+
     def test_unhashable_row_values_return_config_error(self) -> None:
         cases = (
             (
