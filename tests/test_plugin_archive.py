@@ -71,19 +71,28 @@ class PluginArchiveTests(unittest.TestCase):
         for name in THIRD_PARTY_LICENSE_FILES:
             self.assertTrue((licenses / name).is_file())
 
-    def _activate(self) -> Path:
-        """Stage an activation manifest in-tree + a signed bundle OUT-of-tree.
+    def _activate(self, *, in_tree: bool = False) -> Path:
+        """Stage an activation manifest + a signed bundle.
 
-        The runtime bundle ships as a release asset (never committed), so the
-        fixture mirrors production: the committed tree carries only the
-        manifest, and the 0o500 bundle leaf lives in an external handoff
-        directory supplied to the builder via ``bundle_source``.
+        ``in_tree=False`` (default) mirrors an EXTERNAL sealed handoff: the 0o500
+        bundle leaf lives outside the tree and is supplied via ``bundle_source``.
+        ``in_tree=True`` mirrors the git-distribution default: the bundle is
+        COMMITTED at plugins/agent-collab/runtime/darwin-arm64/… and the builder
+        selects it with no ``bundle_source``.
         """
 
         self._install_third_party_notices()
-        self.bundle_leaf = (
-            self.root / "handoff" / "agent-collab-runtime.bundle"
-        )
+        if in_tree:
+            self.bundle_leaf = (
+                self.plugin
+                / "runtime"
+                / "darwin-arm64"
+                / "agent-collab-runtime.bundle"
+            )
+        else:
+            self.bundle_leaf = (
+                self.root / "handoff" / "agent-collab-runtime.bundle"
+            )
         runtime = self.bundle_leaf / "agent-collab-runtime"
         runtime.parent.mkdir(parents=True)
         runtime.write_bytes(b"signed-runtime-fixture")
@@ -452,9 +461,23 @@ class PluginArchiveTests(unittest.TestCase):
             bundle_source=self.bundle_leaf,
         )
 
-    def test_activation_manifest_requires_bundle_source_fail_closed(self) -> None:
+    def _build_in_tree(self, *, expected_commit: str | None = None) -> str:
+        return self.builder.build_archive(
+            self.root,
+            plugin="agent-collab",
+            output=self.archive,
+            bundle_source=None,
+            expected_commit=expected_commit,
+        )
+
+    def test_activation_manifest_requires_a_source_fail_closed(self) -> None:
+        # No --bundle-source AND no committed in-tree runtime is a hard error,
+        # never a silent policy-only downgrade. (_activate stages the bundle
+        # out-of-tree, so with no bundle_source there is no source at all.)
         self._activate()
-        with self.assertRaisesRegex(ValueError, "requires --bundle-source"):
+        with self.assertRaisesRegex(
+            ValueError, "requires a committed in-tree runtime or --bundle-source"
+        ):
             self.builder.build_archive(
                 self.root, plugin="agent-collab", output=self.archive
             )
@@ -508,20 +531,80 @@ class PluginArchiveTests(unittest.TestCase):
             self._build_activation()
         self.assertFalse(self.archive.exists())
 
-    def test_bundle_source_tolerates_git_checkout_modes(self) -> None:
-        # The bundle is distributed by committing to git, so the archive-build
-        # source is the checked-out tree: 0o755 (umask 022) or 0o700 (umask 077),
-        # never the 0o500 build store. Both must be ACCEPTED — a member and the
-        # root at 0o755 build successfully; the emitted archive still carries the
-        # manifest 0o500 (asserted elsewhere).
+    def test_in_tree_bundle_tolerates_git_checkout_modes(self) -> None:
+        # The git-distribution default: the bundle is committed in-tree, so its
+        # checkout modes are 0o755 (umask 022), 0o700 (umask 077), or 0o775
+        # (umask 002) — never the build store's 0o500. All must be ACCEPTED under
+        # the source floor; the emitted archive still carries the canonical 0o500.
+        self._activate(in_tree=True)
+        members = (
+            self.bundle_leaf / "libpython3.13.dylib",
+            self.bundle_leaf / "agent-collab-runtime",
+        )
+        for member_mode in (0o755, 0o700, 0o775):
+            for member in members:
+                member.chmod(member_mode)
+            self.bundle_leaf.chmod(member_mode)
+            if self.archive.exists():
+                self.archive.unlink()
+            with self.subTest(member_mode=oct(member_mode)):
+                self.assertEqual(self._build_in_tree(), "activation")  # no raise
+
+    def _git(self, *args: str) -> str:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", str(self.root), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def test_in_tree_head_provenance_binds_release_commit(self) -> None:
+        # --expected-commit binds the committed in-tree runtime to a release
+        # commit (Codex #4/#5): the happy path packages; a working-tree manifest
+        # that diverges from its committed 100644 blob fails closed even though the
+        # bundle digests still self-agree (which is exactly what provenance adds
+        # over the per-member sha256).
+        self._activate(in_tree=True)
+        self._git("init", "-q")
+        self._git("add", "-A")
+        self._git(
+            "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "release"
+        )
+        commit = self._git("rev-parse", "HEAD")
+
+        self.assertEqual(self._build_in_tree(expected_commit=commit), "activation")
+
+        # Dirty the working-tree manifest with JSON-insignificant whitespace: it
+        # still parses to the same records (so the bundle digests match), but its
+        # bytes no longer equal the committed 100644 blob -> provenance fails.
+        manifest = self.plugin / "runtime-manifest.json"
+        manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        if self.archive.exists():
+            self.archive.unlink()
+        with self.assertRaisesRegex(ValueError, "manifest does not match its HEAD blob"):
+            self._build_in_tree(expected_commit=commit)
+
+        # A non-hex commit argument is rejected before any git call.
+        with self.assertRaisesRegex(ValueError, "must be a git object id"):
+            self._build_in_tree(expected_commit="--upload-pack=evil")
+
+    def test_bundle_source_requires_exact_install_mode(self) -> None:
+        # The EXTERNAL --bundle-source is a privately-extracted sealed handoff, so
+        # it must carry the exact 0o500 install mode (Codex #6): a git-checkout
+        # mode (0o755/0o700) on the external source is REJECTED — that tolerance
+        # belongs only to the committed in-tree path.
         self._activate()
         (self.bundle_leaf / "libpython3.13.dylib").chmod(0o755)
-        self.bundle_leaf.chmod(0o755)
-        self._build_activation()  # no raise
+        with self.assertRaisesRegex(ValueError, "member identity is invalid"):
+            self._build_activation()
 
-        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o700)
-        self.bundle_leaf.chmod(0o700)
-        self._build_activation()  # no raise
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o500)
+        self.bundle_leaf.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "root identity is invalid"):
+            self._build_activation()
 
     def test_bundle_source_still_rejects_unsafe_modes(self) -> None:
         # Tolerance is a SAFE ENVELOPE, not "any mode": a group/other-writable

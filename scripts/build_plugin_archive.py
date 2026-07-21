@@ -12,6 +12,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import tarfile
 import zlib
 from pathlib import Path, PurePosixPath
@@ -347,30 +348,41 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
 
 
 def _validate_activation_bundle_tree(
-    bundle_leaf: Path, records: tuple[dict[str, object], ...]
+    bundle_leaf: Path,
+    records: tuple[dict[str, object], ...],
+    *,
+    require_install_mode: bool,
 ) -> None:
     """Validate the physical runtime bundle leaf directory against the manifest.
 
-    The leaf is HOSTILE input (an operator-supplied out-of-tree handoff):
-    enumerate it bounded and non-following, require member-set EQUALITY with
-    the manifest records, and admit only regular files owned by the invoking
-    user with nlink 1, the exact install mode, exact size, and exact sha256.
-    Devices, FIFOs, sockets, and symlinks all fail the S_ISREG/O_NOFOLLOW
-    checks. `validate_file_records` has already rejected traversal, separator
-    confusables, and Unicode-normalization/case-fold collisions in the paths.
+    Two mode policies (Codex #6). ``require_install_mode=True`` — the EXTERNAL
+    ``--bundle-source`` handoff, a privately-extracted sealed store: require the
+    exact ``install_mode`` (0o500) on each member and the leaf. ``False`` — the
+    COMMITTED IN-TREE bundle, part of the trusted git checkout: accept the source
+    mode floor (`source_mode_ok`, any-umask), because a checkout member's mode
+    reflects the operator's umask, not a grant to an attacker. Either way the leaf
+    is enumerated bounded + non-following, member-set EQUALITY with the records is
+    required, and only regular files owned by the invoking user with nlink 1, exact
+    size, and exact sha256 are admitted. Devices, FIFOs, sockets, and symlinks fail
+    the S_ISREG/O_NOFOLLOW checks. `validate_file_records` has already rejected
+    traversal, separator confusables, and case-fold collisions in the paths. The
+    emitted archive always carries the canonical 0o500 regardless of source mode.
     """
 
     try:
         leaf_info = bundle_leaf.lstat()
     except OSError as exc:
         raise ValueError("runtime bundle source is missing") from exc
+    leaf_mode_ok = (
+        stat.S_IMODE(leaf_info.st_mode) == runtime_bundle.INSTALL_MODE
+        if require_install_mode
+        else runtime_bundle.source_mode_ok(leaf_info.st_mode)
+    )
     if (
         stat.S_ISLNK(leaf_info.st_mode)
         or not stat.S_ISDIR(leaf_info.st_mode)
         or leaf_info.st_uid != os.getuid()
-        # Source is the checked-out git tree (0o755/0o700), not the 0o500 build
-        # store — the emitted archive still carries the manifest 0o500 (below).
-        or not runtime_bundle.source_mode_ok(leaf_info.st_mode)
+        or not leaf_mode_ok
     ):
         raise ValueError("runtime bundle source root identity is invalid")
     expected_names = {record["path"] for record in records}
@@ -402,12 +414,17 @@ def _validate_activation_bundle_tree(
             raise ValueError("runtime bundle source member is unsafe") from exc
         try:
             info = os.fstat(descriptor)
+            member_mode_ok = (
+                stat.S_IMODE(info.st_mode) == record["install_mode"]
+                if require_install_mode
+                else runtime_bundle.source_mode_ok(info.st_mode)
+            )
             if (
                 stat.S_ISLNK(lexical.st_mode)
                 or not stat.S_ISREG(info.st_mode)
                 or info.st_uid != os.getuid()
                 or info.st_nlink != 1
-                or not runtime_bundle.source_mode_ok(info.st_mode)
+                or not member_mode_ok
                 or info.st_size != record["size"]
             ):
                 raise ValueError(
@@ -585,7 +602,12 @@ def _member_plan(
     for relative in relatives:
         source = plugin_path / relative
         _safe_source(source)
-        members[relative.as_posix()] = source
+        key = relative.as_posix()
+        # Explicit duplicate rejection (Codex #6): a tree member must never
+        # silently overwrite a synthesized runtime member via dict assignment.
+        if key in members:
+            raise ValueError(f"duplicate archive member: {key}")
+        members[key] = source
     return [(name, members[name]) for name in sorted(members)]
 
 
@@ -901,7 +923,10 @@ def verify_archive(
 
 
 def _read_runtime_payloads(
-    bundle_leaf: Path, records: tuple[dict[str, object], ...]
+    bundle_leaf: Path,
+    records: tuple[dict[str, object], ...],
+    *,
+    require_install_mode: bool,
 ) -> dict[str, bytes]:
     """Read + re-validate + re-digest each runtime payload into memory.
 
@@ -927,11 +952,16 @@ def _read_runtime_payloads(
             raise ValueError("runtime bundle source member is unsafe") from exc
         try:
             info = os.fstat(descriptor)
+            member_mode_ok = (
+                stat.S_IMODE(info.st_mode) == record["install_mode"]
+                if require_install_mode
+                else runtime_bundle.source_mode_ok(info.st_mode)
+            )
             if (
                 not stat.S_ISREG(info.st_mode)
                 or info.st_uid != os.getuid()
                 or info.st_nlink != 1
-                or not runtime_bundle.source_mode_ok(info.st_mode)
+                or not member_mode_ok
                 or info.st_size != record["size"]
             ):
                 raise ValueError("runtime bundle source member changed during packing")
@@ -958,12 +988,105 @@ def _read_runtime_payloads(
     return payloads
 
 
+def _resolve_in_tree_bundle_leaf(plugin_path: Path) -> Path:
+    """Descend runtime/<platform-arch>/<bundle> from a trusted plugin_path dir fd
+    with no followed component (O_NOFOLLOW|O_DIRECTORY rejects a symlinked or
+    non-directory component, so an intermediate swap cannot redirect the committed
+    source), and return the leaf path for `_validate_activation_bundle_tree`."""
+    walk_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptors: list[int] = []
+    try:
+        descriptors.append(os.open(plugin_path, walk_flags))
+        for component in RUNTIME_BUNDLE_REL.parts:
+            descriptors.append(os.open(component, walk_flags, dir_fd=descriptors[-1]))
+    except OSError as exc:
+        raise ValueError("in-tree runtime bundle path is unsafe") from exc
+    finally:
+        for descriptor in descriptors:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    return plugin_path / RUNTIME_BUNDLE_REL
+
+
+def _git_stdout(repo: Path, *args: str) -> bytes:
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+    if result.returncode != 0:
+        raise ValueError(
+            "git provenance check failed: "
+            + result.stderr.decode("utf-8", "replace").strip()[:200]
+        )
+    return result.stdout
+
+
+def _head_blob_bytes(
+    repo: Path, commit: str, git_path: str, expected_mode: str
+) -> bytes:
+    """Return the bytes of git_path at `commit`, requiring it be an exact-mode
+    regular blob (not a symlink `120000` or gitlink) so a bytes-only compare
+    cannot be satisfied by a symlink-blob + dirty-file swap (Codex #5)."""
+    listing = _git_stdout(repo, "ls-tree", "-z", commit, "--", git_path)
+    if not listing:
+        raise ValueError(f"release commit does not contain {git_path}")
+    record = listing.split(b"\0", 1)[0].decode("utf-8", "replace")
+    meta, _, _ = record.partition("\t")
+    fields = meta.split()
+    if len(fields) != 3 or fields[1] != "blob" or fields[0] != expected_mode:
+        raise ValueError(f"release commit {git_path} is not a {expected_mode} blob")
+    return _git_stdout(repo, "cat-file", "blob", fields[2])
+
+
+def _verify_head_provenance(
+    plugin_path: Path,
+    records: tuple[dict[str, object], ...],
+    frozen_manifest: bytes | None,
+    *,
+    expected_commit: str | None,
+) -> None:
+    """Bind the committed in-tree runtime to a release commit (Codex #4/#5).
+
+    With --expected-commit (release.yml passes the tag commit, re-bound in the
+    build job immediately before packaging), every runtime member must be an exact
+    100755 regular blob at that commit whose bytes match the frozen-manifest
+    digest, and runtime-manifest.json must be a 100644 regular blob matching the
+    frozen bytes — so a dirty or moved working tree cannot be packaged under the
+    release tag. Without it (local/dev/test builds), the frozen manifest + the
+    per-member SHA-256 re-validation remain the integrity gate and this is skipped.
+    """
+    if expected_commit is None:
+        return
+    if frozen_manifest is None:
+        raise ValueError("release provenance requires a frozen manifest")
+    if not re.fullmatch(r"[0-9a-fA-F]{7,64}", expected_commit):
+        raise ValueError("expected release commit must be a git object id")
+    repo = plugin_path.parents[1]
+    prefix = f"plugins/{PLUGIN_NAME}"
+    manifest_blob = _head_blob_bytes(
+        repo, expected_commit, f"{prefix}/runtime-manifest.json", "100644"
+    )
+    if manifest_blob != frozen_manifest:
+        raise ValueError("release manifest does not match its HEAD blob")
+    for record in records:
+        git_path = f"{prefix}/{(RUNTIME_BUNDLE_REL / record['path']).as_posix()}"
+        blob = _head_blob_bytes(repo, expected_commit, git_path, "100755")
+        if hashlib.sha256(blob).hexdigest() != record["sha256"]:
+            raise ValueError("release runtime member differs from its HEAD blob")
+
+
 def build_archive(
     root: Path,
     *,
     plugin: str,
     output: Path,
     bundle_source: Path | None = None,
+    expected_commit: str | None = None,
 ) -> str:
     if plugin != PLUGIN_NAME:
         raise ValueError("agent-collab is the only releaseable plugin")
@@ -981,26 +1104,49 @@ def build_archive(
         if bundle_source is not None:
             raise ValueError("policy-only manifest forbids --bundle-source")
     else:
-        # Fail closed: an activation manifest without a matching signed bundle
-        # source is a hard error, never a silent policy-only downgrade.
-        if bundle_source is None:
-            raise ValueError("activation manifest requires --bundle-source")
+        # An activation manifest is packaged from EITHER the committed in-tree
+        # bundle (the git-distribution default — release.yml invokes with no
+        # --bundle-source) OR an external sealed --bundle-source handoff. Exactly
+        # one source; both present is ambiguous and fails closed.
         runtime_root = plugin_path / "runtime"
-        if runtime_root.exists() or runtime_root.is_symlink():
-            raise ValueError(
-                "in-tree runtime conflicts with --bundle-source; remove one source"
+        in_tree = runtime_root.exists() or runtime_root.is_symlink()
+        if bundle_source is not None:
+            # EXTERNAL sealed handoff (privately extracted, exact 0o500).
+            if in_tree:
+                raise ValueError(
+                    "in-tree runtime conflicts with --bundle-source; remove one source"
+                )
+            try:
+                raw_source = bundle_source.lstat()
+            except OSError as exc:
+                raise ValueError("runtime bundle source is missing") from exc
+            # lstat the raw CLI argument BEFORE resolving — resolve() would erase
+            # the evidence that the argument itself was a symlink.
+            if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
+                raise ValueError("runtime bundle source is unsafe")
+            bundle_leaf = bundle_source.resolve(strict=True)
+            _validate_activation_bundle_tree(bundle_leaf, records, require_install_mode=True)
+            runtime_payloads = _read_runtime_payloads(
+                bundle_leaf, records, require_install_mode=True
             )
-        try:
-            raw_source = bundle_source.lstat()
-        except OSError as exc:
-            raise ValueError("runtime bundle source is missing") from exc
-        # lstat the raw CLI argument BEFORE resolving — resolve() would erase
-        # the evidence that the argument itself was a symlink.
-        if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
-            raise ValueError("runtime bundle source is unsafe")
-        bundle_leaf = bundle_source.resolve(strict=True)
-        _validate_activation_bundle_tree(bundle_leaf, records)
-        runtime_payloads = _read_runtime_payloads(bundle_leaf, records)
+        elif in_tree:
+            # COMMITTED IN-TREE bundle (trusted checkout, any-umask source floor).
+            # Walk runtime/<platform-arch>/<bundle> from a trusted plugin_path fd
+            # with no followed component, then validate + read under the source
+            # floor. Optional git-HEAD provenance binds it to a release commit
+            # (see _verify_head_provenance) when --expected-commit is supplied.
+            bundle_leaf = _resolve_in_tree_bundle_leaf(plugin_path)
+            _validate_activation_bundle_tree(bundle_leaf, records, require_install_mode=False)
+            _verify_head_provenance(
+                plugin_path, records, frozen_manifest, expected_commit=expected_commit
+            )
+            runtime_payloads = _read_runtime_payloads(
+                bundle_leaf, records, require_install_mode=False
+            )
+        else:
+            raise ValueError(
+                "activation manifest requires a committed in-tree runtime or --bundle-source"
+            )
     plan = _member_plan(plugin_path, mode=mode, records=records)
     record_by_name = {
         (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
@@ -1068,8 +1214,20 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help=(
             "path to the signed runtime bundle leaf directory "
-            "(…/agent-collab-runtime.bundle) from the local release handoff; "
-            "required for an activation manifest, forbidden for policy-only"
+            "(…/agent-collab-runtime.bundle) from an EXTERNAL sealed release "
+            "handoff (exact 0o500); omit to package the committed in-tree runtime. "
+            "Forbidden for policy-only; conflicts with an in-tree runtime"
+        ),
+    )
+    parser.add_argument(
+        "--expected-commit",
+        default=None,
+        help=(
+            "git commit id (SHA) the committed in-tree runtime must match: every "
+            "runtime member must be an exact 100755 blob at this commit whose bytes "
+            "match the frozen manifest, and runtime-manifest.json a 100644 blob "
+            "matching its bytes. Release.yml passes the tag commit; omit for local "
+            "builds (frozen-manifest + per-member sha256 remain the integrity gate)"
         ),
     )
     args = parser.parse_args(argv)
@@ -1089,6 +1247,7 @@ def main(argv: list[str] | None = None) -> int:
             plugin=args.plugin,
             output=args.output,
             bundle_source=args.bundle_source,
+            expected_commit=args.expected_commit,
         )
     except (OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
