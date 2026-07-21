@@ -216,19 +216,26 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                 root.chmod(0o700)
 
     def test_host_normalized_root_with_strict_members_is_verified(self):
-        # Regression lock for the REAL install state observed across EVERY host
-        # manager (Claude Code, Codex, Antigravity/agy, and the broker's sealed
-        # copies): install/autoUpdate normalizes the bundle DIRECTORY to 0o755
-        # but leaves the member FILES at 0o500. The loader must accept this
-        # (root-mode tolerance in _bundle_root_mode_ok + strict-0o500 members).
+        # The TAR / ASSET / BROKER install path: a mode-preserving tarball keeps
+        # member FILES at 0o500 while the host normalizes the bundle DIRECTORY to
+        # 0o755. verify_bundle_tree with the DEFAULT tolerant=False accepts exactly
+        # this (root-mode tolerance in _bundle_root_mode_ok + strict-0o500 members),
+        # and it stays the contract for the broker store, where 0o500 is achievable.
         #
-        # This is the empirical refutation of the release-pipeline design-of-
-        # record §9.7 premise ("host normalizes member files to 0o700"): a scan
-        # of every installed bundle found 2356/2356 member files at 0o500 and
-        # ZERO at 0o700, and resolve_runtime() returns OK on the real install.
-        # No source-mode loosening is warranted (it would be unnecessary AND
-        # would open a direct-execution-of-owner-writable-source bypass); this
-        # test instead pins the already-correct behavior against regression.
+        # HISTORY: an earlier comment here said "no source-mode LOOSENING is
+        # warranted (unnecessary AND opens a direct-execution-of-owner-writable
+        # -source bypass)". That was scoped to the tar/asset model, where members
+        # ARE 0o500 (a scan found 2356/2356 members at 0o500) so tolerance was
+        # unneeded. The GIT-DISTRIBUTED model changes the premise: git cannot store
+        # 0o500 and a checkout yields 0o755/0o700 members, so strict-0o500 would
+        # make every git install fail permanently. The tolerant=True git path
+        # (test_git_normalized_members_are_verified_only_when_tolerant) therefore
+        # accepts the git member modes. The "bypass" it was cautious about is the
+        # SAME same-UID owner-writable residual the root predicate already accepts
+        # with operator approval (digest+signature are the tamper guarantee; a
+        # same-UID owner could always chmod 0o500 anyway), adjudicated NON-BLOCKING
+        # in the git-carried distribution design review. This test pins the
+        # tar/broker (strict) path; the tolerant path has its own tests.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "agent-collab-runtime.bundle"
             root.mkdir()
@@ -241,6 +248,89 @@ class RuntimeBundleTreeTests(unittest.TestCase):
                 )
             finally:
                 root.chmod(0o700)
+
+    def test_git_normalized_members_are_verified_only_when_tolerant(self):
+        # The git-distributed plugin tree: checkout yields 0o755 (umask 022) or
+        # 0o700 (umask 077) members. tolerant=True must ACCEPT them; the default
+        # (tolerant=False, the broker/tar contract) must REJECT them, so the two
+        # trees keep distinct guarantees.
+        for member_mode in (0o755, 0o700):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "agent-collab-runtime.bundle"
+                root.mkdir()
+                records = self._create_bundle(root)
+                for record in records:
+                    (root / record["path"]).chmod(member_mode)
+                root.chmod(0o755)
+                try:
+                    # tolerant=True: git modes accepted, identity unchanged.
+                    self.assertEqual(
+                        rb.verify_bundle_tree(
+                            root, records, inspector=self._inspector, tolerant=True,
+                        ),
+                        rb.compute_bundle_identity(records),
+                    )
+                    # default (broker/tar): git member modes rejected.
+                    with self.assertRaises(rb.BundleContractError):
+                        rb.verify_bundle_tree(root, records, inspector=self._inspector)
+                finally:
+                    for record in records:
+                        (root / record["path"]).chmod(0o700)
+                    root.chmod(0o700)
+
+    def test_tolerant_still_rejects_unsafe_member_modes(self):
+        # Tolerance is a safe ENVELOPE: a group/other-writable member — the real
+        # tamper vector — stays rejected even with tolerant=True, unlike 0o755's
+        # read/execute bits, which grant nothing on a public signed binary. Only
+        # write-bit modes are exercised here: the filesystem strips setuid/setgid/
+        # sticky on chmod (measured: 0o2755 -> 0o500), so those are covered at the
+        # predicate level in test_tolerant_mode_ok_predicate instead.
+        for unsafe in (0o775, 0o757, 0o777, 0o770, 0o707):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "agent-collab-runtime.bundle"
+                root.mkdir()
+                records = self._create_bundle(root)
+                (root / records[0]["path"]).chmod(unsafe)
+                root.chmod(0o755)
+                try:
+                    with self.subTest(unsafe=oct(unsafe)):
+                        with self.assertRaises(rb.BundleContractError):
+                            rb.verify_bundle_tree(
+                                root, records, inspector=self._inspector, tolerant=True,
+                            )
+                finally:
+                    for record in records:
+                        (root / record["path"]).chmod(0o700)
+                    root.chmod(0o700)
+
+    def test_tolerance_does_not_relax_content_or_identity(self):
+        # tolerant=True touches ONLY the permission bits. A content change (digest)
+        # under a valid git mode must still fail.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "agent-collab-runtime.bundle"
+            root.mkdir()
+            records = self._create_bundle(root)
+            member = root / records[0]["path"]
+            member.chmod(0o700)
+            member.write_bytes(b"tampered-content-different-length")  # digest + size change
+            member.chmod(0o755)
+            root.chmod(0o755)
+            try:
+                with self.assertRaises(rb.BundleContractError):
+                    rb.verify_bundle_tree(
+                        root, records, inspector=self._inspector, tolerant=True,
+                    )
+            finally:
+                for record in records:
+                    (root / record["path"]).chmod(0o700)
+                root.chmod(0o700)
+
+    def test_tolerant_mode_ok_predicate(self):
+        # The single shared predicate, pinned directly.
+        for ok in (0o500, 0o700, 0o755, 0o550, 0o511):
+            self.assertTrue(rb.tolerant_mode_ok(ok), oct(ok))
+        for bad in (0o775, 0o757, 0o777, 0o400, 0o644, 0o4755, 0o2755, 0o1755, 0o000):
+            self.assertFalse(rb.tolerant_mode_ok(bad), oct(bad))
 
     def test_symlink_hardlink_extra_missing_and_content_drift_fail_closed(self):
         mutations = ("symlink", "hardlink", "extra", "missing", "content")

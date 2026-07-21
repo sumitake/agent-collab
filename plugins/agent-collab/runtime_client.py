@@ -1293,6 +1293,10 @@ def resolve_runtime() -> RuntimeResolution:
                 by_name[member.name],
                 signing=entry["signing"],
             ),
+            # Plugin tree: git-installed, so member modes are host-normalized to
+            # 0o755/0o700 and can never be the build store's 0o500. Digest +
+            # signature carry the tamper guarantee; the mode is a safe envelope.
+            tolerant=True,
         )
     except _RuntimeSignatureError as exc:
         return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=str(exc))
@@ -3659,6 +3663,9 @@ def _verify_published_version(
                 by_name[member.name],
                 signing=entry["signing"],
             ),
+            # Broker store: privately extracted, so exact 0o500 IS achievable and
+            # is kept as a publication-drift invariant. Explicit, not defaulted.
+            tolerant=False,
         )
     except runtime_bundle.BundleContractError as exc:
         raise ValueError("provider broker bundle identity mismatch") from exc

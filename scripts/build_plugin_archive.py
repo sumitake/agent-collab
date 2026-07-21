@@ -368,7 +368,9 @@ def _validate_activation_bundle_tree(
         stat.S_ISLNK(leaf_info.st_mode)
         or not stat.S_ISDIR(leaf_info.st_mode)
         or leaf_info.st_uid != os.getuid()
-        or stat.S_IMODE(leaf_info.st_mode) != runtime_bundle.INSTALL_MODE
+        # Source is the checked-out git tree (0o755/0o700), not the 0o500 build
+        # store — the emitted archive still carries the manifest 0o500 (below).
+        or not runtime_bundle.tolerant_mode_ok(leaf_info.st_mode)
     ):
         raise ValueError("runtime bundle source root identity is invalid")
     expected_names = {record["path"] for record in records}
@@ -405,7 +407,7 @@ def _validate_activation_bundle_tree(
                 or not stat.S_ISREG(info.st_mode)
                 or info.st_uid != os.getuid()
                 or info.st_nlink != 1
-                or stat.S_IMODE(info.st_mode) != record["install_mode"]
+                or not runtime_bundle.tolerant_mode_ok(info.st_mode)
                 or info.st_size != record["size"]
             ):
                 raise ValueError(
@@ -929,7 +931,7 @@ def _read_runtime_payloads(
                 not stat.S_ISREG(info.st_mode)
                 or info.st_uid != os.getuid()
                 or info.st_nlink != 1
-                or stat.S_IMODE(info.st_mode) != record["install_mode"]
+                or not runtime_bundle.tolerant_mode_ok(info.st_mode)
                 or info.st_size != record["size"]
             ):
                 raise ValueError("runtime bundle source member changed during packing")

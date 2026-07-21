@@ -325,20 +325,30 @@ def _validate_inspection(value: Any, record: Mapping[str, Any]) -> None:
             _raise("runtime bundle member inspection changed")
 
 
-def _bundle_root_mode_ok(mode: int) -> bool:
-    """Cache-stable bundle-root directory predicate.
+def tolerant_mode_ok(mode: int) -> bool:
+    """Safe-envelope mode predicate for a GIT-DISTRIBUTED source tree.
 
-    Host plugin managers re-extract the installed bundle and normalize its directory
-    mode (0o755) on install AND on every autoUpdate/restart, so the build-store's exact
-    0o500 can never be preserved on the loaded copy. The real tamper guarantee is the
-    whole-bundle + per-member digest and signature verified below — NOT the root dir
-    mode — so the root predicate requires only owner read+execute, NO group/other write,
-    and NO setuid/setgid/sticky, accepting both 0o500 (build store) and host-normalized
-    0o755 while still rejecting 0o775 / 0o757 / 0o777 and special-bit modes. Accepted
-    residual (truthful): a same-UID owner CAN chmod/mutate the tree; that mutation is
-    detected at resolution by the digest/signature, and exact 0o500 was never a same-UID
-    TOCTOU boundary either (the owner could always chmod it). This matches the
-    operator-approved same-UID reliability posture.
+    A git checkout cannot preserve the build store's `0o500`: it yields `0o755`
+    (umask 022) or `0o700` (umask 077), and host plugin managers re-extract and
+    normalize modes on install and every autoUpdate/restart. The tamper guarantee
+    is the whole-bundle + per-member digest and Developer-ID signature — NOT the
+    mode (the root predicate has said so, operator-approved, since this bundle
+    shipped). Exact `0o500` was never a same-UID TOCTOU boundary either: the owner
+    could always chmod it, and a different UID cannot write into an owner-only tree.
+
+    This predicate is the SINGLE source of that rule, shared by the bundle root,
+    the (tolerant) member check, and the release/export/archive-source gates that
+    now run against the checked-out git tree — so tolerance can never drift across
+    files. It requires owner read+execute (correct for the all-Mach-O members and
+    the traversable directories), and rejects the actual attack vectors: any
+    group/other WRITE and any setuid/setgid/sticky bit. It accepts `0o500`, `0o700`
+    and `0o755` (and other read/execute combinations in that envelope) while
+    rejecting `0o775` / `0o757` / `0o777` and special-bit modes.
+
+    NOTE (reviewer finding 7): every current member is a `0o500` Mach-O executable,
+    so requiring owner-execute is correct for all of them. A future NON-executable
+    data member would need a role-aware predicate and a manifest schema change
+    before it could be recorded — it must not silently ride this envelope.
     """
     perms = stat.S_IMODE(mode)
     return (
@@ -348,13 +358,29 @@ def _bundle_root_mode_ok(mode: int) -> bool:
     )
 
 
+def _bundle_root_mode_ok(mode: int) -> bool:
+    """The bundle root uses the shared safe-envelope predicate (see tolerant_mode_ok)."""
+    return tolerant_mode_ok(mode)
+
+
 def verify_bundle_tree(
     root: Path,
     records: Any,
     *,
     inspector: Callable[[Path], Dict[str, str]],
+    tolerant: bool = False,
 ) -> str:
-    """Verify one closed standalone bundle without following filesystem links."""
+    """Verify one closed standalone bundle without following filesystem links.
+
+    `tolerant` selects the MODE check only. False (default) requires each member's
+    mode to equal the manifest `install_mode` exactly — used for the privately
+    extracted broker store, where the exact `0o500` is achievable and worth keeping
+    as a publication-drift invariant. True accepts the shared safe envelope
+    (`tolerant_mode_ok`) — used for the git-installed plugin tree, whose modes are
+    normalized to `0o755`/`0o700` by the checkout and cannot be `0o500`. Every other
+    check — regular-file type, no symlink, `uid == geteuid`, `nlink == 1`, size,
+    stat identity, per-member SHA-256, and the Mach-O/signature inspection — is
+    identical in both modes; tolerance touches nothing but the permission bits."""
 
     if not isinstance(root, Path) or not callable(inspector):
         _raise("runtime bundle verifier arguments are invalid")
@@ -412,7 +438,11 @@ def verify_bundle_tree(
                     or stat.S_ISLNK(lexical_before.st_mode)
                     or before.st_uid != os.geteuid()
                     or before.st_nlink != 1
-                    or stat.S_IMODE(before.st_mode) != record["install_mode"]
+                    or (
+                        not tolerant_mode_ok(before.st_mode)
+                        if tolerant
+                        else stat.S_IMODE(before.st_mode) != record["install_mode"]
+                    )
                     or before.st_size != record["size"]
                     or _stat_identity(before) != _stat_identity(lexical_before)
                 ):
@@ -480,6 +510,7 @@ __all__ = [
     "compute_bundle_identity",
     "encode_bundle_identity",
     "load_closed_json_object",
+    "tolerant_mode_ok",
     "validate_file_records",
     "verify_bundle_tree",
 ]

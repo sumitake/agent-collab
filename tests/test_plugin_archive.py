@@ -508,14 +508,34 @@ class PluginArchiveTests(unittest.TestCase):
             self._build_activation()
         self.assertFalse(self.archive.exists())
 
-    def test_bundle_source_rejects_mode_drift(self) -> None:
+    def test_bundle_source_tolerates_git_checkout_modes(self) -> None:
+        # The bundle is distributed by committing to git, so the archive-build
+        # source is the checked-out tree: 0o755 (umask 022) or 0o700 (umask 077),
+        # never the 0o500 build store. Both must be ACCEPTED — a member and the
+        # root at 0o755 build successfully; the emitted archive still carries the
+        # manifest 0o500 (asserted elsewhere).
         self._activate()
         (self.bundle_leaf / "libpython3.13.dylib").chmod(0o755)
+        self.bundle_leaf.chmod(0o755)
+        self._build_activation()  # no raise
+
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o700)
+        self.bundle_leaf.chmod(0o700)
+        self._build_activation()  # no raise
+
+    def test_bundle_source_still_rejects_unsafe_modes(self) -> None:
+        # Tolerance is a SAFE ENVELOPE, not "any mode": a group/other-writable
+        # member or root is still rejected — that is the real tamper vector,
+        # unlike 0o755's read/execute bits, which grant nothing on a public signed
+        # binary. (Special bits are stripped by chmod on macOS, so setuid/setgid
+        # rejection is pinned at the predicate level in test_runtime_bundle.)
+        self._activate()
+        (self.bundle_leaf / "libpython3.13.dylib").chmod(0o775)  # group-write member
         with self.assertRaisesRegex(ValueError, "member identity is invalid"):
             self._build_activation()
 
         (self.bundle_leaf / "libpython3.13.dylib").chmod(0o500)
-        self.bundle_leaf.chmod(0o755)
+        self.bundle_leaf.chmod(0o777)  # world-write root
         with self.assertRaisesRegex(ValueError, "root identity is invalid"):
             self._build_activation()
 
