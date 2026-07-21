@@ -6335,10 +6335,12 @@ print(json.dumps({
                     self.assertTrue(
                         any(
                             "--test-requirement" in cmd
+                            and "=notarized" in cmd
                             and "--check-notarization" in cmd
                             for cmd in observed
                         ),
-                        "notarization check must force the online lookup",
+                        "the =notarized requirement and --check-notarization must "
+                        "be in the SAME codesign command (online notary lookup)",
                     )
 
     def test_notarization_tool_failure_is_fail_closed(self) -> None:

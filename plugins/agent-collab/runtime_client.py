@@ -1047,11 +1047,18 @@ def _verify_macos_signature(
         # tool failure or a failed requirement is a fail-closed reject, never a
         # pass.
         #
-        # Known limitation (follow-up): this couples activation to Apple's notary
-        # being reachable, so an OFFLINE / air-gapped end user still fail-closes
-        # (runtime -> temporarily_unavailable). Online users — the common case —
-        # now activate successfully. Full offline support needs a committed
-        # Apple-signed ticket verified against the CDHash (trust-the-checkout).
+        # Known limitation (follow-up): --check-notarization couples activation to
+        # Apple's notary being reachable. Net effect by host state:
+        #   * clean host, online  -> now WORKS (previously broken: no local trust).
+        #   * clean host, offline -> temporarily_unavailable (also was before).
+        #   * host that already holds local notarization trust for this CDHash,
+        #     offline -> now temporarily_unavailable. This is a NARROW regression:
+        #     such a host could satisfy `=notarized` from local trust before.
+        #     Rare for a git-cloned checkout (no quarantine -> no prior Gatekeeper
+        #     assessment) but real.
+        # Online users — the common case — now activate. Full offline support needs
+        # a committed Apple-signed ticket verified against the CDHash
+        # (trust-the-checkout).
         try:
             result = subprocess.run(
                 [
