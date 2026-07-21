@@ -167,6 +167,12 @@ LEGACY_DISPATCHER_REQUEST_KEYS = frozenset(
     set(LEGACY_DISPATCHER_HELLO_KEYS)
     | {"hello_sha256", "ready_sha256", "request"}
 )
+# The dispatcher bridge document (install-client -> bridge subprocess, over an
+# OS pipe in the same trust domain) carries exactly these seven keys for every
+# protocol version. The request reservation (execution_key / request_size /
+# request_sha256) is intentionally NOT echoed here: the bridge derives it from
+# `request`, and the security-relevant boundary is the dispatcher wire frame,
+# where the bridge's freshly computed reservation is what crosses to the server.
 DISPATCHER_BRIDGE_KEYS = frozenset(
     {
         "bridge_protocol_version",
@@ -176,14 +182,9 @@ DISPATCHER_BRIDGE_KEYS = frozenset(
         "deadline_monotonic_ms",
         "handshake_deadline_monotonic_ms",
         "request",
-        "execution_key",
-        "request_size",
-        "request_sha256",
     }
 )
-LEGACY_DISPATCHER_BRIDGE_KEYS = frozenset(
-    DISPATCHER_BRIDGE_KEYS - {"execution_key", "request_size", "request_sha256"}
-)
+LEGACY_DISPATCHER_BRIDGE_KEYS = DISPATCHER_BRIDGE_KEYS
 ADOPTION_CANARY_KEYS = frozenset(
     {
         "protocol_version",
@@ -2074,20 +2075,7 @@ def _dispatcher_bridge_document(
         "handshake_deadline_monotonic_ms": handshake_deadline_monotonic_ms,
         "request": dict(request),
     }
-    expected_keys = LEGACY_DISPATCHER_BRIDGE_KEYS
-    if lane.protocol_version == DISPATCHER_PROTOCOL_VERSION:
-        request_size, request_sha256, execution_key = _dispatcher_request_reservation(
-            request
-        )
-        document.update(
-            {
-                "execution_key": execution_key,
-                "request_size": request_size,
-                "request_sha256": request_sha256,
-            }
-        )
-        expected_keys = DISPATCHER_BRIDGE_KEYS
-    if set(document) != expected_keys:
+    if set(document) != DISPATCHER_BRIDGE_KEYS:
         raise ValueError("provider dispatcher bridge schema is invalid")
     encoded = _dispatcher_canonical_json(document) + b"\n"
     if len(encoded) > MAX_REQUEST_BYTES:
