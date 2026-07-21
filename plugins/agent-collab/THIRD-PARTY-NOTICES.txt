@@ -1,0 +1,36 @@
+Agent Collab native runtime third-party notices
+===============================================
+
+The PolyForm Strict License in LICENSE applies only to John Osumi-authored
+portions of the agent-collab package. The activation runtime also contains the
+third-party components below under their own terms. The policy-only package
+does not contain the native runtime and does not redistribute these components.
+
+Component inventory
+-------------------
+
+- CPython 3.13.14 (Python-2.0 / PSF terms). The exact license and incorporated
+  software notices are in third-party-licenses/CPython-3.13.14-LICENSE.txt and
+  third-party-licenses/CPython-3.13.14-NOTICES.txt.
+- Expat 2.8.1 (MIT), incorporated by CPython. The exact notice is in
+  third-party-licenses/Expat-COPYING.txt.
+- HACL* commit bb3d0dc8d9d15a5cd51094d5b69e70aa09005ff0 (MIT and
+  Apache-2.0), incorporated by CPython hash modules. Notices are in
+  third-party-licenses/HACL-LICENSE.txt; the complete Apache-2.0 text is also
+  reproduced in CPython-3.13.14-NOTICES.txt.
+- libb2 0.98.1 (CC0-1.0), incorporated by CPython's BLAKE2 module. The source
+  dedication is in third-party-licenses/libb2-CC0-1.0.txt.
+- mpdecimal 2.5.1 (BSD-2-Clause), incorporated by CPython's decimal module.
+  Its notice is in third-party-licenses/mpdecimal-NOTICE.txt.
+- mimalloc 2.1.2 (MIT), incorporated by CPython. Its notice is in
+  third-party-licenses/mimalloc-LICENSE.txt.
+- Nuitka 4.1.3 runtime/onefile bootstrap. Nuitka's AGPL text, runtime exception,
+  and attribution notice are in the three Nuitka-4.1.3 files under
+  third-party-licenses/. The runtime exception permits the compiled program to
+  remain under its chosen license; it is preserved verbatim.
+- Hedley v14 (CC0-1.0), incorporated by the Nuitka runtime headers. The source
+  dedication is in third-party-licenses/Hedley-CC0-1.0.txt.
+
+Apple system libraries referenced from /usr/lib and /System/Library are not
+copied into the package. Build-only tools are recorded by private build
+provenance and are not redistributed as runtime components.

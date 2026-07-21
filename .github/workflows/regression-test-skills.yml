@@ -1,0 +1,61 @@
+name: Regression test skills
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Cut Actions-minute burn: cancel superseded in-flight PR runs (each tiny job
+  # is billed a full minute). These are single-trigger pull_request jobs, so the group
+  # is per-PR (github.ref = refs/pull/N/merge); the dual-trigger same-commit race
+  # the sibling workspace gates face does not apply. (cancel-in-progress keeps its
+  # ref!=main guard for uniformity, though these workflows never run on main.)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  smoke-test:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.12' }
+      - name: Install deps
+        run: pip install pyyaml
+      - name: Skill structure smoke test
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+          from pathlib import Path
+          import yaml
+
+          repo = Path(".")
+          errors = []
+          skill_files = list(repo.glob("plugins/*/skills/*/SKILL.md"))
+          print(f"Smoke testing {len(skill_files)} skills...")
+
+          for sf in skill_files:
+              text = sf.read_text()
+              # Has body content after frontmatter
+              body = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.DOTALL)
+              if len(body.strip()) < 100:
+                  errors.append(f"{sf}: body content < 100 chars (likely missing 'How to run' section)")
+                  continue
+              # Has 'How to' or 'Step' or similar workflow content
+              if not re.search(r"##\s+(How to|Step|Workflow|When to use)", body, re.IGNORECASE):
+                  errors.append(f"{sf}: missing 'How to run' / 'Workflow' / 'When to use' heading")
+              # Has anti-patterns or limitations section (operational discipline marker)
+              # (warning only, not error)
+              if not re.search(r"##\s+(Anti-patterns|Limitations|Common pitfalls)", body, re.IGNORECASE):
+                  print(f"  ⚠ {sf.relative_to(repo)}: no Anti-patterns / Limitations section (warning)")
+              print(f"  ✓ {sf.relative_to(repo)}")
+
+          if errors:
+              print("\n=== ERRORS ===")
+              for e in errors: print(f"  ✗ {e}")
+              sys.exit(1)
+          print(f"\n✓ All {len(skill_files)} skills passed smoke test")
+          PYEOF

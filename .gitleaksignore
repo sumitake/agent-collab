@@ -1,0 +1,4 @@
+# Deterministic, nonsecret lane-token derivation in the cross-repository protocol fixture.
+eec4c7a7d9940b9122fa255694ec8cb6a754388b:tests/fixtures/provider_dispatcher_protocol_v1.json:generic-api-key:9
+eec4c7a7d9940b9122fa255694ec8cb6a754388b:tests/fixtures/provider_dispatcher_protocol_v1.json:generic-api-key:23
+eec4c7a7d9940b9122fa255694ec8cb6a754388b:tests/fixtures/provider_dispatcher_protocol_v1.json:generic-api-key:36

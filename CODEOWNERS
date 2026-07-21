@@ -1,0 +1,11 @@
+# Default: operator approval required for all changes to main
+* @sumitake
+
+/.github/workflows/ @sumitake
+/SECURITY.md @sumitake
+/LICENSE @sumitake
+/NOTICE @sumitake
+/COMMERCIAL-LICENSING.md @sumitake
+/AGENTS.md @sumitake
+/CLAUDE.md @sumitake
+/CODEOWNERS @sumitake

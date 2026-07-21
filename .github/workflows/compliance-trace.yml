@@ -1,0 +1,284 @@
+name: Compliance trace
+
+# Hard-fail any PR whose compliance-trace block is absent or malformed. The
+# public format contract lives in `docs/public-governance.md`; the executable
+# parser is kept in sync with `scripts/check_pr_compliance.py` in this repo.
+
+on:
+  pull_request:
+    # Default activity types are [opened, synchronize, reopened]; we add
+    # `edited` so a body-only fix to a malformed compliance-trace
+    # block re-fires this workflow. Without `edited`, body-only fixes leave
+    # the check red until the next push. `edited` also fires on
+    # title / base-ref edits, which is harmless — the validator is
+    # idempotent and runs in ~5 seconds.
+    types: [opened, synchronize, reopened, edited]
+    branches: [main]
+
+# Minimal permissions. `contents: read` for the checkout (the unit-test step
+# runs scripts/test_check_pr_compliance.py). `pull-requests: read` so the
+# validator can fetch the CURRENT PR body at runtime via the API (see choice 2
+# in the comment below) instead of the stale event-payload snapshot. No write
+# surface.
+permissions:
+  contents: read
+  pull-requests: read
+
+# Two design choices keep this REQUIRED gate from blocking on its own
+# concurrency, and from passing/blocking on a STALE result — both unique to this
+# workflow because it alone fires on the `edited` activity type (to re-validate a
+# body-only compliance-trace fix):
+#
+# 1. NO concurrency cancellation. PR #105 gave 9 sibling gates per-PR
+#    cancel-in-progress to save Actions minutes. Here that cancels a same-HEAD
+#    run (synchronize+edited, or edited+edited) and strands a `cancelled`
+#    conclusion for this required check on HEAD, blocking the merge (observed on
+#    PR #113: validate-trace showed both success AND cancelled on the same SHA).
+#    Activity-type group-keying fixes synchronize-vs-edited but not
+#    edited-vs-edited, and `cancel-in-progress: false` with a shared group can
+#    still cancel a *pending* run when 3+ events pile up — so the only strand-free
+#    option is no concurrency control. The ~5s read-only validator simply lets
+#    every triggered run finish.
+#
+# 2. Validate the CURRENT body, fetched at runtime (see the validate step's
+#    stdlib-urllib GET of `.../pulls/N` + the `pull-requests: read` permission
+#    above; formerly `gh api`, switched to avoid a gh CLI dependency), NOT the
+#    event-payload snapshot. With no concurrency, multiple runs for one HEAD
+#    finish in any order; if each validated its own trigger-time snapshot, a
+#    malformed->valid edit could strand a stale FAILURE (fail-safe) and — worse —
+#    a valid->malformed edit could let a stale SUCCESS pass a currently-bad trace
+#    (fail-UNSAFE; chatgpt-codex flagged this on #114). Reading the live body
+#    immediately before validating makes every run agree on the current state.
+#
+# Residual (now tiny): a body edit landing within a single run's brief
+# fetch-to-conclusion window can still race — shrunk from the whole
+# trigger-to-completion span (snapshot) to ~1s, and re-validated on the next
+# event. Full elimination would need merge-time re-validation, which GitHub
+# Actions does not provide.
+#
+# Fork note: the gate now depends on a runtime API read of the PR body. This
+# repo's PRs are first-party (operator + agents), so the fork-PR edge — where a
+# reduced GITHUB_TOKEN on an EXTERNAL fork's `pull_request` event could 403 the
+# read — is not exercised. A failed read is fail-closed (set -e → check fails →
+# blocks, never passes); verify/adjust if external fork PRs are ever accepted.
+
+jobs:
+  validate-trace:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.12' }
+      - name: Unit-test the compliance checker
+        run: python3 scripts/test_check_pr_compliance.py
+      - name: Validate compliance-trace block in PR body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Fetch the CURRENT PR body at runtime (NOT the event-payload snapshot),
+          # immediately before validating, so the body reflects the live PR state
+          # and editing races converge to the current body (see concurrency
+          # comment above). Written to a file to preserve multi-line content and
+          # special characters safely.
+          #
+          # Fetched via stdlib python urllib, NOT the gh CLI, so this required gate
+          # avoids a gh CLI dependency. Same live-fetch safety property as the prior
+          # `gh api` call. FAIL-CLOSED: urllib raises on any HTTP/network error →
+          # python exits non-zero → `set -e` fails the step → the required check
+          # fails (never passes on a failed read — preserves the #114 fix).
+          GH_REPO="${{ github.repository }}" PR_NUMBER="${{ github.event.pull_request.number }}" \
+            python3 - "$RUNNER_TEMP/pr_body.txt" << 'FETCHEOF'
+          import json, os, sys, urllib.request
+          out_path = sys.argv[1]
+          # Mirror gh's GH_TOKEN→GITHUB_TOKEN fallback (Gemini cross-check); fail
+          # CLOSED with a clean message if neither is present (never a bare KeyError,
+          # and never a passing check on a missing token).
+          token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+          if not token:
+              print("::error::no GH_TOKEN/GITHUB_TOKEN in env — cannot fetch PR body")
+              sys.exit(1)
+          url = "https://api.github.com/repos/%s/pulls/%s" % (
+              os.environ["GH_REPO"], os.environ["PR_NUMBER"])
+          req = urllib.request.Request(url, headers={
+              "Authorization": "Bearer %s" % token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "compliance-trace-validator",
+          })
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              body = json.load(resp).get("body") or ""
+          with open(out_path, "w", encoding="utf-8") as fh:
+              fh.write(body)
+          FETCHEOF
+          PR_BODY_FILE="$RUNNER_TEMP/pr_body.txt" python3 << 'PYEOF'
+          import os
+          import re
+          import sys
+          import unicodedata
+
+          # --- KEEP IN SYNC -------------------------------------------------
+          # The next three constants (TRACE_START, TRACE_END, REQUIRED_KEYS)
+          # mirror this repo's `scripts/check_pr_compliance.py`. The public
+          # prose contract is `docs/public-governance.md`. Change both local
+          # implementations together so CI and pre-merge checks cannot drift.
+          # ------------------------------------------------------------------
+          TRACE_START = "<!-- compliance-trace:start -->"
+          TRACE_END = "<!-- compliance-trace:end -->"
+          REQUIRED_KEYS = (
+              "author",
+              "standing_directives",
+              "tier",   # Phase 4c-1 (2026-05-25): formal Tier 1/2/3 declaration required.
+                        # Mirror in scripts/check_pr_compliance.py. Without this,
+                        # the classifier (scripts/classify_pr_tier.py) couldn't gate
+                        # on under-declaration; agents could omit the key to bypass.
+              "cross_check",
+              "post_condition",
+              "mcp_coverage_gap",
+              "contributor_rights",
+              "operator_reserved",
+          )
+
+          body = open(os.environ["PR_BODY_FILE"], encoding="utf-8").read()
+          errors = []
+          # --- KEEP IN SYNC w/ check_pr_compliance._anchored_block_span ---------
+          # Select the block from LINE-ANCHORED markers (a marker line whose
+          # strip() STARTS WITH the marker), not raw rfind. rfind honored a
+          # prefixed/mid-line marker a human reads as prose and picked the LAST,
+          # so a concealed second block (e.g. in a collapsed <details> after the
+          # visible one) became the operative trace while a reviewer read the
+          # first -- the PR-#760 laundering vector. Count EVERY own-line marker;
+          # >=2 blocks (or a stray single-line-double marker) -> reject.
+          starts = []
+          ends = []
+          stray = False
+          _pos = 0
+          for _raw in body.splitlines(keepends=True):
+              _st = _raw.strip()
+              _off = _pos + (len(_raw) - len(_raw.lstrip()))
+              _pos += len(_raw)
+              _is_s = _st.startswith(TRACE_START)
+              _is_e = _st.startswith(TRACE_END)
+              if not (_is_s or _is_e):
+                  continue
+              if _st.count(TRACE_START) + _st.count(TRACE_END) > 1:
+                  stray = True
+              (starts if _is_s else ends).append(_off)
+          start = end = -1
+          if stray or len(starts) > 1 or len(ends) > 1:
+              errors.append(
+                  "multiple compliance-trace blocks (or stray markers) found -- exactly "
+                  "one block is allowed; a concealed second block or stray marker can "
+                  "launder different key/values past this gate than a reviewer reads in "
+                  "the first")
+          elif not starts:
+              errors.append(f"missing start marker '{TRACE_START}'")
+          elif not ends:
+              errors.append(f"missing end marker '{TRACE_END}'")
+          elif ends[0] < starts[0]:
+              errors.append("end marker appears before start marker")
+          else:
+              start, end = starts[0], ends[0]
+
+          data = {}
+          if not errors:
+              inner = body[start + len(TRACE_START):end]
+              for line in inner.splitlines():
+                  raw = line.strip()
+                  if not raw or raw.startswith("<!--") or raw.startswith("#") or ":" not in raw:
+                      continue
+                  k, _, v = raw.partition(":")
+                  # KEEP IN SYNC w/ scripts/check_pr_compliance.py parse_trace_block:
+                  # normalize the key (drop whitespace + control/format chars incl.
+                  # zero-width; lowercase) so decoy keys collapse, then reject any
+                  # duplicate (last-wins would launder e.g. tier:3/tier:1); first-wins.
+                  key = "".join(c for c in k if unicodedata.category(c)[0] not in ("C", "Z")).lower()
+                  if not key:
+                      continue
+                  if key in data:
+                      errors.append(
+                          f"duplicate key '{key}' in compliance-trace block -- a repeated "
+                          f"key silently overrides via last-wins; each key must appear at "
+                          f"most once")
+                      continue
+                  data[key] = v.strip()
+              for key in REQUIRED_KEYS:
+                  if key not in data:
+                      errors.append(f"required key '{key}' missing")
+                  elif not data[key]:
+                      errors.append(f"required key '{key}' is empty")
+
+              contributor_rights = data.get("contributor_rights")
+              if contributor_rights and contributor_rights not in {
+                  "OWNER-AUTHORED", "OPERATOR-CONFIRMED"
+              }:
+                  errors.append(
+                      "contributor_rights must be OWNER-AUTHORED or "
+                      "OPERATOR-CONFIRMED")
+
+              # --- KEEP IN SYNC -------------------------------------------
+              # Tier-aware cross_check CONTENT validation. Mirrors
+              # `cross_check_valid_for_tier` in scripts/check_pr_compliance.py.
+              # Governance-gap fix (2026-06-01, PR #481 post-mortem): a Tier-2/3
+              # PR must record a REAL cross-check verdict (or an in-flight /
+              # codified-pause state) — 'N/A'/'none'/empty is only valid at
+              # Tier 1. Before this, the gate only checked the key was present
+              # and non-empty, so a Tier-3 PR self-merged with cross_check 'N/A'.
+              # Change both this block AND cross_check_valid_for_tier together.
+              # ------------------------------------------------------------
+              if data.get("tier") and data.get("cross_check"):
+                  cc = data["cross_check"].strip()
+                  tm = re.match(r"^(?:tier\s+)?([123])\b",
+                                data["tier"].strip(), re.IGNORECASE)
+                  tier_int = int(tm.group(1)) if tm else None
+                  if tier_int != 1:  # tier 2/3/unknown require a recognized state
+                      ccu = cc.upper()
+                      recognized = bool(re.search(
+                          r"\b(PROCEED|APPROVE|RECONSIDER|REQUEST[_\- ]CHANGES|"
+                          r"NEEDS[_\- ]DISCUSSION|FAILOVER)\b", cc, re.IGNORECASE))
+                      in_flight = any(t in ccu for t in (
+                          "PENDING", "AWAITING", "IN PROGRESS", "IN-PROGRESS",
+                          "PEER_REVIEW_OPEN", "AWAITING-REVIEW",
+                          "DEFERRED-AS-EQUIVALENT"))
+                      # Pause sentinel: anchored to a leading 'BLOCKED' so a
+                      # converged verdict that merely mentions the words is not
+                      # misclassified (round-1 cross-check Mod 1).
+                      pause = ccu.startswith("BLOCKED") and (
+                          "AUTH" in ccu or "QUOTA" in ccu)
+                      if not (recognized or in_flight or pause):
+                          tlabel = (f"tier {tier_int}" if tier_int
+                                    else "an undeclared/unparseable tier")
+                          errors.append(
+                              f"cross_check '{cc[:40]}' is not valid for "
+                              f"{tlabel}: Tier 2/3 require a real cross-check "
+                              f"verdict / in-flight state / BLOCKED pause "
+                              f"sentinel — 'N/A'/'none'/empty is only valid at "
+                              f"Tier 1")
+
+          if errors:
+              # `::error::` is the GitHub Actions annotation prefix — shows
+              # in the PR's "Checks" UI and links the line in the workflow log
+              print("::error::Compliance-trace block validation FAILED:")
+              for e in errors:
+                  print(f"  - {e}")
+              print()
+              print("The PR body must include a complete")
+              print(f"  {TRACE_START}")
+              print("  ... lines: <key>: <value> ...")
+              print(f"  {TRACE_END}")
+              print("block with all 8 required keys non-empty:")
+              for k in REQUIRED_KEYS:
+                  print(f"  - {k}")
+              print()
+              print("Spec: docs/public-governance.md")
+              print("Local pre-merge check: scripts/check_pr_compliance.py")
+              sys.exit(1)
+
+          print("Compliance-trace block VALID:")
+          for k in REQUIRED_KEYS:
+              v = data.get(k, "")
+              if len(v) > 80:
+                  v = v[:77] + "..."
+              print(f"  {k}: {v}")
+          PYEOF

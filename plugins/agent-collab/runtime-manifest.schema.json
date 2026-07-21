@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumitake/agent-collab/runtime-manifest.schema.json",
+  "title": "agent-collab signed standalone native runtime manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol_version",
+    "contract_version",
+    "broker_protocol_version",
+    "channel",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {"const": 3},
+    "protocol_version": {"const": 2},
+    "contract_version": {"const": 3},
+    "broker_protocol_version": {"const": 2},
+    "channel": {"const": "production"},
+    "artifacts": {
+      "type": "array",
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "arch",
+          "kind",
+          "minimum_macos",
+          "path",
+          "entrypoint",
+          "size",
+          "sha256",
+          "provider_runtime_version",
+          "route_contract_version",
+          "signing",
+          "files",
+          "contracts"
+        ],
+        "properties": {
+          "platform": {"const": "darwin"},
+          "arch": {"const": "arm64"},
+          "kind": {"const": "standalone_bundle"},
+          "minimum_macos": {"const": "14.0"},
+          "path": {"const": "runtime/darwin-arm64/agent-collab-runtime.bundle"},
+          "entrypoint": {"const": "agent-collab-runtime"},
+          "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "provider_runtime_version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){1,2}$"},
+          "route_contract_version": {"type": "integer", "minimum": 1},
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "role",
+                "install_mode",
+                "size",
+                "sha256",
+                "macho_type",
+                "architecture",
+                "minimum_macos",
+                "signing_profile"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^[^/\\\\]+$"
+                },
+                "role": {"enum": ["entrypoint", "runtime_library"]},
+                "install_mode": {"const": 320},
+                "size": {"type": "integer", "minimum": 0, "maximum": 67108864},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "macho_type": {"enum": ["executable", "dylib", "bundle"]},
+                "architecture": {"const": "arm64"},
+                "minimum_macos": {"const": "14.0"},
+                "signing_profile": {"const": "production_developer_id"}
+              },
+              "allOf": [
+                {
+                  "if": {"properties": {"role": {"const": "entrypoint"}}},
+                  "then": {
+                    "properties": {
+                      "path": {"const": "agent-collab-runtime"},
+                      "macho_type": {"const": "executable"}
+                    }
+                  }
+                },
+                {
+                  "if": {"properties": {"role": {"const": "runtime_library"}}},
+                  "then": {
+                    "properties": {
+                      "macho_type": {"enum": ["dylib", "bundle"]}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "contracts": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "advisory"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "governance"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "long_context"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "advisory"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "plan"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "build"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "architecture"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "governance"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "huge_context"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "composer"}, "action": {"const": "codegen"}}}
+              ]
+            }
+          },
+          "signing": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "identity",
+              "team_id",
+              "require_notarization",
+              "hardened_runtime",
+              "secure_timestamp"
+            ],
+            "properties": {
+              "mode": {"const": "developer_id"},
+              "identity": {
+                "type": "string",
+                "pattern": "^Developer ID Application: [^\\r\\n]{1,160} \\([A-Z0-9]{10}\\)$"
+              },
+              "team_id": {"type": "string", "pattern": "^[A-Z0-9]{10}$"},
+              "require_notarization": {"const": true},
+              "hardened_runtime": {"const": true},
+              "secure_timestamp": {"const": true}
+            }
+          }
+        }
+      }
+    }
+  }
+}

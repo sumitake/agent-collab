@@ -1,0 +1,227 @@
+name: Validate skills
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Cut Actions-minute burn: cancel superseded in-flight PR runs (each tiny job
+  # is billed a full minute). These are single-trigger pull_request jobs, so the group
+  # is per-PR (github.ref = refs/pull/N/merge); the dual-trigger same-commit race
+  # the sibling workspace gates face does not apply. (cancel-in-progress keeps its
+  # ref!=main guard for uniformity, though these workflows never run on main.)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  validate-frontmatter:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.12' }
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - name: Run repository unit tests
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Validate every SKILL.md frontmatter
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+          from pathlib import Path
+          import yaml
+
+          repo = Path(".")
+          errors = []
+          skill_files = list(repo.glob("plugins/*/skills/*/SKILL.md"))
+          print(f"Validating {len(skill_files)} skills...")
+
+          for sf in skill_files:
+              text = sf.read_text()
+              # Extract frontmatter
+              m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+              if not m:
+                  errors.append(f"{sf}: missing YAML frontmatter")
+                  continue
+              try:
+                  fm = yaml.safe_load(m.group(1))
+              except yaml.YAMLError as e:
+                  errors.append(f"{sf}: YAML parse error: {e}")
+                  continue
+              # Required fields
+              for field in ["name", "version", "description"]:
+                  if field not in fm:
+                      errors.append(f"{sf}: missing field '{field}'")
+              # Version is semver
+              if "version" in fm:
+                  if not re.match(r"^\d+\.\d+\.\d+", str(fm["version"])):
+                      errors.append(f"{sf}: version '{fm['version']}' is not semver")
+              # Description has explicit + situational triggers
+              if "description" in fm:
+                  desc = str(fm["description"])
+                  explicit_count = len(re.findall(r'"[^"]+"', desc))
+                  situational = bool(re.search(
+                      r"or when|proactively|also offer|before any|when [a-z]+ (is|are|needs|finishes|happens|matters|warrants|fits)|when (the user|claude) (is about to|has just|seems|just|needs|hasn[\'’]t)|after [a-z]+ (is built|finishes|completes)",
+                      desc, re.IGNORECASE
+                  ))
+                  if explicit_count < 1:
+                      errors.append(f"{sf}: description missing explicit quoted-phrase triggers")
+                  if not situational:
+                      errors.append(f"{sf}: description missing situational trigger clauses")
+              print(f"  ✓ {sf.relative_to(repo)}")
+
+          if errors:
+              print("\n=== ERRORS ===")
+              for e in errors: print(f"  ✗ {e}")
+              sys.exit(1)
+          print(f"\n✓ All {len(skill_files)} skills passed frontmatter validation")
+          PYEOF
+      - name: Assert verifier-independence block is present and byte-identical
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+          from pathlib import Path
+
+          repo = Path(".")
+          # The six verification skills in the sole agent-collab package must
+          # carry one byte-identical verifier-independence contract. There are
+          # no alias packages or compatibility copies.
+          PLUGIN_DIR = repo / "plugins"
+          VERIFICATION_PATHS = []
+          for sk in ["second-opinion", "code-review", "qa-verify",
+                     "logic-check", "red-team", "debate"]:
+              VERIFICATION_PATHS.append(
+                  PLUGIN_DIR / "agent-collab" / "skills" / sk / "SKILL.md")
+          START = "<!-- verifier-independence:start -->"
+          END = "<!-- verifier-independence:end -->"
+          block_re = re.compile(
+              re.escape(START) + r"(.*?)" + re.escape(END), re.DOTALL)
+
+          print(f"Checking the verifier-independence block across "
+                f"{len(VERIFICATION_PATHS)} verification skill SKILL.md files...")
+          errors = []
+          blocks = {}
+          for sf in VERIFICATION_PATHS:
+              key = str(sf.relative_to(repo))
+              if not sf.is_file():
+                  errors.append(f"{key}: SKILL.md not found at {sf}")
+                  continue
+              text = sf.read_text()
+              matches = block_re.findall(text)
+              if not matches:
+                  errors.append(f"{key}: missing the verifier-independence block "
+                                f"(no {START} ... {END} pair)")
+                  continue
+              if len(matches) > 1:
+                  errors.append(f"{key}: the verifier-independence block appears "
+                                f"{len(matches)} times — expected exactly once")
+                  continue
+              blocks[key] = matches[0]
+              print(f"  ✓ {key}: block present")
+
+          # All extracted blocks must be byte-identical to second-opinion.
+          if len(blocks) > 1:
+              reference_key = str(
+                  (PLUGIN_DIR / "agent-collab" / "skills"
+                   / "second-opinion" / "SKILL.md").relative_to(repo))
+              if reference_key in blocks:
+                  reference = blocks[reference_key]
+                  for key, body in blocks.items():
+                      if body != reference:
+                          errors.append(
+                              f"{key}: verifier-independence block differs from "
+                              f"{reference_key}'s — the block must be byte-identical "
+                              f"across all {len(VERIFICATION_PATHS)} verification skills")
+
+          if errors:
+              print("\n=== ERRORS ===")
+              for e in errors:
+                  print(f"  ✗ {e}")
+              sys.exit(1)
+          print(f"\n✓ verifier-independence block present and byte-identical "
+                f"across all {len(VERIFICATION_PATHS)} verification skills")
+          PYEOF
+      - name: Validate every agents/*.md frontmatter
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+          from pathlib import Path
+          import yaml
+
+          repo = Path(".")
+          errors = []
+          agent_files = list(repo.glob("plugins/*/agents/*.md"))
+          print(f"Validating {len(agent_files)} subagent definition(s)...")
+
+          for af in agent_files:
+              text = af.read_text()
+              m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+              if not m:
+                  errors.append(f"{af}: missing YAML frontmatter")
+                  continue
+              try:
+                  fm = yaml.safe_load(m.group(1))
+              except yaml.YAMLError as e:
+                  errors.append(f"{af}: YAML parse error: {e}")
+                  continue
+              # Required fields
+              for field in ["name", "description", "tools"]:
+                  if field not in fm:
+                      errors.append(f"{af}: missing field '{field}'")
+              # Name matches filename stem
+              if "name" in fm and af.stem != fm["name"]:
+                  errors.append(
+                      f"{af}: frontmatter name '{fm['name']}' does not match "
+                      f"filename stem '{af.stem}'")
+              # tools is a comma-separated list (string) or list (yaml list)
+              if "tools" in fm:
+                  tools_val = fm["tools"]
+                  if not isinstance(tools_val, (str, list)):
+                      errors.append(
+                          f"{af}: tools must be a string or list, got "
+                          f"{type(tools_val).__name__}")
+              # description has explicit + situational triggers
+              # (mirrors the SKILL.md check for trigger-phrase verification per
+              # workspace standing directive #1)
+              if "description" in fm:
+                  desc = str(fm["description"])
+                  explicit_count = len(re.findall(r'"[^"]+"', desc))
+                  situational = bool(re.search(
+                      r"or when|proactively|also offer|before any|"
+                      r"when [a-z]+ (is|are|needs|finishes|happens|matters|"
+                      r"warrants|fits)|when (the user|claude) (is about to|"
+                      r"has just|seems|just|needs|hasn[\'’]t)|"
+                      r"after [a-z]+ (is built|finishes|completes)",
+                      desc, re.IGNORECASE))
+                  if explicit_count < 1:
+                      errors.append(
+                          f"{af}: description missing explicit quoted-phrase "
+                          f"triggers")
+                  if not situational:
+                      errors.append(
+                          f"{af}: description missing situational trigger "
+                          f"clauses")
+              # Per CLAUDE.md directive #7: a subagent that declares a model
+              # SHOULD also declare default_effort (or document an
+              # effort-rules block). Soft check — warn only, not error.
+              if "model" in fm and "default_effort" not in fm:
+                  print(f"  ! {af}: declares 'model' but no 'default_effort' "
+                        f"— directive #7 advises stating effort alongside model")
+              print(f"  ✓ {af.relative_to(repo)}")
+
+          if errors:
+              print("\n=== ERRORS ===")
+              for e in errors:
+                  print(f"  ✗ {e}")
+              sys.exit(1)
+          if agent_files:
+              print(f"\n✓ All {len(agent_files)} subagent definition(s) passed "
+                    f"frontmatter validation")
+          else:
+              print("(no agents/ files in plugins/*/ — nothing to validate)")
+          PYEOF

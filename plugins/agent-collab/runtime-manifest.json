@@ -1,0 +1,491 @@
+{
+  "artifacts": [
+    {
+      "arch": "arm64",
+      "contracts": [
+        {
+          "action": "codegen",
+          "route": "composer"
+        },
+        {
+          "action": "advisory",
+          "route": "codex"
+        },
+        {
+          "action": "advisory",
+          "route": "gemini"
+        },
+        {
+          "action": "governance",
+          "route": "gemini"
+        },
+        {
+          "action": "long_context",
+          "route": "gemini"
+        },
+        {
+          "action": "architecture",
+          "route": "grok"
+        },
+        {
+          "action": "governance",
+          "route": "grok"
+        },
+        {
+          "action": "huge_context",
+          "route": "grok"
+        },
+        {
+          "action": "build",
+          "route": "opencode"
+        },
+        {
+          "action": "plan",
+          "route": "opencode"
+        }
+      ],
+      "entrypoint": "agent-collab-runtime",
+      "files": [
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_blake2.so",
+          "role": "runtime_library",
+          "sha256": "93d4bb8101f35da64a6fa233da3e7482d1ea14cf1f32ccbacc09498870753b27",
+          "signing_profile": "production_developer_id",
+          "size": 89456
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_bz2.so",
+          "role": "runtime_library",
+          "sha256": "443a8a4bdaeda1839a2202b12159731712d098ec516858c39646eaf5b9cdb3d7",
+          "signing_profile": "production_developer_id",
+          "size": 72784
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_cn.so",
+          "role": "runtime_library",
+          "sha256": "559c1132e550708430137fa90c8b4a1070ff5fdafb6427745cef9dc567100be1",
+          "signing_profile": "production_developer_id",
+          "size": 185264
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_hk.so",
+          "role": "runtime_library",
+          "sha256": "c45aab1c4ba8a32abd5cae4db232773b6b8efe08b7e1dae575845b2958f0a2f6",
+          "signing_profile": "production_developer_id",
+          "size": 185328
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_iso2022.so",
+          "role": "runtime_library",
+          "sha256": "7257d8aa7314356c53f46ee91b4fc3dbe69d9d08e8c2cfc00caef18f0e818db7",
+          "signing_profile": "production_developer_id",
+          "size": 71936
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_jp.so",
+          "role": "runtime_library",
+          "sha256": "efa99779f1f2eced5ea308f8d59cc270dc0b9ef95c7cc48e62ebed0ea172dfac",
+          "signing_profile": "production_developer_id",
+          "size": 301120
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_kr.so",
+          "role": "runtime_library",
+          "sha256": "29352a394d63a6da416bf970bc17c154fb634cf58602d3c76c13e763b3322131",
+          "signing_profile": "production_developer_id",
+          "size": 168928
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_codecs_tw.so",
+          "role": "runtime_library",
+          "sha256": "45107077b1dc7f4b4c7ba91f98c6f1a8888f91b907373c6ca658dc42b2407f8c",
+          "signing_profile": "production_developer_id",
+          "size": 168432
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_contextvars.so",
+          "role": "runtime_library",
+          "sha256": "dd5b6f87df3caaf9db80dc11594c7fec172b093ea9722cfac5c23a24997c2597",
+          "signing_profile": "production_developer_id",
+          "size": 68576
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_ctypes.so",
+          "role": "runtime_library",
+          "sha256": "016342a76c92715d43734b791bf37a23b5a5215c9d640ba82aacf772f893595f",
+          "signing_profile": "production_developer_id",
+          "size": 175840
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_datetime.so",
+          "role": "runtime_library",
+          "sha256": "9a7085eb52489300baeaa4fcdfbfcda281a7b1c8f97cfceb93797c3bc9886d13",
+          "signing_profile": "production_developer_id",
+          "size": 150144
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_decimal.so",
+          "role": "runtime_library",
+          "sha256": "61ec61b9ff3c1357df0a16869a830bb3629d269890b5826af555203fe847e0b1",
+          "signing_profile": "production_developer_id",
+          "size": 364640
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_heapq.so",
+          "role": "runtime_library",
+          "sha256": "2abe57963ba2e0dca5ce38c775128c4925b75bf66e6066fb8c4306462cd4bd39",
+          "signing_profile": "production_developer_id",
+          "size": 69728
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_md5.so",
+          "role": "runtime_library",
+          "sha256": "963346d0617f5bb1fa17bb8501ae937374cfbbb7799995a68ff6d456233dbb4a",
+          "signing_profile": "production_developer_id",
+          "size": 71728
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_multibytecodec.so",
+          "role": "runtime_library",
+          "sha256": "03125001439fb0119a06c4f3b66b5fecf2c6e9bade07ee27988870b35e58ca51",
+          "signing_profile": "production_developer_id",
+          "size": 95808
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_opcode.so",
+          "role": "runtime_library",
+          "sha256": "37ac46424859fa55b52a03979c9ffad4cfbd2e2545ae78c8a8fbe47e8eb6e286",
+          "signing_profile": "production_developer_id",
+          "size": 72448
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_pickle.so",
+          "role": "runtime_library",
+          "sha256": "a5e7e4486decf724265e7851457416ee501011b5fc958fc7e72663267aa68985",
+          "signing_profile": "production_developer_id",
+          "size": 168032
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_posixsubprocess.so",
+          "role": "runtime_library",
+          "sha256": "1b5f2127a613a5cbf4c3d688e07198e6bff0b826d2ae8ad277bad9f096d22dbc",
+          "signing_profile": "production_developer_id",
+          "size": 72496
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_random.so",
+          "role": "runtime_library",
+          "sha256": "e491411a81c3e9097b8c1d3e4867d0d3547981036af9b0cf9de36af54f42f160",
+          "signing_profile": "production_developer_id",
+          "size": 71680
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_sha1.so",
+          "role": "runtime_library",
+          "sha256": "683b5614932373c874668aa211f14a3620089406de24c183d4b1489c2523d049",
+          "signing_profile": "production_developer_id",
+          "size": 71760
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_sha2.so",
+          "role": "runtime_library",
+          "sha256": "53b10be378685195e77dbfd48ffa3956672f8b9b036f08886e3ead180e43d0a0",
+          "signing_profile": "production_developer_id",
+          "size": 107264
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_sha3.so",
+          "role": "runtime_library",
+          "sha256": "1211e8192c77133a760da263b671b8c16c25585d68d13e160390691832983def",
+          "signing_profile": "production_developer_id",
+          "size": 91008
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_socket.so",
+          "role": "runtime_library",
+          "sha256": "9a9c746ddd00bdccbb27868d7e38c7c7a5720a5baa2f3daa208f8780a06c6588",
+          "signing_profile": "production_developer_id",
+          "size": 132288
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_statistics.so",
+          "role": "runtime_library",
+          "sha256": "dd39baa3e0b16e7ec5655919394f4b6fb8cc73890c4d0b59bffbf1f452aac442",
+          "signing_profile": "production_developer_id",
+          "size": 68704
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_struct.so",
+          "role": "runtime_library",
+          "sha256": "0ee7763990667bc3013a78a58c0b7df9f12d23c6cb5ed1d1ff224a27b39e85ed",
+          "signing_profile": "production_developer_id",
+          "size": 94528
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "_uuid.so",
+          "role": "runtime_library",
+          "sha256": "856c2e48a11ebcdd4d0d29f738784f9a1ef411c530ea84c2a2a2d47a1ec43c4f",
+          "signing_profile": "production_developer_id",
+          "size": 68528
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "executable",
+          "minimum_macos": "14.0",
+          "path": "agent-collab-runtime",
+          "role": "entrypoint",
+          "sha256": "4d57b4723a636e29762eb29b2aa85e5c3e3ea96b3805dd4de26fea1a26a0ec70",
+          "signing_profile": "production_developer_id",
+          "size": 10245504
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "array.so",
+          "role": "runtime_library",
+          "sha256": "07d0e4b797c4bfa30ce3dca8b686509f07dd391bb69a8c39ef43ed7edc42b29f",
+          "signing_profile": "production_developer_id",
+          "size": 113760
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "binascii.so",
+          "role": "runtime_library",
+          "sha256": "d2f7e26cedf1f2cf918d787c9ccddc09ed81ebacaef9accb4e8fc2e211fede4f",
+          "signing_profile": "production_developer_id",
+          "size": 72224
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "fcntl.so",
+          "role": "runtime_library",
+          "sha256": "8cd0c802e1bf4f20fa219afb1a13ee3a0d695922a51d3e6d16c02563e5f03536",
+          "signing_profile": "production_developer_id",
+          "size": 70368
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "grp.so",
+          "role": "runtime_library",
+          "sha256": "57e6b2e05a04b6815c1b2aca4ea32b0c943ae199327610ba39882d33793a6c50",
+          "signing_profile": "production_developer_id",
+          "size": 71024
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "dylib",
+          "minimum_macos": "14.0",
+          "path": "libpython3.13.dylib",
+          "role": "runtime_library",
+          "sha256": "5f254690e2f1a2fe629c005727d9c1cc78639ad2f0effd168456b2abe492b83e",
+          "signing_profile": "production_developer_id",
+          "size": 4973360
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "math.so",
+          "role": "runtime_library",
+          "sha256": "c435c6d416d69e03bf823016129620faecced5a0d06b8ce5fc13402671658300",
+          "signing_profile": "production_developer_id",
+          "size": 111216
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "pyexpat.so",
+          "role": "runtime_library",
+          "sha256": "958ad67888a79243a81c40dfe04d9129aa622d959eccfc04072f8b149a3d7e2d",
+          "signing_profile": "production_developer_id",
+          "size": 259232
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "select.so",
+          "role": "runtime_library",
+          "sha256": "eebcb02c739eac3b8badb680cd621f709e710e09895687c57a5cc72355a0f3e9",
+          "signing_profile": "production_developer_id",
+          "size": 92160
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "termios.so",
+          "role": "runtime_library",
+          "sha256": "3b726a4657d7f1bb2fccdbde15b4fad757c5bb20c0f9f8f239ac1bb1747fe441",
+          "signing_profile": "production_developer_id",
+          "size": 71744
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "unicodedata.so",
+          "role": "runtime_library",
+          "sha256": "4b5302d2bf6e961717764e9b9612a70a387ebce9384dd6b44c2b8655ddcc44fe",
+          "signing_profile": "production_developer_id",
+          "size": 746848
+        },
+        {
+          "architecture": "arm64",
+          "install_mode": 320,
+          "macho_type": "bundle",
+          "minimum_macos": "14.0",
+          "path": "zlib.so",
+          "role": "runtime_library",
+          "sha256": "e400c59906305d42e8789ab90abae82ddee281025f5c2e5968e373546bc68e9b",
+          "signing_profile": "production_developer_id",
+          "size": 92896
+        }
+      ],
+      "kind": "standalone_bundle",
+      "minimum_macos": "14.0",
+      "path": "runtime/darwin-arm64/agent-collab-runtime.bundle",
+      "platform": "darwin",
+      "sha256": "7fa1ccef76cf9b17a85b71fe1f1b120c52962675b448171c8c7bf39a2e492e83",
+      "signing": {
+        "hardened_runtime": true,
+        "identity": "Developer ID Application: OSUMI CONSULTING LLC (36UFP9KY4T)",
+        "mode": "developer_id",
+        "require_notarization": true,
+        "secure_timestamp": true,
+        "team_id": "36UFP9KY4T"
+      },
+      "size": 20178784,
+      "provider_runtime_version": "2.0.0",
+      "route_contract_version": 2
+    }
+  ],
+  "broker_protocol_version": 2,
+  "channel": "production",
+  "contract_version": 3,
+  "protocol_version": 2,
+  "schema_version": 3
+}

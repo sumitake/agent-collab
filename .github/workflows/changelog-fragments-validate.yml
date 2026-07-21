@@ -1,0 +1,54 @@
+name: Validate changelog fragments
+
+# Runs on every PR to main. PRs commit ONLY changelog.d/ fragments; the
+# generated CHANGELOG.md is compiled at release time, not in PRs (see
+# changelog.d/README.md). This gate routes by whether the PR edits
+# CHANGELOG.md: a fragment-only PR only needs the compiler to succeed
+# (--dry-run); a PR that does edit CHANGELOG.md (e.g. a release PR) must
+# match the compiled fragments exactly (--check).
+#
+# pull_request ONLY by design: the HEAD^1 base-diff below assumes HEAD is a
+# 2-parent merge commit. Adding push/workflow_dispatch would break it.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Cut Actions-minute burn: cancel superseded in-flight PR runs (each tiny job
+  # is billed a full minute). These are single-trigger pull_request jobs, so the group
+  # is per-PR (github.ref = refs/pull/N/merge); the dual-trigger same-commit race
+  # the sibling workspace gates face does not apply. (cancel-in-progress keeps its
+  # ref!=main guard for uniformity, though these workflows never run on main.)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  validate:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.12' }
+      - name: Unit-test the fragment compiler
+        run: python3 -m unittest scripts.test_build_changelog -v
+      - name: Detect whether this PR edits CHANGELOG.md
+        id: detect
+        # HEAD is the PR merge commit; HEAD^1 is the exact base tip it merged
+        # onto (race-safe vs base.sha). No diff = fragment-only PR.
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- CHANGELOG.md; then
+            echo "changelog_md_modified=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "changelog_md_modified=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate fragments compile (fragment-only PR)
+        if: steps.detect.outputs.changelog_md_modified == 'no'
+        run: python3 scripts/build-changelog.py --dry-run >/dev/null
+      - name: Check CHANGELOG.md matches compiled fragments (PR edits CHANGELOG.md)
+        if: steps.detect.outputs.changelog_md_modified == 'yes'
+        run: python3 scripts/build-changelog.py --check

@@ -1,0 +1,37 @@
+{
+  "name": "agent-collab",
+  "version": "4.2.0",
+  "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. The signed runtime artifact is intentionally absent until the private build/sign integration completes.",
+  "author": {
+    "name": "John Osumi"
+  },
+  "license": "PolyForm-Strict-1.0.0",
+  "homepage": "https://github.com/sumitake/agent-collab#readme",
+  "repository": "https://github.com/sumitake/agent-collab",
+  "keywords": [
+    "agent-collab",
+    "multi-model",
+    "cross-family",
+    "governance",
+    "routing",
+    "codex",
+    "opencode",
+    "glm",
+    "zhipu",
+    "grok",
+    "gemini",
+    "claude"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Collab",
+    "shortDescription": "Route collaboration through independent managed model families.",
+    "longDescription": "Unified collaboration policy, migration checks, and signed-runtime routing for Codex and compatible hosts without provider-specific plugins.",
+    "developerName": "John Osumi",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": "Review this with an eligible independent model family."
+  }
+}

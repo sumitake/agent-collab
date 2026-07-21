@@ -1,0 +1,103 @@
+### agent-collab 3.0.0 — breaking unified-package consolidation
+
+- **Breaking:** retire `claude-collab`, `codex-collab`,
+  `antigravity-collab`, `codex-tools`, and `glm-worker` immediately. Together
+  with the already-retired `grok-worker`, they are removed from the
+  marketplace, release inventory, active documentation, and generated package
+  surface without presets, tombstones, dependencies, or compatibility shims.
+  The historical `agent-collab-plugin`, `gemini-collab`, and `grok-collab`
+  package identities are also treated as retired exact aliases. The clean
+  `sumitake/agent-collab` repository is the marketplace source; a repository
+  name is not itself an installed legacy package.
+- Add `agent-collab 3.0.0` as the only package and release. It resolves the
+  primary, model family, active model, host runtime, and session dynamically.
+  `codex-tools` → the managed Codex backend in `agent-collab`; `glm-worker`
+  → the managed OpenCode backend, with `opencode/glm-5.2` retained as the
+  current Zhipu-family model preset.
+- Add a narrow signed-native-runtime manifest, standalone public coordinator,
+  and verifier. Exact route/action, authority, and artifact-author provenance
+  checks cover Gemini, Codex, OpenCode, Grok 4.5, and Composer. Grok 4.5 is
+  limited to sealed read-only architecture, governance, and huge-context
+  actions; generic advisory or worker roles cannot select it. OpenCode build
+  is explicitly mutation-capable workspace-write authority, distinct from
+  read-only plan. Response family
+  is derived from the artifact-author model on every call, including OpenCode
+  model switches; structured provider/model parsing rejects ambiguous lineage
+  and incidental substring matches. Applicable non-governance worker requests
+  may carry an exact artifact snapshot so its author family is also excluded.
+  Contradictory or unknown response provenance is rejected. Runtime
+  stdout and stderr are bounded while the process is running, with process-
+  group termination and reaping on output-limit or unexpected collector
+  failures. The release
+  tree contains no unsigned
+  placeholder artifact; all native routes are typed unavailable until the
+  private build/sign system supplies the notarized binary. A
+  policy-only release may ship with an empty artifact manifest and no runtime.
+  Native activation remains blocked until the Darwin-arm64 artifact advertises
+  the full matrix and supplies commit-bound Developer ID, hardened-runtime, and
+  notarization evidence.
+- Split the local signed-tag tool and GitHub release workflow by canonical
+  package mode. Policy-only mode proves the manifest/archive contain no runtime;
+  activation alone invokes the strict macOS signing/notarization verifier.
+- Bind the exact captured artifact independently from the instruction prompt in
+  sealed native JSON: base64 bytes, SHA-256, byte size, author model, and
+  derived author family are verified before launch. Ambiguous active-model
+  lineage remains unknown even when a stale asserted family is present;
+  governance fails closed and non-governance worker artifacts warn when author
+  independence is unknown.
+- Add native Codex packaging with a `.codex-plugin/plugin.json` manifest and
+  generated `.agents/plugins/marketplace.json`, while retaining the
+  Claude-compatible package manifest. Release consistency requires both host
+  manifests to identify the same sole `agent-collab` package and version.
+- Make policy-only readiness deterministic on every host: the manifest is
+  parsed and validated before the Darwin-arm64 activation gate, an empty
+  artifact set remains typed unavailable, and runtime tests explicitly
+  simulate the supported target rather than inheriting the CI host platform.
+- Add a provider-free migration doctor, duplicate-package routing block,
+  dynamic known/unknown host preflight, and policy-only safe mode. Safe mode
+  disables every native model route. Async inbox readiness is available only
+  after a current host observation and the public coordinator never sends;
+  reinstalling a retired package is not a rollback. The doctor parses enabled
+  and installed-disabled Codex plugin tables from `~/.codex/config.toml`,
+  preserves source-host provenance, and emits removal commands for the owning
+  package manager. Empty primary
+  configuration is re-observed on every request so ZCode model switches take
+  effect immediately. `codex/build` and `auto/worker` are coordinator-only,
+  typed-unavailable contracts and never widen the signed required runtime
+  matrix or promote into advisory authority. Malformed rows fail as
+  `config_error`. Missing or hostile home-directory resolution now blocks with
+  a typed inventory error. Python 3.10 uses a strict exact-table compatibility
+  parser for Codex plugin selection, including escaped-key and multiline-string
+  defenses, instead of substring matching or silently skipping the registry.
+- Add a clean-history public-export gate. Deleted backend sources remain in the
+  private history until the separately authorized rewrite and residual audit;
+  direct visibility changes or exports from the unsanitized clone are blocked.
+  The gate scans every reachable blob as bytes, recursively inspects nested
+  archives under cumulative depth/member/size bounds, semantically detects
+  statically constructed provider argv, applies only narrow harmless-fixture
+  masking, and rejects provider-backend archive directories, symlink, or other
+  unsafe tree modes. It separately inspects every ref, direct blob or tree
+  target, annotated-tag object/message, and release-tag form/target.
+- Pin every pull-request workflow to GitHub-hosted `ubuntu-latest`; public PR
+  code can no longer execute on a persistent self-hosted runner, and
+  the mutable `RUNNER_TARGET` repository variable has been removed.
+- Grant CodeQL the additional read-only `actions: read` scope required to
+  associate and upload pull-request analysis results; all other workflow token
+  permissions remain explicitly least-privilege.
+- Keep CodeQL enforceable while the sanitized repository is still private:
+  complete analysis now retains SARIF as a bounded workflow artifact when Code
+  Scanning is unavailable, then switches automatically to Code Scanning upload
+  once the repository becomes public.
+- Require releases to originate from a verified signed annotated tag whose
+  target commit is the checked-out commit on `origin/main`. Both the local
+  release tool and GitHub workflow enforce the same ancestry boundary, and
+  the release job force-materializes the remote annotated tag object before
+  history inspection so the checkout action's peeled commit ref cannot be
+  mistaken for an unsigned or lightweight tag. The
+  hardened-runtime verification parses the actual numeric code-signing flags.
+  Runtime and release verification also inspect the executable as a thin arm64
+  Mach-O with exactly one macOS `LC_BUILD_VERSION` for minimum macOS 14.0.
+  The operator-owned Developer ID Team ID is pinned independently in reviewed
+  `signing_policy.py`; the manifest cannot select its own signer, and the
+  unconfigured anchor blocks activation until matching signing/notarization
+  credentials are provisioned.

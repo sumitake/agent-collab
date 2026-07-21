@@ -1,0 +1,34 @@
+# Dependabot version-update configuration for agent-collab.
+#
+# One ecosystem: GitHub Actions workflows. The unified plugin is stdlib-only;
+# the signed native runtime is supplied by the private build/sign pipeline.
+#
+# Skills are markdown only — no skill-level deps to track. If a future skill
+# introduces a deps file, add an entry here.
+#
+# Workflow tie-in: dependency changes are Tier 2 or Tier 3 under
+# docs/public-governance.md and require an independent cross-family check.
+# Auto-merge for patch updates is deliberately not enabled.
+#
+# Rollback: delete this file (revert PR). Vulnerability-alerts and
+# automated-security-fixes remain enabled at the repo level independently.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ci"

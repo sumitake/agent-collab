@@ -1,0 +1,5 @@
+#!/bin/bash
+# Pre-commit hook wrapper for release consistency verification (M11)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/../scripts/check_release_consistency.py"

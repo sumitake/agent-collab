@@ -1,0 +1,52 @@
+name: skill-build-fresh
+
+# Enforces single-source-of-truth for skill content. Every PR runs
+# `scripts/build_skills.py --check` — if any `plugins/*/skills/*/SKILL.md`
+# has been edited directly (instead of via its `skill-specs/<name>.md` source),
+# the working tree diverges from generator output and this check fails with
+# a unified diff identifying the divergent file.
+#
+# To resolve a failure: edit the spec at `skill-specs/<name>.md`, re-run
+# `python3 scripts/build_skills.py` locally, and commit the regenerated
+# `SKILL.md`. Direct edits to per-package `SKILL.md` are intentionally
+# rejected at PR time to prevent drift between packages.
+#
+# See `skill-specs/README.md` for the full spec format + workflow.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'skill-specs/**'
+      - 'plugins/*/skills/**'
+      - 'scripts/build_skills.py'
+      - 'scripts/skill-build-config.json'
+      - '.github/workflows/skill-build-fresh.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Cut Actions-minute burn: cancel superseded in-flight PR runs (each tiny job
+  # is billed a full minute). These are single-trigger pull_request jobs, so the group
+  # is per-PR (github.ref = refs/pull/N/merge); the dual-trigger same-commit race
+  # the sibling workspace gates face does not apply. (cancel-in-progress keeps its
+  # ref!=main guard for uniformity, though these workflows never run on main.)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-fresh:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Run skill build in --check mode
+        run: python3 scripts/build_skills.py --check

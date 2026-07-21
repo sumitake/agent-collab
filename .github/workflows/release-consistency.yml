@@ -1,0 +1,33 @@
+name: Release consistency
+
+# Asserts the single agent-collab version is identical across plugin.json,
+# marketplace metadata, changelog fragments, and READMEs, and never regresses.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Cut Actions-minute burn: cancel superseded in-flight PR runs (each tiny job
+  # is billed a full minute). These are single-trigger pull_request jobs, so the group
+  # is per-PR (github.ref = refs/pull/N/merge); the dual-trigger same-commit race
+  # the sibling workspace gates face does not apply. (cancel-in-progress keeps its
+  # ref!=main guard for uniformity, though these workflows never run on main.)
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  consistency:
+    # Public pull requests never execute on a persistent self-hosted machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.12' }
+      - name: Unit-test the consistency checker
+        run: python scripts/test_check_release_consistency.py
+      - name: Fetch main for the monotonicity comparison
+        run: git fetch --depth=1 origin main:refs/remotes/origin/main
+      - name: Check release-version consistency + monotonicity
+        run: python scripts/check_release_consistency.py --against-ref origin/main

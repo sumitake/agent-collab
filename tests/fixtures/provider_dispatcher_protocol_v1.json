@@ -1,0 +1,62 @@
+{
+  "hello": {
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "client_pid": 4242,
+    "deadline_monotonic_ms": 123456,
+    "dispatcher_protocol_version": 1,
+    "frame_type": "hello",
+    "lane_generation": 7,
+    "lane_token": "3b73a0ffbe3426ef5761f5c09b756ef6",
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "nonce": "bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4"
+  },
+  "hello_sha256": "22aa7f6865b4976d83040cfbecfe3e3ff17ace6aeb6714d58fe0cc9303c482e9",
+  "ready": {
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "client_pid": 4242,
+    "deadline_monotonic_ms": 123456,
+    "dispatcher_pid": 9001,
+    "dispatcher_protocol_version": 1,
+    "frame_type": "ready",
+    "hello_sha256": "22aa7f6865b4976d83040cfbecfe3e3ff17ace6aeb6714d58fe0cc9303c482e9",
+    "lane_generation": 7,
+    "lane_token": "3b73a0ffbe3426ef5761f5c09b756ef6",
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "nonce": "bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4"
+  },
+  "ready_sha256": "e460532cc54809d66d29992ba4af3d3bd54cdd5d1720bc54748ada9a173c77b6",
+  "request": {
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "client_pid": 4242,
+    "deadline_monotonic_ms": 123456,
+    "dispatcher_protocol_version": 1,
+    "frame_type": "request",
+    "hello_sha256": "22aa7f6865b4976d83040cfbecfe3e3ff17ace6aeb6714d58fe0cc9303c482e9",
+    "lane_generation": 7,
+    "lane_token": "3b73a0ffbe3426ef5761f5c09b756ef6",
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "nonce": "bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4",
+    "ready_sha256": "e460532cc54809d66d29992ba4af3d3bd54cdd5d1720bc54748ada9a173c77b6",
+    "request": {
+      "adapter_contract_generation": 4,
+      "attempt_generation": 5,
+      "authority_token": "dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHQ",
+      "binary_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "host_context": "generic",
+      "operation": "adoption_canary",
+      "protocol_version": 2,
+      "provider": "gemini",
+      "registry_generation": 17,
+      "request_id": "parity-1",
+      "routes": [
+        "gemini/advisory",
+        "gemini/governance"
+      ],
+      "source_generation": 8,
+      "timeout_ms": 30000,
+      "worker_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "request_sha256": "ada31f6533d2cf78cb38af9e8f4a12626484dc5d47a0e5e397afd6ac194cb6d7",
+  "schema_version": 1
+}
