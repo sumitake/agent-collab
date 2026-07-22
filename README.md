@@ -1,24 +1,62 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.2.2). It gives
-Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
-dynamic collaboration surface without publishing provider executors or
-maintaining host-specific plugin copies.
+[![CI](https://github.com/sumitake/agent-collab/actions/workflows/ci.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml)
+[![Secret Scan](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml)
 
-This public repository is the source of truth for the coordinator policy,
-skills, migration tooling, fail-closed client, contribution governance, and
-release-safety checks. Provider runtime implementation, build credentials, and
-signing infrastructure remain in a separate private build/sign system. A
-policy-only release contains no native runtime; an activation release may import
-only the final signed and notarized standalone bundle plus its closed manifest
-and verification metadata. No
-downloader, post-install hook, runtime cache, raw provider recipe, or executable
-source copy is shipped here.
+**agent-collab** gives Claude, Codex, Antigravity, OpenCode, ZCode, and custom
+primary hosts one dynamic, governed collaboration surface, without publishing
+provider executors or maintaining host-specific plugin copies. It resolves the
+active primary and its model, host, and session dynamically, enforces
+cross-family reviewer independence, and routes managed provider work (Codex,
+Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
+
+This public repository distributes one package, **agent-collab** (v4.2.2), and is
+the source of truth for the coordinator policy, skills, migration tooling, the
+fail-closed runtime client, contribution governance, and release-safety checks.
+The signed and notarized darwin-arm64 native runtime is committed in this
+repository and advertised through a closed activation manifest; the build
+credentials and signing infrastructure that produce it remain in a separate
+private build/sign system.
 
 Contributors need no access to the private build/sign system. See
 [public governance](docs/public-governance.md),
 [migration guidance](docs/migration-from-legacy-packages.md), and the
 [security policy](SECURITY.md).
+
+## What this is not
+
+- Not an open-source grant. It is source-available under the PolyForm Strict
+  License 1.0.0 (see [License](#license)).
+- Not a shipper of provider executor source, raw provider invocation recipes,
+  downloaders, post-install hooks, or a runtime cache. The private build/sign
+  system stays private.
+- Not a collection of host-specific plugins. One package carries native metadata
+  for every supported host.
+- Not a synchronous Claude path. Claude remains asynchronous inbox-only; the
+  shared runtime never creates a synchronous Claude route.
+
+## What it provides
+
+- One unified `/agent-collab:*` skill surface (review, intent, code/security,
+  QA, logic, brainstorming, debate, research, long-context, delegation,
+  orchestration, readiness, teamwork, and migration) across every host.
+- Dynamic primary-identity resolution (primary id, family, active model, host
+  runtime, session) with cross-family reviewer, worker, tiebreaker, and fallback
+  independence enforced fail-closed.
+- Managed, broker-only provider routes (Codex, Gemini, OpenCode, and unified
+  Grok 4.5), each with explicit, non-substitutable `target=` selection and
+  sealed action authorities.
+- A verified native runtime client: per-member SHA-256, Developer ID signature,
+  online notarization, and Mach-O checks before any provider launch, with a
+  typed-unavailable fallback on any failure.
+- Zero-idle execution: a per-user launchd socket starts the signed runtime only
+  when a request arrives and exits after one bounded response, with no resident
+  process, polling loop, or ambient credentials.
+- A provider-free migration doctor, policy-only safe mode, and a byte-level
+  clean-public-repository history gate.
+- Reproducible releases: signed annotated tags, deterministic SHA-256 evidence,
+  an SPDX 2.3 SBOM, and matrix CI with CodeQL, Gitleaks, and secret scanning.
 
 ## Current package
 
@@ -39,227 +77,7 @@ Contributors need no access to the private build/sign system. See
   artifact bytes and author-model lineage instead of failing the coordinator's
   closed schema before reaching the managed runtime.
 
-## What's new - v4.2.0
-
-- First public activation release: the plugin now ships the Developer ID signed and
-  notarized darwin-arm64 native runtime committed in the repository, advertised
-  through a schema-version-3 activation manifest, with `EXPECTED_DEVELOPER_ID_TEAM`
-  pinned to the Osumi Consulting LLC team.
-- Make the marketplace git install work under any operator umask, including umask
-  002: the git checkout is treated as a trusted source (the host already runs the
-  plugin's Python control plane from it), so the native runtime tolerates the umask
-  permission bits on the source while keeping content integrity (per-member
-  SHA-256, Developer ID signature, notarization, Mach-O checks) and the exact
-  private broker-store mode unchanged.
-- Package the committed in-tree runtime in the release archive, binding the whole
-  archive to the release commit.
-
-## What's new - v4.1.1
-
-- Make broker status prove the canonical selected selector lane, its immutable
-  artifact and manifest, launchd job, socket, and a successful closed liveness
-  exchange before reporting the route executable.
-- Make migration readiness fail closed unless both the signed runtime and the
-  broker execution path are proven, eliminating manifest-only `READY` results.
-- Recover Codex Desktop's active OpenAI model from its exact current rollout
-  when the host does not export model metadata, with bounded no-follow reads,
-  identity checks, and conflict detection against any exported model.
-
-## What's new - v4.1.0
-
-- Bind every schema-3 runtime artifact to its signed provider-runtime and route-
-  contract anchor. Gemini governance proof and provenance must match the exact
-  selected or retained lane that answered.
-- Add selector-v2 roles for selected, retained, candidate, and lifecycle. The
-  dispatcher-2 READY reserves the canonical request digest, size, and execution
-  key and consumes fallback eligibility.
-- Preserve exact committed schema-2/runtime-2 continuity for dispatcher-1 and
-  historical broker-2 transports. Runtime-1 broker remains lifecycle-only.
-
-## v4.0.5 highlights
-
-- Accept the exact Gemini governance proof version emitted by provider runtime
-  2.0.0 while keeping that proof contract separate from the public bundle
-  manifest contract. Governance response provenance must identify that same
-  compatible runtime version. Legacy, crossed, and mixed-provenance tuples
-  continue to fail closed, including when their proof digests are otherwise
-  valid.
-
-## v4.0.4 highlights
-
-- Translate the sealed public protocol-v2 provider-adoption request to the
-  private dispatcher protocol-v1 authority frame at the installed-client
-  boundary, and validate dispatcher replies on that same private protocol.
-  Normal public requests remain protocol v2, the caller document is unchanged,
-  and swapped protocol versions fail closed.
-
-## v4.0.3 highlights
-
-- Send dispatcher lifecycle ping and lock-probe control messages on their
-  sealed protocol-v1 contract while retaining protocol-v2 typed failures.
-  Successful lifecycle replies and failures are validated against their own
-  protocols, so swapped or malformed responses still fail closed.
-
-## v4.0.2 highlights
-
-- Permit dispatcher lifecycle control to prove an exact protocol-v1 blue
-  baseline while staging protocol-v2 green. Normal v2 requests and responses
-  still reject v1, so the bridge cannot become a provider-routing downgrade.
-- Preserve the selected blue protocol when recovery rebuilds mutable state and
-  plist files from the immutable manifest.
-
-## v4.0.1 highlights
-
-- Correct the `intent-check` route guidance so the closed Gemini governance
-  contract receives its required high effort, while rudimentary Codex advisory
-  intent comparisons remain low and sealed Grok governance remains high.
-
-## v4.0.0 highlights
-
-- Unify Grok architecture, governance, huge-context, and compatibility codegen
-  on the combined `grok-4.5` model. `target=composer` remains a compatibility
-  route name, not a second model identity.
-- Require `composer/codegen` callers to provide a sealed task class and a
-  low/medium/high effort level. Simple codegen starts at low, standard fixes
-  and features at medium, and complex multi-file or architecture-heavy work at
-  high; callers may raise but never undercut the task floor.
-- Advance the fixed provider protocol to v2. Old public clients and old signed
-  runtimes fail closed instead of selecting the retired Composer model or an
-  outdated effort policy.
-
-## v3.5.2 highlights
-
-- Authenticate launchd-activated dispatchers as two explicit principals: the
-  root-owned launchd listener and the operator-owned sealed runtime process.
-  The client waits only for the exact kernel pid-1 handoff sentinel under the
-  handshake deadline, then completes stable process, artifact, socket, and
-  final peer-PID proof before sending any hello bytes.
-
-The v3.5.1 dispatcher-boundary changes remain in force:
-
-- Treat every dispatcher-client failure after the request-bearing child is
-  launched—including malformed or noncanonical output—as post-request, so a
-  possibly accepted green request can never be retried through blue.
-- Keep POSIX `fcntl` locking optional at import time so unsupported hosts
-  retain typed platform-unavailable behavior; lifecycle locking still fails
-  closed before filesystem I/O when the primitive is absent.
-
-The v3.5.0 dispatcher and adoption-canary changes remain in force:
-
-- Authenticate a staged dispatcher with Darwin peer credentials, exact
-  published executable identity, and a request-free nonce/deadline/lane-bound
-  hello/ready exchange before sending provider-bearing bytes.
-- Add a separate internal `adoption_canary` operation bound to one provider,
-  candidate and worker digest tuple, registry generations, route allowlist, and
-  one-time authority token. The sealed canary document remains on runtime
-  protocol v2 inside dispatcher bridge/handshake frames that use private
-  protocol v1. It is not a policy route or model selector.
-- Permit an explicitly committed green selector only with the authenticated
-  handshake. A separate local bound on the request-free phase preserves a blue
-  fallback budget without shortening the original request deadline;
-  pre-request handshake failure may use independently proven blue, while
-  failure at or after request send never retries another lane.
-
-The shipped selector remains legacy-blue by default. Staging a green lane or
-running an authorized shadow canary does not commit it for normal traffic.
-
-The v3.4.0 continuity-bootstrap changes remain in force: strict derived lane
-state, a separately verified blue fallback, one captured lane per request, and
-Codex-seatbelt lifecycle denial with read-only status preserved.
-
-The v3.3.0 Gemini-governance changes remain in force:
-
-- Add a distinct broker-only `gemini/governance` contract using exact Gemini
-  3.1 Pro/high selection and complete artifact-bound proof validation. Gemini
-  advisory and long-context remain ordinary read-only actions and cannot emit
-  governance evidence.
-- Advance the native runtime to manifest schema 2, contract 3, and broker
-  transport 2. Bind the public coordinator, closed standalone-bundle identity,
-  lifecycle state, release gates, generated skills, and response parser to the
-  same route matrix. That release used provider protocol 1; v4.0.0 advances it
-  to protocol 2 for the unified Grok contract.
-- Adopt canonical passwd HOME as the managed-provider reliability policy while
-  retaining closed environments, family exclusion, route authority, provider
-  state serialization, bounded lifecycle, and no raw CLI fallback.
-- Move Codex advisory behind the same broker, guardian, acknowledged gate, and
-  cancellation lifecycle as every other provider route; only local runtime
-  management remains a direct exact-artifact operation.
-
-The v3.2.0 provider-broker changes remain in force:
-
-- Add explicit zero-idle launchd socket activation for managed Gemini,
-  OpenCode, Grok, and Composer routes, with digest-bound state and no direct
-  fallback.
-- Add closed install, status, rollback, and uninstall broker lifecycle commands
-  with transactional prior-version restoration and immutable version retention.
-- Resolve OpenCode models per request from live session observation, explicit
-  central configuration, or the fixed GLM preset; ignore ambient and row-level
-  model selection.
-- Require closed Grok terminal-state parsing, expose exact `cancelled` and
-  `input_limit` results, and permit only one same-route cancellation retry when
-  more than ten seconds remain under the original deadline.
-
-The v3.1.0 licensing and distribution changes remain in force:
-
-- Adopt the unmodified PolyForm Strict License 1.0.0. John Osumi retains
-  copyright, and commercial use requires separate explicit written approval
-  administered by Osumi Consulting LLC.
-- Make `AGENTS.md` the canonical public repository guide. `CLAUDE.md` remains
-  only as Claude Code's `@AGENTS.md` compatibility loader.
-- Require contributor-rights evidence and package exact legal documents,
-  deterministic SHA-256 evidence, and an SPDX 2.3 SBOM with every release.
-- All previous host presets and provider packages are retired and deleted. The
-  marketplace, release matrix, and active package inventory contain only
-  `agent-collab`.
-- Primary id, family, active model, host runtime, and session identifier are
-  resolved dynamically or from explicit configuration. Model changes during a
-  an OpenCode or ZCode session update provenance before the next route.
-- Governance review requires a complete, trustworthy, and internally
-  consistent primary id, family, active model, host runtime, and session
-  identifier. Explicit configuration may fill missing observations, but a
-  conflict with strong current-session identity blocks every route.
-- Partial or unknown primary identity may continue only for non-governance
-  delegation and always carries an independence warning.
-- The active primary and immutable artifact-author families are excluded from
-  reviewer, worker, tiebreaker, and fallback selection.
-- Claude remains asynchronous inbox-only. The shared runtime never creates a
-  synchronous Claude path.
-- A provider-free migration doctor blocks provider routing while any legacy
-  package is active and prints exact install, verify, and removal actions.
-- Policy-only safe mode disables every native model route. An asynchronous
-  inbox is eligible only when the active host explicitly reports its transport
-  available; otherwise inbox readiness also returns typed unavailable.
-
-Migration shorthand:
-
-- `codex-tools →` managed Codex backend in `agent-collab`
-- `glm-worker →` managed OpenCode backend in `agent-collab`, with
-  `opencode/glm-5.2` as the current Zhipu-family model preset
-- host-specific collaboration packages → dynamic host profiles in
-  `agent-collab`
-
-The exhaustive namespace/skill table is in
-[docs/migration-from-legacy-packages.md](docs/migration-from-legacy-packages.md).
-
-## License
-
-The public repository and distributed package use the unmodified
-[PolyForm Strict License 1.0.0](LICENSE). This is a source-available license,
-not an open-source grant: it permits the uses described in the license and does
-not permit redistribution, changes, derivative works, or commercial use.
-
-Copyright is owned by John Osumi. Commercial use requires separate, explicit
-written approval administered by Osumi Consulting LLC. Repository access,
-installation, GitHub activity, and an accepted contribution do not constitute
-approval. See [NOTICE](NOTICE) and
-[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
-approval boundary.
-
-An activation archive also redistributes CPython 3.13.14, Nuitka 4.1.3 runtime
-material, and their incorporated components under their own terms. The exact,
-digest-pinned inventory is shipped as `THIRD-PARTY-NOTICES.txt` and
-`third-party-licenses/` inside the plugin package. Those files are excluded from
-policy-only archives because no native runtime is present.
+The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## System architecture
 
@@ -355,9 +173,10 @@ request.
 
 The expected Apple Developer ID Team ID is pinned in the public
 `plugins/agent-collab/signing_policy.py` policy source, independently of the
-runtime manifest. It is currently unconfigured; activation releases remain
-blocked until a reviewed Team ID is committed and matching signing and
-notarization credentials are available to the private producer.
+runtime manifest, and is checked against every runtime member's signature during
+verification. An activation release refuses to publish unless the committed
+bundle matches that pinned team and passes notarization; a policy-only release
+carries no runtime and keeps every native route typed unavailable.
 
 Governance plus applicable review, fallback, and worker calls carry the
 captured artifact separately from the instruction prompt. The sealed native
@@ -367,15 +186,14 @@ client decodes and verifies the representation before launch; neither the
 coordinator nor the native runtime may reconstruct the artifact from a prompt
 copy.
 
-The repository intentionally contains no native runtime bundle yet. Native
-Gemini, Codex, OpenCode, and Grok 4.5 routes remain unavailable until
-the private build/sign integration supplies the real bundle, manifest digest,
-and complete contract declaration. Deterministic tests use temporary fixture
-bundles only. The release gate requires every platform artifact to expose
-the complete required contract matrix. Retirement and a policy-only release may
-land before native parity, but an activation release cannot launch any provider
-until the signed runtime exposes the complete matrix, including the
-`composer/codegen` compatibility route.
+The signed and notarized darwin-arm64 runtime bundle is committed in this
+repository (first shipped in the v4.2.x activation release). Native Codex,
+Gemini, OpenCode, and Grok 4.5 routes activate once a host installs the plugin,
+verifies the runtime, and installs the broker; until then they remain typed
+unavailable, and a policy-only fallback keeps every native route unavailable by
+design. Deterministic tests use temporary fixture bundles only. The release gate
+requires every platform artifact to expose the complete required contract
+matrix, including the `composer/codegen` compatibility route.
 
 ## Production lifecycle
 
@@ -387,9 +205,9 @@ until the signed runtime exposes the complete matrix, including the
    nested Mach-O before the entrypoint with hardened runtime, notarizes the
    closed bundle, and records whole-bundle plus per-member evidence.
 4. A policy-only plugin release omits the runtime and keeps every native route
-   typed unavailable. An activation release imports only the final bundle,
-   closed manifest metadata, and exact third-party notice/license tree; no
-   private source implementation crosses the boundary.
+   typed unavailable. An activation release commits the final signed and
+   notarized bundle, its closed manifest metadata, and the exact third-party
+   notice/license tree; no private source implementation crosses the boundary.
 5. Plugin CI validates both Claude and Codex manifests/marketplaces, schemas,
    skills, migration behavior, runtime fixtures, the dependency-free secret
    scan, CodeQL security analysis, release consistency, and public-export
@@ -475,7 +293,7 @@ external prerequisites and must be installed and authenticated through their
 vendor-supported interfaces. No workspace checkout or provider-specific plugin
 is required. Policy-only releases report the management surface unavailable.
 
-Broker lifecycle is always explicit—import, readiness, route invocation, and
+Broker lifecycle is always explicit: import, readiness, route invocation, and
 package auto-update do not install or modify launchd state. The private rollout
 manager invokes these closed update primitives in order after its host and
 provider gates:
@@ -711,3 +529,23 @@ runtime path is packaged; the activation-only verifier is not run.
 Release consistency additionally requires the Claude and Codex plugin
 manifests to have the same name/version and the generated Codex marketplace to
 contain exactly the one local unified package.
+
+## License
+
+The public repository and distributed package use the unmodified
+[PolyForm Strict License 1.0.0](LICENSE). This is a source-available license,
+not an open-source grant: it permits the uses described in the license and does
+not permit redistribution, changes, derivative works, or commercial use.
+
+Copyright is owned by John Osumi. Commercial use requires separate, explicit
+written approval administered by Osumi Consulting LLC. Repository access,
+installation, GitHub activity, and an accepted contribution do not constitute
+approval. See [NOTICE](NOTICE) and
+[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the exact ownership and
+approval boundary.
+
+An activation archive also redistributes CPython 3.13.14, Nuitka 4.1.3 runtime
+material, and their incorporated components under their own terms. The exact,
+digest-pinned inventory is shipped as `THIRD-PARTY-NOTICES.txt` and
+`third-party-licenses/` inside the plugin package. Those files are excluded from
+policy-only archives because no native runtime is present.
