@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 4.2.1
+version: 4.2.2
 defaults:
   tier: Fast
   effort: low
