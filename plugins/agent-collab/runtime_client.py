@@ -1464,6 +1464,23 @@ class _OperatorHomeUnavailable(ValueError):
     """
 
 
+class _BrokerNotarizationUnavailable(ValueError):
+    """Broker-path retryable marker: notarization could not be confirmed online.
+
+    A ValueError subclass (backward-compatible with existing broad
+    ``except (... ValueError)`` mappers) that lets broker lifecycle terminals
+    distinguish a transient notary-unreachable outage from genuine corruption,
+    without leaking the consumer-path ``_RuntimeNotarizationUnavailable`` across
+    the broker API boundary. Activation still gates on status == OK.
+    """
+
+
+def _broker_notary_unavailable_result(exc: BaseException, **result_kwargs: Any) -> RuntimeResult:
+    """Map a broker notary-unconfirmed failure to retryable UNAVAILABLE."""
+
+    return RuntimeResult(RuntimeStatus.UNAVAILABLE, error=str(exc), **result_kwargs)
+
+
 def _operator_home() -> str | None:
     if _pwd is None:
         return None
@@ -2785,6 +2802,8 @@ def _load_broker_state(
             dispatcher_protocol_version=None,
         )
         _verify_plist_against_state(root, document)
+    except _BrokerNotarizationUnavailable as exc:
+        return None, _broker_notary_unavailable_result(exc)
     except (OSError, ValueError):
         return None, RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installed identity could not be proven")
     if require_socket:
@@ -3004,6 +3023,8 @@ def _capture_broker_lanes(
         if not lanes:
             raise ValueError("provider dispatcher has no committed normal lane")
         return tuple(lanes), None
+    except _BrokerNotarizationUnavailable as exc:
+        return (), _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         return (), RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
@@ -3645,9 +3666,10 @@ def _broker_control_lock(root: Path) -> Iterator[None]:
 
 
 class _BrokerMutationFailure(RuntimeError):
-    def __init__(self, *, restored_previous: bool) -> None:
+    def __init__(self, *, restored_previous: bool, retryable: bool = False) -> None:
         super().__init__("provider control mutation failed")
         self.restored_previous = restored_previous
+        self.retryable = retryable
 
 
 @contextmanager
@@ -3676,7 +3698,10 @@ def _broker_control_transaction(
                 ValueError,
             ):
                 restored = False
-            raise _BrokerMutationFailure(restored_previous=restored) from exc
+            retryable = isinstance(exc, _BrokerNotarizationUnavailable)
+            raise _BrokerMutationFailure(
+                restored_previous=restored, retryable=retryable
+            ) from exc
 
 
 def _copy_regular_nofollow(
@@ -3781,6 +3806,10 @@ def _verify_published_version(
             # is kept as a publication-drift invariant. Explicit, not defaulted.
             tolerant=False,
         )
+    except _RuntimeNotarizationUnavailable as exc:
+        # Specific before BundleContractError: notary-unconfirmed is retryable,
+        # not a hard broker identity mismatch (MRO: subclass of BundleContractError).
+        raise _BrokerNotarizationUnavailable(str(exc)) from exc
     except runtime_bundle.BundleContractError as exc:
         raise ValueError("provider broker bundle identity mismatch") from exc
     if observed != artifact_digest or _safe_file_identity(entrypoint, executable=True) is None:
@@ -4607,6 +4636,8 @@ def invoke_dispatcher_ping(
             RuntimeStatus.PROTOCOL_ERROR,
             error="staged provider dispatcher ping completion is unproven",
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         return RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
@@ -4878,6 +4909,8 @@ def dispatcher_status() -> RuntimeResult:
                 "persistent_process": False,
             },
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         return RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
@@ -5054,6 +5087,15 @@ def stage_dispatcher() -> RuntimeResult:
             )
             return _staged_dispatcher_result(selector=selector, lane=lane)
     except _BrokerMutationFailure as failure:
+        if failure.retryable:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"restored_previous": failure.restored_previous},
+                error=(
+                    "provider dispatcher stage could not confirm runtime notarization; "
+                    "retry when the notary is reachable"
+                ),
+            )
         restored = failure.restored_previous
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
@@ -5063,6 +5105,10 @@ def stage_dispatcher() -> RuntimeResult:
                 if restored
                 else "provider dispatcher staging failed; candidate cleanup is unproven"
             ),
+        )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(
+            exc, result={"restored_previous": False}
         )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
@@ -5148,6 +5194,15 @@ def commit_dispatcher_selector() -> RuntimeResult:
                 },
             )
     except _BrokerMutationFailure as failure:
+        if failure.retryable:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"restored_previous": failure.restored_previous},
+                error=(
+                    "provider dispatcher commit could not confirm runtime notarization; "
+                    "retry when the notary is reachable"
+                ),
+            )
         restored = failure.restored_previous
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
@@ -5157,6 +5212,10 @@ def commit_dispatcher_selector() -> RuntimeResult:
                 if restored
                 else "provider dispatcher selector commit failed; control metadata is unproven"
             ),
+        )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(
+            exc, result={"restored_previous": False}
         )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
@@ -5237,6 +5296,15 @@ def abort_dispatcher_candidate() -> RuntimeResult:
                 },
             )
     except _BrokerMutationFailure as failure:
+        if failure.retryable:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                result={"restored_previous": failure.restored_previous},
+                error=(
+                    "provider dispatcher abort could not confirm runtime notarization; "
+                    "retry when the notary is reachable"
+                ),
+            )
         restored = failure.restored_previous
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
@@ -5246,6 +5314,10 @@ def abort_dispatcher_candidate() -> RuntimeResult:
                 if restored
                 else "provider dispatcher abort failed; selector is unproven"
             ),
+        )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(
+            exc, result={"restored_previous": False}
         )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         restored = False
@@ -5534,6 +5606,8 @@ def recover_last_committed_control_plane() -> RuntimeResult:
                     "desired_provider_binaries_changed": False,
                 },
             )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc, result={"recovered": False})
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
@@ -5662,6 +5736,10 @@ def drain_retiring_dispatcher() -> RuntimeResult:
                     "versions_retained": True,
                 },
             )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(
+            exc, result={"retained_drained": False}
+        )
     except (OSError, RuntimeError, subprocess.SubprocessError, TypeError, ValueError):
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
@@ -5679,14 +5757,17 @@ def _activate_broker_record(
     next_previous: Mapping[str, Any] | None,
     restore_state: Mapping[str, Any] | None,
 ) -> RuntimeResult:
-    _bundle, runtime, _manifest, _anchor = _verify_published_version(
-        root,
-        artifact_digest=target_artifact,
-        manifest_digest=target_manifest,
-        role="selected",
-        transport="broker",
-        dispatcher_protocol_version=None,
-    )
+    try:
+        _bundle, runtime, _manifest, _anchor = _verify_published_version(
+            root,
+            artifact_digest=target_artifact,
+            manifest_digest=target_manifest,
+            role="selected",
+            transport="broker",
+            dispatcher_protocol_version=None,
+        )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     home = _operator_home()
     if home is None:
         return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="operator home is unavailable")
@@ -5730,6 +5811,17 @@ def _activate_broker_record(
             require_socket=True,
         )
         if observed_error is not None or observed_state != record:
+            # A retryable notary miss on readback occurs AFTER _bootstrap_broker, so it
+            # must STILL be rolled back — route it through the restoration handler below
+            # as the broker-notary type (which rolls back, THEN returns UNAVAILABLE), never
+            # a bare early return that would leave the just-activated candidate running.
+            if (
+                observed_error is not None
+                and observed_error.status is RuntimeStatus.UNAVAILABLE
+            ):
+                raise _BrokerNotarizationUnavailable(
+                    observed_error.error or _NOTARIZATION_UNAVAILABLE_MESSAGE
+                )
             raise RuntimeError("provider broker activation state could not be read back")
         return RuntimeResult(
             RuntimeStatus.OK,
@@ -5741,7 +5833,7 @@ def _activate_broker_record(
                 "persistent_process": False,
             },
         )
-    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
         restored = False
         try:
             _bootout_broker(plist_path)
@@ -5790,6 +5882,12 @@ def _activate_broker_record(
                         pass
         except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
             restored = False
+        if isinstance(exc, _BrokerNotarizationUnavailable):
+            # Post-mutation notary miss: rollback ran above; report retryable (not a
+            # hard error) while still surfacing whether the prior state was restored.
+            return _broker_notary_unavailable_result(
+                exc, result={"restored_previous": restored}
+            )
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
             result={"restored_previous": restored},
@@ -5898,6 +5996,15 @@ def install_broker() -> RuntimeResult:
                             "persistent_process": False,
                         },
                     )
+                except _BrokerNotarizationUnavailable as exc:
+                    restored = _restore_selector_v2_snapshot(
+                        root, selector_before_raw
+                    )
+                    if lane is not None:
+                        restored = _cleanup_dispatcher_candidate(root, lane) and restored
+                    return _broker_notary_unavailable_result(
+                        exc, result={"restored_previous": restored}
+                    )
                 except (
                     OSError,
                     RuntimeError,
@@ -5960,6 +6067,8 @@ def install_broker() -> RuntimeResult:
             ),
             restore_state=proven_current,
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker installation preflight failed")
 
@@ -6062,6 +6171,14 @@ def broker_status() -> RuntimeResult:
                     transport="broker",
                     dispatcher_protocol_version=None,
                 )
+            except _BrokerNotarizationUnavailable:
+                return RuntimeResult(
+                    RuntimeStatus.UNAVAILABLE,
+                    error=(
+                        "provider broker rollback readiness could not be confirmed; "
+                        "retry when the notary is reachable"
+                    ),
+                )
             except (
                 OSError,
                 RuntimeError,
@@ -6087,6 +6204,8 @@ def broker_status() -> RuntimeResult:
             },
             error="provider broker selector is unavailable",
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (
         KeyError,
         OSError,
@@ -6201,6 +6320,8 @@ def rollback_broker() -> RuntimeResult:
             next_previous=proven_current,
             restore_state=proven_current,
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker rollback preflight failed")
 
@@ -6288,6 +6409,8 @@ def uninstall_broker() -> RuntimeResult:
             RuntimeStatus.OK,
             result={"installed": False, "versions_retained": True},
         )
+    except _BrokerNotarizationUnavailable as exc:
+        return _broker_notary_unavailable_result(exc)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="provider broker uninstall preflight failed")
 

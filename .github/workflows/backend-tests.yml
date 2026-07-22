@@ -23,5 +23,6 @@ jobs:
           python3 -m unittest tests.test_agent_collab_migration -v
           python3 -m unittest tests.test_agent_collab_coordinator -v
           python3 -m unittest tests.test_public_export_safety -v
+          python3 -m unittest tests.test_path2_broker_notarization -v
       - name: Verify active source tree
         run: python3 scripts/check-public-export-safety.py --active-tree
