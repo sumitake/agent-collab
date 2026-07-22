@@ -6267,12 +6267,15 @@ print(json.dumps({
         )
         # A bare command-line Mach-O is not an app bundle, so notarization is
         # verified via codesign's `=notarized` requirement (binds to the CDHash),
-        # never `spctl --assess`. The check is purely returncode-driven: a
-        # notarized Developer-ID binary passes (0); un-notarized fails (3).
+        # never `spctl --assess`. The check is returncode-driven: rc 0 passes;
+        # any nonzero rc is IRREDUCIBLY ambiguous at the consumer (unreachable
+        # notary vs genuinely unnotarized) and is typed as the retryable
+        # _RuntimeNotarizationUnavailable (issue #36) — never a consumer-side hard
+        # failure. `"unavailable"` marks that expected raise.
         cases = (
             ("", 0, False),
             ("Timestamp=none", 0, False),
-            ("Timestamp=Jul 12, 2026 at 12:00:00", 3, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", 3, "unavailable"),
             ("Timestamp=Jul 12, 2026 at 12:00:00", 0, True),
         )
         for timestamp, notarized_rc, expected in cases:
@@ -6302,13 +6305,22 @@ print(json.dumps({
                         return mock.Mock(returncode=notarized_rc, stdout="", stderr="")
                     return mock.Mock(returncode=0, stdout="", stderr="valid")
 
-                with mock.patch.object(self.client.subprocess, "run", side_effect=run):
-                    valid, error = self.client._verify_macos_signature(
-                        Path("/tmp/agent-collab-runtime"),
-                        team_id="TESTTEAM01",
-                        require_notarization=True,
-                    )
-                self.assertEqual(valid, expected, error)
+                if expected == "unavailable":
+                    with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+                            self.client._verify_macos_signature(
+                                Path("/tmp/agent-collab-runtime"),
+                                team_id="TESTTEAM01",
+                                require_notarization=True,
+                            )
+                else:
+                    with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                        valid, error = self.client._verify_macos_signature(
+                            Path("/tmp/agent-collab-runtime"),
+                            team_id="TESTTEAM01",
+                            require_notarization=True,
+                        )
+                    self.assertEqual(valid, expected, error)
                 # Notarization must be proven by codesign's `=notarized`
                 # requirement, never by spctl.
                 self.assertFalse(
@@ -6351,7 +6363,11 @@ print(json.dumps({
             "    minos 14.0\n"
         )
         # If the notarization codesign call raises (missing tool / timeout), the
-        # verifier must fail closed — never treat an un-run check as a pass.
+        # verifier must never treat an un-run check as a pass. Post-#36 tri-state:
+        # a transient/un-run notarization check is typed RETRYABLE (raises
+        # _RuntimeNotarizationUnavailable -> RuntimeStatus.UNAVAILABLE), not a
+        # corruption signal. Fail-closed intent preserved: the runtime still never
+        # activates (activation gates on status == OK), only the reporting differs.
         for exc in (
             OSError("codesign missing"),
             subprocess.TimeoutExpired(cmd="codesign", timeout=20),
@@ -6380,13 +6396,41 @@ print(json.dumps({
                     return mock.Mock(returncode=0, stdout="", stderr="valid")
 
                 with mock.patch.object(self.client.subprocess, "run", side_effect=run):
-                    valid, error = self.client._verify_macos_signature(
-                        Path("/tmp/agent-collab-runtime"),
-                        team_id="TESTTEAM01",
-                        require_notarization=True,
-                    )
-                self.assertFalse(valid)
-                self.assertIn("verification tool failed", error)
+                    with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+                        self.client._verify_macos_signature(
+                            Path("/tmp/agent-collab-runtime"),
+                            team_id="TESTTEAM01",
+                            require_notarization=True,
+                        )
+
+    def test_resolve_runtime_notary_unavailable_maps_to_unavailable(self) -> None:
+        # Issue #36 end-to-end: a _RuntimeNotarizationUnavailable raised by the
+        # bundle inspector (via _verify_macos_signature) must map to the retryable
+        # UNAVAILABLE, NOT SIGNATURE_ERROR. Exercises resolve_runtime's load-bearing
+        # except ORDERING through the real verify_bundle_tree path.
+        self._fixture()
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), \
+             mock.patch.object(
+                 self.client,
+                 "_verify_macos_signature",
+                 side_effect=self.client._RuntimeNotarizationUnavailable("notary unreachable"),
+             ):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertNotEqual(result.status, self.client.RuntimeStatus.SIGNATURE_ERROR)
+
+    def test_resolve_runtime_genuine_signature_failure_still_signature_error(self) -> None:
+        # Control: a genuine signature failure must still be SIGNATURE_ERROR, so the
+        # new earlier except clause does not swallow real negatives.
+        self._fixture()
+        with mock.patch.object(self.client, "PLUGIN_ROOT", self.root), \
+             mock.patch.object(
+                 self.client,
+                 "_verify_macos_signature",
+                 side_effect=self.client._RuntimeSignatureError("bad signature"),
+             ):
+            result = self.client.resolve_runtime()
+        self.assertEqual(result.status, self.client.RuntimeStatus.SIGNATURE_ERROR)
 
     def test_manifest_rejects_cross_platform_path_mismatch(self) -> None:
         self._fixture()
@@ -7233,3 +7277,127 @@ time.sleep(10)
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotarizationTriStateTests(unittest.TestCase):
+    """Issue #36 Phase 1: `_verify_macos_signature` must type an unreachable Apple
+    notary (or a transient tool failure) as the RETRYABLE
+    `_RuntimeNotarizationUnavailable`, while a genuine not-notarized negative
+    (notary confirmed reachable) stays a signature failure. Behaviour only; no
+    network — the reachability probe and every subprocess call are mocked."""
+
+    _DETAIL = (
+        "Executable=/x\n"
+        "Identifier=com.example.runtime\n"
+        "TeamIdentifier=TESTTEAM01\n"
+        "Authority=Developer ID Application: Test (TESTTEAM01)\n"
+        "flags=0x10000(runtime)\n"
+        "Timestamp=Jan 1, 2026 at 12:00:00 AM\n"
+    )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = _load_client()
+
+    def _run_verify(self, *, notary_rc=None, notary_exc=None):
+        client = self.client
+
+        def run_side_effect(cmd, **kwargs):
+            if "--test-requirement" in cmd:  # the notarization call
+                if notary_exc is not None:
+                    raise notary_exc
+                return subprocess.CompletedProcess(cmd, notary_rc, stdout="", stderr="")
+            if "-dv" in cmd:  # signature detail
+                return subprocess.CompletedProcess(cmd, 0, stdout=self._DETAIL, stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")  # --verify
+
+        with mock.patch.object(client, "EXPECTED_DEVELOPER_ID_TEAM", "TESTTEAM01"), \
+             mock.patch.object(client, "_verify_macho_identity", return_value=(True, "")), \
+             mock.patch.object(client.subprocess, "run", side_effect=run_side_effect):
+            return client._verify_macos_signature(
+                Path("/x"),
+                team_id="TESTTEAM01",
+                identity="Developer ID Application: Test (TESTTEAM01)",
+                secure_timestamp=True,
+                require_notarization=True,
+            )
+
+    def test_notarized_ok(self) -> None:
+        self.assertEqual(self._run_verify(notary_rc=0), (True, ""))
+
+    def test_nonzero_rc_raises_unavailable(self) -> None:
+        # Issue #36 (Codex P1 resolution, operator-directed): rc != 0 is
+        # irreducibly ambiguous at the consumer (unreachable-notary vs genuinely
+        # unnotarized are indistinguishable, and no probe can confirm the notary
+        # operation), so EVERY nonzero rc is typed as the retryable
+        # _RuntimeNotarizationUnavailable — never a consumer-side SIGNATURE_ERROR.
+        # Authoritative genuine-not-notarized detection lives at the release gate.
+        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+            self._run_verify(notary_rc=3)
+
+    def test_timeout_raises_unavailable(self) -> None:
+        exc = subprocess.TimeoutExpired(cmd="codesign", timeout=20)
+        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+            self._run_verify(notary_exc=exc)
+
+    def test_oserror_raises_unavailable(self) -> None:
+        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+            self._run_verify(notary_exc=OSError("codesign missing"))
+
+    def test_exception_hierarchy_ordering(self) -> None:
+        # Sibling of the signature error (both subclass BundleContractError), and
+        # NOT a subclass of it — so resolve_runtime's earlier except clause maps it
+        # to UNAVAILABLE and the signature handler never swallows it.
+        client = self.client
+        self.assertTrue(
+            issubclass(client._RuntimeNotarizationUnavailable, client.runtime_bundle.BundleContractError)
+        )
+        self.assertFalse(
+            issubclass(client._RuntimeNotarizationUnavailable, client._RuntimeSignatureError)
+        )
+
+
+class NotarizationSpawnSafetyTests(unittest.TestCase):
+    """Issue #36 safety invariant: a retryable UNAVAILABLE resolution — like every
+    other non-OK status — must NEVER reach the runtime launcher. manage_runtime
+    gates on `status == OK`, so re-typing the notary-unreachable case to UNAVAILABLE
+    changes reporting/retryability only, never whether the runtime executes."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = _load_client()
+
+    def _manage_with_status(self, resolution):
+        client = self.client
+        with mock.patch.object(client, "_management_document", return_value={}), \
+             mock.patch.object(client, "resolve_runtime", return_value=resolution), \
+             mock.patch.object(client, "_launch_runtime") as launch:
+            result = client.manage_runtime(action="grok_login", request_id="r", timeout_ms=1000)
+        return result, launch
+
+    def test_unavailable_never_launches(self) -> None:
+        client = self.client
+        resolution = client.RuntimeResolution(client.RuntimeStatus.UNAVAILABLE, error="notary unreachable")
+        result, launch = self._manage_with_status(resolution)
+        self.assertEqual(result.status, client.RuntimeStatus.UNAVAILABLE)
+        launch.assert_not_called()
+
+    def test_signature_error_never_launches(self) -> None:
+        client = self.client
+        resolution = client.RuntimeResolution(client.RuntimeStatus.SIGNATURE_ERROR, error="bad")
+        result, launch = self._manage_with_status(resolution)
+        self.assertEqual(result.status, client.RuntimeStatus.SIGNATURE_ERROR)
+        launch.assert_not_called()
+
+    def test_ok_does_launch_control(self) -> None:
+        # Control: proves the gate would actually catch a leak — OK reaches the launcher.
+        client = self.client
+        resolution = client.RuntimeResolution(client.RuntimeStatus.OK, path=Path("/x"))
+        with mock.patch.object(client, "_management_document", return_value={}), \
+             mock.patch.object(client, "resolve_runtime", return_value=resolution), \
+             mock.patch.object(client, "_launch_runtime", return_value="launched") as launch:
+            result = client.manage_runtime(action="grok_login", request_id="r", timeout_ms=1000)
+        launch.assert_called_once()
+        self.assertEqual(result, "launched")
+
+
