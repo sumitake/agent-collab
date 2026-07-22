@@ -1,4 +1,6 @@
-### Fixed
+### agent-collab 4.2.4 — 2026-07-22
+
+#### Fixed
 
 - **Broker-verification notarization tri-state (issue #36 path-2).** Extend the Phase-1
   consumer-activation notarization tri-state to the broker-verification / lifecycle path in

@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.2.3), and is
+This public repository distributes one package, **agent-collab** (v4.2.4), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -62,21 +62,19 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.2.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.2.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.2.3
+## What's new - v4.2.4
 
-- **Notarization outage no longer mis-typed as a corrupted runtime (issue #36, Phase 1).**
-  On a host that is online but cannot confirm notarization with Apple (enterprise
-  firewall, notary outage, restrictive allowlist), consumer activation now reports the
-  retryable `RuntimeStatus.UNAVAILABLE` with an actionable message instead of a
-  corrupted `SIGNATURE_ERROR`. Activation still gates on `status == OK`, so a runtime
-  whose notarization cannot be confirmed never executes — only the reporting and
-  retryability change.
-- **Synchronous Codex governance-review route.** Adds the `("codex","governance")`
-  first-class synchronous governance-review route (mirroring `gemini/governance`),
-  enabling a proof-backed synchronous Codex governance review that anchors a Tier-3
-  peer review without the async inbox. Additive; existing contracts are unchanged.
+- **Broker-verification notarization tri-state (issue #36 path-2).** Completes issue #36
+  by extending the Phase-1 consumer-activation notarization tri-state (v4.2.3) to the
+  broker-verification / lifecycle path. A transient *online-but-notary-unreachable* outage
+  during a broker operation (install, status, stage/commit/abort, rollback, drain, recover,
+  uninstall) is now reported as a retryable `RuntimeStatus.UNAVAILABLE` instead of a
+  mis-typed hard `INTEGRITY_ERROR` / `PROVIDER_ERROR` / `PROTOCOL_ERROR`. Genuine integrity
+  failures (signature, digest, membership) keep their hard status; activation still gates on
+  `status == OK`, so re-typing changes reporting and retryability only, never whether an
+  unverified runtime is adopted.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
