@@ -272,6 +272,17 @@ package through their compatible plugin manager; if that host has no native
 plugin surface, it cannot install this package directly and must remain
 temporarily unsupported rather than recreating a provider-specific shim.
 
+The retired standalone packages migrate to the unified `agent-collab`:
+
+- `codex-tools →` managed Codex backend in `agent-collab`
+- `glm-worker →` managed OpenCode backend in `agent-collab`, with
+  `opencode/glm-5.2` as the current Zhipu-family model preset
+- host-specific collaboration packages → dynamic host profiles in
+  `agent-collab`
+
+The exhaustive namespace and skill table is in
+[docs/migration-from-legacy-packages.md](docs/migration-from-legacy-packages.md).
+
 An activation release adds a closed signed-runtime management surface beside
 the coordinator. Resolve the installed plugin root and run only:
 
