@@ -1029,20 +1029,41 @@ def _verify_macos_signature(
     if require_notarization:
         # The runtime entrypoint is a bare command-line Mach-O, not a .app
         # bundle, so `spctl --assess --type execute` always rejects it ("the
-        # code is valid but does not seem to be an app"). Verify notarization
-        # the same way the release gate (verify_runtime_release.py) does: the
-        # codesign requirement `notarized` is the documented, code-object-native
-        # proof and binds to this binary's CDHash. A tool failure or a failed
-        # requirement is a fail-closed reject, never a pass. Offline note: a
-        # bare Mach-O cannot have a notarization ticket stapled (stapling targets
-        # bundles, disk images, and installer packages, not standalone binaries).
-        # Without `--check-notarization` this requirement does not run the online
-        # Gatekeeper lookup itself; it is satisfied by a stapled ticket or the
-        # host's local notarization trust state. A bare binary therefore relies
-        # on that local state (e.g. the host that notarized it, or a prior
-        # Gatekeeper assessment); a host without it fails closed, never a bypass.
-        # This activation-time dependency is a known operational constraint
-        # (pipeline follow-up).
+        # code is valid but does not seem to be an app"). The codesign
+        # requirement `notarized` is the documented, code-object-native proof and
+        # binds to this binary's CDHash. Verify it the same way the release gate
+        # (verify_runtime_release.py) does.
+        #
+        # `--check-notarization` forces the ONLINE Apple notary lookup by CDHash.
+        # It is required so activation succeeds on a clean host: a bare Mach-O
+        # cannot have a notarization ticket stapled (stapling targets
+        # .app/.dmg/.pkg), and without the flag `=notarized` is satisfied only by
+        # a stapled ticket or the host's LOCAL notarization trust state — which a
+        # freshly-installed plugin checkout does not have, so activation
+        # fail-closed for every clean-host user.
+        #
+        # Empirically (macos-14.8.7, macos-15.7.7, macOS 26):
+        #   * genuinely notarized, online                  -> rc 0 (accept)
+        #   * unsigned / ad-hoc / Dev-ID-signed-unnotarized -> rc 3 (reject)
+        #   * genuinely notarized, CLEAN/UNCACHED host, notary unreachable
+        #                                                  -> rc 3 (FAIL-CLOSED)
+        # rc == 0 requires a positive notarization result: either a live online
+        # confirmation, OR a locally-cached positive that a PRIOR successful online
+        # lookup established for this exact CDHash. Neither can exist for an
+        # unnotarized CDHash, so unnotarized code never passes; a tool failure or a
+        # failed requirement is a fail-closed reject.
+        #
+        # Offline behaviour + known limitation (follow-up): --check-notarization
+        # couples a FRESH activation to Apple's notary being reachable.
+        #   * clean/uncached host, offline -> temporarily_unavailable (fail-closed).
+        #     The common fresh-install-offline case; strictly no worse than before
+        #     (that host was already broken without a local trust state).
+        #   * host that already confirmed THIS CDHash online -> the positive is
+        #     cached, so a later offline check returns rc 0. Safe: only genuinely
+        #     notarized CDHashes ever cache a positive.
+        # Online users — the common case — now activate (previously broken). Full
+        # offline support for a fresh/uncached install needs a committed
+        # Apple-signed ticket verified against the CDHash (trust-the-checkout).
         try:
             result = subprocess.run(
                 [
@@ -1052,6 +1073,7 @@ def _verify_macos_signature(
                     "--verbose=4",
                     "--test-requirement",
                     "=notarized",
+                    "--check-notarization",
                     str(path),
                 ],
                 capture_output=True,

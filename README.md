@@ -28,6 +28,12 @@ Contributors need no access to the private build/sign system. See
 
 ## What's new - v4.2.1
 
+- Verify notarization online at both the release gate and consumer activation
+  (`codesign --test-requirement '=notarized' --check-notarization`), so a clean host
+  (a GitHub-hosted CI runner or a freshly-installed end-user checkout) confirms the
+  runtime is notarized instead of fail-closing. Empirically fail-closed when the
+  Apple notary is unreachable, and it rejects unsigned, ad-hoc, and
+  Developer-ID-signed-unnotarized binaries on macOS 14 and 15.
 - Accept the exact sealed artifact snapshot required by the collaboration skills
   on the read-only `opencode/plan` route. OpenCode plan/review calls now preserve
   artifact bytes and author-model lineage instead of failing the coordinator's

@@ -235,6 +235,77 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
             )
         )
 
+    def test_notarization_assessment_forces_online_check_notarization(self) -> None:
+        # Regression guard (adversarial-review requirement). The notarization
+        # assessment MUST force the ONLINE Apple notary lookup via
+        # --check-notarization. Without it, `=notarized` is satisfied only by a
+        # stapled ticket (impossible for a bare Mach-O) or the notarizing host's
+        # local trust state, so the gate fail-closes on a clean CI runner (this is
+        # the bug that failed the first release carrying a committed runtime).
+        # Verified fail-closed on macos-15.7.7: offline -> rc 3, so rc 0 requires a
+        # positive online confirmation. Do not drop the flag "to fix flakiness".
+        self._manifest(set(self.gate.REQUIRED_CONTRACTS))
+        notarization_commands: list[list[str]] = []
+
+        def run(command, **_kwargs):
+            if command[0] == "/usr/bin/lipo":
+                return mock.Mock(returncode=0, stdout="arm64\n", stderr="")
+            if command[0] == "/usr/bin/otool":
+                if "-hv" in command:
+                    return mock.Mock(
+                        returncode=0,
+                        stdout="MH_MAGIC_64 ARM64 ALL 0x00 EXECUTE 21 1688\n",
+                        stderr="",
+                    )
+                return mock.Mock(
+                    returncode=0,
+                    stdout=(
+                        "Load command 9\n"
+                        "      cmd LC_BUILD_VERSION\n"
+                        " platform 1\n"
+                        "    minos 14.0\n"
+                    ),
+                    stderr="",
+                )
+            if command[0] == "/usr/bin/codesign" and "-dv" in command:
+                return mock.Mock(
+                    returncode=0,
+                    stdout="",
+                    stderr=(
+                        "Authority=Developer ID Application: Test Operator (TESTTEAM01)\n"
+                        "TeamIdentifier=TESTTEAM01 flags=0x10000(runtime)\n"
+                        "Timestamp=Jul 12, 2026 at 12:00:00\n"
+                    ),
+                )
+            if command[0] == "/usr/bin/codesign" and "--test-requirement" in command:
+                notarization_commands.append(list(command))
+            return mock.Mock(
+                returncode=0,
+                stdout="",
+                stderr="accepted\nsource=Notarized Developer ID\n",
+            )
+
+        with (
+            mock.patch.object(self.gate.subprocess, "run", side_effect=run),
+            mock.patch.object(self.gate.platform, "system", return_value="Darwin"),
+            mock.patch.object(self.gate.platform, "machine", return_value="arm64"),
+        ):
+            ok, _evidence, errors = self.gate.verify_release(self.root, git_sha="abc")
+        self.assertTrue(ok, errors)
+        self.assertTrue(
+            notarization_commands,
+            "expected a codesign --test-requirement notarization assessment",
+        )
+        for command in notarization_commands:
+            self.assertIn("=notarized", command)
+            self.assertIn(
+                "--check-notarization",
+                command,
+                "notarization assessment must force the online lookup so it "
+                "verifies on a clean CI host; see verify_runtime_release.py + the "
+                "macos-15 fail-closed probe",
+            )
+
     def test_release_rejects_runtime_filename_without_hardened_flag(self) -> None:
         self._manifest(set(self.gate.REQUIRED_CONTRACTS))
         def run(command, **_kwargs):
@@ -412,8 +483,14 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                     )
                 self.assertEqual(ok, expected, errors)
                 # Notarization is asserted via the codesign requirement command
-                # shape (never spctl), and the exact `=notarized` predicate with
-                # --strict and WITHOUT --check-notarization (which would fail open).
+                # shape (never spctl): the exact `=notarized` predicate with
+                # --strict AND --check-notarization, which forces the ONLINE Apple
+                # notary lookup so the gate verifies on a clean CI host (without it
+                # the requirement is satisfied only by a stapled ticket — impossible
+                # for a bare Mach-O — or the notarizing host's local trust state, so
+                # a fresh CI runner fail-closes). Empirically fail-closed on
+                # macos-15.7.7 (offline -> rc 3), so rc 0 requires a positive online
+                # confirmation.
                 notar = [
                     c
                     for c in codesign_calls
@@ -422,7 +499,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
                 self.assertEqual(len(notar), 1)
                 self.assertIn("--strict", notar[0])
                 self.assertEqual(notar[0][notar[0].index("--test-requirement") + 1], "=notarized")
-                self.assertNotIn("--check-notarization", notar[0])
+                self.assertIn("--check-notarization", notar[0])
                 self.assertFalse(any(c and c[0] == "/usr/sbin/spctl" for c in codesign_calls))
                 if expected:
                     self.assertEqual(
