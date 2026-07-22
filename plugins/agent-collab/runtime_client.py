@@ -5810,13 +5810,18 @@ def _activate_broker_record(
             manifest_digest=target_manifest,
             require_socket=True,
         )
-        # R2: do not collapse a retryable notary miss into RuntimeError→PROVIDER_ERROR.
-        if (
-            observed_error is not None
-            and observed_error.status is RuntimeStatus.UNAVAILABLE
-        ):
-            return observed_error
         if observed_error is not None or observed_state != record:
+            # A retryable notary miss on readback occurs AFTER _bootstrap_broker, so it
+            # must STILL be rolled back — route it through the restoration handler below
+            # as the broker-notary type (which rolls back, THEN returns UNAVAILABLE), never
+            # a bare early return that would leave the just-activated candidate running.
+            if (
+                observed_error is not None
+                and observed_error.status is RuntimeStatus.UNAVAILABLE
+            ):
+                raise _BrokerNotarizationUnavailable(
+                    observed_error.error or _NOTARIZATION_UNAVAILABLE_MESSAGE
+                )
             raise RuntimeError("provider broker activation state could not be read back")
         return RuntimeResult(
             RuntimeStatus.OK,
@@ -5828,9 +5833,7 @@ def _activate_broker_record(
                 "persistent_process": False,
             },
         )
-    except _BrokerNotarizationUnavailable as exc:
-        return _broker_notary_unavailable_result(exc)
-    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
         restored = False
         try:
             _bootout_broker(plist_path)
@@ -5879,6 +5882,12 @@ def _activate_broker_record(
                         pass
         except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
             restored = False
+        if isinstance(exc, _BrokerNotarizationUnavailable):
+            # Post-mutation notary miss: rollback ran above; report retryable (not a
+            # hard error) while still surfacing whether the prior state was restored.
+            return _broker_notary_unavailable_result(
+                exc, result={"restored_previous": restored}
+            )
         return RuntimeResult(
             RuntimeStatus.PROVIDER_ERROR,
             result={"restored_previous": restored},

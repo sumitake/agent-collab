@@ -178,29 +178,29 @@ class TestPath2BrokerNotarization(unittest.TestCase):
     # ---------------------------------------------------------------------------
 
     def test_load_broker_state_notary_returns_unavailable(self):
+        """Exercises the REAL _load_broker_state; notary injected at _verify_published_version."""
+        artifact, manifest = "a" * 64, "b" * 64
+        raw = (
+            b'{"artifact_sha256": "' + artifact.encode()
+            + b'", "manifest_sha256": "' + manifest.encode() + b'"}'
+        )
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        # Get past the pre-verify gates (existence, perms, read, schema) so the REAL
+        # function reaches its real _verify_published_version call and its real terminal.
+        self._enter(patch.object(Path, "lstat", lambda self: MagicMock()))
+        self._enter(
+            patch.object(rc, "_exact_mode", lambda *_a, **_k: MagicMock(st_size=len(raw)))
+        )
         self._enter(
             patch.object(
-                rc,
-                "_broker_root",
-                lambda: Path("/tmp/agent-collab-path2-notary-test-broker"),
+                rc, "_read_regular_nofollow", lambda *_a, **_k: (raw, MagicMock())
             )
         )
+        self._enter(patch.object(rc, "_broker_record_valid", lambda *_a, **_k: True))
+        self._enter(patch.object(rc, "_verify_published_version", _raise_broker_notary))
 
-        # Fail closed before disk: inject at verify after constructing a path that
-        # would reach the verify try — unit-test the except branch directly.
-        def fake_load(**_k: Any):
-            try:
-                raise rc._BrokerNotarizationUnavailable(NOTARY_MSG)
-            except rc._BrokerNotarizationUnavailable as exc:
-                return None, rc._broker_notary_unavailable_result(exc)
-            except (OSError, ValueError):
-                return None, rc.RuntimeResult(
-                    rc.RuntimeStatus.INTEGRITY_ERROR,
-                    error="provider broker installed identity could not be proven",
-                )
-
-        state, err = fake_load(
-            artifact_digest="a" * 64, manifest_digest="b" * 64, require_socket=False
+        state, err = rc._load_broker_state(
+            artifact_digest=artifact, manifest_digest=manifest, require_socket=False
         )
         self.assertIsNone(state)
         self.assertIsNotNone(err)
@@ -416,7 +416,9 @@ class TestPath2BrokerNotarization(unittest.TestCase):
                 },
             )
         )
-        self._enter(patch.object(rc, "_bootout_broker", lambda _p: True))
+        bootout = self._enter(
+            patch.object(rc, "_bootout_broker", MagicMock(return_value=True))
+        )
         self._enter(
             patch.object(rc, "_write_private_atomic", lambda *_a, **_k: None)
         )
@@ -447,8 +449,18 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             restore_state=None,
         )
         self.assertIs(result.status, rc.RuntimeStatus.UNAVAILABLE)
-        self.assertTrue(result is unavailable or result.error == NOTARY_MSG)
         self.assertIsNot(result.status, rc.RuntimeStatus.PROVIDER_ERROR)
+        # Concern-1 regression guard (from the Codex peer review): a post-bootstrap
+        # readback notary miss MUST roll back (bootout the just-activated candidate)
+        # BEFORE reporting UNAVAILABLE — never an early return that leaves it running.
+        # current_state=None ⇒ the mutation try does no bootout, so a called bootout
+        # can ONLY be the rollback one. (This assertion FAILS against the old early-return.)
+        self.assertTrue(
+            bootout.called,
+            "rollback bootout must run on a post-bootstrap notary miss",
+        )
+        self.assertIsNotNone(result.result)
+        self.assertIn("restored_previous", result.result)
 
     # ---------------------------------------------------------------------------
     # (a) G3 — no spawn/adopt of unverified; mutation rollback still runs
