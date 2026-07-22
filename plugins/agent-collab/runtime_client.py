@@ -28,6 +28,7 @@ import selectors
 import shutil
 import signal
 import socket
+import ssl
 import stat
 import struct
 import subprocess
@@ -1064,6 +1065,16 @@ def _verify_macos_signature(
         # Online users — the common case — now activate (previously broken). Full
         # offline support for a fresh/uncached install needs a committed
         # Apple-signed ticket verified against the CDHash (trust-the-checkout).
+        #
+        # Tri-state typing (issue #36): `codesign … --check-notarization` returns
+        # rc != 0 IDENTICALLY for "notary unreachable" and "genuinely not
+        # notarized" (same stderr on macos-14/15), so the exit code alone cannot
+        # tell a transient outage from a real negative. A transient/unreachable
+        # condition is NOT a corrupted runtime — it is retryable. We raise
+        # `_RuntimeNotarizationUnavailable` for those cases so resolve_runtime can
+        # map them to the retryable RuntimeStatus.UNAVAILABLE (not the
+        # non-retryable SIGNATURE_ERROR). Execution still gates on status == OK, so
+        # neither outcome can activate an unnotarized binary.
         try:
             result = subprocess.run(
                 [
@@ -1081,14 +1092,87 @@ def _verify_macos_signature(
                 timeout=20,
             )
         except (OSError, subprocess.SubprocessError):
-            return False, "macOS notarization verification tool failed"
+            # TimeoutExpired is a SubprocessError. A tool/network failure means we
+            # could not CONFIRM notarization -> transient/retryable, not corrupt.
+            raise _RuntimeNotarizationUnavailable(_NOTARIZATION_UNAVAILABLE_MESSAGE)
         if result.returncode != 0:
+            # rc != 0 is ambiguous (unreachable-notary vs genuinely-unnotarized).
+            # Disambiguate with an INDEPENDENT reachability probe: only a
+            # confirmed-reachable notary lets us call this a genuine negative.
+            if _apple_notary_reachable() is not True:
+                # Unreachable OR indeterminate -> bias to retryable. Still blocks
+                # activation (status != OK); only the reporting/retry differs.
+                raise _RuntimeNotarizationUnavailable(_NOTARIZATION_UNAVAILABLE_MESSAGE)
             return False, "runtime is not notarized: codesign '=notarized' requirement failed"
     return True, ""
 
 
 class _RuntimeSignatureError(runtime_bundle.BundleContractError):
     """Preserve signature failures through the closed bundle verifier."""
+
+
+class _RuntimeNotarizationUnavailable(runtime_bundle.BundleContractError):
+    """Notarization could not be CONFIRMED (Apple notary unreachable / a transient
+    tool failure), as distinct from a genuine not-notarized negative.
+
+    A SIBLING of `_RuntimeSignatureError` (both subclass BundleContractError; this
+    is deliberately NOT a subclass of `_RuntimeSignatureError`) so resolve_runtime
+    maps it to the retryable RuntimeStatus.UNAVAILABLE, not the non-retryable
+    SIGNATURE_ERROR. It is a transient/retryable condition, never a corruption
+    signal, and never a path to execution (activation gates on status == OK)."""
+
+
+_NOTARIZATION_UNAVAILABLE_MESSAGE = (
+    "runtime notarization could not be confirmed: Apple's notarization service is "
+    "unreachable (allow *.apple.com / CloudKit, or retry when reachable). "
+    "The runtime is not corrupted."
+)
+
+# Apple notary / CloudKit hosts contacted by `codesign --check-notarization`.
+# Used only to disambiguate an ambiguous rc != 0 (unreachable vs unnotarized); a
+# named constant so a future Apple host change is a one-line edit. Safe-fail: if
+# every host is unreachable the probe returns False, which biases toward the
+# retryable outcome and never toward activation.
+_APPLE_NOTARY_PROBE_HOSTS = ("api.apple-cloudkit.com", "gateway.icloud.com")
+
+
+def _apple_notary_reachable() -> bool | None:
+    """Independently probe whether Apple's notary/CloudKit endpoint is reachable.
+
+    Returns True (a TLS handshake completed under system trust to an expected
+    host), False (every host failed with a network error), or None (an
+    unexpected non-network error made the result indeterminate). MUST NOT raise
+    into its caller: a raised probe would collapse back into a generic failure
+    and re-create the exact mis-typing this fix removes. A bare TCP accept is not
+    success (a captive portal can accept the connection); only a completed TLS
+    handshake with hostname verification counts."""
+
+    saw_network_failure = False
+    saw_unexpected = False
+    for host in _APPLE_NOTARY_PROBE_HOSTS:
+        try:
+            context = ssl.create_default_context()
+            with socket.create_connection((host, 443), timeout=4.0) as raw:
+                with context.wrap_socket(raw, server_hostname=host) as tls:
+                    # Handshake completed under system trust + hostname check.
+                    tls.getpeercert()
+                    return True
+        except (
+            socket.gaierror,
+            socket.timeout,
+            TimeoutError,
+            ConnectionError,
+            ssl.SSLError,
+            OSError,
+        ):
+            saw_network_failure = True
+            continue
+        except Exception:
+            saw_unexpected = True
+            continue
+    if saw_unexpected and not saw_network_failure:
+        return None
+    return False
 
 
 def _encoded_macos_version(value: int) -> str:
@@ -1366,6 +1450,11 @@ def resolve_runtime() -> RuntimeResolution:
             # signature carry the tamper guarantee; the mode is a safe envelope.
             tolerant=True,
         )
+    except _RuntimeNotarizationUnavailable as exc:
+        # Transient: notary unreachable / tool failure. Retryable, not corrupt.
+        # Caught BEFORE _RuntimeSignatureError (order load-bearing: both subclass
+        # BundleContractError, this one is a sibling of the signature error).
+        return RuntimeResolution(RuntimeStatus.UNAVAILABLE, manifest_digest=manifest_digest, error=str(exc))
     except _RuntimeSignatureError as exc:
         return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=str(exc))
     except runtime_bundle.BundleContractError as exc:
