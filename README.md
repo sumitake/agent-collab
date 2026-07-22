@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.2.4), and is
+This public repository distributes one package, **agent-collab** (v4.3.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -40,7 +40,8 @@ Contributors need no access to the private build/sign system. See
 
 - One unified `/agent-collab:*` skill surface (review, intent, code/security,
   QA, logic, brainstorming, debate, research, long-context, delegation,
-  orchestration, readiness, teamwork, and migration) across every host.
+  orchestration, readiness, teamwork, migration, and native inbox-monitor
+  lifecycle management) across every host.
 - Dynamic primary-identity resolution (primary id, family, active model, host
   runtime, session) with cross-family reviewer, worker, tiebreaker, and fallback
   independence enforced fail-closed.
@@ -62,19 +63,15 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.2.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.3.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.2.4
+## What's new - v4.3.0
 
-- **Broker-verification notarization tri-state (issue #36 path-2).** Completes issue #36
-  by extending the Phase-1 consumer-activation notarization tri-state (v4.2.3) to the
-  broker-verification / lifecycle path. A transient *online-but-notary-unreachable* outage
-  during a broker operation (install, status, stage/commit/abort, rollback, drain, recover,
-  uninstall) is now reported as a retryable `RuntimeStatus.UNAVAILABLE` instead of a
-  mis-typed hard `INTEGRITY_ERROR` / `PROVIDER_ERROR` / `PROTOCOL_ERROR`. Genuine integrity
-  failures (signature, digest, membership) keep their hard status; activation still gates on
-  `status == OK`, so re-typing changes reporting and retryability only, never whether an
-  unverified runtime is adopted.
+- **Portable inbox-monitor lifecycle.** Adds `start-inbox-monitor`, one generated
+  skill that selects Codex persistent-goal/exec, Claude persistent Monitor, or
+  Antigravity wake-on-exit task semantics from current host evidence. It
+  preserves typed failures, requires positive startup proof, and never creates
+  schedules or weakens the sandbox.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -396,7 +393,7 @@ handoff.
 
 The unified package includes review, intent, code/security, QA, logic,
 brainstorming, debate, research, long-context, visual-workflow, delegation, orchestration,
-readiness, teamwork, migration, and explicit managed-routing skills under the
+readiness, teamwork, migration, native inbox-monitor lifecycle, and explicit managed-routing skills under the
 single `/agent-collab:*` namespace. Provider targets are request parameters,
 not plugin identities.
 

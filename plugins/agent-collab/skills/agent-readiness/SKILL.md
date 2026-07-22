@@ -1,6 +1,6 @@
 ---
 name: agent-readiness
-version: 4.2.4
+version: 4.3.0
 description: Evaluate whether an agent, model, CLI, plugin, or role is ready for a proposed responsibility. Use when the user says "agent readiness," "is this agent ready," "can Codex be primary," "can Grok handle this role," "promote this agent," "evaluate this worker," "review model readiness," or "/agent-collab:agent-readiness." Also offer this proactively before assigning a new primary, reviewer, worker, delegate, headless, release, or merge-related role to Claude, Codex, Antigravity/Gemini, Grok, or a future agent.
 ---
 
