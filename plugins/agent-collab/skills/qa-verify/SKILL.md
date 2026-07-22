@@ -1,6 +1,6 @@
 ---
 name: qa-verify
-version: 4.2.0
+version: 4.2.1
 defaults:
   tier: Fast
   effort: low

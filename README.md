@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.2.0). It gives
+This repository distributes one package: **agent-collab** (v4.2.1). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,7 +24,14 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.2.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.2.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.2.1
+
+- Accept the exact sealed artifact snapshot required by the collaboration skills
+  on the read-only `opencode/plan` route. OpenCode plan/review calls now preserve
+  artifact bytes and author-model lineage instead of failing the coordinator's
+  closed schema before reaching the managed runtime.
 
 ## What's new - v4.2.0
 
