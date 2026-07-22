@@ -1,6 +1,6 @@
 ---
 name: debate
-version: 4.2.4
+version: 4.3.0
 defaults:
   tier: Advanced
   effort: high
