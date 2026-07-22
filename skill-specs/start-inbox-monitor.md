@@ -1,7 +1,7 @@
 ---
 name: start-inbox-monitor
 version: {{ skill_version }}
-description: Use when the user says "start the inbox monitor", "keep monitoring agent messages", or "/{{ package_name }}:start-inbox-monitor", and when an active cross-agent thread needs durable session-scoped inbox monitoring. Select the native Codex, Claude, or Antigravity lifecycle instead of inventing a universal polling loop.
+description: Use when the user says "start the inbox monitor", "keep monitoring agent messages", or "/{{ package_name }}:start-inbox-monitor", or when an active cross-agent thread needs durable session-scoped inbox monitoring. Select the native Codex, Claude, or Antigravity lifecycle instead of inventing a universal polling loop.
 ---
 
 # Start inbox monitor
@@ -31,7 +31,7 @@ busy-lease result. Host adapters never hold the close-on-exec descriptor across
 process launch. Never use
 `--no-lock` outside isolated monitor tests.
 
-## Resolve current evidence
+## Workflow: resolve current evidence
 
 1. Identify the active primary from the current host runtime.
 2. Resolve the strong current-session identifier in this exact order:
