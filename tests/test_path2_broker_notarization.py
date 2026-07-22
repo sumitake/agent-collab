@@ -173,6 +173,100 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             self.assertIsInstance(broker_exc, ValueError)
             self.assertNotIsInstance(broker_exc, rc._RuntimeSignatureError)
 
+    def test_verify_published_version_source_retype_real(self):
+        """REAL _verify_published_version: a notary miss at verify_bundle_tree is
+        re-typed to _BrokerNotarizationUnavailable (exercises the actual EDIT-4 source
+        re-type, not a hand-replay). Closes the Codex R2 low/non-blocking concern."""
+        import hashlib
+
+        artifact = "a" * 64
+        manifest_raw = b'{"schema": 1}'
+        manifest_digest = hashlib.sha256(manifest_raw).hexdigest()
+        entry = {"sha256": artifact, "_files": [], "signing": {}, "_anchor": None}
+
+        # Get past every pre-verify gate so the REAL function reaches verify_bundle_tree.
+        self._enter(
+            patch.object(rc, "_broker_version_path", lambda *a, **k: Path("/tmp/v"))
+        )
+        self._enter(patch.object(rc, "_exact_mode", lambda *a, **k: MagicMock()))
+        self._enter(
+            patch.object(
+                rc, "_read_regular_nofollow", lambda *a, **k: (manifest_raw, MagicMock())
+            )
+        )
+        self._enter(
+            patch.object(
+                rc.runtime_bundle, "load_closed_json_object", lambda _r: {"doc": True}
+            )
+        )
+        self._enter(patch.object(rc, "_manifest_entry", lambda *a, **k: (entry, None)))
+        self._enter(
+            patch.object(
+                Path,
+                "iterdir",
+                lambda self: [
+                    Path("agent-collab-runtime.bundle"),
+                    Path(rc.MANIFEST_NAME),
+                ],
+            )
+        )
+        # The inspector (verify_bundle_tree) raises the CONSUMER notary type; the real
+        # source re-type must convert it to the BROKER type.
+        self._enter(
+            patch.object(rc.runtime_bundle, "verify_bundle_tree", _raise_notary)
+        )
+        with self.assertRaises(rc._BrokerNotarizationUnavailable):
+            rc._verify_published_version(
+                Path("/tmp/x"),
+                artifact_digest=artifact,
+                manifest_digest=manifest_digest,
+            )
+
+    def test_verify_published_version_signature_stays_hard_real(self):
+        """REAL _verify_published_version: a genuine signature error is NOT re-typed —
+        it falls through to the generic BundleContractError→ValueError hard path (G2)."""
+        import hashlib
+
+        artifact = "a" * 64
+        manifest_raw = b'{"schema": 1}'
+        manifest_digest = hashlib.sha256(manifest_raw).hexdigest()
+        entry = {"sha256": artifact, "_files": [], "signing": {}, "_anchor": None}
+        self._enter(
+            patch.object(rc, "_broker_version_path", lambda *a, **k: Path("/tmp/v"))
+        )
+        self._enter(patch.object(rc, "_exact_mode", lambda *a, **k: MagicMock()))
+        self._enter(
+            patch.object(
+                rc, "_read_regular_nofollow", lambda *a, **k: (manifest_raw, MagicMock())
+            )
+        )
+        self._enter(
+            patch.object(
+                rc.runtime_bundle, "load_closed_json_object", lambda _r: {"doc": True}
+            )
+        )
+        self._enter(patch.object(rc, "_manifest_entry", lambda *a, **k: (entry, None)))
+        self._enter(
+            patch.object(
+                Path,
+                "iterdir",
+                lambda self: [
+                    Path("agent-collab-runtime.bundle"),
+                    Path(rc.MANIFEST_NAME),
+                ],
+            )
+        )
+        self._enter(
+            patch.object(rc.runtime_bundle, "verify_bundle_tree", _raise_signature)
+        )
+        with self.assertRaises(ValueError) as ctx:
+            rc._verify_published_version(
+                Path("/tmp/x"),
+                artifact_digest=artifact,
+                manifest_digest=manifest_digest,
+            )
+        self.assertNotIsInstance(ctx.exception, rc._BrokerNotarizationUnavailable)
+
     # ---------------------------------------------------------------------------
     # (c) Catch-ordering / Class-B terminals → UNAVAILABLE
     # ---------------------------------------------------------------------------
