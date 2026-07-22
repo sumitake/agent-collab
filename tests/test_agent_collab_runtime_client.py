@@ -6267,12 +6267,15 @@ print(json.dumps({
         )
         # A bare command-line Mach-O is not an app bundle, so notarization is
         # verified via codesign's `=notarized` requirement (binds to the CDHash),
-        # never `spctl --assess`. The check is purely returncode-driven: a
-        # notarized Developer-ID binary passes (0); un-notarized fails (3).
+        # never `spctl --assess`. The check is returncode-driven: rc 0 passes;
+        # any nonzero rc is IRREDUCIBLY ambiguous at the consumer (unreachable
+        # notary vs genuinely unnotarized) and is typed as the retryable
+        # _RuntimeNotarizationUnavailable (issue #36) — never a consumer-side hard
+        # failure. `"unavailable"` marks that expected raise.
         cases = (
             ("", 0, False),
             ("Timestamp=none", 0, False),
-            ("Timestamp=Jul 12, 2026 at 12:00:00", 3, False),
+            ("Timestamp=Jul 12, 2026 at 12:00:00", 3, "unavailable"),
             ("Timestamp=Jul 12, 2026 at 12:00:00", 0, True),
         )
         for timestamp, notarized_rc, expected in cases:
@@ -6302,13 +6305,22 @@ print(json.dumps({
                         return mock.Mock(returncode=notarized_rc, stdout="", stderr="")
                     return mock.Mock(returncode=0, stdout="", stderr="valid")
 
-                with mock.patch.object(self.client.subprocess, "run", side_effect=run):
-                    valid, error = self.client._verify_macos_signature(
-                        Path("/tmp/agent-collab-runtime"),
-                        team_id="TESTTEAM01",
-                        require_notarization=True,
-                    )
-                self.assertEqual(valid, expected, error)
+                if expected == "unavailable":
+                    with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
+                            self.client._verify_macos_signature(
+                                Path("/tmp/agent-collab-runtime"),
+                                team_id="TESTTEAM01",
+                                require_notarization=True,
+                            )
+                else:
+                    with mock.patch.object(self.client.subprocess, "run", side_effect=run):
+                        valid, error = self.client._verify_macos_signature(
+                            Path("/tmp/agent-collab-runtime"),
+                            team_id="TESTTEAM01",
+                            require_notarization=True,
+                        )
+                    self.assertEqual(valid, expected, error)
                 # Notarization must be proven by codesign's `=notarized`
                 # requirement, never by spctl.
                 self.assertFalse(
@@ -7287,7 +7299,7 @@ class NotarizationTriStateTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = _load_client()
 
-    def _run_verify(self, *, notary_rc=None, notary_exc=None, probe=None):
+    def _run_verify(self, *, notary_rc=None, notary_exc=None):
         client = self.client
 
         def run_side_effect(cmd, **kwargs):
@@ -7301,8 +7313,7 @@ class NotarizationTriStateTests(unittest.TestCase):
 
         with mock.patch.object(client, "EXPECTED_DEVELOPER_ID_TEAM", "TESTTEAM01"), \
              mock.patch.object(client, "_verify_macho_identity", return_value=(True, "")), \
-             mock.patch.object(client.subprocess, "run", side_effect=run_side_effect), \
-             mock.patch.object(client, "_apple_notary_reachable", return_value=probe):
+             mock.patch.object(client.subprocess, "run", side_effect=run_side_effect):
             return client._verify_macos_signature(
                 Path("/x"),
                 team_id="TESTTEAM01",
@@ -7314,18 +7325,15 @@ class NotarizationTriStateTests(unittest.TestCase):
     def test_notarized_ok(self) -> None:
         self.assertEqual(self._run_verify(notary_rc=0), (True, ""))
 
-    def test_genuine_unnotarized_reachable_is_signature_failure(self) -> None:
-        valid, error = self._run_verify(notary_rc=3, probe=True)
-        self.assertFalse(valid)
-        self.assertIn("not notarized", error)
-
-    def test_unreachable_notary_raises_unavailable(self) -> None:
+    def test_nonzero_rc_raises_unavailable(self) -> None:
+        # Issue #36 (Codex P1 resolution, operator-directed): rc != 0 is
+        # irreducibly ambiguous at the consumer (unreachable-notary vs genuinely
+        # unnotarized are indistinguishable, and no probe can confirm the notary
+        # operation), so EVERY nonzero rc is typed as the retryable
+        # _RuntimeNotarizationUnavailable — never a consumer-side SIGNATURE_ERROR.
+        # Authoritative genuine-not-notarized detection lives at the release gate.
         with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
-            self._run_verify(notary_rc=3, probe=False)
-
-    def test_indeterminate_probe_raises_unavailable(self) -> None:
-        with self.assertRaises(self.client._RuntimeNotarizationUnavailable):
-            self._run_verify(notary_rc=3, probe=None)
+            self._run_verify(notary_rc=3)
 
     def test_timeout_raises_unavailable(self) -> None:
         exc = subprocess.TimeoutExpired(cmd="codesign", timeout=20)
@@ -7347,16 +7355,6 @@ class NotarizationTriStateTests(unittest.TestCase):
         self.assertFalse(
             issubclass(client._RuntimeNotarizationUnavailable, client._RuntimeSignatureError)
         )
-
-    def test_probe_never_raises_returns_none_on_unexpected(self) -> None:
-        client = self.client
-        with mock.patch.object(client.socket, "create_connection", side_effect=RuntimeError("x")):
-            self.assertIsNone(client._apple_notary_reachable())
-
-    def test_probe_returns_false_on_network_error(self) -> None:
-        client = self.client
-        with mock.patch.object(client.socket, "create_connection", side_effect=OSError("net")):
-            self.assertIs(client._apple_notary_reachable(), False)
 
 
 class NotarizationSpawnSafetyTests(unittest.TestCase):
