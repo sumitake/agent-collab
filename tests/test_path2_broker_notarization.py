@@ -64,6 +64,11 @@ class _nullcontext:
 
 
 class TestPath2BrokerNotarization(unittest.TestCase):
+    def _enter(self, cm):
+        """Python 3.10-safe context-manager entry (TestCase.enterContext is 3.11+)."""
+        value = cm.__enter__()
+        self.addCleanup(cm.__exit__, None, None, None)
+        return value
     """Path-2 broker notarization tri-state behavioral tests."""
 
     def _notary_at_verify(self):
@@ -72,7 +77,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         def wrapped(*args: Any, **kwargs: Any):
             raise rc._BrokerNotarizationUnavailable(NOTARY_MSG)
 
-        self.enterContext(patch.object(rc, "_verify_published_version", wrapped))
+        self._enter(patch.object(rc, "_verify_published_version", wrapped))
         return wrapped
 
     def _signature_at_verify(self):
@@ -81,7 +86,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         def wrapped(*_a: Any, **_k: Any):
             raise ValueError("provider broker bundle identity mismatch")
 
-        self.enterContext(patch.object(rc, "_verify_published_version", wrapped))
+        self._enter(patch.object(rc, "_verify_published_version", wrapped))
         return wrapped
 
     # ---------------------------------------------------------------------------
@@ -173,7 +178,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
     # ---------------------------------------------------------------------------
 
     def test_load_broker_state_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_broker_root",
@@ -208,8 +213,8 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             artifact_digest="a" * 64,
             manifest_digest="b" * 64,
         )
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(
             patch.object(
                 rc,
                 "_read_broker_selector_view",
@@ -222,8 +227,8 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIs(err.status, rc.RuntimeStatus.UNAVAILABLE)
 
     def test_dispatcher_status_notary_returns_unavailable(self):
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(
             patch.object(
                 Path,
                 "lstat",
@@ -232,11 +237,11 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             )
         )
         # Force the view read to raise the broker notary marker.
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", _raise_broker_notary)
         )
         # Root mode check may fail first; patch _exact_mode to pass.
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_exact_mode",
@@ -248,8 +253,8 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.status, rc.RuntimeStatus.INTEGRITY_ERROR)
 
     def test_invoke_dispatcher_ping_notary_returns_unavailable(self):
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", _raise_broker_notary)
         )
         result = rc.invoke_dispatcher_ping()
@@ -257,18 +262,18 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.status, rc.RuntimeStatus.INTEGRITY_ERROR)
 
     def test_recover_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
                 lambda _root: _nullcontext(),
             )
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", _raise_broker_notary)
         )
         result = rc.recover_last_committed_control_plane()
@@ -277,18 +282,18 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.status, rc.RuntimeStatus.PROVIDER_ERROR)
 
     def test_drain_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
                 lambda _root: _nullcontext(),
             )
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", _raise_broker_notary)
         )
         result = rc.drain_retiring_dispatcher()
@@ -296,10 +301,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertEqual(result.result, {"retained_drained": False})
 
     def test_install_broker_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "resolve_runtime",
@@ -316,29 +321,29 @@ class TestPath2BrokerNotarization(unittest.TestCase):
                 ),
             )
         )
-        self.enterContext(patch.object(rc, "_ensure_broker_layout", _raise_broker_notary))
+        self._enter(patch.object(rc, "_ensure_broker_layout", _raise_broker_notary))
         result = rc.install_broker()
         self.assertIs(result.status, rc.RuntimeStatus.UNAVAILABLE)
         self.assertIsNot(result.status, rc.RuntimeStatus.INTEGRITY_ERROR)
 
     def test_rollback_broker_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
         # root.exists True
-        self.enterContext(patch.object(Path, "exists", lambda self: True, create=True))
-        self.enterContext(
+        self._enter(patch.object(Path, "exists", lambda self: True, create=True))
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
                 lambda _root: _nullcontext(),
             )
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", lambda _r: (None, None))
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_current_broker_state", _raise_broker_notary)
         )
         result = rc.rollback_broker()
@@ -346,19 +351,19 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.status, rc.RuntimeStatus.INTEGRITY_ERROR)
 
     def test_uninstall_broker_notary_returns_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
-        self.enterContext(patch.object(Path, "exists", lambda self: True, create=True))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: Path("/tmp/x")))
+        self._enter(patch.object(Path, "exists", lambda self: True, create=True))
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
                 lambda _root: _nullcontext(),
             )
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_v2", _raise_broker_notary)
         )
         result = rc.uninstall_broker()
@@ -366,7 +371,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.status, rc.RuntimeStatus.INTEGRITY_ERROR)
 
     def test_activate_broker_record_initial_notary_unavailable(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_verify_published_version", _raise_broker_notary)
         )
         result = rc._activate_broker_record(
@@ -390,17 +395,17 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         def fake_verify(*_a: Any, **_k: Any):
             return Path("/tmp/b"), runtime_path, Path("/tmp/m"), None
 
-        self.enterContext(patch.object(rc, "_verify_published_version", fake_verify))
-        self.enterContext(patch.object(rc, "_operator_home", lambda: "/tmp/home"))
-        self.enterContext(
+        self._enter(patch.object(rc, "_verify_published_version", fake_verify))
+        self._enter(patch.object(rc, "_operator_home", lambda: "/tmp/home"))
+        self._enter(
             patch.object(
                 rc,
                 "_broker_plist_document",
                 lambda **_k: {"Label": rc.BROKER_LABEL},
             )
         )
-        self.enterContext(patch.object(rc, "_plist_bytes", lambda _d: b"<plist/>"))
-        self.enterContext(
+        self._enter(patch.object(rc, "_plist_bytes", lambda _d: b"<plist/>"))
+        self._enter(
             patch.object(
                 rc,
                 "_record_for",
@@ -411,21 +416,21 @@ class TestPath2BrokerNotarization(unittest.TestCase):
                 },
             )
         )
-        self.enterContext(patch.object(rc, "_bootout_broker", lambda _p: True))
-        self.enterContext(
+        self._enter(patch.object(rc, "_bootout_broker", lambda _p: True))
+        self._enter(
             patch.object(rc, "_write_private_atomic", lambda *_a, **_k: None)
         )
-        self.enterContext(patch.object(rc, "_bootstrap_broker", lambda _p: True))
-        self.enterContext(patch.object(rc, "_broker_job_loaded", lambda: True))
-        self.enterContext(
+        self._enter(patch.object(rc, "_bootstrap_broker", lambda _p: True))
+        self._enter(patch.object(rc, "_broker_job_loaded", lambda: True))
+        self._enter(
             patch.object(rc, "_exact_mode", lambda *_a, **_k: MagicMock())
         )
-        self.enterContext(patch.object(rc, "_broker_ping", lambda _p: True))
+        self._enter(patch.object(rc, "_broker_ping", lambda _p: True))
 
         unavailable = rc.RuntimeResult(
             rc.RuntimeStatus.UNAVAILABLE, error=NOTARY_MSG
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_load_broker_state",
@@ -450,10 +455,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
     # ---------------------------------------------------------------------------
 
     def test_g3_stage_notary_unavailable_and_rollback_runs(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "resolve_runtime",
@@ -471,7 +476,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             )
         )
         root = Path("/tmp/broker-root-path2")
-        self.enterContext(patch.object(rc, "_ensure_broker_layout", lambda: root))
+        self._enter(patch.object(rc, "_ensure_broker_layout", lambda: root))
 
         rollback_calls: list[bool] = []
 
@@ -495,10 +500,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
             return _Tx()
 
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_control_transaction", fake_transaction)
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", lambda _r: (None, None))
         )
         # Baseline present so stage proceeds to verify.
@@ -517,13 +522,13 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             "candidate": None,
             "lifecycle": None,
         }
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", lambda _r: baseline)
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_publish_broker_version", lambda *_a, **_k: None)
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_dispatcher_lane_snapshot",
@@ -541,11 +546,11 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             )
         )
         # No untracked paths.
-        self.enterContext(patch.object(Path, "exists", lambda self: False, create=True))
-        self.enterContext(
+        self._enter(patch.object(Path, "exists", lambda self: False, create=True))
+        self._enter(
             patch.object(Path, "is_symlink", lambda self: False, create=True)
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_verify_published_version", _raise_broker_notary)
         )
 
@@ -559,11 +564,11 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.result.get("staged"), True)
 
     def test_g3_commit_notary_unavailable_and_rollback_runs(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
         root = Path("/tmp/broker-root-path2")
-        self.enterContext(patch.object(rc, "_broker_root", lambda: root))
+        self._enter(patch.object(rc, "_broker_root", lambda: root))
 
         rollback_calls: list[bool] = []
 
@@ -587,7 +592,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
             return _Tx()
 
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_control_transaction", fake_transaction)
         )
         selector = {
@@ -611,10 +616,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             },
             "lifecycle": None,
         }
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", lambda _r: (selector, b"{}"))
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_load_selector_v2_lane", _raise_broker_notary)
         )
 
@@ -626,11 +631,11 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIsNot(result.result.get("committed"), True)
 
     def test_g3_abort_notary_unavailable_and_rollback_runs(self):
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
         root = Path("/tmp/broker-root-path2")
-        self.enterContext(patch.object(rc, "_broker_root", lambda: root))
+        self._enter(patch.object(rc, "_broker_root", lambda: root))
 
         rollback_calls: list[bool] = []
 
@@ -654,7 +659,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
             return _Tx()
 
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_control_transaction", fake_transaction)
         )
         selector = {
@@ -678,10 +683,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             },
             "lifecycle": None,
         }
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", lambda _r: (selector, b"{}"))
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_load_selector_v2_lane", _raise_broker_notary)
         )
 
@@ -694,10 +699,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
     def test_g2_stage_genuine_corruption_stays_provider_error(self):
         """Hard integrity failure on mutation path must not become UNAVAILABLE."""
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_lifecycle_seatbelt_block", lambda: None)
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "resolve_runtime",
@@ -715,7 +720,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             )
         )
         root = Path("/tmp/broker-root-path2")
-        self.enterContext(patch.object(rc, "_ensure_broker_layout", lambda: root))
+        self._enter(patch.object(rc, "_ensure_broker_layout", lambda: root))
 
         def fake_transaction(_root: Path, *, rollback: Callable[[], bool]):
             class _Tx:
@@ -736,10 +741,10 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
             return _Tx()
 
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_broker_control_transaction", fake_transaction)
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_selector_v2_snapshot", lambda _r: (None, None))
         )
         baseline = {
@@ -757,13 +762,13 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             "candidate": None,
             "lifecycle": None,
         }
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", lambda _r: baseline)
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_publish_broker_version", lambda *_a, **_k: None)
         )
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_dispatcher_lane_snapshot",
@@ -780,15 +785,15 @@ class TestPath2BrokerNotarization(unittest.TestCase):
                 ),
             )
         )
-        self.enterContext(patch.object(Path, "exists", lambda self: False, create=True))
-        self.enterContext(
+        self._enter(patch.object(Path, "exists", lambda self: False, create=True))
+        self._enter(
             patch.object(Path, "is_symlink", lambda self: False, create=True)
         )
 
         def hard_verify(*_a: Any, **_k: Any):
             raise ValueError("provider broker bundle identity mismatch")
 
-        self.enterContext(patch.object(rc, "_verify_published_version", hard_verify))
+        self._enter(patch.object(rc, "_verify_published_version", hard_verify))
 
         result = rc.stage_dispatcher()
         self.assertIs(result.status, rc.RuntimeStatus.PROVIDER_ERROR)
@@ -800,9 +805,9 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
     def test_broker_status_rollback_readiness_notary_surfaces_unavailable(self):
         root = Path("/tmp/broker-status-path2")
-        self.enterContext(patch.object(rc, "_broker_root", lambda: root))
-        self.enterContext(patch.object(Path, "exists", lambda self: True, create=True))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: root))
+        self._enter(patch.object(Path, "exists", lambda self: True, create=True))
+        self._enter(
             patch.object(
                 rc,
                 "_exact_mode",
@@ -810,7 +815,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             )
         )
         # Force legacy state path (no selector-v2 view).
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", lambda _r: None)
         )
         state = {
@@ -846,13 +851,13 @@ class TestPath2BrokerNotarization(unittest.TestCase):
                 "previous": None,
             },
         }
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_current_broker_state", lambda _r: dict(state))
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_verify_plist_against_state", lambda *_a, **_k: None)
         )
-        self.enterContext(patch.object(rc, "_broker_job_loaded", lambda: False))
+        self._enter(patch.object(rc, "_broker_job_loaded", lambda: False))
 
         calls = {"n": 0}
 
@@ -864,7 +869,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
             # previous (rollback readiness) → notary miss
             raise rc._BrokerNotarizationUnavailable(NOTARY_MSG)
 
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_verify_published_version", verify_side_effect)
         )
 
@@ -885,16 +890,16 @@ class TestPath2BrokerNotarization(unittest.TestCase):
 
     def test_broker_status_outer_notary_unavailable(self):
         root = Path("/tmp/broker-status-path2")
-        self.enterContext(patch.object(rc, "_broker_root", lambda: root))
-        self.enterContext(patch.object(Path, "exists", lambda self: True, create=True))
-        self.enterContext(
+        self._enter(patch.object(rc, "_broker_root", lambda: root))
+        self._enter(patch.object(Path, "exists", lambda self: True, create=True))
+        self._enter(
             patch.object(
                 rc,
                 "_exact_mode",
                 lambda *_a, **_k: MagicMock(st_mode=0o040700, st_uid=0, st_nlink=2),
             )
         )
-        self.enterContext(
+        self._enter(
             patch.object(rc, "_read_broker_selector_view", _raise_broker_notary)
         )
         result = rc.broker_status()
@@ -916,7 +921,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertIs(failure.restored_previous, False)
 
     def test_broker_control_transaction_sets_retryable_on_notary(self):
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
@@ -937,7 +942,7 @@ class TestPath2BrokerNotarization(unittest.TestCase):
         self.assertEqual(rolled["n"], 1)
 
     def test_broker_control_transaction_hard_error_not_retryable(self):
-        self.enterContext(
+        self._enter(
             patch.object(
                 rc,
                 "_broker_control_lock",
