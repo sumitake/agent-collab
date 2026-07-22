@@ -1,6 +1,6 @@
 ---
 name: compose-skills
-version: 4.2.3
+version: 4.2.4
 description: Select a bounded, token-aware combination of collaboration skills or task lenses before execution. Use when the user says "compose skills," "which skills should I use," "use skill composition," "select a recipe," "combine these skills," or "/agent-collab:compose-skills." Also offer this proactively when a task plausibly needs multiple lenses, reviewers, or agents and would benefit from progressive disclosure, explicit fan-out limits, and a smallest-useful-skill plan before routing or loading full skill bodies.
 ---
 

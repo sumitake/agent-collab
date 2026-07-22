@@ -1,6 +1,6 @@
 ---
 name: code-review
-version: 4.2.3
+version: 4.2.4
 defaults:
   tier: Advanced
   effort: high
