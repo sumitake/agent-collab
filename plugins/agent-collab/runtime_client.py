@@ -1064,6 +1064,16 @@ def _verify_macos_signature(
         # Online users — the common case — now activate (previously broken). Full
         # offline support for a fresh/uncached install needs a committed
         # Apple-signed ticket verified against the CDHash (trust-the-checkout).
+        #
+        # Tri-state typing (issue #36): `codesign … --check-notarization` returns
+        # rc != 0 IDENTICALLY for "notary unreachable" and "genuinely not
+        # notarized" (same stderr on macos-14/15), so the exit code alone cannot
+        # tell a transient outage from a real negative. A transient/unreachable
+        # condition is NOT a corrupted runtime — it is retryable. We raise
+        # `_RuntimeNotarizationUnavailable` for those cases so resolve_runtime can
+        # map them to the retryable RuntimeStatus.UNAVAILABLE (not the
+        # non-retryable SIGNATURE_ERROR). Execution still gates on status == OK, so
+        # neither outcome can activate an unnotarized binary.
         try:
             result = subprocess.run(
                 [
@@ -1081,14 +1091,50 @@ def _verify_macos_signature(
                 timeout=20,
             )
         except (OSError, subprocess.SubprocessError):
-            return False, "macOS notarization verification tool failed"
+            # TimeoutExpired is a SubprocessError. A tool/network failure means we
+            # could not CONFIRM notarization -> transient/retryable, not corrupt.
+            raise _RuntimeNotarizationUnavailable(_NOTARIZATION_UNAVAILABLE_MESSAGE)
         if result.returncode != 0:
-            return False, "runtime is not notarized: codesign '=notarized' requirement failed"
+            # rc != 0 is IRREDUCIBLY ambiguous at the consumer: `--check-notarization`
+            # returns the same nonzero for an unreachable notary and a genuinely
+            # unnotarized binary, and no independent probe can confirm the notary
+            # *operation* itself (a frontend TLS handshake proves only that a
+            # frontend is reachable). So we do NOT infer a genuine negative here; we
+            # type every unconfirmed result as the retryable
+            # _RuntimeNotarizationUnavailable. This is safe: activation gates on
+            # status == OK, so a runtime whose notarization we cannot confirm never
+            # executes; only the reporting/retryability differs from a hard failure.
+            # The AUTHORITATIVE genuine-not-notarized check lives at the release gate
+            # (verify_runtime_release.py), which runs on a fresh, online CI host where
+            # the lookup is reliable; a runtime that passed that gate IS notarized,
+            # and under trust-the-checkout (git-committed, sha256-pinned, Dev-ID +
+            # hardened-runtime verified above) a genuinely-unnotarized runtime cannot
+            # legitimately reach a consumer.
+            raise _RuntimeNotarizationUnavailable(_NOTARIZATION_UNAVAILABLE_MESSAGE)
     return True, ""
 
 
 class _RuntimeSignatureError(runtime_bundle.BundleContractError):
     """Preserve signature failures through the closed bundle verifier."""
+
+
+class _RuntimeNotarizationUnavailable(runtime_bundle.BundleContractError):
+    """Notarization could not be CONFIRMED (Apple notary unreachable / a transient
+    tool failure), as distinct from a genuine not-notarized negative.
+
+    A SIBLING of `_RuntimeSignatureError` (both subclass BundleContractError; this
+    is deliberately NOT a subclass of `_RuntimeSignatureError`) so resolve_runtime
+    maps it to the retryable RuntimeStatus.UNAVAILABLE, not the non-retryable
+    SIGNATURE_ERROR. It is a transient/retryable condition, never a corruption
+    signal, and never a path to execution (activation gates on status == OK)."""
+
+
+_NOTARIZATION_UNAVAILABLE_MESSAGE = (
+    "runtime notarization could not be confirmed online (Apple's notarization "
+    "service may be unreachable — allow *.apple.com / CloudKit, or retry when it is "
+    "reachable). This is a retryable condition; the runtime is not reported as "
+    "corrupted."
+)
 
 
 def _encoded_macos_version(value: int) -> str:
@@ -1366,6 +1412,11 @@ def resolve_runtime() -> RuntimeResolution:
             # signature carry the tamper guarantee; the mode is a safe envelope.
             tolerant=True,
         )
+    except _RuntimeNotarizationUnavailable as exc:
+        # Transient: notary unreachable / tool failure. Retryable, not corrupt.
+        # Caught BEFORE _RuntimeSignatureError (order load-bearing: both subclass
+        # BundleContractError, this one is a sibling of the signature error).
+        return RuntimeResolution(RuntimeStatus.UNAVAILABLE, manifest_digest=manifest_digest, error=str(exc))
     except _RuntimeSignatureError as exc:
         return RuntimeResolution(RuntimeStatus.SIGNATURE_ERROR, manifest_digest=manifest_digest, error=str(exc))
     except runtime_bundle.BundleContractError as exc:

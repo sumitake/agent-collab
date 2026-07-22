@@ -507,6 +507,10 @@ def _runtime_state() -> str:
             return "invalid: missing contracts " + rendered
         return "available"
     if resolution.status == client.RuntimeStatus.UNAVAILABLE:
+        # Surface the specific reason (e.g. issue #36: Apple notary unreachable ->
+        # a retryable, actionable message), not just a bare "typed unavailable".
+        if resolution.error:
+            return f"typed unavailable: {resolution.error}"
         return "typed unavailable"
     return f"invalid: {resolution.status.value}"
 
