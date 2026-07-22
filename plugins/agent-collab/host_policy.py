@@ -40,12 +40,15 @@ KNOWN_FAMILIES = frozenset({"anthropic", "google", "openai", "xai", "zhipu"})
 DEFAULT_OPENCODE_MODEL = "opencode/glm-5.2"
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_EFFORTS = frozenset({"high", "xhigh"})
+CODEX_GOVERNANCE_MODEL = "openai/gpt-5.6-sol"
+CODEX_GOVERNANCE_EFFORTS = frozenset({"high", "xhigh"})
 ROUTE_ACTIONS = frozenset(
     {
         ("gemini", "advisory"),
         ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
+        ("codex", "governance"),
         ("opencode", "plan"),
         ("opencode", "build"),
         ("grok", "architecture"),
@@ -82,6 +85,7 @@ AUTHORITIES = {
     ("gemini", "governance"): "read_only",
     ("gemini", "long_context"): "read_only",
     ("codex", "advisory"): "read_only",
+    ("codex", "governance"): "read_only",
     ("opencode", "plan"): "read_only",
     ("opencode", "build"): "workspace_write",
     ("grok", "architecture"): "read_only",
@@ -90,7 +94,12 @@ AUTHORITIES = {
     ("composer", "codegen"): "output_only",
 }
 GOVERNANCE_CONTRACTS = frozenset(
-    {("gemini", "governance"), ("codex", "advisory"), ("grok", "governance")}
+    {
+        ("gemini", "governance"),
+        ("codex", "advisory"),
+        ("codex", "governance"),
+        ("grok", "governance"),
+    }
 )
 _GROK_REVIEW_SEALS = {
     ("grok", "architecture"): ("architecture", "high"),
@@ -878,6 +887,25 @@ def _validate_row(
             or (row["mode"] == "repo-review" and not _is_safe_cwd(row.get("cwd")))
         ):
             return None, "unknown", "Codex row values are invalid"
+    elif contract == ("codex", "governance"):
+        # Gemini-parity governance row: same shape as codex/advisory but the reviewer
+        # model + effort are pinned (mirrors the gemini/governance case above).
+        allowed = {"model", "effort", "mode", "cwd"}
+        required = {"model", "effort", "mode"}
+        if not required.issubset(row) or not set(row).issubset(allowed):
+            return None, "unknown", "Codex governance row fields are invalid"
+        if (
+            type(row["model"]) is not str
+            or row["model"] != CODEX_GOVERNANCE_MODEL
+            or resolve_model_family(row["model"]) != "openai"
+            or type(row["effort"]) is not str
+            or row["effort"] not in CODEX_GOVERNANCE_EFFORTS
+            or not isinstance(row["mode"], str)
+            or row["mode"] not in {"prompt-only", "repo-review"}
+            or (row["mode"] == "prompt-only" and "cwd" in row)
+            or (row["mode"] == "repo-review" and not _is_safe_cwd(row.get("cwd")))
+        ):
+            return None, "unknown", "Codex governance row values are invalid"
     elif contract in {("opencode", "plan"), ("opencode", "build")}:
         if not {"cwd"}.issubset(row) or not set(row).issubset({"model", "variant", "cwd"}):
             return None, "unknown", "OpenCode row fields are invalid"
