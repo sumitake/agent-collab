@@ -1,4 +1,4 @@
-### agent-collab 4.2.1 — 2026-07-21
+### agent-collab 4.2.2 — 2026-07-21
 
 #### Fixed
 

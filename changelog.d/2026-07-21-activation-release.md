@@ -1,4 +1,4 @@
-### agent-collab 4.2.0 - first activation release
+### agent-collab 4.2.2 - first activation release
 
 First public activation release: the plugin now ships the signed and notarized
 native runtime committed in the repository, so the documented marketplace install

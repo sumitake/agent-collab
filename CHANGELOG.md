@@ -153,12 +153,36 @@ The public changelog intentionally records policy, compatibility, and migration 
 - Require contributor-rights evidence and package exact legal documents,
   SHA-256 evidence, and an SPDX 2.3 SBOM in the policy-only release.
 
-### agent-collab 3.2.0 — zero-idle provider broker
+### agent-collab 3.3.0 — managed Gemini governance and reliable provider state
+
+- Add a distinct broker-only `gemini/governance` action with exact Gemini 3.1
+  Pro/high selection, immutable artifact binding, shared-HOME/PTY containment
+  evidence, response hashing, and public-client proof-digest validation.
+- Keep Gemini advisory and long-context separate and explicitly ineligible as
+  governance evidence; automatic governance now maps Gemini and Grok to their
+  explicit governance actions while Codex remains advisory.
+- Advance the signed-runtime route contract to version 2 across policy,
+  manifests, schemas, archive/release verification, generated skills, and
+  deterministic tests.
+- Document canonical passwd HOME as the managed-provider reliability policy
+  without relaxing family exclusion, authority separation, bounded lifecycle,
+  or the prohibition on raw provider fallbacks.
+- Make Codex, Gemini, OpenCode, Grok, and Composer uniformly broker-only and
+  bind provider startup to the signed guardian's acknowledged pre-exec gate;
+  only local runtime management retains direct exact-artifact execution.
+
+### agent-collab 3.3.0 — closed standalone provider bundle
 
 - Route managed Gemini, OpenCode, Grok, and Composer requests through an explicit, digest-bound
   launchd socket broker that starts for one request and returns to zero idle
   processes. Add closed install, status, rollback, and uninstall lifecycle
   commands with transactional prior-version restoration and no direct fallback.
+- Replace the failed onefile launch path with manifest schema 2, native contract
+  3, and broker transport 2 over one closed standalone bundle. Bind its identity
+  to the sorted role/mode/size/digest/Mach-O facts of every member; publish only
+  exact immutable `0500` files; verify the kernel-reported entrypoint and the
+  complete lifecycle state before provider dispatch. Provider protocol 1 and
+  all existing route-authority boundaries remain unchanged.
 - Resolve the OpenCode model per request from live OpenCode/ZCode observation,
   explicit central configuration, or the fixed `opencode/glm-5.2` preset while
   ignoring ambient and row-level model fallbacks.
@@ -180,6 +204,300 @@ The public changelog intentionally records policy, compatibility, and migration 
   state across failures and no-op reactivation; reject unverified rollback
   targets; treat a never-installed root as typed uninstalled/unavailable; and
   map bounded `launchctl` failures to closed lifecycle results.
+
+### agent-collab 3.5.0 — authenticated dispatcher canaries
+
+- Add exact Darwin dispatcher peer proof and a request-free, digest-bound
+  hello/ready handshake before any green provider request is sent.
+- Add a token-gated internal `adoption_canary` coordinator operation bound to
+  one candidate tuple and route allowlist without exposing a user-selectable
+  provider path, model, auth root, or policy route.
+- Keep the selector legacy-blue by default. Apply a separate local bound to the
+  request-free handshake so a proven pre-request green failure retains time for
+  independently proven blue without shortening the original request deadline;
+  a failure at or after request send never retries another lane.
+
+### agent-collab 3.5.0 — provider update continuity
+
+- Add a strict, legacy-default blue/green broker selector so a newly installed
+  client can continue using the separately verified legacy broker while a
+  content-derived dispatcher lane is staged.
+- Preserve blue on missing, invalid, unproven, refused, or timed-out green
+  connections before any send attempt; never retry another lane after a
+  connection succeeds. Each request captures one lane ordering so an in-flight
+  blue request completes even if the next request atomically selects green.
+- Add closed stage, status, no-provider ping, canonical-lock probe, selector
+  commit, candidate abort, committed-control recovery, and retiring-blue drain
+  operations. Green uses a distinct content-derived label/socket; commitment
+  never bootouts blue, and recovery never changes desired provider binaries.
+- Keep one canonical Gemini/Grok/OpenCode lock across blue and green for the
+  complete request through provider teardown. Credential-free contention and
+  acquisition probes let every installed client prove that namespace before
+  green traffic is enabled.
+- Permit a bounded two-selector overlap when both entries are the unified
+  `agent-collab` package, allowing Codex to retain its old cache while a distinct
+  candidate selector is proven. Retired package names remain blocking, and old
+  client retirement stays behind the private fresh-session finalization gate.
+- Block every packaged mutating broker/dispatcher lifecycle operation from the
+  Codex seatbelt before lifecycle reads or writes while retaining read-only
+  status and probes.
+
+### Fixed
+- Notarization is now verified with the code-object-native `codesign --verify --strict --test-requirement '=notarized'` instead of `spctl --assess --type execute`, at BOTH the release CI gate (`verify_runtime_release.py`) and runtime activation in the client (`runtime_client.py`). The runtime entrypoint is a bare command-line Mach-O, not a `.app` bundle, and `spctl --type execute` only assesses `.app` bundles — it always rejects a bare executable ("the code is valid but does not seem to be an app"), a false negative that would fail every otherwise-valid activation release at the notarization step AND every client activation. The `notarized` codesign requirement binds to the CDHash and rejects unsigned, ad-hoc, and Developer-ID-signed-but-not-notarized binaries by exit code; both call-sites fail closed on tool error. The check is combined with `--check-notarization` (see the online-verification entry) so it forces the online Apple notary lookup and succeeds on a clean host — a bare Mach-O cannot have a notarization ticket stapled, so without the online lookup `=notarized` would depend on the host's local notarization trust state and fail-close on any clean host.
+
+### agent-collab 3.5.2 — launchd dispatcher peer readiness
+
+- Distinguish the root-owned launchd listener credential from the
+  operator-owned sealed runtime process when authenticating a staged
+  dispatcher on macOS.
+- Retry only the exact root-plus-pid-1 launchd handoff sentinel under the
+  existing handshake deadline, with capped exponential sleeps and immediate
+  failure for malformed state or socket errors.
+- Re-prove the stable process start identity, exact executable, signed
+  artifact, socket identity, and final kernel peer PID before sending hello.
+
+### agent-collab 4.0.4 - adoption protocol boundary
+
+- Preserve the sealed provider-adoption request and response on public runtime
+  protocol v2 while carrying them inside the private dispatcher protocol-v1
+  bridge, matching the one-time authority registry and frozen dispatcher.
+
+### agent-collab 4.0.3 — dispatcher lifecycle control protocol
+
+- Send lifecycle ping and lock-probe control messages on the sealed dispatcher
+  protocol-v1 contract so a staged dispatcher can be proven before activation.
+- Keep typed lifecycle failures on runtime protocol v2 and reject swapped,
+  malformed, or extra-field success and failure responses.
+
+### agent-collab 4.0.2 — protocol-v1 blue lifecycle bridge
+
+- Keep normal protocol-v2 routing fail-closed against protocol-v1 runtimes and
+  responses while allowing dispatcher lifecycle control to prove the exact
+  signed v1 blue baseline needed for make-before-break staging.
+- Stage and verify protocol-v2 green without rewriting or stopping v1 blue, and
+  derive the selected blue protocol from its immutable manifest during mutable
+  control-plane recovery.
+
+### agent-collab 4.0.1 — intent-check effort contract correction
+
+- Fixed `intent-check` routing guidance so Gemini governance rows use their
+  required high effort, while rudimentary Codex advisory intent comparisons
+  remain low and the sealed Grok governance fallback remains high.
+
+### agent-collab 4.0.0 — Grok 4.5 model and effort unification
+
+- **Breaking:** advance the fixed public/native runtime protocol to v2. Older
+  public clients and signed runtimes now reject each other instead of silently
+  using the retired Composer model or an outdated request shape.
+- Route Grok architecture, governance, huge-context, and compatibility codegen
+  through the same `xai/grok-4.5` author model. `composer/codegen` remains a
+  public compatibility route with output-only authority, not a separate model.
+- Seal review effort from the task: architecture and governance use high,
+  huge-context synthesis uses medium, and callers cannot override those review
+  profiles. Codegen requires `simple_codegen`, `standard_codegen`, or
+  `complex_codegen`, with respective low, medium, and high effort floors.
+- Keep all model, tool, sandbox, credential, environment, filesystem, and
+  application authority out of the public codegen row. The trusted primary
+  still owns applying output, integration review, testing, git, and release.
+
+### agent-collab 3.5.1 — fail-closed dispatcher boundary
+
+- Treat malformed or noncanonical dispatcher-client output after the
+  request-bearing child launches as a post-request failure, preventing a
+  possible second execution through blue after green acceptance.
+- Preserve typed unsupported-platform behavior when POSIX `fcntl` is absent,
+  while failing lifecycle locking closed before filesystem I/O.
+
+### Changed
+- `build_plugin_archive.py` now sources the activation runtime bundle from an out-of-tree signed handoff via `--bundle-source <leaf .bundle dir>` instead of the git checkout — the signed runtime ships as a release asset and is never committed. The committed `runtime-manifest.json` alone decides the mode (design decision D1): an activation manifest without `--bundle-source` is a hard error (never a silent policy-only downgrade), a policy-only manifest forbids the flag, and an in-tree `runtime/` conflicts with an external source. The bundle source is treated as hostile input (symlink argument rejected before resolution; bounded non-following enumeration; member-set equality; per-member O_NOFOLLOW regular-file/uid/nlink/mode/size/sha256 checks with the strict 0o500 install mode preserved), and its payloads are re-read + re-digested through fresh descriptors at pack time.
+- `verify_archive` is rearchitected to **regenerate the canonical tar from trusted inputs and byte-compare** rather than parse a possibly-hostile archive: it never hands candidate tar bytes to `tarfile`. A shared deterministic `USTAR` serializer (used by both build and verify) reproduces the canonical tar with runtime payloads zero-filled; the candidate is only bounded-inflated and then sliced at offsets the verifier computed. Every structural property — headers, exact typeflags, ordering, padding, EOF, dialect, and the absence of hidden PAX/GNU/sparse records — is bound by the byte-compare outside the runtime ranges; each runtime payload is bound to the frozen-manifest digest; the archived `runtime-manifest.json` bytes are bound to the frozen snapshot. Reading the candidate is fd-only (`O_NOFOLLOW`/`O_NONBLOCK` + `fstat`, no path-swap window) under hard compressed- and decompressed-size caps, with a canonical gzip-header check and single-stream (no trailing/concatenated data) validation. The archive is built into an exclusive temp that is verified before an atomic rename, so a failed build never leaves a publishable artifact. Hardened through a 2-round up-front adversarial design review of the hostile-archive-reading threat model (the regenerate-and-compare pivot) before implementation.
+
+### Added
+- Regression test locking in that a host-normalized runtime bundle (directory 0o755, member files 0o500) verifies and resolves — the empirically-confirmed state produced by every supported installer (Claude Code, Codex, Antigravity/agy, and the broker's sealed copies: 2356/2356 installed member files were 0o500, none 0o700). This closes release-pipeline design item §9.7 as empirically non-reproduced: no source-mode loosening is made (it would be unnecessary and would open a direct-execution-of-owner-writable-source bypass); the loader already handles the real install correctly.
+
+### agent-collab 4.0.5 - Gemini governance proof v2
+
+- Validate Gemini governance evidence against the provider runtime `2.0.0`
+  proof contract `2` tuple instead of conflating it with the public bundle
+  manifest contract, and require governance response provenance to identify
+  that same compatible runtime while rejecting legacy, crossed, and
+  mixed-provenance version tuples.
+
+### agent-collab 4.1.0 - Signed lane contract anchor
+
+- Bind schema-3 runtime artifacts, selector-v2 lanes, dispatcher protocol-2
+  reservations, and Gemini governance proof to one authenticated runtime
+  contract anchor while preserving exact committed legacy normal lanes.
+
+### agent-collab 4.1.1 — 2026-07-20
+
+#### Fixed
+
+- Make `broker-status` use the same canonical selector view as request routing,
+  so a valid selector-v1 selected dispatcher is no longer misclassified as an
+  obsolete single-broker installation.
+- Require the selected immutable lane, launchd job, socket, and closed liveness
+  exchange to pass before broker status is ready. Migration-doctor `READY` now
+  requires this executable proof as well as the signed runtime manifest.
+- Require the one-shot launchd job to return idle and every retained fallback
+  lane to remain independently verifiable before status can claim executable
+  readiness, matching the topology that request routing will actually accept.
+- Advertise a retained lane as rollback-capable, and include it as a request
+  fallback, only when its own launchd job is currently loaded. Retained job
+  availability is a point-in-time snapshot and does not deactivate a healthy
+  selected lane.
+- Treat a selectorless legacy broker as installed but unavailable even when its
+  old socket responds, because current request routing cannot capture an
+  executable lane without the same canonical selector proof.
+- Keep liveness compatible with a verified dispatcher-v1 selected lane while a
+  dispatcher-v2 candidate is staged, so the previous lane remains executable
+  until the new lane is fully proved and atomically selected.
+- Preserve typed timeout, output-limit, and teardown results after a dispatcher
+  accepts a request instead of collapsing those local completion failures into
+  a misleading `protocol_error`; accepted work still never retries another lane.
+- Wait for a selected dispatcher-v1 one-shot job to return idle before exposing
+  its response to the next caller, closing the launchd teardown window without
+  serializing the concurrent dispatcher-v2 scheduler.
+- Bound that dispatcher-v1 idle proof by the request's existing absolute broker
+  deadline, including every `launchctl` collection and final polling sleep, so
+  teardown verification cannot silently start or overrun a fresh timeout.
+- Resolve Codex Desktop's active OpenAI model from its exact current rollout
+  when `CODEX_ACTIVE_MODEL` is absent. The reader is fixed-root, bounded,
+  no-follow, same-owner, single-file, and fail-closed on ambiguous, writable,
+  linked, malformed, oversized, concurrently growing, or conflicting identity
+  evidence.
+
+#### Verification
+
+- Added RED/GREEN regressions for selector-v1 projection, legacy selected-lane
+  liveness, selectorless legacy false-positive rejection, one-shot idle
+  completion, invalid retained-lane rejection,
+  unloaded retained-job rollback and fallback suppression,
+  accepted-request timeout typing and no-fallback behavior, legacy one-shot
+  response teardown, deadline reuse, bounded launchctl collection, and capped
+  polling, failed dispatcher ping, manifest-only doctor readiness, safe Codex
+  rollout identity, and ambiguous, growing, or unsafe rollout rejection.
+
+### Fixed
+
+- Type an accepted-request idle-probe failure as a teardown failure, not a
+  protocol error: `_wait_for_job_idle` now fails closed on the expected
+  `OSError` / `subprocess.SubprocessError` and on a typed
+  `_OperatorHomeUnavailable` raised by `_launchctl`'s per-call operator-home
+  re-resolution (a `ValueError` subclass, so the environmental case is caught
+  race-free while a genuine code-bug `ValueError` and an invalid job label
+  still surface).
+- Bound provider teardown by the caller deadline: `_terminate_and_reap` polls
+  to reap the SIGKILLed session-group leader within a small grace of the
+  caller deadline rather than two fixed five-second waits, and reports a
+  proven teardown only when the whole-group kill was posted AND the leader was
+  reaped, so a leader-only fallback is honestly typed as a teardown failure.
+- Bound the request-dispatch path's retained-lane availability probe by the
+  request deadline: `_launch_broker` now starts the deadline before capturing
+  lanes and threads it through `_capture_broker_lanes` → `_job_loaded` →
+  `_launchctl`, so a small-`timeout_ms` request no longer blocks on
+  launchctl's ~20s default before dispatch (lifecycle/status callers keep the
+  default bound).
+- Reject an incomplete Codex rollout tail instead of trusting the preceding
+  model context: `_codex_rollout_window` fails closed on a non-newline-
+  terminated final record, so a concurrently written model-changing record can
+  no longer yield stale governance-ready identity.
+
+- Added a strict, fail-closed grammar for signed release-tag messages: exact field
+  set in canonical order, no duplicates or unknown fields, no trailing material,
+  lowercase-hex digests, ASCII-only, bare-basename asset names, and a
+  `vMAJOR.MINOR.PATCH` tag validator intended to run before a tag name reaches any ref or
+  path. Not yet wired to a release path — it is the parsing substrate the
+  activation cut will use (agent-collab 4.1.0).
+
+### agent-collab 4.2.1 — 2026-07-21
+
+#### Fixed
+
+- Align the closed coordinator schema with the collaboration-skill contract for
+  read-only OpenCode planning and review. `opencode/plan` now accepts the exact
+  optional artifact snapshot (`content` plus `author_model`) so the client can
+  preserve artifact bytes, provenance, and family-exclusion evidence instead of
+  rejecting a correctly constructed request before managed execution.
+
+#### Verification
+
+- Added a coordinator regression for an artifact-bound `opencode/plan` request;
+  the test fails on 4.2.0 with `request fields violate the closed coordinator
+  schema` and passes with the corrected review-contract set.
+
+### agent-collab 4.2.2 — 2026-07-21
+
+#### Fixed
+
+- Verify notarization online at both the release gate (`verify_runtime_release.py`)
+  and consumer activation (`runtime_client.py`) by adding `--check-notarization` to
+  the `codesign --test-requirement '=notarized'` check. A bare Mach-O cannot have a
+  notarization ticket stapled, so without the online lookup the requirement is
+  satisfied only by the notarizing host's local trust state and fail-closes on any
+  clean host — the CI runner (which blocked the first activation release) and every
+  fresh end-user install. Empirically fail-closed when the Apple notary is
+  unreachable, and it rejects unsigned, ad-hoc, and Developer-ID-signed-unnotarized
+  binaries on macOS 14 and 15.
+
+### agent-collab 4.2.2 - first activation release
+
+First public activation release: the plugin now ships the signed and notarized
+native runtime committed in the repository, so the documented marketplace install
+(`/plugin marketplace add`) delivers a working activation build under any operator
+umask, including umask 002 whose group-writable checkout the previous exact-mode
+and safe-envelope checks both rejected.
+
+### Added
+
+- Commit the Developer ID signed and notarized darwin-arm64 native runtime bundle
+  (38 members) in the repository and advertise it through a schema-version-3
+  activation manifest, pinning `EXPECTED_DEVELOPER_ID_TEAM` to the Osumi Consulting
+  LLC team in `signing_policy.py`. The plugin remains source-available under the
+  PolyForm Strict License 1.0.0; commercial licensing is administered by Osumi
+  Consulting LLC.
+
+### Changed
+
+- Treat the git checkout as a trusted source under the trust-the-checkout model:
+  the host already executes the plugin's Python control plane from the checkout, so
+  the native runtime tolerates the operator umask permission bits on the source
+  while keeping content integrity (per-member SHA-256, Developer ID signature,
+  notarization, Mach-O checks) and the exact broker-store mode unchanged. The
+  `AGENTS.md` runtime policy is updated to distinguish the strict private broker
+  store from the tolerant git source.
+- Package the committed in-tree runtime in `build_plugin_archive`, binding the whole
+  archive to the release commit, alongside the external sealed handoff path.
+
+### Fixed
+
+- Runtime: the dispatcher bridge document (`runtime_client._dispatcher_bridge_document`)
+  now emits the canonical seven-key schema for every protocol version, instead of
+  over-sending the request reservation (`execution_key` / `request_size` /
+  `request_sha256`) for v2. The receiving bridge validator (workspace
+  `provider_runtime._validate_dispatcher_bridge_document`, and its tests) accepts
+  exactly seven keys and derives the reservation from `request` itself, so the
+  over-send made a fresh selector-v2 dispatcher fail its first bridge exchange with
+  "dispatcher bridge document is invalid". The reservation still crosses the trust
+  boundary on the wire hello frame (where the bridge's freshly computed values are
+  used); echoing it in the same-trust-domain bridge document added no integrity
+  value. Fixes fresh v2 dispatcher activation.
+
+- The signed runtime bundle can now be distributed by committing it to the public
+  git repository, so the documented marketplace install (`/plugin marketplace add`)
+  delivers a working activation build under any operator umask — including umask
+  002, whose group-writable checkout the previous exact-`0o500` and safe-envelope
+  checks both rejected. The plugin checkout is now treated as a trusted **source**
+  under the trust-the-checkout model: the host already executes the plugin's Python
+  control plane from the same tree, so a peer who can write the checkout already
+  owns the verifier, and the source permission-mode rejection (which blocked normal
+  clones) is dropped in favor of a floor that requires owner read+execute and no
+  special bits while tolerating group/other bits. Content integrity is unchanged —
+  per-member SHA-256, Developer-ID signature, notarization, and Mach-O checks are
+  untouched — and the privately-extracted **broker store** keeps its exact `0o500`
+  check. `build_plugin_archive` now packages the committed in-tree runtime (with
+  optional git-`HEAD` `100755`/`100644` provenance binding it to the release tag)
+  in addition to the external sealed `--bundle-source` handoff. (agent-collab 4.1.1)
 
 <!-- changelog-fragments:end -->
 

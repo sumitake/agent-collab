@@ -1,6 +1,6 @@
 ---
 name: architect
-version: 4.2.1
+version: 4.2.2
 description: Request read-only architecture consultation for codebase analysis, system design, implementation planning, decomposition, or long-horizon coding strategy. Use when the user says "ask the architect," "have Grok design this," "architecture consultation," "plan this implementation," "decompose this build," "analyze the system design," or "/agent-collab:architect." Also offer this proactively before a substantial multi-system or long-horizon implementation where an independent architecture pass can reduce rework. This role never edits files, runs shell commands or tests, mutates a worktree, opens PRs, merges, or deploys.
 ---
 

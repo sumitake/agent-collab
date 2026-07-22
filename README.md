@@ -1,6 +1,6 @@
 # agent-collab
 
-This repository distributes one package: **agent-collab** (v4.2.1). It gives
+This repository distributes one package: **agent-collab** (v4.2.2). It gives
 Claude, Codex, Antigravity, OpenCode, ZCode, and custom primary hosts the same
 dynamic collaboration surface without publishing provider executors or
 maintaining host-specific plugin copies.
@@ -24,9 +24,9 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.2.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.2.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.2.1
+## What's new - v4.2.2
 
 - Verify notarization online at both the release gate and consumer activation
   (`codesign --test-requirement '=notarized' --check-notarization`), so a clean host
