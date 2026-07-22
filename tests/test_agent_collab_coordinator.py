@@ -310,6 +310,38 @@ class CoordinatorTests(unittest.TestCase):
             errors.append(error)
         self.assertEqual(errors, ["route action/authority mismatch"] * 2)
 
+    def test_codex_governance_is_an_accepted_review_contract(self) -> None:
+        # The managed-synchronous Codex governance route (operator-directed 2026-07-22)
+        # is a first-class governance review contract: prompt + artifact, governance=True.
+        coordinator = _load(
+            "agent_collab_codex_gov_coordinator", PLUGIN / "coordinator.py"
+        )
+        request = {
+            "protocol_version": 2,
+            "request_id": "codex-governance-accept",
+            "operation": "execute",
+            "route": "codex",
+            "action": "governance",
+            "timeout_ms": 30_000,
+            "governance": True,
+            "primary": {},
+            "row": {
+                "model": "openai/gpt-5.6-sol",
+                "effort": "high",
+                "mode": "prompt-only",
+            },
+            "prompt": "Review this artifact for correctness and risk.",
+            "artifact": {
+                "content": "material to review",
+                "author_model": "google/gemini-test",
+            },
+        }
+        validated, _request_id, error = coordinator._validate(request)
+        self.assertIsNotNone(validated, error)
+        self.assertEqual(error, "")
+        self.assertIn(("codex", "governance"), coordinator.DIRECT_CONTRACTS)
+        self.assertIn(("codex", "governance"), coordinator.REVIEW_CONTRACTS)
+
     def test_async_inbox_has_observed_readiness_only_coordinator_contract(self) -> None:
         base = {
             "protocol_version": 2,
