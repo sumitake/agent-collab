@@ -9,7 +9,7 @@
   "plugins": [],
   "metadata": {
     "description": "Agent collaboration plugin marketplace",
-    "version": "4.2.2",
+    "version": "4.2.3",
     "repository": "https://github.com/sumitake/agent-collab"
   }
 }
