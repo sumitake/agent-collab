@@ -10,7 +10,7 @@
     {
       "name": "agent-collab",
       "description": "Unified dynamic-host collaboration package. Centralized skills and async coordination work without legacy packages; every model-execution route requires the verified signed plugin artifact.",
-      "version": "4.2.2",
+      "version": "4.2.3",
       "author": {
         "name": "John Osumi"
       },
@@ -32,7 +32,7 @@
   ],
   "metadata": {
     "description": "Agent collaboration plugin marketplace",
-    "version": "4.2.2",
+    "version": "4.2.3",
     "repository": "https://github.com/sumitake/agent-collab"
   }
 }

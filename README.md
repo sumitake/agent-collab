@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.2.2), and is
+This public repository distributes one package, **agent-collab** (v4.2.3), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -62,20 +62,21 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.2.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.2.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.2.2
+## What's new - v4.2.3
 
-- Verify notarization online at both the release gate and consumer activation
-  (`codesign --test-requirement '=notarized' --check-notarization`), so a clean host
-  (a GitHub-hosted CI runner or a freshly-installed end-user checkout) confirms the
-  runtime is notarized instead of fail-closing. Empirically fail-closed when the
-  Apple notary is unreachable, and it rejects unsigned, ad-hoc, and
-  Developer-ID-signed-unnotarized binaries on macOS 14 and 15.
-- Accept the exact sealed artifact snapshot required by the collaboration skills
-  on the read-only `opencode/plan` route. OpenCode plan/review calls now preserve
-  artifact bytes and author-model lineage instead of failing the coordinator's
-  closed schema before reaching the managed runtime.
+- **Notarization outage no longer mis-typed as a corrupted runtime (issue #36, Phase 1).**
+  On a host that is online but cannot confirm notarization with Apple (enterprise
+  firewall, notary outage, restrictive allowlist), consumer activation now reports the
+  retryable `RuntimeStatus.UNAVAILABLE` with an actionable message instead of a
+  corrupted `SIGNATURE_ERROR`. Activation still gates on `status == OK`, so a runtime
+  whose notarization cannot be confirmed never executes — only the reporting and
+  retryability change.
+- **Synchronous Codex governance-review route.** Adds the `("codex","governance")`
+  first-class synchronous governance-review route (mirroring `gemini/governance`),
+  enabling a proof-backed synchronous Codex governance review that anchors a Tier-3
+  peer review without the async inbox. Additive; existing contracts are unchanged.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 

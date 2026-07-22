@@ -483,6 +483,38 @@ and safe-envelope checks both rejected.
   used); echoing it in the same-trust-domain bridge document added no integrity
   value. Fixes fresh v2 dispatcher activation.
 
+### agent-collab 4.2.3 — 2026-07-21
+
+#### Fixed
+- **Notarization outage no longer mis-typed as a corrupted runtime (issue #36, Phase 1).**
+  On a host that is online but cannot confirm notarization with Apple (enterprise
+  firewall blocking `*.apple.com` / CloudKit, Apple notary outage, restrictive
+  allowlist), consumer activation no longer reports the runtime as a corrupted
+  `SIGNATURE_ERROR`. Any nonzero result from `codesign … --check-notarization` — a
+  transient `TimeoutExpired`/`OSError`, or any `rc != 0` — is now typed as the
+  retryable `RuntimeStatus.UNAVAILABLE` (new `_RuntimeNotarizationUnavailable`,
+  a sibling of `_RuntimeSignatureError`) with an actionable, retryable message.
+  Activation still gates on `status == OK`, so a runtime whose notarization cannot
+  be confirmed never executes — only the reporting and retryability change.
+  `migration-doctor` now surfaces the specific reason rather than a bare
+  "typed unavailable".
+- The consumer does not attempt to distinguish "genuinely unnotarized" from
+  "notary unreachable": `codesign --check-notarization` returns the same nonzero
+  for both, and a frontend TLS handshake cannot confirm the notary lookup itself
+  (per the Codex review of PR #39). The authoritative genuine-not-notarized check
+  remains at the release gate (`verify_runtime_release.py`), which runs on a fresh,
+  online CI host where the lookup is reliable.
+
+#### Notes
+- Scope is Phase 1 (consumer-activation path) per the operator's phased decision.
+  The broker-verification path (`_verify_published_version`) exhibits the same
+  defect typed as `INTEGRITY_ERROR`; an audit found its true surface spans the
+  broker lifecycle (≈14 status-mappers + load-bearing exception flatteners), so it
+  is tracked as its own focused follow-up. Full offline activation (a committed
+  Apple-signed notarization ticket verified offline against the entrypoint CDHash)
+  remains a separately-scoped Tier-3 effort gated on a feasibility spike (a bare
+  Mach-O cannot be stapled, so it is not turnkey).
+
 - The signed runtime bundle can now be distributed by committing it to the public
   git repository, so the documented marketplace install (`/plugin marketplace add`)
   delivers a working activation build under any operator umask — including umask
@@ -498,6 +530,24 @@ and safe-envelope checks both rejected.
   check. `build_plugin_archive` now packages the committed in-tree runtime (with
   optional git-`HEAD` `100755`/`100644` provenance binding it to the release tag)
   in addition to the external sealed `--bundle-source` handoff. (agent-collab 4.1.1)
+
+### Added
+
+- Coordinator/host_policy: the `("codex","governance")` first-class **synchronous**
+  governance-review route (operator-directed 2026-07-22), mirroring
+  `gemini/governance` (prompt + artifact) with a pinned reviewer model + governance
+  effort. Enables a proof-backed synchronous Codex governance review that anchors a
+  Tier-3 peer review without the async inbox. Additive route (`ROUTE_ACTIONS`,
+  `AUTHORITIES`, `GOVERNANCE_CONTRACTS`, `REVIEW_CONTRACTS`, `DIRECT_CONTRACTS`,
+  a row-validation case); existing contracts are unchanged. Companion workspace
+  change adds the runtime emission + the `validate_codex_governance_proof` gate.
+
+### Changed
+
+- Restyle the public root `README.md` toward the reference project layout: add CI,
+  CodeQL, and secret-scan badges, a non-goals section, and a capability list; surface
+  only the latest release and link the full `CHANGELOG.md` for history; refresh the
+  now-shipped activation and runtime notes; and move the license section to the end.
 
 <!-- changelog-fragments:end -->
 
