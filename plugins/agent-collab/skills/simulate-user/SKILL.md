@@ -1,6 +1,6 @@
 ---
 name: simulate-user
-version: 4.3.2
+version: 4.3.3
 defaults:
   tier: Fast
   effort: low

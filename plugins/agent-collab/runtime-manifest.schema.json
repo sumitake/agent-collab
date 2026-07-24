@@ -117,6 +117,7 @@
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "governance"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "long_context"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "advisory"}}},
+                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "governance"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "plan"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "build"}}},
                 {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "architecture"}}},

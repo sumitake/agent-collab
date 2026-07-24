@@ -1,6 +1,6 @@
 ---
 name: knowledge-compile
-version: 4.3.2
+version: 4.3.3
 description: Compile multiple sources into a durable, cited knowledge dossier without mixing claims, assumptions, and decisions. Use when the user says "compile knowledge," "build a dossier," "create a knowledge base," "synthesize these sources," "preserve research context," "make this reviewable later," or "/agent-collab:knowledge-compile." Also offer this proactively when a task spans several repos, PRs, papers, articles, logs, agent messages, or drafts and future agents need source-separated context for independent review.
 ---
 
