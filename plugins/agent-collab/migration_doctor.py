@@ -501,7 +501,11 @@ def _runtime_state() -> str:
     client = _load_runtime_client()
     resolution = client.resolve_runtime()
     if resolution.status == client.RuntimeStatus.OK:
-        missing = set(client.SUPPORTED_CONTRACTS).difference(resolution.contracts)
+        # Judge readiness against the required baseline, not the client's full
+        # acceptance set: an optional route the signed artifact does not
+        # advertise is unavailable on its own (invoke() refuses it per-route),
+        # and must not report the whole runtime as blocked.
+        missing = set(client.REQUIRED_CONTRACTS).difference(resolution.contracts)
         if missing:
             rendered = ",".join(f"{route}/{action}" for route, action in sorted(missing))
             return "invalid: missing contracts " + rendered
