@@ -34,7 +34,12 @@ unavailable and state that a signed typed image contract is required.
 
 ## Workflow
 
-1. Inspect the image using the active host's native visual capability.
+1. Inspect the image using the active host's native visual capability. When any region is
+   detail-bound — small text, dense charts, closely spaced lines, fine UI
+   detail — magnify it before reading: use the host's native zoom or crop
+   actions, or a code-execution crop from the full-resolution source. A
+   full-view-only read of sub-patch detail is unreliable and tends to fail
+   confidently rather than uncertainly.
 2. State once that this is a primary-only visual read and is not an independent
    cross-family review.
 3. Select one or two lenses that match the user's request: hierarchy and flow,
