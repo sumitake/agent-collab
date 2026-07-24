@@ -852,6 +852,29 @@ print(json.dumps({{
         request.update(overrides)
         return request
 
+    def _adoption_canary_ok_response(
+        self, request: dict[str, object]
+    ) -> dict[str, object]:
+        return {
+            "protocol_version": self.client.PROTOCOL_VERSION,
+            "request_id": request["request_id"],
+            "status": "ok",
+            "result": {
+                "provider": request["provider"],
+                "registry_generation": request["registry_generation"],
+                "attempt_generation": request["attempt_generation"],
+                "passed_routes": request["routes"],
+            },
+            "provenance": {
+                "operation": "adoption_canary",
+                "binary_sha256": request["binary_sha256"],
+                "worker_sha256": request["worker_sha256"],
+                "adapter_contract_generation": request[
+                    "adapter_contract_generation"
+                ],
+            },
+        }
+
     def test_adoption_canary_is_a_closed_internal_operation_not_a_route(self) -> None:
         request = self._adoption_canary_request()
         original = dict(request)
@@ -1550,37 +1573,31 @@ print(json.dumps({{
             green_artifact="a" * 64,
             green_manifest="b" * 64,
         )
-        response = {
-            "protocol_version": self.client.PROTOCOL_VERSION,
-            "request_id": request["request_id"],
-            "status": "ok",
-            "result": {
-                "provider": "gemini",
-                "registry_generation": 17,
-                "attempt_generation": 5,
-                "passed_routes": request["routes"],
-            },
-            "provenance": {
-                "operation": "adoption_canary",
-                "binary_sha256": "1" * 64,
-                "worker_sha256": "2" * 64,
-                "adapter_contract_generation": 4,
-            },
-        }
+        response = self._adoption_canary_ok_response(request)
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            artifact_digest=green.artifact_digest,
+            manifest_digest=green.manifest_digest,
+        )
         with mock.patch.object(
             self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
         ), mock.patch.object(
             self.client,
             "_read_broker_selector_v2",
             return_value={"candidate": selector["green"]},
         ), mock.patch.object(
             self.client, "_load_selector_v2_lane", return_value=green
-        ), mock.patch.object(
+        ) as loader, mock.patch.object(
             self.client, "_invoke_dispatcher_bridge", return_value=response
         ) as bridge:
             result = self.client.invoke_adoption_canary(request=request)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(result.result["passed_routes"], request["routes"])
+        loader.assert_called_once_with(
+            self.root, selector["green"], role="candidate"
+        )
         bridge.assert_called_once()
         self.assertEqual(bridge.call_args.kwargs["lane"], green)
         self.assertEqual(bridge.call_args.kwargs["request"]["host_context"], "generic")
@@ -1611,16 +1628,129 @@ print(json.dumps({{
         )
         self.assertEqual(failure.status, self.client.RuntimeStatus.TIMEOUT)
 
-        missing = dict(selector, green=None)
         with mock.patch.object(
             self.client, "_broker_root", return_value=self.root
         ), mock.patch.object(
-            self.client, "_read_broker_selector", return_value=missing
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", return_value=None
         ), mock.patch.object(
             self.client, "_invoke_dispatcher_bridge"
         ) as bridge:
             unavailable = self.client.invoke_adoption_canary(request=request)
         self.assertEqual(unavailable.status, self.client.RuntimeStatus.UNAVAILABLE)
+        bridge.assert_not_called()
+
+    def test_adoption_canary_uses_verified_selected_lane_after_commit(self) -> None:
+        request = self._adoption_canary_request()
+        selector = self._selector_v2_document()
+        selector["candidate"] = None
+        selected_document = dict(selector["selected"])
+        selected = self.client.BrokerLaneSnapshot(
+            name="selected",
+            generation=selected_document["lane_generation"],
+            artifact_digest=selected_document["artifact_sha256"],
+            manifest_digest=selected_document["manifest_sha256"],
+            label=(
+                "com.agent-collab.provider-dispatcher."
+                + self.client._dispatcher_lane_token(
+                    selected_document["artifact_sha256"],
+                    selected_document["manifest_sha256"],
+                )
+            ),
+            socket_path=self.root / "selected.sock",
+            transport="dispatcher",
+            protocol_version=selected_document["protocol_version"],
+            anchor=self.client.RuntimeContractAnchor("2.0.0", 2),
+        )
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            artifact_digest=selected.artifact_digest,
+            manifest_digest=selected.manifest_digest,
+        )
+        response = self._adoption_canary_ok_response(request)
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=self.root
+        ), mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_selector_v2_lane", return_value=selected
+        ) as loader, mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge", return_value=response
+        ) as bridge:
+            result = self.client.invoke_adoption_canary(request=request)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        loader.assert_called_once_with(
+            self.root, selected_document, role="selected"
+        )
+        self.assertEqual(bridge.call_args.kwargs["lane"], selected)
+
+    def test_adoption_canary_rejects_co_packaged_lane_identity_mismatch(self) -> None:
+        request = self._adoption_canary_request()
+        staged = self._selector_v2_document()
+        committed = self._selector_v2_document()
+        committed["candidate"] = None
+        cases = (
+            (
+                "candidate",
+                staged,
+                self.client.RuntimeResolution(
+                    self.client.RuntimeStatus.OK,
+                    artifact_digest=staged["selected"]["artifact_sha256"],
+                    manifest_digest=staged["selected"]["manifest_sha256"],
+                ),
+            ),
+            (
+                "selected",
+                committed,
+                self.client.RuntimeResolution(
+                    self.client.RuntimeStatus.OK,
+                    artifact_digest="f" * 64,
+                    manifest_digest="0" * 64,
+                ),
+            ),
+        )
+        for name, selector, resolution in cases:
+            with self.subTest(role=name), mock.patch.object(
+                self.client, "_broker_root", return_value=self.root
+            ), mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ), mock.patch.object(
+                self.client, "_read_broker_selector_v2", return_value=selector
+            ), mock.patch.object(
+                self.client, "_load_selector_v2_lane"
+            ) as loader, mock.patch.object(
+                self.client, "_invoke_dispatcher_bridge"
+            ) as bridge:
+                result = self.client.invoke_adoption_canary(request=request)
+
+            self.assertEqual(
+                result.status, self.client.RuntimeStatus.INTEGRITY_ERROR
+            )
+            loader.assert_not_called()
+            bridge.assert_not_called()
+
+    def test_adoption_canary_preserves_failed_runtime_verification_status(self) -> None:
+        request = self._adoption_canary_request()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.UNAVAILABLE,
+            error="notarization service unavailable",
+        )
+        with mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_v2"
+        ) as selector_reader, mock.patch.object(
+            self.client, "_invoke_dispatcher_bridge"
+        ) as bridge:
+            result = self.client.invoke_adoption_canary(request=request)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertEqual(result.error, resolution.error)
+        selector_reader.assert_not_called()
         bridge.assert_not_called()
 
     def _selector_document(
@@ -7399,5 +7529,3 @@ class NotarizationSpawnSafetyTests(unittest.TestCase):
             result = client.manage_runtime(action="grok_login", request_id="r", timeout_ms=1000)
         launch.assert_called_once()
         self.assertEqual(result, "launched")
-
-
