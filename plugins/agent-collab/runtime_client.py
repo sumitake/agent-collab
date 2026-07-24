@@ -309,6 +309,28 @@ SUPPORTED_CONTRACTS = frozenset(
         ("composer", "codegen"),
     }
 )
+# Contracts this client can accept but that a signed runtime is not obliged to
+# advertise. A route listed here is available only when the verified manifest
+# advertises it; `invoke()` already refuses it per-route otherwise (see the
+# `resolution.contracts` check), so its absence degrades exactly that route
+# rather than the whole runtime.
+#
+# Keep this set as small as the evidence justifies: everything NOT listed here
+# is required, so a newly added route defaults to required until someone
+# deliberately marks it optional.
+OPTIONAL_CONTRACTS = frozenset(
+    {
+        # Accepted by this client; the currently shipped signed artifact
+        # advertises the ten-route set without it.
+        ("codex", "governance"),
+    }
+)
+# The baseline every shipped runtime must advertise for the runtime as a whole
+# to be considered available. Readiness must be judged against this, never
+# against SUPPORTED_CONTRACTS: the latter is the client's acceptance set, and
+# treating it as required makes one unadvertised optional route report the
+# entire runtime as blocked.
+REQUIRED_CONTRACTS = SUPPORTED_CONTRACTS - OPTIONAL_CONTRACTS
 ADOPTION_PROVIDER_ROUTES = {
     "gemini": frozenset(
         f"{route}/{action}"

@@ -67,6 +67,52 @@ class CodexGovernanceContractTests(unittest.TestCase):
         }
         self.assertNotIn(CONTRACT, advertised)
 
+    def test_optional_route_is_accepted_but_not_required_for_readiness(
+        self,
+    ) -> None:
+        """An accepted-but-unadvertised route must not block the runtime.
+
+        Readiness is judged against REQUIRED_CONTRACTS. Judging it against
+        SUPPORTED_CONTRACTS instead makes ``migration_doctor._runtime_state()``
+        report ``invalid: missing contracts codex/governance`` for the runtime
+        this release actually ships, which drives ``provider_routing`` to
+        BLOCKED even though only this one route is unavailable.
+        """
+        self.assertIn(CONTRACT, self.client.SUPPORTED_CONTRACTS)
+        self.assertIn(CONTRACT, self.client.OPTIONAL_CONTRACTS)
+        self.assertNotIn(CONTRACT, self.client.REQUIRED_CONTRACTS)
+
+        # required and optional partition the acceptance set, so a route added
+        # to SUPPORTED_CONTRACTS is required until deliberately marked optional.
+        self.assertEqual(
+            self.client.REQUIRED_CONTRACTS | self.client.OPTIONAL_CONTRACTS,
+            self.client.SUPPORTED_CONTRACTS,
+        )
+        self.assertFalse(
+            self.client.REQUIRED_CONTRACTS & self.client.OPTIONAL_CONTRACTS
+        )
+
+        # The shipped signed manifest satisfies the required baseline in full.
+        advertised = {
+            (row["route"], row["action"])
+            for row in self.manifest["artifacts"][0]["contracts"]
+        }
+        self.assertEqual(
+            set(self.client.REQUIRED_CONTRACTS).difference(advertised), set()
+        )
+
+    def test_doctor_readiness_uses_the_required_baseline(self) -> None:
+        """Guard the call site itself, not just the constants."""
+        source = (PLUGIN / "migration_doctor.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "set(client.REQUIRED_CONTRACTS).difference(resolution.contracts)",
+            source,
+        )
+        self.assertNotIn(
+            "set(client.SUPPORTED_CONTRACTS).difference(resolution.contracts)",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

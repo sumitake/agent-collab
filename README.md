@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.3.3), and is
+This public repository distributes one package, **agent-collab** (v4.3.4), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -63,15 +63,14 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.3.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.3.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.3.3
+## What's new - v4.3.4
 
-- **Dev/runtime-generation contract compatibility.** The client and manifest
-  schema now accept `codex/governance` when a verified runtime generation
-  advertises it. The current signed public runtime manifest remains unchanged
-  and does not claim that unshipped route; unsupported generations continue to
-  return typed `UNAVAILABLE`.
+- **Truthful runtime-wide readiness.** Migration doctor now distinguishes
+  contracts accepted by the client from the baseline contracts every signed
+  runtime must advertise. The unshipped `codex/governance` route remains
+  individually unavailable without blocking the verified ten-route runtime.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
