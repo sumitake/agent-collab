@@ -1,6 +1,6 @@
 ---
 name: dev-delegate
-version: 4.3.3
+version: 4.3.4
 defaults:
   tier: Standard
   effort: medium
