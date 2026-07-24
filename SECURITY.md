@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---|---|
-| 3.x | Yes |
+| 4.x | Yes |
 | Earlier releases | No |
 
 Policy-only releases contain no native runtime. When an activation release is
