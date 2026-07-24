@@ -87,6 +87,17 @@ REASON: <one sentence — the single most important reason for the verdict>
 [paste the actual output / log / result trace / summary]
 ```
 
+**Make the inspector earn its PASS.** When filling in the ORIGINAL REQUEST
+constraints, phrase each one at evidence level, not presence level: require the
+inspector to produce what it checked (a recomputed count, a traced value, a
+`file:line`, a re-read artifact) rather than confirm that a section or field
+exists — a presence-level constraint lets the inspector pass work it never
+actually inspected. Name the likely shortcuts explicitly (e.g., "do not verify
+the row count from the summary line; recount from the output rows"), and state
+what is out of scope so the inspector does not thrash on style nits or
+pre-existing issues. A clean PASS against presence-level constraints is weak
+evidence; weigh it accordingly in step 3.
+
 **Retry-on-malformed.** If the response does not lead with `VERDICT: PASS` or `VERDICT: FAIL` (e.g., it starts with conversational preamble or wraps the output in markdown), retry exactly once with:
 
 > Previous response did not match the required format. Re-emit strictly per the template above (VERDICT / REASON / FAILED CONSTRAINTS if FAIL), no preamble or commentary.
