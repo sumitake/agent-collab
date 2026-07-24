@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -963,6 +964,28 @@ enabled = true
         self.assertEqual(report.broker_runtime, "integrity_error")
         self.assertEqual(report.provider_routing, "BLOCKED")
 
+    def test_doctor_reports_responsive_busy_broker_ready(self) -> None:
+        statuses = types.SimpleNamespace(
+            OK="ok",
+            UNAVAILABLE="unavailable",
+            INTEGRITY_ERROR="integrity_error",
+        )
+        runtime = types.SimpleNamespace(
+            RuntimeStatus=statuses,
+            broker_status=lambda: types.SimpleNamespace(
+                status=statuses.OK,
+                result={
+                    "active": True,
+                    "dispatcher_ready": True,
+                    "persistent_process": True,
+                },
+            ),
+        )
+        with mock.patch.object(
+            self.doctor, "_load_runtime_client", return_value=runtime
+        ):
+            self.assertEqual(self.doctor._broker_runtime_state(), "ready")
+
     def test_doctor_inventories_codex_config_with_observed_host_provenance(self) -> None:
         config = self.home / ".codex" / "config.toml"
         config.parent.mkdir(parents=True)
@@ -1618,6 +1641,55 @@ enabled = true
         self.assertTrue(self.policy.verify_policy_envelope(outcome.envelope))
         tampered = dataclasses.replace(outcome.envelope, action="build")
         self.assertFalse(self.policy.verify_policy_envelope(tampered))
+
+    def test_policy_envelope_timeout_can_only_be_resealed_narrower(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            self.policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("codex", "advisory")}), "digest-1"),
+        ):
+            outcome = self.policy.issue_policy_envelope(
+                request_id="narrow-timeout-1",
+                route="codex",
+                action="advisory",
+                governance=False,
+                prompt="review",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "claude",
+                    "active_model": "anthropic/claude-opus",
+                    "host_runtime": "claude-code",
+                    "session_identifier": "c-1",
+                },
+                row_config={
+                    "model": "openai/codex",
+                    "effort": "high",
+                    "mode": "prompt-only",
+                },
+            )
+        self.assertEqual(outcome.status, self.policy.PreflightStatus.OK)
+        assert outcome.envelope is not None
+        narrowed = self.policy.narrow_policy_envelope_timeout(
+            outcome.envelope, 12_345
+        )
+        self.assertEqual(narrowed.timeout_ms, 12_345)
+        self.assertTrue(self.policy.verify_policy_envelope(narrowed))
+        self.assertEqual(
+            dataclasses.replace(narrowed, timeout_ms=30_000, seal=""),
+            dataclasses.replace(outcome.envelope, seal=""),
+        )
+        for invalid in (True, 0, 30_001):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.policy.narrow_policy_envelope_timeout(
+                    outcome.envelope, invalid
+                )
+        with self.assertRaises(ValueError):
+            self.policy.narrow_policy_envelope_timeout(
+                dataclasses.replace(outcome.envelope, seal="0" * 64),
+                12_345,
+            )
 
     def test_policy_envelope_preserves_automatic_target_provenance(self) -> None:
         with mock.patch.object(

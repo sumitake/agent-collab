@@ -1002,6 +1002,34 @@ def verify_policy_envelope(envelope: object) -> bool:
     return hmac.compare_digest(expected, envelope.seal)
 
 
+def narrow_policy_envelope_timeout(
+    envelope: PolicyEnvelope,
+    timeout_ms: int,
+) -> PolicyEnvelope:
+    """Reseal the same authority with only a smaller remaining time budget."""
+
+    if (
+        not isinstance(envelope, PolicyEnvelope)
+        or not verify_policy_envelope(envelope)
+        or type(timeout_ms) is not int
+        or not 1 <= timeout_ms <= envelope.timeout_ms
+    ):
+        raise ValueError("policy envelope timeout narrowing is invalid")
+    unsigned = PolicyEnvelope(
+        **{
+            **asdict(envelope),
+            "timeout_ms": timeout_ms,
+            "seal": "",
+        }
+    )
+    seal = hmac.new(
+        _SEAL_KEY,
+        _unsigned_envelope(unsigned),
+        hashlib.sha256,
+    ).hexdigest()
+    return PolicyEnvelope(**{**asdict(unsigned), "seal": seal})
+
+
 def startup_preflight(
     *,
     governance: bool,

@@ -12,6 +12,7 @@ import importlib.util
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -304,6 +305,7 @@ def _inventory_legacy() -> tuple[str, ...]:
 
 
 def process(document: object) -> tuple[dict[str, Any], int]:
+    started = time.monotonic()
     validated, request_id, error = _validate(document)
     if validated is None:
         return _response(request_id, "config_error", error), 2
@@ -318,10 +320,34 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         if result.provenance is not None:
             response["provenance"] = result.provenance
         return response, 0 if result.status.value not in {"config_error", "protocol_error"} else 2
+    request_deadline = started + validated["timeout_ms"] / 1000.0
+
+    def remaining_timeout_ms() -> int:
+        remaining = request_deadline - time.monotonic()
+        if remaining <= 0:
+            return 0
+        return max(1, min(validated["timeout_ms"], int(remaining * 1000)))
+
+    def timeout_response(
+        *, attempts: list[dict[str, str]] | None = None
+    ) -> tuple[dict[str, Any], int]:
+        extra = {} if attempts is None else {"attempts": attempts}
+        return (
+            _response(
+                validated["request_id"],
+                "timeout",
+                "coordinator request deadline expired",
+                **extra,
+            ),
+            0,
+        )
+
     policy = _load("agent_collab_host_policy", "host_policy.py")
     runtime = _load("agent_collab_runtime_client", "runtime_client.py")
     artifact = validated.get("artifact", {})
     legacy = _inventory_legacy()
+    if remaining_timeout_ms() == 0:
+        return timeout_response()
 
     if validated["route"] == "inbox":
         preflight = policy.startup_preflight(
@@ -331,6 +357,8 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             safe_mode=False,
             async_inbox_target=validated["row"],
         )
+        if remaining_timeout_ms() == 0:
+            return timeout_response()
         if preflight.status != policy.PreflightStatus.OK:
             status = (
                 "unknown_family"
@@ -347,6 +375,8 @@ def process(document: object) -> tuple[dict[str, Any], int]:
                 preflight.warning or "async inbox is unavailable",
             ), 0
         target = policy.resolve_async_inbox_target(validated["row"])
+        if remaining_timeout_ms() == 0:
+            return timeout_response()
         response = _response(
             validated["request_id"],
             "ok",
@@ -364,7 +394,12 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             response["warning"] = preflight.warning
         return response, 0
 
-    def issue_for(route: str, row: dict[str, Any]):
+    def issue_for(
+        route: str,
+        row: dict[str, Any],
+        *,
+        timeout_ms: int,
+    ):
         action = validated["action"]
         if validated["route"] == "auto" and action == "architecture":
             action = "architecture" if route == "grok" else "advisory"
@@ -382,7 +417,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             governance=validated["governance"],
             explicit_target=validated["route"] != "auto",
             prompt=validated.get("prompt", ""),
-            timeout_ms=validated["timeout_ms"],
+            timeout_ms=timeout_ms,
             explicit_config=validated["primary"],
             row_config=row,
             artifact_author_model=artifact.get("author_model", ""),
@@ -397,6 +432,8 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             active_legacy_packages=legacy,
             safe_mode=False,
         )
+        if remaining_timeout_ms() == 0:
+            return timeout_response(attempts=[])
         if preflight.status == policy.PreflightStatus.DUPLICATE_BLOCKED:
             return _response(
                 validated["request_id"], "duplicate_blocked", preflight.warning
@@ -417,6 +454,8 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             artifact_author_model=artifact.get("author_model", ""),
             artifact_content=artifact.get("content", ""),
         )
+        if remaining_timeout_ms() == 0:
+            return timeout_response(attempts=[])
         if preflight.status != policy.PreflightStatus.OK:
             status = (
                 "unknown_family"
@@ -449,13 +488,20 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             runtime.RuntimeStatus.AUTH_ERROR,
             runtime.RuntimeStatus.QUOTA_ERROR,
             runtime.RuntimeStatus.CONTAINMENT_ERROR,
-            runtime.RuntimeStatus.TIMEOUT,
             runtime.RuntimeStatus.OUTPUT_LIMIT,
-            runtime.RuntimeStatus.TEARDOWN_ERROR,
             runtime.RuntimeStatus.PROVIDER_ERROR,
         }
         for route in candidates:
-            issue = issue_for(route, validated["row"][route])
+            remaining = remaining_timeout_ms()
+            if remaining == 0:
+                return timeout_response(attempts=attempts)
+            issue = issue_for(
+                route,
+                validated["row"][route],
+                timeout_ms=remaining,
+            )
+            if remaining_timeout_ms() == 0:
+                return timeout_response(attempts=attempts)
             if issue.envelope is None:
                 attempts.append({"route": route, "status": issue.status.value})
                 if issue.status in {
@@ -466,8 +512,24 @@ def process(document: object) -> tuple[dict[str, Any], int]:
                 return _response(
                     validated["request_id"], issue.status.value, issue.warning, attempts=attempts
                 ), 2 if issue.status == policy.PreflightStatus.CONFIG_ERROR else 0
-            result = runtime.invoke(envelope=issue.envelope)
+            remaining = remaining_timeout_ms()
+            if remaining == 0:
+                return timeout_response(attempts=attempts)
+            envelope = policy.narrow_policy_envelope_timeout(
+                issue.envelope,
+                min(issue.envelope.timeout_ms, remaining),
+            )
+            result = runtime.invoke(envelope=envelope)
             attempts.append({"route": route, "status": result.status.value})
+            if result.status == runtime.RuntimeStatus.TEARDOWN_ERROR:
+                return _response(
+                    validated["request_id"],
+                    result.status.value,
+                    result.error,
+                    attempts=attempts,
+                ), 0
+            if remaining_timeout_ms() == 0:
+                return timeout_response(attempts=attempts)
             if result.status == runtime.RuntimeStatus.OK:
                 response = _response(
                     validated["request_id"],
@@ -480,6 +542,15 @@ def process(document: object) -> tuple[dict[str, Any], int]:
                 if issue.warning:
                     response["warning"] = issue.warning
                 return response, 0
+            if result.status in {
+                runtime.RuntimeStatus.TIMEOUT,
+            }:
+                return _response(
+                    validated["request_id"],
+                    result.status.value,
+                    result.error,
+                    attempts=attempts,
+                ), 0
             if result.status not in retryable:
                 return _response(
                     validated["request_id"], result.status.value, result.error, attempts=attempts
@@ -491,7 +562,16 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             attempts=attempts,
         ), 0
 
-    issue = issue_for(validated["route"], validated["row"])
+    remaining = remaining_timeout_ms()
+    if remaining == 0:
+        return timeout_response()
+    issue = issue_for(
+        validated["route"],
+        validated["row"],
+        timeout_ms=remaining,
+    )
+    if remaining_timeout_ms() == 0:
+        return timeout_response()
     if issue.envelope is None:
         status_map = {
             policy.PreflightStatus.CONFIG_ERROR: "config_error",
@@ -503,7 +583,17 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         status = status_map.get(issue.status, "unavailable")
         operational = status in {"unavailable", "same_family_blocked", "duplicate_blocked", "unknown_family"}
         return _response(validated["request_id"], status, issue.warning), 0 if operational else 2
-    result = runtime.invoke(envelope=issue.envelope)
+    remaining = remaining_timeout_ms()
+    if remaining == 0:
+        return timeout_response()
+    envelope = policy.narrow_policy_envelope_timeout(
+        issue.envelope,
+        min(issue.envelope.timeout_ms, remaining),
+    )
+    result = runtime.invoke(envelope=envelope)
+    if result.status != runtime.RuntimeStatus.TEARDOWN_ERROR:
+        if remaining_timeout_ms() == 0:
+            return timeout_response()
     response = _response(
         validated["request_id"],
         result.status.value,

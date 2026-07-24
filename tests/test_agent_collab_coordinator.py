@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -702,6 +703,350 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "ok")
         self.assertEqual(captured, [False])
+
+    def test_automatic_routes_share_one_deadline_across_fallbacks(self) -> None:
+        coordinator = _load(
+            "agent_collab_shared_deadline_coordinator",
+            PLUGIN / "coordinator.py",
+        )
+        policy = _load(
+            "agent_collab_shared_deadline_policy",
+            PLUGIN / "host_policy.py",
+        )
+        runtime = _load(
+            "agent_collab_shared_deadline_runtime",
+            PLUGIN / "runtime_client.py",
+        )
+        captured: list[tuple[str, int]] = []
+
+        def invoke(*, envelope):
+            captured.append((envelope.route, envelope.timeout_ms))
+            if len(captured) == 1:
+                time.sleep(0.03)
+                return runtime.RuntimeResult(
+                    runtime.RuntimeStatus.UNAVAILABLE,
+                    error="first route unavailable",
+                )
+            return runtime.RuntimeResult(
+                runtime.RuntimeStatus.OK,
+                result={"review": "ok"},
+                provenance={"route": envelope.route},
+            )
+
+        request = {
+            "protocol_version": 2,
+            "request_id": "auto-shared-deadline-1",
+            "operation": "execute",
+            "route": "auto",
+            "action": "advisory",
+            "timeout_ms": 200,
+            "governance": False,
+            "primary": {
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "c-deadline",
+            },
+            "row": {
+                "gemini": {
+                    "model": "google/gemini-test",
+                    "effort": "high",
+                },
+                "codex": {
+                    "model": "openai/codex-test",
+                    "effort": "high",
+                    "mode": "prompt-only",
+                },
+            },
+            "prompt": "review",
+        }
+        with (
+            mock.patch.object(
+                policy,
+                "_runtime_contracts",
+                return_value=(
+                    frozenset(
+                        {
+                            ("gemini", "advisory"),
+                            ("codex", "advisory"),
+                        }
+                    ),
+                    "digest-1",
+                ),
+            ),
+            mock.patch.object(runtime, "invoke", side_effect=invoke),
+            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
+            mock.patch.object(
+                coordinator,
+                "_load",
+                side_effect=lambda _name, filename: (
+                    policy if filename == "host_policy.py" else runtime
+                ),
+            ),
+        ):
+            response, code = coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "ok")
+        self.assertEqual([route for route, _ in captured], ["gemini", "codex"])
+        self.assertGreaterEqual(captured[0][1], 1)
+        self.assertLessEqual(captured[0][1], request["timeout_ms"])
+        self.assertGreaterEqual(captured[1][1], 1)
+        self.assertLess(captured[1][1], captured[0][1])
+
+    def test_automatic_timeout_or_unproven_teardown_never_falls_back(
+        self,
+    ) -> None:
+        for status in ("timeout", "teardown_error"):
+            with self.subTest(status=status):
+                coordinator = _load(
+                    f"agent_collab_terminal_{status}_coordinator",
+                    PLUGIN / "coordinator.py",
+                )
+                policy = _load(
+                    f"agent_collab_terminal_{status}_policy",
+                    PLUGIN / "host_policy.py",
+                )
+                runtime = _load(
+                    f"agent_collab_terminal_{status}_runtime",
+                    PLUGIN / "runtime_client.py",
+                )
+                invocations: list[str] = []
+
+                def invoke(*, envelope):
+                    invocations.append(envelope.route)
+                    if len(invocations) > 1:
+                        return runtime.RuntimeResult(
+                            runtime.RuntimeStatus.OK,
+                            result={"review": "unsafe fallback"},
+                            provenance={"route": envelope.route},
+                        )
+                    return runtime.RuntimeResult(
+                        getattr(runtime.RuntimeStatus, status.upper()),
+                        error=f"first route {status}",
+                    )
+
+                request = {
+                    "protocol_version": 2,
+                    "request_id": f"auto-terminal-{status}-1",
+                    "operation": "execute",
+                    "route": "auto",
+                    "action": "advisory",
+                    "timeout_ms": 200,
+                    "governance": False,
+                    "primary": {
+                        "primary_id": "claude",
+                        "active_model": "anthropic/claude-opus",
+                        "host_runtime": "claude-code",
+                        "session_identifier": "c-terminal",
+                    },
+                    "row": {
+                        "gemini": {
+                            "model": "google/gemini-test",
+                            "effort": "high",
+                        },
+                        "codex": {
+                            "model": "openai/codex-test",
+                            "effort": "high",
+                            "mode": "prompt-only",
+                        },
+                    },
+                    "prompt": "review",
+                }
+                with (
+                    mock.patch.object(
+                        policy,
+                        "_runtime_contracts",
+                        return_value=(
+                            frozenset(
+                                {
+                                    ("gemini", "advisory"),
+                                    ("codex", "advisory"),
+                                }
+                            ),
+                            "digest-1",
+                        ),
+                    ),
+                    mock.patch.object(runtime, "invoke", side_effect=invoke),
+                    mock.patch.object(
+                        coordinator, "_inventory_legacy", return_value=()
+                    ),
+                    mock.patch.object(
+                        coordinator,
+                        "_load",
+                        side_effect=lambda _name, filename: (
+                            policy
+                            if filename == "host_policy.py"
+                            else runtime
+                        ),
+                    ),
+                ):
+                    response, code = coordinator.process(request)
+
+                self.assertEqual(code, 0)
+                self.assertEqual(response["status"], status)
+                self.assertEqual(
+                    response["attempts"],
+                    [{"route": "gemini", "status": status}],
+                )
+                self.assertEqual(invocations, ["gemini"])
+
+    def test_automatic_late_success_is_typed_timeout(self) -> None:
+        coordinator = _load(
+            "agent_collab_late_success_coordinator",
+            PLUGIN / "coordinator.py",
+        )
+        policy = _load(
+            "agent_collab_late_success_policy",
+            PLUGIN / "host_policy.py",
+        )
+        runtime = _load(
+            "agent_collab_late_success_runtime",
+            PLUGIN / "runtime_client.py",
+        )
+        invocations: list[str] = []
+
+        def invoke(*, envelope):
+            invocations.append(envelope.route)
+            time.sleep(0.02)
+            return runtime.RuntimeResult(
+                runtime.RuntimeStatus.OK,
+                result={"review": "too late"},
+                provenance={"route": envelope.route},
+            )
+
+        request = {
+            "protocol_version": 2,
+            "request_id": "auto-late-success-1",
+            "operation": "execute",
+            "route": "auto",
+            "action": "advisory",
+            "timeout_ms": 10,
+            "governance": False,
+            "primary": {
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "c-late",
+            },
+            "row": {
+                "gemini": {
+                    "model": "google/gemini-test",
+                    "effort": "high",
+                },
+                "codex": {
+                    "model": "openai/codex-test",
+                    "effort": "high",
+                    "mode": "prompt-only",
+                },
+            },
+            "prompt": "review",
+        }
+        with (
+            mock.patch.object(
+                policy,
+                "_runtime_contracts",
+                return_value=(
+                    frozenset(
+                        {
+                            ("gemini", "advisory"),
+                            ("codex", "advisory"),
+                        }
+                    ),
+                    "digest-1",
+                ),
+            ),
+            mock.patch.object(runtime, "invoke", side_effect=invoke),
+            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
+            mock.patch.object(
+                coordinator,
+                "_load",
+                side_effect=lambda _name, filename: (
+                    policy if filename == "host_policy.py" else runtime
+                ),
+            ),
+        ):
+            response, code = coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "timeout")
+        self.assertEqual(
+            response["attempts"],
+            [{"route": "gemini", "status": "ok"}],
+        )
+        self.assertEqual(invocations, ["gemini"])
+
+    def test_automatic_preflight_consumes_the_same_request_deadline(self) -> None:
+        coordinator = _load(
+            "agent_collab_slow_preflight_coordinator",
+            PLUGIN / "coordinator.py",
+        )
+        policy = _load(
+            "agent_collab_slow_preflight_policy",
+            PLUGIN / "host_policy.py",
+        )
+        runtime = _load(
+            "agent_collab_slow_preflight_runtime",
+            PLUGIN / "runtime_client.py",
+        )
+        request = {
+            "protocol_version": 2,
+            "request_id": "auto-slow-preflight-1",
+            "operation": "execute",
+            "route": "auto",
+            "action": "advisory",
+            "timeout_ms": 10,
+            "governance": False,
+            "primary": {
+                "primary_id": "claude",
+                "active_model": "anthropic/claude-opus",
+                "host_runtime": "claude-code",
+                "session_identifier": "c-slow-preflight",
+            },
+            "row": {
+                "gemini": {
+                    "model": "google/gemini-test",
+                    "effort": "high",
+                },
+                "codex": {
+                    "model": "openai/codex-test",
+                    "effort": "high",
+                    "mode": "prompt-only",
+                },
+            },
+            "prompt": "review",
+        }
+        unavailable = policy.PreflightOutcome(
+            policy.PreflightStatus.UNAVAILABLE,
+            policy.resolve_profile(request["primary"]),
+            (),
+            "slow preflight unavailable",
+        )
+
+        def slow_preflight(**_kwargs):
+            time.sleep(0.02)
+            return unavailable
+
+        with (
+            mock.patch.object(
+                policy, "startup_preflight", side_effect=slow_preflight
+            ),
+            mock.patch.object(runtime, "invoke") as invoke,
+            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
+            mock.patch.object(
+                coordinator,
+                "_load",
+                side_effect=lambda _name, filename: (
+                    policy if filename == "host_policy.py" else runtime
+                ),
+            ),
+        ):
+            response, code = coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "timeout")
+        self.assertEqual(response["attempts"], [])
+        invoke.assert_not_called()
 
     def test_empty_primary_reobserves_zcode_model_on_each_request(self) -> None:
         coordinator = _load("agent_collab_switch_coordinator", PLUGIN / "coordinator.py")

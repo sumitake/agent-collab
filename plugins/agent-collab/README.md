@@ -2,7 +2,7 @@
 
 `agent-collab` is the single dynamic-host collaboration package.
 
-Current: **4.3.1**
+Current: **4.3.2**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -59,7 +59,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.3.1 package.
+identify this same 4.3.2 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -298,7 +298,10 @@ process exit, and retains one verified prior record. Failed updates restore the
 complete prior state; same-version reactivation preserves its rollback target,
 and an unverified version is never recorded as rollback-safe. `broker-status`
 is read-only and emits no prompt, credential, provider output, or private path;
-bounded `launchctl` collection failures return a typed lifecycle error.
+an exact selected-lane ping proves callability, while a separate one-second
+quiescence observation reports `persistent_process` without making an active
+request look unavailable. Lifecycle mutations still require their full idle
+proof. Bounded `launchctl` collection failures return a typed lifecycle error.
 
 Use the closed rollback/removal actions only when needed:
 
@@ -334,7 +337,12 @@ Every request contains exactly `protocol_version`, `request_id`, `operation`,
 `route`, `action`, `timeout_ms`, `governance`, `primary`, and `row`.
 `protocol_version` is integer `2`; `request_id` matches
 `[A-Za-z0-9._:-]{1,128}`; `operation` is `readiness` or `execute`; and
-`timeout_ms` is an integer from 1 through 600000. An `execute` request also has
+`timeout_ms` is an integer from 1 through 600000 and is one end-to-end
+coordinator budget. Policy resolution and every automatic candidate consume
+that same monotonic deadline; a fallback receives only the remaining sealed
+milliseconds. Timeout and teardown-unproven results are terminal because
+accepted-request cleanup is not safe to overlap with another provider. An
+`execute` request also has
 `prompt`. A governance request has `prompt` plus `artifact`, exactly
 `{"content":"...","author_model":"..."}`; both values must be nonblank. It may
 use only a read-only governance-review contract: `gemini/governance`,
