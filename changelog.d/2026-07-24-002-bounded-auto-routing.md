@@ -8,6 +8,10 @@
 - Stop automatic fallback after a timed-out or teardown-unproven accepted
   request, preventing a second provider worker from overlapping uncertain
   cleanup.
+- Permit automatic fallback only for a typed pre-acceptance `unavailable`
+  result. Authentication, quota, containment, output, protocol, provider, and
+  every other post-launch result are terminal, so one review request cannot
+  silently become a second provider invocation.
 - Keep selected-dispatcher callability distinct from lifecycle quiescence so
   migration doctor no longer reports a responsive lane unavailable merely
   because another bounded request is active. Bound the status-only quiescence

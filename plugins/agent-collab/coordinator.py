@@ -483,14 +483,12 @@ def process(document: object) -> tuple[dict[str, Any], int]:
                 attempts=[],
             ), 0
         attempts: list[dict[str, str]] = []
-        retryable = {
-            runtime.RuntimeStatus.UNAVAILABLE,
-            runtime.RuntimeStatus.AUTH_ERROR,
-            runtime.RuntimeStatus.QUOTA_ERROR,
-            runtime.RuntimeStatus.CONTAINMENT_ERROR,
-            runtime.RuntimeStatus.OUTPUT_LIMIT,
-            runtime.RuntimeStatus.PROVIDER_ERROR,
-        }
+        # Only a pre-acceptance availability miss is safe to route around.
+        # Every other managed result may follow provider acceptance or mutate
+        # provider/session state even when no answer was observed.  Retrying a
+        # different reviewer would then duplicate work and could silently
+        # replace the intended verdict.
+        retryable = {runtime.RuntimeStatus.UNAVAILABLE}
         for route in candidates:
             remaining = remaining_timeout_ms()
             if remaining == 0:

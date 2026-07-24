@@ -794,10 +794,32 @@ class CoordinatorTests(unittest.TestCase):
         self.assertGreaterEqual(captured[1][1], 1)
         self.assertLess(captured[1][1], captured[0][1])
 
-    def test_automatic_timeout_or_unproven_teardown_never_falls_back(
-        self,
-    ) -> None:
-        for status in ("timeout", "teardown_error"):
+    def test_automatic_only_preacceptance_unavailable_can_fall_back(self) -> None:
+        terminal_statuses = tuple(
+            status
+            for status in (
+                "manifest_invalid",
+                "platform_unsupported",
+                "path_invalid",
+                "integrity_error",
+                "signature_error",
+                "host_blocked",
+                "config_error",
+                "spawn_error",
+                "timeout",
+                "output_limit",
+                "protocol_error",
+                "auth_error",
+                "quota_error",
+                "containment_error",
+                "cancelled",
+                "input_limit",
+                "teardown_error",
+                "provider_error",
+                "canary_blocked",
+            )
+        )
+        for status in terminal_statuses:
             with self.subTest(status=status):
                 coordinator = _load(
                     f"agent_collab_terminal_{status}_coordinator",
@@ -883,7 +905,10 @@ class CoordinatorTests(unittest.TestCase):
                 ):
                     response, code = coordinator.process(request)
 
-                self.assertEqual(code, 0)
+                self.assertEqual(
+                    code,
+                    2 if status in {"config_error", "protocol_error"} else 0,
+                )
                 self.assertEqual(response["status"], status)
                 self.assertEqual(
                     response["attempts"],
