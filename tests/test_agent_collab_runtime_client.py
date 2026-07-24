@@ -4250,7 +4250,9 @@ print(json.dumps({{
         self.assertFalse(result.result["active"])
         self.assertFalse(result.result["dispatcher_ready"])
 
-    def test_broker_status_requires_dispatcher_to_return_idle(self) -> None:
+    def test_broker_status_reports_responsive_dispatcher_ready_while_busy(
+        self,
+    ) -> None:
         root = self.root / "broker-state"
         self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
         ping = self.client.RuntimeResult(
@@ -4258,6 +4260,7 @@ print(json.dumps({{
             result={"ready": True},
             provenance={"operation": "dispatcher_ping"},
         )
+        started = time.monotonic()
         with mock.patch.object(
             self.client, "_broker_root", return_value=root
         ), mock.patch.object(
@@ -4271,11 +4274,17 @@ print(json.dumps({{
         ) as wait_for_idle:
             result = self.client.broker_status()
 
-        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
-        self.assertFalse(result.result["active"])
-        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertTrue(result.result["active"])
+        self.assertTrue(result.result["dispatcher_ready"])
         self.assertTrue(result.result["persistent_process"])
         wait_for_idle.assert_called_once()
+        idle_deadline = wait_for_idle.call_args.kwargs["deadline"]
+        self.assertGreater(idle_deadline, started)
+        self.assertLessEqual(
+            idle_deadline - started,
+            self.client.BROKER_STATUS_IDLE_OBSERVATION_SECONDS + 0.1,
+        )
 
     def test_broker_status_rejects_invalid_retained_lane(self) -> None:
         root = self.root / "broker-state"
@@ -6653,6 +6662,44 @@ print(json.dumps({
                 result = self.client.invoke(envelope=envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(result.provenance["author_family"], "google")
+
+    def test_invoke_accounts_for_runtime_resolution_before_launch(self) -> None:
+        self._fixture()
+        envelope = self._envelope(
+            route="gemini",
+            action="advisory",
+            request_id="req-resolution-deadline",
+            prompt="review",
+            timeout_ms=10,
+        )
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=self.root / "runtime",
+            contracts=frozenset({("gemini", "advisory")}),
+            manifest_digest=envelope.runtime_manifest_digest,
+        )
+
+        def slow_resolution():
+            time.sleep(0.02)
+            return resolution
+
+        with mock.patch.object(
+            self.client, "_native_document", return_value=b"{}"
+        ), mock.patch.object(
+            self.client, "resolve_runtime", side_effect=slow_resolution
+        ), mock.patch.object(
+            self.client,
+            "_launch_broker",
+            return_value=self.client.RuntimeResult(
+                self.client.RuntimeStatus.OK,
+                result={"review": "late"},
+            ),
+        ) as launch:
+            result = self.client.invoke(envelope=envelope)
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(result.error, "provider request deadline expired")
+        launch.assert_not_called()
 
     def test_codex_build_is_resolvable_but_typed_unavailable(self) -> None:
         policy = self.client._load_host_policy()

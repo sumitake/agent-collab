@@ -4262,6 +4262,10 @@ def _broker_job_loaded() -> bool:
 # ("activation ping failed") and fall through to the restore path, which
 # skips the ping and so silently masked the miscalibration.
 BROKER_COLD_START_TIMEOUT_SECONDS = 30.0
+# Status needs only a short point-in-time quiescence observation after a
+# successful liveness ping. Lifecycle mutations keep their full idle-proof
+# bound and still require ``persistent_process`` to be false.
+BROKER_STATUS_IDLE_OBSERVATION_SECONDS = 1.0
 # Upper bound on how long teardown may poll to reap a SIGKILLed leader when no
 # caller deadline is supplied (preserves the pre-existing wait bound). When a
 # deadline is supplied, teardown polls at most REAP_GRACE_SECONDS past it.
@@ -6101,8 +6105,18 @@ def broker_status() -> RuntimeResult:
                     live = ping.status is RuntimeStatus.OK
                 else:
                     live = _broker_ping(lane.socket_path)
-                idle = _wait_for_job_idle(lane.label)
-                ready = live and idle
+                idle = _wait_for_job_idle(
+                    lane.label,
+                    deadline=(
+                        time.monotonic()
+                        + BROKER_STATUS_IDLE_OBSERVATION_SECONDS
+                    ),
+                )
+                # Liveness proves the selected lane is callable. Idleness is a
+                # separate lifecycle/quiescence signal: a legitimate in-flight
+                # provider request can keep the socket-activated job running
+                # after this ping without making the lane unavailable.
+                ready = live
                 persistent_process = not idle
 
             rollback_available = False
@@ -7128,33 +7142,60 @@ def manage_runtime(*, action: str, request_id: str, timeout_ms: int) -> RuntimeR
 
 
 def invoke(*, envelope: object) -> RuntimeResult:
+    started = time.monotonic()
     try:
         payload = _native_document(envelope)
     except (AttributeError, RuntimeError, TypeError, ValueError, RecursionError):
         return RuntimeResult(RuntimeStatus.CONFIG_ERROR, error="invalid or unsealed policy envelope")
+    deadline = started + envelope.timeout_ms / 1000.0
     if (envelope.route, envelope.action) in TEMPORARILY_UNAVAILABLE_CONTRACTS:
         return RuntimeResult(
             RuntimeStatus.UNAVAILABLE,
             error=TEMPORARILY_UNAVAILABLE_CONTRACTS[(envelope.route, envelope.action)],
         )
     resolution = resolve_runtime()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return RuntimeResult(
+            RuntimeStatus.TIMEOUT,
+            error="provider request deadline expired",
+        )
     if resolution.status != RuntimeStatus.OK or resolution.path is None:
         return RuntimeResult(resolution.status, error=resolution.error)
     if resolution.manifest_digest != envelope.runtime_manifest_digest:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime manifest changed after policy selection")
     if (envelope.route, envelope.action) not in resolution.contracts:
         return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime does not advertise the sealed route/action")
+    remaining_ms = max(1, min(envelope.timeout_ms, int(remaining * 1000)))
+    if remaining_ms < envelope.timeout_ms:
+        try:
+            policy = _load_host_policy()
+            envelope = policy.narrow_policy_envelope_timeout(
+                envelope, remaining_ms
+            )
+            payload = _native_document(envelope)
+        except (
+            AttributeError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            RecursionError,
+        ):
+            return RuntimeResult(
+                RuntimeStatus.INTEGRITY_ERROR,
+                error="provider request deadline narrowing failed",
+            )
     if envelope.route in BROKERED_ROUTES:
         return _launch_broker(
             resolution=resolution,
             payload=payload,
-            timeout_ms=envelope.timeout_ms,
+            timeout_ms=remaining_ms,
             envelope=envelope,
         )
     return _launch_runtime(
         resolution=resolution,
         payload=payload,
-        timeout_ms=envelope.timeout_ms,
+        timeout_ms=remaining_ms,
         envelope=envelope,
     )
 

@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.3.1), and is
+This public repository distributes one package, **agent-collab** (v4.3.2), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -63,15 +63,20 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.3.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.3.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.3.1
+## What's new - v4.3.2
 
-- **Continuous provider adoption.** Provider requalification now uses the
-  verified staged candidate while an update is pending and the verified
-  selected dispatcher after commit. The client binds either role to the exact
-  co-packaged signed and notarized runtime identity and fails closed on any
-  mismatch, so post-commit requalification does not create an unavailable gap.
+- **One end-to-end collaboration deadline.** Automatic reviewer routing now
+  shares the caller's bounded timeout across policy resolution and every
+  eligible fallback instead of resetting the full budget for each provider.
+  A timed-out or teardown-unproven accepted request is terminal, so another
+  provider worker cannot overlap uncertain cleanup.
+- **Truthful busy-dispatcher readiness.** A successful exact selected-lane ping
+  proves callability even while another bounded request keeps the launchd job
+  active. Status observes quiescence for at most one second; the independent
+  `persistent_process` signal remains fail-closed for every lifecycle mutation
+  that requires the full idle proof.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
