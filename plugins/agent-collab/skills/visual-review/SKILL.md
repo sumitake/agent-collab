@@ -1,6 +1,6 @@
 ---
 name: visual-review
-version: 4.3.0
+version: 4.3.1
 defaults:
   tier: Advanced
   effort: high

@@ -11,7 +11,7 @@ active primary and its model, host, and session dynamically, enforces
 cross-family reviewer independence, and routes managed provider work (Codex,
 Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
 
-This public repository distributes one package, **agent-collab** (v4.3.0), and is
+This public repository distributes one package, **agent-collab** (v4.3.1), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -63,15 +63,15 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.3.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.3.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.3.0
+## What's new - v4.3.1
 
-- **Portable inbox-monitor lifecycle.** Adds `start-inbox-monitor`, one generated
-  skill that selects Codex persistent-goal/exec, Claude persistent Monitor, or
-  Antigravity wake-on-exit task semantics from current host evidence. It
-  preserves typed failures, requires positive startup proof, and never creates
-  schedules or weakens the sandbox.
+- **Continuous provider adoption.** Provider requalification now uses the
+  verified staged candidate while an update is pending and the verified
+  selected dispatcher after commit. The client binds either role to the exact
+  co-packaged signed and notarized runtime identity and fails closed on any
+  mismatch, so post-commit requalification does not create an unavailable gap.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 

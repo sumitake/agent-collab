@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 4.3.0
+version: 4.3.1
 defaults:
   tier: Fast
   effort: low

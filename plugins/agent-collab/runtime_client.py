@@ -7252,20 +7252,36 @@ def invoke_adoption_canary(*, request: object) -> RuntimeResult:
     try:
         payload = _adoption_canary_document(request)
         document = json.loads(payload.decode("ascii"))
+        resolution = resolve_runtime()
+        if resolution.status is not RuntimeStatus.OK:
+            return RuntimeResult(resolution.status, error=resolution.error)
         root = _broker_root()
         selector = _read_broker_selector_v2(root)
-        if selector is None or selector.get("candidate") is None:
+        if selector is None:
             return RuntimeResult(
                 RuntimeStatus.UNAVAILABLE,
-                error="staged provider dispatcher is unavailable",
+                error="provider adoption dispatcher is unavailable",
             )
+        role = "candidate" if selector.get("candidate") is not None else "selected"
+        lane_document = selector.get(role)
+        if lane_document is None:
+            return RuntimeResult(
+                RuntimeStatus.UNAVAILABLE,
+                error="provider adoption dispatcher is unavailable",
+            )
+        if (
+            type(lane_document) is not dict
+            or lane_document.get("artifact_sha256") != resolution.artifact_digest
+            or lane_document.get("manifest_sha256") != resolution.manifest_digest
+        ):
+            raise ValueError("provider adoption dispatcher identity mismatch")
         lane = _load_selector_v2_lane(
-            root, selector["candidate"], role="candidate"
+            root, lane_document, role=role
         )
     except (OSError, TypeError, ValueError, RecursionError):
         return RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
-            error="staged provider dispatcher identity is unproven",
+            error="provider adoption dispatcher identity is unproven",
         )
     deadline = time.monotonic() + document["timeout_ms"] / 1000.0
     try:
@@ -7283,14 +7299,14 @@ def invoke_adoption_canary(*, request: object) -> RuntimeResult:
     except _DispatcherPreRequestError:
         return RuntimeResult(
             RuntimeStatus.INTEGRITY_ERROR,
-            error="staged provider dispatcher bridge is unproven",
+            error="provider adoption dispatcher bridge is unproven",
         )
     except _DispatcherPostRequestError as exc:
         if exc.result is not None:
             return exc.result
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
-            error="staged provider dispatcher failed after canary acceptance",
+            error="provider adoption dispatcher failed after canary acceptance",
         )
     except (OSError, TypeError, ValueError):
         return RuntimeResult(
