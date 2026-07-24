@@ -300,6 +300,7 @@ SUPPORTED_CONTRACTS = frozenset(
         ("gemini", "governance"),
         ("gemini", "long_context"),
         ("codex", "advisory"),
+        ("codex", "governance"),
         ("opencode", "plan"),
         ("opencode", "build"),
         ("grok", "architecture"),
