@@ -7072,6 +7072,32 @@ time.sleep(10)
         self.assertFalse(created[0].exists())
         self.assertFalse(str(created[0]).startswith(str(self.root) + os.sep))
 
+    def test_launch_rejects_runtime_rewrite_before_private_response_pipe(
+        self,
+    ) -> None:
+        binary = self._fixture()
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root):
+            resolution = self.client.resolve_runtime()
+        self.assertEqual(resolution.status, self.client.RuntimeStatus.OK)
+
+        binary.chmod(0o700)
+        binary.write_bytes(binary.read_bytes() + b"\n# rewritten after resolution\n")
+        binary.chmod(0o500)
+
+        with mock.patch.object(self.client.subprocess, "Popen") as popen:
+            result = self.client._launch_runtime(
+                resolution=resolution,
+                payload=b"{}\n",
+                timeout_ms=1_000,
+                management_request_id="private-pipe-rewrite",
+            )
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.INTEGRITY_ERROR)
+        self.assertEqual(result.error, "runtime identity changed before launch")
+        popen.assert_not_called()
+
     def test_terminate_and_reap_is_deadline_bounded(self) -> None:
         # A child that never exits must NOT block the two fixed 5s waits past
         # the caller deadline: with an already-expired deadline the call does
