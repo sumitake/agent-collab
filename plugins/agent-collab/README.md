@@ -1,6 +1,11 @@
 # agent-collab
 
-`agent-collab` is the single dynamic-host collaboration package.
+`agent-collab` is the single dynamic-host collaboration package: the
+installable half of the governed multi-agent engineering model described in
+the [repository README](../../README.md) — cross-family review independence,
+verifiable compliance evidence, and operator final-say, delivered as one
+package for every supported host. This document is the package's technical
+reference; the repository README carries the purpose and governance narrative.
 
 Current: **4.3.4**
 

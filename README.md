@@ -4,14 +4,64 @@
 [![CodeQL](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml)
 [![Secret Scan](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml)
 
-**agent-collab** gives Claude, Codex, Antigravity, OpenCode, ZCode, and custom
-primary hosts one dynamic, governed collaboration surface, without publishing
-provider executors or maintaining host-specific plugin copies. It resolves the
-active primary and its model, host, and session dynamically, enforces
-cross-family reviewer independence, and routes managed provider work (Codex,
-Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
+**agent-collab** turns a collection of AI coding agents from different vendors —
+Claude, Codex, Gemini, Grok, and OpenCode-hosted models — into one governed
+engineering team: any of them can lead a session, delegate work to the others
+through managed, verified routes, and none of them can approve, merge, or
+expand its own authority without independent review from a different model
+family.
 
-This public repository distributes one package, **agent-collab** (v4.3.4), and is
+## Why this exists
+
+A single AI agent working alone has structural problems that no amount of
+prompting fixes. It shares blind spots with every other instance of its own
+model family, so the errors it makes are exactly the errors it cannot catch in
+review. It can misreport what it did — vendors themselves disclose
+reward-hacking behavior in frontier coding models — so its claims of "tests
+pass" or "review converged" need verification that does not come from itself.
+And when it can execute, review, and merge in one unaccountable loop, a single
+hallucination can propagate into governing documents and tooling unchecked.
+
+This project exists to close those three gaps structurally rather than by
+trust:
+
+- **Cross-family review independence.** Changes in the highest governance
+  tier — security-sensitive logic, schemas and contracts, and anything
+  touching merge authority — require review by a model family *different
+  from* both the author and the first reviewer, resolved dynamically at decision time and enforced fail-closed by
+  CI — not by convention. Different vendors' models fail differently; the
+  triangle catches what any one family pattern-matches past.
+- **Verifiable evidence, not narrative.** Merges carry machine-validated
+  compliance traces: quoted verdicts, reviewer identity and family, reviewed
+  commit SHA, and (for the Gemini leg) a signed broker proof. An agent's
+  self-report is never the evidence of record.
+- **Operator final-say with minimal operator load.** Agents coordinate with
+  each other by default and self-merge only inside codified tiers; anything
+  destructive, security-sensitive, or authority-changing routes to the human
+  operator. The operator can revert, redirect, or revoke at any time.
+
+## What it delivers in practice
+
+- **Coverage a single model cannot give you.** Adversarial review legs from
+  three or more vendor families on governance-grade changes; in production use
+  on this project, cross-family reviewers have repeatedly caught real defects
+  — silently drifted CI gates, falsified historical records, contract-weakening
+  edits — that same-family review missed.
+- **Cost-tiered delegation.** Bulk reading, mechanical codegen, and triage
+  route to the cheapest capable provider pool through managed routes; frontier
+  reasoning and merge judgment stay with the primary. Model and reasoning
+  effort are disclosed per invocation, so cost and quality are auditable.
+- **A hard security boundary around providers.** Provider CLIs are reached
+  only through a signed, notarized native runtime with per-member digest
+  verification, socket-activated zero-idle execution, and typed-unavailable
+  failure — never raw provider invocations, ambient credentials, or silent
+  fallbacks.
+- **One plugin for every host.** A single package serves Claude Code, Codex,
+  Antigravity, OpenCode, ZCode, and custom hosts, resolving the active
+  primary's identity, model, and session dynamically — no per-host forks to
+  drift out of sync.
+
+This public repository distributes that one package, **agent-collab** (v4.3.4), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -23,7 +73,6 @@ Contributors need no access to the private build/sign system. See
 [public governance](docs/public-governance.md),
 [migration guidance](docs/migration-from-legacy-packages.md), and the
 [security policy](SECURITY.md).
-
 ## What this is not
 
 - Not an open-source grant. It is source-available under the PolyForm Strict
