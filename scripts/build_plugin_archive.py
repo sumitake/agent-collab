@@ -127,6 +127,11 @@ REQUIRED_CONTRACTS = frozenset(
         ("composer", "codegen"),
     }
 )
+# Accepted-but-not-required routes; see verify_runtime_release.OPTIONAL_CONTRACTS
+# and the public client's REQUIRED/OPTIONAL partition. Explicit enumeration only
+# — an advertised route outside REQUIRED | OPTIONAL is still rejected.
+OPTIONAL_CONTRACTS = frozenset({("codex", "governance")})
+ACCEPTED_CONTRACTS = REQUIRED_CONTRACTS | OPTIONAL_CONTRACTS
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _EXCLUDED_PARTS = frozenset({".venv", "__pycache__"})
@@ -340,7 +345,8 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
             for record in records
         )
         or not isinstance(contracts_value, list)
-        or contracts != REQUIRED_CONTRACTS
+        or not REQUIRED_CONTRACTS <= contracts
+        or not contracts <= ACCEPTED_CONTRACTS
         or len(contracts_value) != len(contracts)
     ):
         raise ValueError("activation runtime manifest fields are invalid")

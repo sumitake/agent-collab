@@ -60,12 +60,26 @@ class CodexGovernanceContractTests(unittest.TestCase):
             frozenset({CONTRACT}),
         )
 
-    def test_signed_public_manifest_does_not_claim_unshipped_route(self) -> None:
+    def test_signed_public_manifest_now_ships_the_route_and_keeps_it_optional(
+        self,
+    ) -> None:
+        """The route is shipped as of v4.4.1, and stays OPTIONAL, not required.
+
+        Until v4.4.1 the client and schema accepted ``codex/governance`` while
+        the signed runtime deliberately did not advertise it, and this test
+        pinned that gap. The v4.4.1 runtime is built from a workspace source
+        closure where the route is a real read-only contract, so it now
+        advertises it. The invariant that still matters is the partition: the
+        route must remain accepted-but-not-required, so a runtime that omits
+        it continues to verify rather than being forced to claim it.
+        """
         advertised = {
             (row["route"], row["action"])
             for row in self.manifest["artifacts"][0]["contracts"]
         }
-        self.assertNotIn(CONTRACT, advertised)
+        self.assertIn(CONTRACT, advertised)
+        self.assertNotIn(CONTRACT, self.client.REQUIRED_CONTRACTS)
+        self.assertTrue(self.client.REQUIRED_CONTRACTS <= advertised)
 
     def test_optional_route_is_accepted_but_not_required_for_readiness(
         self,
@@ -112,6 +126,58 @@ class CodexGovernanceContractTests(unittest.TestCase):
             "set(client.SUPPORTED_CONTRACTS).difference(resolution.contracts)",
             source,
         )
+
+
+class ReleaseVerifierContractBoundsTests(unittest.TestCase):
+    """The release verifiers accept the enumerated optional route only.
+
+    v4.4.1 replaced their exact-equality contract check with a bounded
+    containment check (REQUIRED <= advertised <= REQUIRED | OPTIONAL). These
+    tests pin that it is BOUNDED: an unenumerated extra route is still
+    rejected, and the required baseline is still mandatory. Without this, the
+    change would read as an open superset that tolerates any future route.
+    """
+
+    def _modules(self):
+        root = Path(__file__).resolve().parent.parent
+        loaded = []
+        for name in ("verify_runtime_release", "build_plugin_archive"):
+            spec = importlib.util.spec_from_file_location(
+                f"_bounds_{name}", root / "scripts" / f"{name}.py"
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            loaded.append((name, module))
+        return loaded
+
+    def test_optional_set_is_exactly_the_codex_governance_route(self) -> None:
+        for name, module in self._modules():
+            with self.subTest(module=name):
+                self.assertEqual(
+                    module.OPTIONAL_CONTRACTS, frozenset({("codex", "governance")})
+                )
+                self.assertEqual(
+                    module.ACCEPTED_CONTRACTS,
+                    module.REQUIRED_CONTRACTS | module.OPTIONAL_CONTRACTS,
+                )
+                # optional must not overlap the mandatory baseline
+                self.assertFalse(
+                    module.REQUIRED_CONTRACTS & module.OPTIONAL_CONTRACTS
+                )
+
+    def test_unenumerated_extra_route_is_not_accepted(self) -> None:
+        rogue = ("attacker", "exfiltrate")
+        for name, module in self._modules():
+            with self.subTest(module=name):
+                advertised = module.REQUIRED_CONTRACTS | {rogue}
+                self.assertFalse(advertised <= module.ACCEPTED_CONTRACTS)
+
+    def test_missing_required_route_is_not_accepted(self) -> None:
+        for name, module in self._modules():
+            with self.subTest(module=name):
+                short = set(module.REQUIRED_CONTRACTS)
+                short.pop()
+                self.assertFalse(module.REQUIRED_CONTRACTS <= short)
 
 
 if __name__ == "__main__":

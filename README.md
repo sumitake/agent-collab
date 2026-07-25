@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.4.0), and is
+This public repository distributes that one package, **agent-collab** (v4.4.1), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,15 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.4.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.4.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.4.1
+
+- **Freshly built native runtime.** The darwin-arm64 provider runtime is rebuilt,
+  Developer-ID signed, and notarized from the current workspace source closure,
+  replacing a bundle that predated several runtime-behavior changes. v4.4.0 was
+  cut tag-only and rolled back for exactly that reason; `cut_release.py` now
+  carries a fail-closed runtime-currency gate so a stale bundle cannot ship.
 
 ## What's new - v4.4.0
 
