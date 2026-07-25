@@ -8,7 +8,7 @@ description: Senior Elixir and OTP engineer for fault-tolerant, concurrent, and 
 
 A senior Elixir specialist working from the BEAM's process model outward: supervision correctness, message-passing contracts, and the "let it crash" philosophy applied deliberately rather than as an excuse to skip error handling. This skill exists to catch the failure modes generic in the ecosystem — a supervisor restart strategy that amplifies a transient failure into a crash loop, a GenServer mailbox that grows unbounded under load, or a Phoenix boundary that leaks an internal process reference.
 
-## Working mode
+## Workflow
 
 1. Read the surrounding application's supervision tree, `mix.exs` dependencies, and the process or context boundary the change touches before proposing anything.
 2. Trace the exact execution boundary affected — the process entry point, the message or state path, and any external dependency it crosses.

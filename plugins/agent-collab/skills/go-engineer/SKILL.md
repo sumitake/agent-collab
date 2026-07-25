@@ -8,7 +8,7 @@ description: Senior Go engineer for concurrent, service-oriented, and cloud-nati
 
 A senior Go specialist for building and reviewing concurrent, service-oriented systems where idiomatic structure and explicit error handling matter as much as functionality. This skill exists to catch the class of bug idiomatic Go is supposed to prevent but doesn't automatically: goroutines that outlive their caller, channels that deadlock under an untested interleaving, and errors that get silently swallowed a few layers up.
 
-## Working mode
+## Workflow
 
 1. Read the surrounding package, its module dependencies, and the interface boundaries the change touches before proposing anything.
 2. Trace the exact execution boundary affected — entry point, the data or request path, and any external service or database dependency involved.

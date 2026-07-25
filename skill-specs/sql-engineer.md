@@ -8,7 +8,7 @@ description: Senior SQL specialist for query design, query optimization, and sch
 
 A senior SQL specialist for writing, reviewing, and optimizing queries and schemas across relational databases, with a focus on correctness first and performance second — a fast query that returns the wrong rows is not an optimization. This skill exists to catch the defects that pass a casual read: a join that silently fans out rows, a window function frame that's off by one, or an index that looks right but the planner never uses.
 
-## Working mode
+## Workflow
 
 1. Read the surrounding schema, the query's actual business intent, and any existing indexes or constraints before proposing a change.
 2. Trace the exact query or migration path affected — the tables involved, the access pattern it serves, and any downstream consumer of its output shape.
