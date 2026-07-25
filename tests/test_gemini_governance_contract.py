@@ -283,6 +283,43 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         proof["proof_sha256"] = hashlib.sha256(canonical).hexdigest()
         return proof
 
+    @staticmethod
+    def _resign_proof(proof: dict[str, object]) -> dict[str, object]:
+        proof.pop("proof_sha256", None)
+        canonical = json.dumps(
+            proof, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+        proof["proof_sha256"] = hashlib.sha256(canonical).hexdigest()
+        return proof
+
+    def _proof_v2(
+        self,
+        envelope,
+        text: str,
+        *,
+        recovered: bool,
+        runtime_version: str = "2.0.0",
+        contract_version: int = 2,
+    ) -> dict[str, object]:
+        proof = self._proof(
+            envelope,
+            text,
+            runtime_version=runtime_version,
+            contract_version=contract_version,
+        )
+        proof["version"] = 2
+        proof["proof_schema_capability"] = "gemini_governance_recovery_v2"
+        proof["provider_binary_sha256"] = "c" * 64
+        proof["execution_attempts"] = 2 if recovered else 1
+        proof["recovery_applied"] = recovered
+        proof["first_attempt_status"] = (
+            "contained_tool_no_answer" if recovered else "none"
+        )
+        proof["recovery_reason"] = (
+            "empty_answer_after_contained_tool" if recovered else "none"
+        )
+        return self._resign_proof(proof)
+
     def _response(
         self,
         envelope,
@@ -321,6 +358,29 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
                 host_runtime=provenance_host_runtime,
             ),
         }
+
+    def _response_v2(
+        self,
+        envelope,
+        *,
+        recovered: bool,
+        text: str = "approved",
+    ) -> dict[str, object]:
+        response = self._response(envelope, text=text)
+        proof = self._proof_v2(
+            envelope,
+            text,
+            recovered=recovered,
+        )
+        response["result"]["governance_proof"] = proof
+        for key in (
+            "execution_attempts",
+            "recovery_applied",
+            "first_attempt_status",
+            "recovery_reason",
+        ):
+            response["result"][key] = proof[key]
+        return response
 
     def _anchor(
         self, runtime_version: str = "2.0.0", contract_version: int = 2
@@ -380,6 +440,178 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         )
         result = self._parse(response, envelope)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+
+    def test_execute_accepts_exact_recovery_capable_v2_contracts(self) -> None:
+        envelope = self._envelope()
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered):
+                response = self._response_v2(envelope, recovered=recovered)
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.OK,
+                    result.error,
+                )
+
+    def test_public_proof_keyset_registry_names_both_exact_contracts(self) -> None:
+        self.assertEqual(
+            self.client.GEMINI_GOVERNANCE_PROOF_KEYSETS,
+            frozenset(
+                {
+                    self.client.GEMINI_GOVERNANCE_PROOF_V1_KEYS,
+                    self.client.GEMINI_GOVERNANCE_PROOF_V2_KEYS,
+                }
+            ),
+        )
+        self.assertIs(
+            self.client.GEMINI_GOVERNANCE_PROOF_KEYS,
+            self.client.GEMINI_GOVERNANCE_PROOF_V1_KEYS,
+        )
+
+    def test_complete_v1_contract_remains_a_deliberate_rollback_schema(
+        self,
+    ) -> None:
+        envelope = self._envelope()
+        response = self._response_v2(envelope, recovered=True)
+        proof = response["result"]["governance_proof"]
+        for field in self.client.GEMINI_GOVERNANCE_RESULT_V2_ONLY_KEYS:
+            response["result"].pop(field)
+        for field in self.client.GEMINI_GOVERNANCE_PROOF_V2_ONLY_KEYS:
+            proof.pop(field)
+        proof["version"] = 1
+        self._resign_proof(proof)
+
+        result = self._parse(response, envelope)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK, result.error)
+
+    def test_execute_v2_discriminants_never_fall_back_to_v1(self) -> None:
+        envelope = self._envelope()
+        v2_result_fields = (
+            "execution_attempts",
+            "recovery_applied",
+            "first_attempt_status",
+            "recovery_reason",
+        )
+        v2_proof_fields = (
+            "proof_schema_capability",
+            "provider_binary_sha256",
+            *v2_result_fields,
+        )
+
+        for field in v2_result_fields:
+            with self.subTest(location="result", field=field):
+                response = self._response(envelope)
+                response["result"][field] = (
+                    1
+                    if field == "execution_attempts"
+                    else False
+                    if field == "recovery_applied"
+                    else "none"
+                )
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        for field in v2_proof_fields:
+            with self.subTest(location="proof", field=field):
+                response = self._response(envelope)
+                proof = response["result"]["governance_proof"]
+                proof[field] = (
+                    "gemini_governance_recovery_v2"
+                    if field == "proof_schema_capability"
+                    else "c" * 64
+                    if field == "provider_binary_sha256"
+                    else 1
+                    if field == "execution_attempts"
+                    else False
+                    if field == "recovery_applied"
+                    else "none"
+                )
+                self._resign_proof(proof)
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        response = self._response_v2(envelope, recovered=False)
+        response["result"]["governance_proof"]["version"] = 1
+        self._resign_proof(response["result"]["governance_proof"])
+        self.assertEqual(
+            self._parse(response, envelope).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+        response = self._response(envelope)
+        response["result"]["governance_proof"]["version"] = 2
+        self._resign_proof(response["result"]["governance_proof"])
+        self.assertEqual(
+            self._parse(response, envelope).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+    def test_execute_v2_recovery_tuple_and_types_are_closed(self) -> None:
+        envelope = self._envelope()
+        invalid_updates = (
+            {"execution_attempts": True},
+            {"execution_attempts": "1"},
+            {"recovery_applied": 1},
+            {"recovery_applied": "false"},
+            {"first_attempt_status": None},
+            {"recovery_reason": None},
+            {"execution_attempts": 2},
+            {"recovery_applied": True},
+            {"first_attempt_status": "contained_tool_no_answer"},
+            {"recovery_reason": "empty_answer_after_contained_tool"},
+            {"proof_schema_capability": "unknown"},
+            {"provider_binary_sha256": "not-a-digest"},
+        )
+        for updates in invalid_updates:
+            with self.subTest(updates=updates):
+                response = self._response_v2(envelope, recovered=False)
+                proof = response["result"]["governance_proof"]
+                proof.update(updates)
+                for key in (
+                    "execution_attempts",
+                    "recovery_applied",
+                    "first_attempt_status",
+                    "recovery_reason",
+                ):
+                    if key in updates:
+                        response["result"][key] = updates[key]
+                self._resign_proof(proof)
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        response = self._response_v2(envelope, recovered=True)
+        response["result"]["execution_attempts"] = 1
+        self.assertEqual(
+            self._parse(response, envelope).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+    def test_execute_v2_remains_bound_to_request_artifact_and_answer(self) -> None:
+        envelope = self._envelope()
+        for field, value in (
+            ("request_id", "another-request"),
+            ("artifact_sha256", "d" * 64),
+            ("response_sha256", "e" * 64),
+        ):
+            with self.subTest(field=field):
+                response = self._response_v2(envelope, recovered=True)
+                proof = response["result"]["governance_proof"]
+                proof[field] = value
+                self._resign_proof(proof)
+                result = self._parse(response, envelope)
+                self.assertEqual(
+                    result.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
 
     def test_execute_rejects_legacy_or_crossed_proof_versions(self) -> None:
         envelope = self._envelope()

@@ -355,7 +355,34 @@ FIXED_AUTHOR_MODELS = {
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_DISPLAY = "Gemini 3.1 Pro (High)"
 GEMINI_GOVERNANCE_CONTAINMENT = "write_contained_shared_home"
-GEMINI_GOVERNANCE_PROOF_KEYS = frozenset(
+GEMINI_GOVERNANCE_RESULT_V1_KEYS = frozenset(
+    {
+        "text",
+        "containment_level",
+        "tools_disabled",
+        "pty_used",
+        "lock_acquired",
+        "cleanup_confirmed",
+        "selected_display",
+        "governance_evidence",
+        "artifact_sha256",
+        "artifact_author_model",
+        "artifact_author_family",
+        "governance_proof",
+    }
+)
+GEMINI_GOVERNANCE_RESULT_V2_ONLY_KEYS = frozenset(
+    {
+        "execution_attempts",
+        "recovery_applied",
+        "first_attempt_status",
+        "recovery_reason",
+    }
+)
+GEMINI_GOVERNANCE_RESULT_V2_KEYS = (
+    GEMINI_GOVERNANCE_RESULT_V1_KEYS | GEMINI_GOVERNANCE_RESULT_V2_ONLY_KEYS
+)
+GEMINI_GOVERNANCE_PROOF_V1_KEYS = frozenset(
     {
         "version",
         "request_id",
@@ -383,6 +410,42 @@ GEMINI_GOVERNANCE_PROOF_KEYS = frozenset(
         "failed_over",
         "response_sha256",
         "proof_sha256",
+    }
+)
+GEMINI_GOVERNANCE_PROOF_V2_ONLY_KEYS = frozenset(
+    {
+        "proof_schema_capability",
+        "provider_binary_sha256",
+        "execution_attempts",
+        "recovery_applied",
+        "first_attempt_status",
+        "recovery_reason",
+    }
+)
+GEMINI_GOVERNANCE_PROOF_V2_KEYS = (
+    GEMINI_GOVERNANCE_PROOF_V1_KEYS | GEMINI_GOVERNANCE_PROOF_V2_ONLY_KEYS
+)
+# Public registry for callers that need to recognize either exact schema.
+# An individual proof MUST equal one member; the union is not itself a schema.
+GEMINI_GOVERNANCE_PROOF_KEYSETS = frozenset(
+    {
+        GEMINI_GOVERNANCE_PROOF_V1_KEYS,
+        GEMINI_GOVERNANCE_PROOF_V2_KEYS,
+    }
+)
+# Backward-compatible alias for callers that explicitly inspect the legacy
+# contract. New dual-version consumers use GEMINI_GOVERNANCE_PROOF_KEYSETS.
+GEMINI_GOVERNANCE_PROOF_KEYS = GEMINI_GOVERNANCE_PROOF_V1_KEYS
+GEMINI_GOVERNANCE_PROOF_V2_CAPABILITY = "gemini_governance_recovery_v2"
+GEMINI_GOVERNANCE_RECOVERY_TUPLES = frozenset(
+    {
+        (1, False, "none", "none"),
+        (
+            2,
+            True,
+            "contained_tool_no_answer",
+            "empty_answer_after_contained_tool",
+        ),
     }
 )
 TEMPORARILY_UNAVAILABLE_CONTRACTS = {
@@ -6690,22 +6753,37 @@ def _gemini_governance_execute_result_valid(
     provenance: Mapping[str, Any],
     anchor: RuntimeContractAnchor,
 ) -> bool:
-    expected_result_keys = {
-        "text",
-        "containment_level",
-        "tools_disabled",
-        "pty_used",
-        "lock_acquired",
-        "cleanup_confirmed",
-        "selected_display",
-        "governance_evidence",
-        "artifact_sha256",
-        "artifact_author_model",
-        "artifact_author_family",
-        "governance_proof",
-    }
+    # Proof hashes are response-consistency checks, not signatures. Schema
+    # choice is trusted only inside _launch_runtime's verified-runtime/private-
+    # pipe boundary: the selected executable identity is rechecked immediately
+    # before a direct child launch, and stdout is an anonymous OS pipe with no
+    # external response-ingest path. A party able to rewrite that executable,
+    # its process memory, or its private pipe is already inside the native
+    # runtime trust domain and could forge either complete schema. Retained v1
+    # therefore remains intentionally acceptable for rollback continuity; any
+    # v2 discriminator that actually arrives selects v2 exclusively.
     text = result.get("text")
     proof = result.get("governance_proof")
+    if type(proof) is not dict:
+        return False
+    recovery_contract = (
+        bool(set(result) & GEMINI_GOVERNANCE_RESULT_V2_ONLY_KEYS)
+        or bool(set(proof) & GEMINI_GOVERNANCE_PROOF_V2_ONLY_KEYS)
+        or (
+            type(proof.get("version")) is int
+            and proof.get("version") == 2
+        )
+    )
+    expected_result_keys = (
+        GEMINI_GOVERNANCE_RESULT_V2_KEYS
+        if recovery_contract
+        else GEMINI_GOVERNANCE_RESULT_V1_KEYS
+    )
+    expected_proof_keys = (
+        GEMINI_GOVERNANCE_PROOF_V2_KEYS
+        if recovery_contract
+        else GEMINI_GOVERNANCE_PROOF_V1_KEYS
+    )
     if (
         set(result) != expected_result_keys
         or type(text) is not str
@@ -6720,13 +6798,12 @@ def _gemini_governance_execute_result_valid(
         or result.get("artifact_sha256") != envelope.artifact_sha256
         or result.get("artifact_author_model") != envelope.artifact_author_model
         or result.get("artifact_author_family") != envelope.artifact_author_family
-        or type(proof) is not dict
-        or set(proof) != GEMINI_GOVERNANCE_PROOF_KEYS
+        or set(proof) != expected_proof_keys
     ):
         return False
 
     expected_scalars = {
-        "version": 1,
+        "version": 2 if recovery_contract else 1,
         "request_id": envelope.request_id,
         "action": "governance",
         "authority": "read_only",
@@ -6752,11 +6829,40 @@ def _gemini_governance_execute_result_valid(
         "failed_over": False,
         "response_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
     }
+    if recovery_contract:
+        expected_scalars["proof_schema_capability"] = (
+            GEMINI_GOVERNANCE_PROOF_V2_CAPABILITY
+        )
     if any(
         type(proof.get(key)) is not type(expected) or proof.get(key) != expected
         for key, expected in expected_scalars.items()
     ):
         return False
+    if recovery_contract:
+        recovery_fields = (
+            "execution_attempts",
+            "recovery_applied",
+            "first_attempt_status",
+            "recovery_reason",
+        )
+        expected_types = (int, bool, str, str)
+        if (
+            type(proof.get("provider_binary_sha256")) is not str
+            or _SHA256_RE.fullmatch(proof["provider_binary_sha256"]) is None
+            or any(
+                type(proof.get(key)) is not expected_type
+                or type(result.get(key)) is not expected_type
+                or result.get(key) != proof.get(key)
+                for key, expected_type in zip(
+                    recovery_fields,
+                    expected_types,
+                    strict=True,
+                )
+            )
+            or tuple(proof[key] for key in recovery_fields)
+            not in GEMINI_GOVERNANCE_RECOVERY_TUPLES
+        ):
+            return False
     if (
         provenance.get("author_model") != proof.get("reviewer_model")
         or provenance.get("author_family") != proof.get("reviewer_family")

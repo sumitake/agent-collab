@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.3.4), and is
+This public repository distributes that one package, **agent-collab** (v4.3.5), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,14 +129,17 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.3.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.3.5 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.3.4
+## What's new - v4.3.5
 
-- **Truthful runtime-wide readiness.** Migration doctor now distinguishes
-  contracts accepted by the client from the baseline contracts every signed
-  runtime must advertise. The unshipped `codex/governance` route remains
-  individually unavailable without blocking the verified ten-route runtime.
+- **Continuity-safe Gemini governance proofs.** The public runtime client now
+  accepts the exact legacy proof-v1 contract and the exact recovery-capable
+  proof-v2 contract as disjoint schemas. Any v2 discriminator selects strict
+  v2 validation with no fallback to v1, preserving callable retained lanes
+  while rejecting partial, hybrid, coerced, or contradictory recovery claims.
+  The documented trust boundary makes explicit that these are consistency
+  proofs carried by a verified child runtime, not cryptographic signatures.
 
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -224,6 +227,18 @@ Gemini uses the managed agy backend with canonical passwd HOME, mandatory PTY,
 serialized state, and write containment. `gemini/governance` is distinct from
 advisory/long-context and emits complete artifact-bound broker proof; ordinary
 Gemini output cannot be presented as governance evidence.
+Proof v1 and v2 are exact, disjoint response-consistency schemas, not
+cryptographic attestations. The proof hash catches malformed or inconsistent
+output inside the verified native-runtime boundary; it does not claim to defeat
+a process that can already rewrite the verified runtime or its private
+anonymous stdout pipe. The client rechecks the selected executable identity
+immediately before direct child launch, uses no external response-ingest path,
+and rejects any runtime rewrite before opening that pipe. Within that boundary,
+a complete legacy v1 proof remains intentionally accepted for retained-lane
+rollback continuity, while any received v2 discriminator selects only the v2
+schema. Dual-version consumers should use
+`GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
+`GEMINI_GOVERNANCE_PROOF_KEYS` name remains a v1-only compatibility alias.
 
 The broker rejects cross-UID, stale/replayed, substituted-artifact, and
 connecting-process mismatches. It does not claim to protect provider

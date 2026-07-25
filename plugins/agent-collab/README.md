@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.3.4**
+Current: **4.3.5**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -64,7 +64,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.3.4 package.
+identify this same 4.3.5 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -137,7 +137,16 @@ those proof-domain versions remain separate from public bundle manifest
 contract `3`. Governance response provenance must identify that same compatible
 runtime version; legacy, crossed, or mixed-provenance tuples fail closed. This
 is a response-consistency check inside the broker transport trust boundary, not
-a separate provenance-attestation mechanism.
+a separate provenance-attestation mechanism. Its hash is not a signature: a
+process able to rewrite the verified runtime, its memory, or its anonymous
+stdout pipe is already inside the native-runtime trust domain and could forge
+either complete schema. The client rechecks the selected executable identity
+immediately before direct child launch and has no external response-ingest
+path, so a runtime rewrite fails before that private pipe opens. Within this
+explicit boundary, complete legacy v1 remains intentionally acceptable for
+retained-lane rollback continuity; any received v2 discriminator selects only
+v2. Dual-version callers use `GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
+`GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only.
 
 No signed artifact is present in this source tree yet. Native **Gemini
 advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**,
