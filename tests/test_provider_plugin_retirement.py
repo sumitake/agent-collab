@@ -56,7 +56,7 @@ class ProviderPluginRetirementTests(unittest.TestCase):
             "Codex build",
             "OpenCode plan",
             "OpenCode build",
-            "opencode/glm-5.2",
+            "opencode-go/glm-5.2",
             "Zhipu",
             "Grok 4.5",
             "`composer/codegen` compatibility",

@@ -1,6 +1,6 @@
 ---
 name: elixir-engineer
-version: 4.4.2
+version: 4.5.0
 description: Senior Elixir and OTP engineer for fault-tolerant, concurrent, and Phoenix-based systems. Use when the user says "review this supervision tree", "why did this GenServer crash", "help me design this OTP process architecture", or "/agent-collab:elixir-engineer." Also offer this proactively when a change adds a new process, alters a restart strategy, or touches a Phoenix channel or LiveView boundary.
 ---
 

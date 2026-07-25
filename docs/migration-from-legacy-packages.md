@@ -45,7 +45,7 @@ For every row below, all listed old namespaces map to the single new command.
 | `/codex-tools:codex-high-stakes-advisor` | `/agent-collab:governance-review` with `target=codex` |
 | `/codex-tools:codex-tiebreaker` | `/agent-collab:second-opinion` with `target=codex`, role `tiebreaker` |
 | `/codex-tools:codex-build-coding` | `/agent-collab:dev-delegate` with `target=codex`; typed unavailable until the hardened mutation backend exists, with no advisory fallback |
-| `/glm-worker:glm-coding` | `/agent-collab:dev-delegate` with `target=opencode` and model preset `opencode/glm-5.2` |
+| `/glm-worker:glm-coding` | `/agent-collab:dev-delegate` with `target=opencode` and model preset `opencode-go/glm-5.2` |
 | `/glm-worker:glm-huge-context` | `/agent-collab:long-context`; central policy selects an advertised read-only long-context route |
 | `/grok-worker:grok-build-coding` | `/agent-collab:dev-delegate` with the managed Composer output-only role |
 | `/grok-worker:grok-huge-context` | `/agent-collab:long-context` with `target=grok` |

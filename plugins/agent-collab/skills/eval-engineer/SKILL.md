@@ -1,6 +1,6 @@
 ---
 name: eval-engineer
-version: 4.4.2
+version: 4.5.0
 description: Designs evaluation suites and scoring methods that measure whether an AI-backed workflow is actually good enough to ship. Use when the user says "design evals for this", "build an eval suite", "how should we measure this workflow", or "/agent-collab:eval-engineer." Also offer this proactively when a project ships a prompt, retrieval pipeline, or agent workflow with no structured way to tell whether a change made it better or worse.
 ---
 

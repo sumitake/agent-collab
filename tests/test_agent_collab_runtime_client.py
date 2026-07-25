@@ -6924,7 +6924,7 @@ print(json.dumps({{
             "route": "opencode",
             "action": "plan",
             "authority": envelope.authority,
-            "author_model": "opencode/glm-5.2",
+            "author_model": "opencode-go/glm-5.2",
             "author_family": "zhipu",
             "host_runtime": "fixture-runtime",
             "session_identifier": "fixture-session",
@@ -7621,6 +7621,242 @@ time.sleep(10)
                 json.loads(decision.envelope.row_json)["model"],
                 policy.DEFAULT_OPENCODE_MODEL,
             )
+
+    def test_opencode_packaged_default_uses_go_provider(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            decision = policy.issue_policy_envelope(
+                request_id="opencode-go-default",
+                route="opencode",
+                action="plan",
+                governance=False,
+                prompt="plan",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "custom",
+                    "active_model": "custom/unknown",
+                    "host_runtime": "custom",
+                    "session_identifier": "s-1",
+                },
+                row_config={"cwd": "/tmp/project"},
+            )
+        self.assertIsNotNone(decision.envelope, decision.warning)
+        assert decision.envelope is not None
+        self.assertEqual(
+            json.loads(decision.envelope.row_json)["model"],
+            "opencode-go/glm-5.2",
+        )
+
+    def test_opencode_go_provider_guard_allows_go_models(self) -> None:
+        policy = self.client._load_host_policy()
+        cases = (
+            ("opencode-go/glm-5.2", "zhipu"),
+            ("opencode-go/kimi-k3", "moonshot"),
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"AGENT_COLLAB_OPENCODE_PROVIDER": "opencode-go"},
+            clear=False,
+        ), mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            for model, family in cases:
+                with self.subTest(model=model):
+                    decision = policy.issue_policy_envelope(
+                        request_id=f"go-{family}",
+                        route="opencode",
+                        action="plan",
+                        governance=False,
+                        prompt="plan",
+                        timeout_ms=30_000,
+                        explicit_config={
+                            "primary_id": "custom",
+                            "active_model": "custom/unknown",
+                            "host_runtime": "custom",
+                            "session_identifier": "s-1",
+                            "opencode_model": model,
+                        },
+                        row_config={"cwd": "/tmp/project"},
+                    )
+                    self.assertIsNotNone(decision.envelope, decision.warning)
+                    assert decision.envelope is not None
+                    self.assertEqual(decision.envelope.target_author_family, family)
+
+    def test_opencode_go_provider_guard_rejects_non_go_namespaces(self) -> None:
+        policy = self.client._load_host_policy()
+        cases = (
+            "opencode/glm-5.2",
+            "opencode-go.evil/glm-5.2",
+            "glm-5.2",
+            " opencode-go/glm-5.2 ",
+        )
+        with mock.patch.dict(
+            os.environ,
+            {"AGENT_COLLAB_OPENCODE_PROVIDER": "opencode-go"},
+            clear=False,
+        ), mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            for index, model in enumerate(cases):
+                with self.subTest(model=model):
+                    decision = policy.issue_policy_envelope(
+                        request_id=f"reject-provider-{index}",
+                        route="opencode",
+                        action="plan",
+                        governance=False,
+                        prompt="plan",
+                        timeout_ms=30_000,
+                        explicit_config={
+                            "primary_id": "custom",
+                            "active_model": "custom/unknown",
+                            "host_runtime": "custom",
+                            "session_identifier": "s-1",
+                            "opencode_model": model,
+                        },
+                        row_config={"cwd": "/tmp/project"},
+                    )
+                    self.assertEqual(
+                        decision.status,
+                        policy.PreflightStatus.CONFIG_ERROR,
+                    )
+                    self.assertIsNone(decision.envelope)
+                    self.assertIn("OpenCode Go provider policy", decision.warning)
+
+    def test_opencode_provider_guard_rejects_malformed_policy(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            for index, configured_provider in enumerate(
+                ("", "opencode", "opencode-go ", "OPENCODE-GO")
+            ):
+                with self.subTest(configured_provider=configured_provider), mock.patch.dict(
+                    os.environ,
+                    {"AGENT_COLLAB_OPENCODE_PROVIDER": configured_provider},
+                    clear=False,
+                ):
+                    decision = policy.issue_policy_envelope(
+                        request_id=f"bad-provider-policy-{index}",
+                        route="opencode",
+                        action="plan",
+                        governance=False,
+                        prompt="plan",
+                        timeout_ms=30_000,
+                        explicit_config={
+                            "primary_id": "custom",
+                            "active_model": "custom/unknown",
+                            "host_runtime": "custom",
+                            "session_identifier": "s-1",
+                            "opencode_model": "opencode-go/glm-5.2",
+                        },
+                        row_config={"cwd": "/tmp/project"},
+                    )
+                    self.assertEqual(
+                        decision.status,
+                        policy.PreflightStatus.CONFIG_ERROR,
+                    )
+                    self.assertIsNone(decision.envelope)
+                    self.assertIn("provider policy is invalid", decision.warning)
+
+    def test_opencode_go_provider_guard_rejects_live_zen_observation(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.dict(
+            os.environ,
+            {"AGENT_COLLAB_OPENCODE_PROVIDER": "opencode-go"},
+            clear=False,
+        ), mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            decision = policy.issue_policy_envelope(
+                request_id="reject-live-zen",
+                route="opencode",
+                action="plan",
+                governance=False,
+                prompt="plan",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "zcode",
+                    "active_model": "opencode/glm-5.2",
+                    "host_runtime": "opencode",
+                    "session_identifier": "z-1",
+                    "opencode_model": "opencode-go/glm-5.2",
+                },
+                row_config={"cwd": "/tmp/project"},
+            )
+        self.assertEqual(decision.status, policy.PreflightStatus.CONFIG_ERROR)
+        self.assertIsNone(decision.envelope)
+        self.assertIn("OpenCode Go provider policy", decision.warning)
+
+    def test_opencode_go_provider_guard_blocks_zen_during_preflight(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.dict(
+            os.environ,
+            {"AGENT_COLLAB_OPENCODE_PROVIDER": "opencode-go"},
+            clear=False,
+        ), mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            outcome = policy.startup_preflight(
+                governance=False,
+                explicit_config={
+                    "primary_id": "custom",
+                    "active_model": "custom/unknown",
+                    "host_runtime": "custom",
+                    "session_identifier": "s-1",
+                    "opencode_model": "opencode/glm-5.2",
+                },
+                active_legacy_packages=(),
+                safe_mode=False,
+            )
+        self.assertEqual(outcome.status, policy.PreflightStatus.CONFIG_ERROR)
+        self.assertEqual(outcome.eligible_routes, ())
+        self.assertIn("OpenCode Go provider policy", outcome.warning)
+
+    def test_native_revalidation_applies_current_opencode_provider_guard(self) -> None:
+        policy = self.client._load_host_policy()
+        with mock.patch.object(
+            policy,
+            "_runtime_contracts",
+            return_value=(frozenset({("opencode", "plan")}), "digest-1"),
+        ):
+            decision = policy.issue_policy_envelope(
+                request_id="late-provider-guard",
+                route="opencode",
+                action="plan",
+                governance=False,
+                prompt="plan",
+                timeout_ms=30_000,
+                explicit_config={
+                    "primary_id": "custom",
+                    "active_model": "custom/unknown",
+                    "host_runtime": "custom",
+                    "session_identifier": "s-1",
+                    "opencode_model": "opencode/glm-5.2",
+                },
+                row_config={"cwd": "/tmp/project"},
+            )
+        self.assertIsNotNone(decision.envelope, decision.warning)
+        assert decision.envelope is not None
+        with mock.patch.dict(
+            os.environ,
+            {"AGENT_COLLAB_OPENCODE_PROVIDER": "opencode-go"},
+            clear=False,
+        ), self.assertRaisesRegex(ValueError, "OpenCode Go provider policy"):
+            self.client._native_document(decision.envelope)
 
 
 if __name__ == "__main__":
