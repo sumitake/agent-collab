@@ -35,15 +35,14 @@ REQUIRED_CONTRACTS = frozenset(
         ("grok", "governance"),
         ("grok", "huge_context"),
         ("composer", "codegen"),
+        # Shipped as of v4.4.1. REQUIRED here, not optional: a release gate
+        # validates what WE are about to publish, so requiring the route stops
+        # a future cut from silently dropping a governance capability. The
+        # public client keeps it OPTIONAL because it validates whatever is
+        # already installed, including older field artifacts that predate it.
+        ("codex", "governance"),
     }
 )
-# Accepted-but-not-required routes, mirroring the public client's
-# REQUIRED/OPTIONAL partition (runtime_client.py). A runtime MAY advertise
-# these; one that omits them still verifies. Membership here is an explicit
-# enumeration, never an open superset: an advertised route outside
-# REQUIRED | OPTIONAL is still rejected.
-OPTIONAL_CONTRACTS = frozenset({("codex", "governance")})
-ACCEPTED_CONTRACTS = REQUIRED_CONTRACTS | OPTIONAL_CONTRACTS
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.IGNORECASE)
 _CODESIGN_TIMESTAMP_RE = re.compile(r"(?m)^Timestamp=(.+)$")
@@ -405,11 +404,7 @@ def verify_release(
         )
     except (KeyError, TypeError):
         contracts = frozenset()
-    if (
-        not REQUIRED_CONTRACTS <= contracts
-        or not contracts <= ACCEPTED_CONTRACTS
-        or len(item.get("contracts", [])) != len(contracts)
-    ):
+    if contracts != REQUIRED_CONTRACTS or len(item.get("contracts", [])) != len(contracts):
         errors.append(
             "runtime artifact does not advertise the exact required route/action contract"
         )

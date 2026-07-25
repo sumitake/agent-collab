@@ -137,18 +137,10 @@ class PluginArchiveTests(unittest.TestCase):
                 }
             )
         records.sort(key=lambda item: item["path"].encode("utf-8"))
-        contracts = (
-            ("gemini", "advisory"),
-            ("gemini", "governance"),
-            ("gemini", "long_context"),
-            ("codex", "advisory"),
-            ("opencode", "plan"),
-            ("opencode", "build"),
-            ("grok", "architecture"),
-            ("grok", "governance"),
-            ("grok", "huge_context"),
-            ("composer", "codegen"),
-        )
+        # Derive from the builder's own allowlist rather than restating it:
+        # a hardcoded copy here silently rots when the required set changes
+        # (it did, when codex/governance became required in v4.4.1).
+        contracts = tuple(sorted(self.builder.REQUIRED_CONTRACTS))
         manifest = {
             "schema_version": 3,
             "protocol_version": 2,

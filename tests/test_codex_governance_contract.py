@@ -128,77 +128,63 @@ class CodexGovernanceContractTests(unittest.TestCase):
         )
 
 
-class ReleaseVerifierContractBoundsTests(unittest.TestCase):
-    """The release verifiers accept the enumerated optional route only.
+class ReleaseGateRequiresCodexGovernanceTests(unittest.TestCase):
+    """v4.4.1 requires codex/governance at the RELEASE gates, not optionally.
 
-    All THREE copies are covered (verify_runtime_release, build_plugin_archive,
-    check-public-export-safety) — the third was missed on the first pass and
-    only CI's --active-tree run caught it.
-
-    v4.4.1 replaced their exact-equality contract check with a bounded
-    containment check (REQUIRED <= advertised <= REQUIRED | OPTIONAL). These
-    tests pin that it is BOUNDED: an unenumerated extra route is still
-    rejected, and the required baseline is still mandatory. Without this, the
-    change would read as an open superset that tolerates any future route.
+    Release gates validate what this repository is about to publish, so the
+    route is REQUIRED there: a later cut that silently omits it must fail
+    rather than quietly regress a governance capability (Tier 3 review
+    condition). The public client keeps it OPTIONAL because it validates
+    whatever is already installed, including older field artifacts. These
+    tests exercise a real call site, not just the constants, so a future
+    partial edit to any of the three copies fails here.
     """
 
-    def _modules(self):
-        root = Path(__file__).resolve().parent.parent
-        loaded = []
-        for name in (
-            "verify_runtime_release",
-            "build_plugin_archive",
-            "check-public-export-safety",
-        ):
-            alias = "_bounds_" + name.replace("-", "_")
-            spec = importlib.util.spec_from_file_location(
-                alias, root / "scripts" / f"{name}.py"
-            )
-            module = importlib.util.module_from_spec(spec)
-            # register before exec: @dataclass resolves sys.modules[__module__]
-            sys.modules[alias] = module
-            spec.loader.exec_module(module)
-            loaded.append((name, module))
-        return loaded
+    GATES = (
+        "verify_runtime_release",
+        "build_plugin_archive",
+        "check-public-export-safety",
+    )
 
     @staticmethod
-    def _sets(module):
-        """The export-safety copy uses _RUNTIME_-suffixed names."""
-        if hasattr(module, "REQUIRED_CONTRACTS"):
-            return (
-                module.REQUIRED_CONTRACTS,
-                module.OPTIONAL_CONTRACTS,
-                module.ACCEPTED_CONTRACTS,
-            )
-        return (
-            module.REQUIRED_RUNTIME_CONTRACTS,
-            module.OPTIONAL_RUNTIME_CONTRACTS,
-            module.ACCEPTED_RUNTIME_CONTRACTS,
+    def _load(name):
+        alias = "_gate_" + name.replace("-", "_")
+        spec = importlib.util.spec_from_file_location(
+            alias, ROOT / "scripts" / f"{name}.py"
         )
+        module = importlib.util.module_from_spec(spec)
+        # register before exec: @dataclass resolves sys.modules[__module__]
+        sys.modules[alias] = module
+        spec.loader.exec_module(module)
+        return module
 
-    def test_optional_set_is_exactly_the_codex_governance_route(self) -> None:
-        for name, module in self._modules():
-            with self.subTest(module=name):
-                required, optional, accepted = self._sets(module)
-                self.assertEqual(optional, frozenset({("codex", "governance")}))
-                self.assertEqual(accepted, required | optional)
-                # optional must not overlap the mandatory baseline
-                self.assertFalse(required & optional)
+    @staticmethod
+    def _required(module):
+        return getattr(
+            module, "REQUIRED_CONTRACTS", None
+        ) or module.REQUIRED_RUNTIME_CONTRACTS
 
-    def test_unenumerated_extra_route_is_not_accepted(self) -> None:
-        rogue = ("attacker", "exfiltrate")
-        for name, module in self._modules():
-            with self.subTest(module=name):
-                required, _, accepted = self._sets(module)
-                self.assertFalse((required | {rogue}) <= accepted)
+    def test_all_three_gate_copies_require_the_route(self) -> None:
+        for name in self.GATES:
+            with self.subTest(gate=name):
+                required = self._required(self._load(name))
+                self.assertIn(CONTRACT, required)
+                self.assertEqual(len(required), 11)
 
-    def test_missing_required_route_is_not_accepted(self) -> None:
-        for name, module in self._modules():
-            with self.subTest(module=name):
-                required, _, _ = self._sets(module)
-                short = set(required)
-                short.pop()
-                self.assertFalse(required <= short)
+    def test_gate_copies_agree_exactly(self) -> None:
+        """Three hand-maintained copies must not drift apart."""
+        sets = {name: self._required(self._load(name)) for name in self.GATES}
+        reference = sets[self.GATES[0]]
+        for name, value in sets.items():
+            with self.subTest(gate=name):
+                self.assertEqual(set(value), set(reference))
+
+    def test_client_keeps_the_route_optional(self) -> None:
+        """The client posture is deliberately the opposite of the gates'."""
+        client = _load_runtime_client()
+        self.assertIn(CONTRACT, client.SUPPORTED_CONTRACTS)
+        self.assertIn(CONTRACT, client.OPTIONAL_CONTRACTS)
+        self.assertNotIn(CONTRACT, client.REQUIRED_CONTRACTS)
 
 
 if __name__ == "__main__":
