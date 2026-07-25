@@ -14,7 +14,9 @@
   real read-only contract.
 
 - **Release verifiers accept an enumerated optional route.**
-  `verify_runtime_release.py` and `build_plugin_archive.py` previously required
+  `verify_runtime_release.py`, `build_plugin_archive.py`, and
+  `check-public-export-safety.py` (three independent copies of the same
+  allowlist) previously required
   the advertised contract set to equal an exact ten-route set, which rejected
   any runtime advertising the new route. They now apply a bounded containment
   check — `REQUIRED <= advertised <= REQUIRED | OPTIONAL` — mirroring the
@@ -26,8 +28,8 @@
 
 ### Tests
 
-- Pin that the verifier containment check is bounded: an unenumerated extra
-  route is rejected, a missing required route is rejected, and OPTIONAL is
-  exactly `codex/governance` in both verifiers.
+- Pin that the verifier containment check is bounded in ALL THREE copies: an
+  unenumerated extra route is rejected, a missing required route is rejected,
+  and OPTIONAL is exactly `codex/governance`.
 - Update the route-shipping test to the new reality (route now advertised) while
   still asserting it remains accepted-but-not-required.

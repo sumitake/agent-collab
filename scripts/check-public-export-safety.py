@@ -158,6 +158,13 @@ REQUIRED_RUNTIME_CONTRACTS = frozenset(
         ("composer", "codegen"),
     }
 )
+# Accepted-but-not-required routes; the third copy of this partition, alongside
+# verify_runtime_release.py and build_plugin_archive.py. Explicit enumeration
+# only — an advertised route outside REQUIRED | OPTIONAL is still rejected.
+OPTIONAL_RUNTIME_CONTRACTS = frozenset({("codex", "governance")})
+ACCEPTED_RUNTIME_CONTRACTS = (
+    REQUIRED_RUNTIME_CONTRACTS | OPTIONAL_RUNTIME_CONTRACTS
+)
 
 
 @dataclass(frozen=True)
@@ -682,8 +689,9 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             record["signing_profile"] != "production_developer_id"
             for record in records
         )
-        or frozenset(contract_rows) != REQUIRED_RUNTIME_CONTRACTS
-        or len(contract_rows) != len(REQUIRED_RUNTIME_CONTRACTS)
+        or not REQUIRED_RUNTIME_CONTRACTS <= frozenset(contract_rows)
+        or not frozenset(contract_rows) <= ACCEPTED_RUNTIME_CONTRACTS
+        or len(contract_rows) != len(frozenset(contract_rows))
     ):
         return Violation("unmanifested_runtime", str(relative))
 

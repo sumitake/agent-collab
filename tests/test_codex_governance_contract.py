@@ -131,6 +131,10 @@ class CodexGovernanceContractTests(unittest.TestCase):
 class ReleaseVerifierContractBoundsTests(unittest.TestCase):
     """The release verifiers accept the enumerated optional route only.
 
+    All THREE copies are covered (verify_runtime_release, build_plugin_archive,
+    check-public-export-safety) — the third was missed on the first pass and
+    only CI's --active-tree run caught it.
+
     v4.4.1 replaced their exact-equality contract check with a bounded
     containment check (REQUIRED <= advertised <= REQUIRED | OPTIONAL). These
     tests pin that it is BOUNDED: an unenumerated extra route is still
@@ -141,43 +145,60 @@ class ReleaseVerifierContractBoundsTests(unittest.TestCase):
     def _modules(self):
         root = Path(__file__).resolve().parent.parent
         loaded = []
-        for name in ("verify_runtime_release", "build_plugin_archive"):
+        for name in (
+            "verify_runtime_release",
+            "build_plugin_archive",
+            "check-public-export-safety",
+        ):
+            alias = "_bounds_" + name.replace("-", "_")
             spec = importlib.util.spec_from_file_location(
-                f"_bounds_{name}", root / "scripts" / f"{name}.py"
+                alias, root / "scripts" / f"{name}.py"
             )
             module = importlib.util.module_from_spec(spec)
+            # register before exec: @dataclass resolves sys.modules[__module__]
+            sys.modules[alias] = module
             spec.loader.exec_module(module)
             loaded.append((name, module))
         return loaded
 
+    @staticmethod
+    def _sets(module):
+        """The export-safety copy uses _RUNTIME_-suffixed names."""
+        if hasattr(module, "REQUIRED_CONTRACTS"):
+            return (
+                module.REQUIRED_CONTRACTS,
+                module.OPTIONAL_CONTRACTS,
+                module.ACCEPTED_CONTRACTS,
+            )
+        return (
+            module.REQUIRED_RUNTIME_CONTRACTS,
+            module.OPTIONAL_RUNTIME_CONTRACTS,
+            module.ACCEPTED_RUNTIME_CONTRACTS,
+        )
+
     def test_optional_set_is_exactly_the_codex_governance_route(self) -> None:
         for name, module in self._modules():
             with self.subTest(module=name):
-                self.assertEqual(
-                    module.OPTIONAL_CONTRACTS, frozenset({("codex", "governance")})
-                )
-                self.assertEqual(
-                    module.ACCEPTED_CONTRACTS,
-                    module.REQUIRED_CONTRACTS | module.OPTIONAL_CONTRACTS,
-                )
+                required, optional, accepted = self._sets(module)
+                self.assertEqual(optional, frozenset({("codex", "governance")}))
+                self.assertEqual(accepted, required | optional)
                 # optional must not overlap the mandatory baseline
-                self.assertFalse(
-                    module.REQUIRED_CONTRACTS & module.OPTIONAL_CONTRACTS
-                )
+                self.assertFalse(required & optional)
 
     def test_unenumerated_extra_route_is_not_accepted(self) -> None:
         rogue = ("attacker", "exfiltrate")
         for name, module in self._modules():
             with self.subTest(module=name):
-                advertised = module.REQUIRED_CONTRACTS | {rogue}
-                self.assertFalse(advertised <= module.ACCEPTED_CONTRACTS)
+                required, _, accepted = self._sets(module)
+                self.assertFalse((required | {rogue}) <= accepted)
 
     def test_missing_required_route_is_not_accepted(self) -> None:
         for name, module in self._modules():
             with self.subTest(module=name):
-                short = set(module.REQUIRED_CONTRACTS)
+                required, _, _ = self._sets(module)
+                short = set(required)
                 short.pop()
-                self.assertFalse(module.REQUIRED_CONTRACTS <= short)
+                self.assertFalse(required <= short)
 
 
 if __name__ == "__main__":
