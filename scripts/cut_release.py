@@ -46,6 +46,52 @@ def _tag_exists(tag: str) -> bool:
     return bool(local or remote)
 
 
+# The staleness watermark is the last commit touching the runtime BUNDLE dir
+# only. Deliberately NOT runtime-manifest.json: a manifest/contract-only commit
+# would advance the watermark past unaddressed `runtime:` merges and let a
+# stale binary pass (cross-check round 1, high-residual finding).
+_RUNTIME_STAGE_PATHS = ("plugins/agent-collab/runtime/",)
+
+
+def _runtime_currency_or_fail(allow_stale: bool) -> None:
+    """Fail an activation release whose staged runtime predates runtime changes.
+
+    A tag-only cut packages the committed tree, so nothing else stops a release
+    from shipping a runtime bundle staged N releases ago while `runtime:`-scoped
+    merges landed since (2026-07-25: v4.4.0 shipped the 4.2.0 bundle despite
+    five later runtime merges and had to be rolled back). The staged bundle is
+    current only when no runtime-scoped subject exists after the commit that
+    last touched the staged runtime paths.
+    """
+    staged = _git("log", "-1", "--format=%H", "--", *_RUNTIME_STAGE_PATHS).stdout.strip()
+    if not staged:
+        _fail(
+            "no staged runtime found under plugins/agent-collab/runtime/ -- an "
+            "activation release requires the workspace-side full runtime build "
+            "and stage first (workspace docs/portable-v2-openssl-toolchain-runbook.md)"
+        )
+    subjects = _git("log", "--format=%s", f"{staged}..HEAD").stdout.splitlines()
+    stale = [s for s in subjects if s.strip().lower().startswith("runtime:")]
+    if not stale:
+        return
+    lines = "\n".join(f"  - {s}" for s in stale)
+    if allow_stale:
+        print(
+            "cut-release: WARNING -- staged runtime predates runtime-scoped "
+            f"merges (--allow-stale-runtime given):\n{lines}",
+            file=sys.stderr,
+        )
+        return
+    _fail(
+        "staged runtime is STALE -- these runtime-scoped merges landed after "
+        f"the runtime bundle was last staged:\n{lines}\n"
+        "Run the workspace full runtime build + stage "
+        "(workspace docs/portable-v2-openssl-toolchain-runbook.md) before "
+        "cutting, or pass --allow-stale-runtime only when the operator has "
+        "confirmed those merges do not affect the compiled runtime."
+    )
+
+
 def _head_is_published_main_or_fail() -> None:
     _git(
         "fetch",
@@ -151,7 +197,7 @@ def _archive_contract_verified_or_fail(mode: str) -> None:
         _fail("release mode changed during archive verification")
 
 
-def cut(dry_run: bool) -> int:
+def cut(dry_run: bool, allow_stale_runtime: bool = False) -> int:
     # Release gate (read-only): run regardless of --dry-run so a dry run gives a
     # true preview and fails fast if the changelog is stale vs the fragments.
     _changelog_compiled_or_fail()
@@ -159,6 +205,7 @@ def cut(dry_run: bool) -> int:
     _archive_contract_verified_or_fail(mode)
     if mode == "activation":
         _signed_runtime_verified_or_fail()
+        _runtime_currency_or_fail(allow_stale_runtime)
     if dry_run:
         print(
             "cut-release: [dry-run] CHANGELOG.md and canonical "
@@ -236,10 +283,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="print the actions, change nothing")
     ap.add_argument("--rollback", metavar="TAG",
                     help="undo a release: delete its tag (local + remote) and GH release")
+    ap.add_argument("--allow-stale-runtime", action="store_true",
+                    help="operator override: cut even though runtime-scoped merges "
+                         "landed after the staged runtime (prints a loud warning)")
     args = ap.parse_args(argv)
     if args.rollback:
         return rollback(args.rollback, args.dry_run)
-    return cut(args.dry_run)
+    return cut(args.dry_run, allow_stale_runtime=args.allow_stale_runtime)
 
 
 if __name__ == "__main__":
