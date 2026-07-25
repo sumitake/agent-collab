@@ -615,5 +615,46 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         self.assertIn('"--is-ancestor"', cut_tool)
 
 
+class ReleaseGateContractDriftTests(ReleaseRuntimeGateTests):
+    """The contract set is enforced at the real call site, both directions.
+
+    Inherits the valid-manifest harness above so these exercise
+    ``verify_release`` itself rather than set algebra over the constants.
+    codex/governance became REQUIRED in v4.4.1 (Tier 3 review condition): a
+    cut that omits it must fail rather than silently regress the capability.
+    """
+
+    CONTRACT_ERROR = "does not advertise the exact required route/action contract"
+    CODEX_GOVERNANCE = ("codex", "governance")
+
+    def _contract_errors(self, contracts):
+        self._manifest(contracts)
+        _, _, errors = self.gate.verify_release(self.root, git_sha="abc")
+        return [error for error in errors if self.CONTRACT_ERROR in error]
+
+    def test_codex_governance_is_required_not_optional(self) -> None:
+        self.assertIn(self.CODEX_GOVERNANCE, self.gate.REQUIRED_CONTRACTS)
+
+    def test_exact_required_set_passes_the_contract_check(self) -> None:
+        self.assertFalse(
+            self._contract_errors(set(self.gate.REQUIRED_CONTRACTS))
+        )
+
+    def test_omitting_codex_governance_is_rejected(self) -> None:
+        self.assertTrue(
+            self._contract_errors(
+                set(self.gate.REQUIRED_CONTRACTS) - {self.CODEX_GOVERNANCE}
+            )
+        )
+
+    def test_unenumerated_extra_route_is_rejected(self) -> None:
+        self.assertTrue(
+            self._contract_errors(
+                set(self.gate.REQUIRED_CONTRACTS)
+                | {("attacker", "exfiltrate")}
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

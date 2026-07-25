@@ -156,6 +156,10 @@ REQUIRED_RUNTIME_CONTRACTS = frozenset(
         ("grok", "governance"),
         ("grok", "huge_context"),
         ("composer", "codegen"),
+        # Shipped as of v4.4.1; REQUIRED at the release gate so a later cut
+        # cannot silently drop it. Third copy of this allowlist, alongside
+        # verify_runtime_release.py and build_plugin_archive.py.
+        ("codex", "governance"),
     }
 )
 

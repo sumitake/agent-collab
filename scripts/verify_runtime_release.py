@@ -35,6 +35,12 @@ REQUIRED_CONTRACTS = frozenset(
         ("grok", "governance"),
         ("grok", "huge_context"),
         ("composer", "codegen"),
+        # Shipped as of v4.4.1. REQUIRED here, not optional: a release gate
+        # validates what WE are about to publish, so requiring the route stops
+        # a future cut from silently dropping a governance capability. The
+        # public client keeps it OPTIONAL because it validates whatever is
+        # already installed, including older field artifacts that predate it.
+        ("codex", "governance"),
     }
 )
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")

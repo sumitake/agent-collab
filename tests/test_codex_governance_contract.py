@@ -60,12 +60,26 @@ class CodexGovernanceContractTests(unittest.TestCase):
             frozenset({CONTRACT}),
         )
 
-    def test_signed_public_manifest_does_not_claim_unshipped_route(self) -> None:
+    def test_signed_public_manifest_now_ships_the_route_and_keeps_it_optional(
+        self,
+    ) -> None:
+        """The route is shipped as of v4.4.1, and stays OPTIONAL, not required.
+
+        Until v4.4.1 the client and schema accepted ``codex/governance`` while
+        the signed runtime deliberately did not advertise it, and this test
+        pinned that gap. The v4.4.1 runtime is built from a workspace source
+        closure where the route is a real read-only contract, so it now
+        advertises it. The invariant that still matters is the partition: the
+        route must remain accepted-but-not-required, so a runtime that omits
+        it continues to verify rather than being forced to claim it.
+        """
         advertised = {
             (row["route"], row["action"])
             for row in self.manifest["artifacts"][0]["contracts"]
         }
-        self.assertNotIn(CONTRACT, advertised)
+        self.assertIn(CONTRACT, advertised)
+        self.assertNotIn(CONTRACT, self.client.REQUIRED_CONTRACTS)
+        self.assertTrue(self.client.REQUIRED_CONTRACTS <= advertised)
 
     def test_optional_route_is_accepted_but_not_required_for_readiness(
         self,
@@ -112,6 +126,65 @@ class CodexGovernanceContractTests(unittest.TestCase):
             "set(client.SUPPORTED_CONTRACTS).difference(resolution.contracts)",
             source,
         )
+
+
+class ReleaseGateRequiresCodexGovernanceTests(unittest.TestCase):
+    """v4.4.1 requires codex/governance at the RELEASE gates, not optionally.
+
+    Release gates validate what this repository is about to publish, so the
+    route is REQUIRED there: a later cut that silently omits it must fail
+    rather than quietly regress a governance capability (Tier 3 review
+    condition). The public client keeps it OPTIONAL because it validates
+    whatever is already installed, including older field artifacts. These
+    tests exercise a real call site, not just the constants, so a future
+    partial edit to any of the three copies fails here.
+    """
+
+    GATES = (
+        "verify_runtime_release",
+        "build_plugin_archive",
+        "check-public-export-safety",
+    )
+
+    @staticmethod
+    def _load(name):
+        alias = "_gate_" + name.replace("-", "_")
+        spec = importlib.util.spec_from_file_location(
+            alias, ROOT / "scripts" / f"{name}.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        # register before exec: @dataclass resolves sys.modules[__module__]
+        sys.modules[alias] = module
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def _required(module):
+        return getattr(
+            module, "REQUIRED_CONTRACTS", None
+        ) or module.REQUIRED_RUNTIME_CONTRACTS
+
+    def test_all_three_gate_copies_require_the_route(self) -> None:
+        for name in self.GATES:
+            with self.subTest(gate=name):
+                required = self._required(self._load(name))
+                self.assertIn(CONTRACT, required)
+                self.assertEqual(len(required), 11)
+
+    def test_gate_copies_agree_exactly(self) -> None:
+        """Three hand-maintained copies must not drift apart."""
+        sets = {name: self._required(self._load(name)) for name in self.GATES}
+        reference = sets[self.GATES[0]]
+        for name, value in sets.items():
+            with self.subTest(gate=name):
+                self.assertEqual(set(value), set(reference))
+
+    def test_client_keeps_the_route_optional(self) -> None:
+        """The client posture is deliberately the opposite of the gates'."""
+        client = _load_runtime_client()
+        self.assertIn(CONTRACT, client.SUPPORTED_CONTRACTS)
+        self.assertIn(CONTRACT, client.OPTIONAL_CONTRACTS)
+        self.assertNotIn(CONTRACT, client.REQUIRED_CONTRACTS)
 
 
 if __name__ == "__main__":

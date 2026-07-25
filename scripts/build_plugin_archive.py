@@ -125,6 +125,9 @@ REQUIRED_CONTRACTS = frozenset(
         ("grok", "governance"),
         ("grok", "huge_context"),
         ("composer", "codegen"),
+        # Shipped as of v4.4.1; REQUIRED at the release gate so a later cut
+        # cannot silently drop it. See verify_runtime_release.REQUIRED_CONTRACTS.
+        ("codex", "governance"),
     }
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

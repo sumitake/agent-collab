@@ -162,17 +162,10 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 }
             )
         bundle.chmod(0o500)
-        contracts = (
-            ("gemini", "advisory"),
-            ("gemini", "governance"),
-            ("gemini", "long_context"),
-            ("codex", "advisory"),
-            ("opencode", "plan"),
-            ("opencode", "build"),
-            ("grok", "architecture"),
-            ("grok", "governance"),
-            ("grok", "huge_context"),
-            ("composer", "codegen"),
+        # Derive from the builder's allowlist rather than restating it; a
+        # hardcoded copy rots when the required set changes (v4.4.1).
+        contracts = tuple(
+            sorted(_load("agent_collab_archive_contracts", ARCHIVE_SCRIPT).REQUIRED_CONTRACTS)
         )
         manifest = {
             "schema_version": 3,
