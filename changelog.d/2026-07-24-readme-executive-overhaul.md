@@ -1,0 +1,2 @@
+### Changed
+- Root `README.md` opening rewritten purpose-first (operator-directed overhaul): why governed multi-agent collaboration exists (family blind spots, disclosed reward-hacking, unaccountable authority loops), what it delivers, and how governance is implemented — followed by the unchanged technical sections; stale intro version pin removed (version lives in "Current package"). Package README gains a purpose-bridge paragraph. Doc-only, no version bump.

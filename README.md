@@ -4,14 +4,81 @@
 [![CodeQL](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/codeql.yml)
 [![Secret Scan](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/sumitake/agent-collab/actions/workflows/secret-scan.yml)
 
-**agent-collab** gives Claude, Codex, Antigravity, OpenCode, ZCode, and custom
-primary hosts one dynamic, governed collaboration surface, without publishing
-provider executors or maintaining host-specific plugin copies. It resolves the
-active primary and its model, host, and session dynamically, enforces
-cross-family reviewer independence, and routes managed provider work (Codex,
-Gemini, OpenCode, and unified Grok 4.5) through a verified, signed native runtime.
+**agent-collab** turns a collection of AI coding agents from different vendors —
+Claude, Codex, Gemini, Grok, and OpenCode-hosted models — into one governed
+engineering team: any of them can lead a session, delegate work to the others
+through managed, verified routes, and none of them can approve, merge, or
+expand its own authority without independent review from a different model
+family.
 
-This public repository distributes one package, **agent-collab** (v4.3.4), and is
+## Why this exists
+
+A single AI agent working alone has structural problems that no amount of
+prompting fixes. It shares blind spots with every other instance of its own
+model family, so the errors it makes are exactly the errors it cannot catch in
+review. It can misreport what it did — vendors themselves disclose
+reward-hacking behavior in frontier coding models — so its claims of "tests
+pass" or "review converged" need verification that does not come from itself.
+And when it can execute, review, and merge in one unaccountable loop, a single
+hallucination can propagate into governing documents and tooling unchecked.
+
+This project exists to close those three gaps structurally rather than by
+trust:
+
+- **Cross-family reviewer independence, enforced at selection.** The
+  coordinator resolves the active primary's family and the artifact author's
+  family at call time and *excludes both* from reviewer, worker, tiebreaker,
+  and fallback selection — fail-closed, so an unknown family refuses a
+  governance route rather than guessing. Review therefore comes from a
+  different vendor's model than the one that wrote the change. Different
+  families fail differently; that is the point.
+- **Written evidence with an honest boundary.** Every governed merge carries a
+  compliance trace — tier, cross-check verdict, and the standing directives
+  followed — and CI hard-fails a PR whose trace is missing, malformed, or
+  under-declares its tier. Two different mechanisms do two different jobs: the
+  coordinator enforces family independence when it *selects* a route
+  (fail-closed), and CI validates the **form and presence** of the recorded
+  evidence. What neither does today is cryptographically authenticate a quoted
+  verdict — that is discrepancy detection, with per-agent signing on the
+  roadmap. The managed Gemini leg additionally returns a signed broker
+  proof, and this project's own workspace layers stricter requirements
+  (reviewer identity, reviewed SHA, distinct-family peer review) on top for
+  its highest tier.
+- **Operator final-say where it is codified.** Agents coordinate with each
+  other and self-merge converged, green, recorded changes; operator-reserved
+  paths (CODEOWNERS-gated files, including the governance contract itself) and
+  the codified operator-required classes route to the human instead. Not every
+  sensitive change is machine-forced to a human — the reserved set and tier
+  rules define the boundary — and the operator can revert, redirect, or revoke
+  the arrangement at any time.
+
+## What it delivers in practice
+
+- **Coverage a single model cannot give you.** At minimum one adversarial
+  review leg from a family other than the author's — and on the highest tier,
+  this project runs a three-family triangle (author, cross-check, and a peer
+  reviewer distinct from both), the direction the contract is converging on. In production use on this project, cross-family
+  reviewers have repeatedly caught real defects — silently drifted CI gates,
+  falsified historical records, contract-weakening edits, overclaiming
+  documentation — that same-family review missed.
+- **Cost-tiered delegation, explicitly targeted.** Bulk reading, mechanical
+  codegen, and long-context work can be sent to cheaper provider pools while
+  frontier reasoning and the merge decision stay with the primary. Targets are
+  named explicitly per call today, with automatic cost-aware worker routing the
+  next step on that path; an explicit target never silently substitutes another
+  provider, and model plus reasoning effort are disclosed per invocation, so
+  cost and quality stay auditable.
+- **A hard security boundary around providers.** Provider CLIs are reached
+  only through a signed, notarized native runtime with per-member digest
+  verification, socket-activated zero-idle execution, and typed-unavailable
+  failure — never raw provider invocations, ambient credentials, or silent
+  fallbacks.
+- **One plugin for every host.** A single package serves Claude Code, Codex,
+  Antigravity, OpenCode, ZCode, and custom hosts, resolving the active
+  primary's identity, model, and session dynamically — no per-host forks to
+  drift out of sync.
+
+This public repository distributes that one package, **agent-collab** (v4.3.4), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -23,7 +90,6 @@ Contributors need no access to the private build/sign system. See
 [public governance](docs/public-governance.md),
 [migration guidance](docs/migration-from-legacy-packages.md), and the
 [security policy](SECURITY.md).
-
 ## What this is not
 
 - Not an open-source grant. It is source-available under the PolyForm Strict
