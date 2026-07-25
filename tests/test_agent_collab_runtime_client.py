@@ -229,6 +229,7 @@ print(json.dumps({
     "request_id": request["request_id"],
     "status": "ok",
     "result": {
+        "text": "fixture response",
         "argv": sys.argv[1:],
         "secret_present": "LEAK_ME" in os.environ,
         "tmpdir": os.environ.get("TMPDIR", ""),
@@ -3646,6 +3647,7 @@ print(json.dumps({{
                     "request_id": envelope.request_id,
                     "status": "ok",
                     "result": {
+                        "text": "fixture review",
                         "review": "ok",
                         "governance_evidence": False,
                     },
@@ -6745,7 +6747,7 @@ print(json.dumps({{
     "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
-    "result": {{"review": "ok"}},
+    "result": {{"text": "fixture review", "review": "ok"}},
     "provenance": {{
         "route": request["route"],
         "action": request["action"],
@@ -6783,7 +6785,7 @@ print(json.dumps({{
     "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
-    "result": {{"review": "ok"}},
+    "result": {{"text": "fixture review", "review": "ok"}},
     "provenance": {{
         "route": request["route"],
         "action": request["action"],
@@ -6901,6 +6903,101 @@ print(json.dumps({{
         ).encode("utf-8")
         parsed = self.client._parse_response(stale, envelope, 0)
         self.assertEqual(parsed.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+    def test_execute_success_requires_pinned_substantive_text_contract(self) -> None:
+        self._fixture()
+        corpus_path = CLIENT.with_name("execute-output-contract-v1.json")
+        corpus_bytes = corpus_path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(corpus_bytes).hexdigest(),
+            "395b0e369c077d4324d4cbd28b79efdbc0921aa3e90468de07618df403e2c70b",
+        )
+        corpus = json.loads(corpus_bytes)
+        self.assertEqual(
+            corpus["algorithm"],
+            "terminal-canonical-v1/python-unicode-category-v1",
+        )
+        envelope = self._envelope(route="opencode", action="plan")
+        provenance = {
+            "route": "opencode",
+            "action": "plan",
+            "authority": envelope.authority,
+            "author_model": "opencode/glm-5.2",
+            "author_family": "zhipu",
+            "host_runtime": "fixture-runtime",
+            "session_identifier": "fixture-session",
+            "observation_sequence": 1,
+        }
+
+        def parse(result):
+            response = {
+                "protocol_version": 2,
+                "request_id": envelope.request_id,
+                "status": "ok",
+                "result": result,
+                "provenance": provenance,
+            }
+            return self.client._parse_response(
+                json.dumps(response, ensure_ascii=False).encode("utf-8"),
+                envelope,
+                0,
+            )
+
+        for value in corpus["substantive"]:
+            with self.subTest(kind="substantive", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.OK,
+                )
+        for kind in ("non_substantive", "invalid"):
+            for value in corpus[kind]:
+                with self.subTest(kind=kind, value=repr(value)):
+                    self.assertEqual(
+                        parse({"text": value}).status,
+                        self.client.RuntimeStatus.PROTOCOL_ERROR,
+                    )
+        for value in (None, 0, False, [], {}):
+            with self.subTest(kind="wrong-type", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+        self.assertEqual(
+            parse({}).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+        readiness = replace(envelope, operation="readiness")
+        readiness_response = {
+            "protocol_version": 2,
+            "request_id": readiness.request_id,
+            "status": "ok",
+            "result": {"ready": True},
+            "provenance": provenance,
+        }
+        self.assertEqual(
+            self.client._parse_response(
+                json.dumps(readiness_response).encode("utf-8"),
+                readiness,
+                0,
+            ).status,
+            self.client.RuntimeStatus.OK,
+        )
+
+        typed_failure = {
+            "protocol_version": 2,
+            "request_id": envelope.request_id,
+            "status": "containment_error",
+            "error": "managed provider containment is unavailable",
+        }
+        self.assertEqual(
+            self.client._parse_response(
+                json.dumps(typed_failure).encode("utf-8"),
+                envelope,
+                0,
+            ).status,
+            self.client.RuntimeStatus.CONTAINMENT_ERROR,
+        )
 
     def test_manifest_schema_allows_only_exact_route_action_pairs(self) -> None:
         schema = json.loads(

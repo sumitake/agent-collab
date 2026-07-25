@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -6935,6 +6936,93 @@ def _gemini_result_valid(
     return False
 
 
+def _canonical_execute_text(text: object) -> str | None:
+    """Apply the v1 terminal contract without rewriting caller-visible text."""
+
+    if type(text) is not str:
+        return None
+    output: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        code = ord(char)
+        if char == "\x1b" or code in (0x9B, 0x9D):
+            if code == 0x9B:
+                kind = "csi"
+                index += 1
+            elif code == 0x9D:
+                kind = "osc"
+                index += 1
+            else:
+                if index + 1 >= length:
+                    return None
+                marker = text[index + 1]
+                if marker == "[":
+                    kind = "csi"
+                elif marker == "]":
+                    kind = "osc"
+                else:
+                    return None
+                index += 2
+            if kind == "csi":
+                complete = False
+                while index < length:
+                    value = ord(text[index])
+                    if (
+                        text[index] == "\x1b"
+                        or value < 0x20
+                        or 0x7F <= value <= 0x9F
+                    ):
+                        return None
+                    index += 1
+                    if 0x40 <= value <= 0x7E:
+                        complete = True
+                        break
+                if not complete:
+                    return None
+                continue
+            complete = False
+            while index < length:
+                current = text[index]
+                value = ord(current)
+                if current == "\x07":
+                    index += 1
+                    complete = True
+                    break
+                if current == "\x1b":
+                    if index + 1 < length and text[index + 1] == "\\":
+                        index += 2
+                        complete = True
+                        break
+                    return None
+                if value < 0x20 or 0x7F <= value <= 0x9F:
+                    return None
+                index += 1
+            if not complete:
+                return None
+            continue
+        if char in ("\t", "\n", "\r"):
+            output.append(char)
+        elif code < 0x20 or 0x7F <= code <= 0x9F:
+            pass
+        else:
+            output.append(char)
+        index += 1
+    canonical = "".join(output).replace("\r\n", "\n")
+    if "\r" in canonical:
+        return None
+    return canonical
+
+
+def _execute_text_is_substantive(text: object) -> bool:
+    canonical = _canonical_execute_text(text)
+    return canonical is not None and any(
+        not char.isspace() and unicodedata.category(char)[0] not in {"C", "M"}
+        for char in canonical
+    )
+
+
 def _parse_response(
     out: bytes,
     envelope: object,
@@ -7032,6 +7120,18 @@ def _parse_response(
         or provenance["observation_sequence"] < 0
     ):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime provenance contract mismatch")
+    if envelope.operation not in {"execute", "readiness"}:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="runtime operation contract mismatch",
+        )
+    if envelope.operation == "execute" and not _execute_text_is_substantive(
+        response["result"].get("text")
+    ):
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="runtime execute result contract mismatch",
+        )
     if not _gemini_result_valid(response["result"], envelope, provenance, anchor):
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
