@@ -575,6 +575,124 @@ and safe-envelope checks both rejected.
   Claude, and Antigravity lifecycle adapters, typed startup outcomes, positive
   singleton proof, and explicit no-schedule/no-sandbox-bypass boundaries.
 
+### agent-collab 4.3.1 — 2026-07-23
+
+#### Fixed
+
+- Keep provider adoption callable after a dispatcher update commits by using
+  the exact verified `selected` lane when no staged `candidate` exists.
+- Bind both staged and committed canary paths to the co-packaged signed and
+  notarized runtime identity, preserving fail-closed behavior on any selector
+  mismatch or transient verification failure.
+
+#### Verification
+
+- Added regression coverage for staged-candidate, committed-selected,
+  identity-mismatch, and notarization-unavailable paths.
+
+### agent-collab 4.3.2 — 2026-07-24
+
+#### Fixed
+
+- Enforce one end-to-end monotonic timeout across coordinator preflight,
+  automatic reviewer candidates, runtime verification, and provider launch.
+  Each fallback is resealed with only the remaining budget.
+- Stop automatic fallback after a timed-out or teardown-unproven accepted
+  request, preventing a second provider worker from overlapping uncertain
+  cleanup.
+- Permit automatic fallback only for a typed pre-acceptance `unavailable`
+  result. Authentication, quota, containment, output, protocol, provider, and
+  every other post-launch result are terminal, so one review request cannot
+  silently become a second provider invocation.
+- Keep selected-dispatcher callability distinct from lifecycle quiescence so
+  migration doctor no longer reports a responsive lane unavailable merely
+  because another bounded request is active. Bound the status-only quiescence
+  observation to one second instead of waiting the full 30-second cold-start
+  allowance; lifecycle operations retain their full idle proof.
+
+#### Safety
+
+- Notarization, signature, provenance, route authority, and selector checks are
+  unchanged. Install, update, rollback, commit, drain, and other lifecycle
+  operations still require a proven non-persistent process state.
+
+### agent-collab 4.3.3 — 2026-07-24
+
+### Fixed
+
+- Allow verified development or future runtime manifests to advertise the
+  `codex/governance` route by adding it to the public client's manifest parser
+  allowlist and the matching JSON schema enumeration. The currently shipped
+  signed and notarized public runtime manifest remains unchanged at its honest
+  ten-route capability set, so it does not claim the unshipped route and
+  continues to return typed unavailable for it.
+
+### Tests
+
+- Pin the distinction between the client's accepted contract vocabulary and
+  the exact routes advertised by the current signed public runtime.
+
+### Added
+
+<!-- release: agent-collab 4.4.0 -->
+
+- **Domain-expert skill pack (16 new skills).** New pure-prompt, host-neutral
+  expertise skills alongside the existing collaboration/governance set:
+  `rust-engineer`, `go-engineer`, `elixir-engineer`, `sql-engineer`,
+  `kubernetes-specialist`, `terraform-engineer`, `sre-engineer`,
+  `incident-responder`, `mlops-engineer`, `llm-architect`,
+  `postgres-engineer`, `data-engineer`, `eval-engineer`,
+  `prompt-regression-tester`, `hallucination-investigator`, and
+  `ai-writing-auditor`. Authored under workspace ownership, informed by the
+  MIT-licensed VoltAgent subagent corpora at pinned SHAs (947b44ca /
+  5605c9c1) after an untrusted-input security audit; all supply-chain
+  patterns flagged by that audit (third-party installers, external MCP
+  endpoints, fictional tools) are excluded by construction. No coordinator,
+  provider, or delegation surface is touched.
+
+- qa-verify: instruct callers to phrase QA constraints at evidence level rather than
+  presence level (the inspector must produce what it checked; name likely shortcuts;
+  bound with an out-of-scope list), per the approve-everything verifier failure mode
+  documented in Anthropic's outcome-grader cookbook. Additive guidance only; the
+  PASS/FAIL verdict contract is unchanged.
+
+### agent-collab 4.3.4 — 2026-07-24
+
+### Fixed
+
+- Fixed `migration_doctor` reporting `provider_routing="BLOCKED"` for the shipped runtime.
+  Readiness compared the client's full acceptance set against the manifest, so the accepted
+  but deliberately unadvertised `codex/governance` route marked the entire runtime invalid.
+  Readiness is now judged against a required baseline (`REQUIRED_CONTRACTS`), with
+  `OPTIONAL_CONTRACTS` holding routes a signed artifact may advertise but need not ship.
+
+### Changed
+- Root `README.md` opening rewritten purpose-first (operator-directed overhaul): why governed multi-agent collaboration exists (family blind spots, disclosed reward-hacking, unaccountable authority loops), what it delivers, and how governance is implemented — followed by the unchanged technical sections; stale intro version pin removed (version lives in "Current package"). Package README gains a purpose-bridge paragraph. Doc-only, no version bump.
+
+### Fixed
+- SECURITY.md support matrix: `3.x` → `4.x` (current major per plugin.json 4.3.1; staleness audit).
+
+- visual-review + ui-to-code: direct the primary to magnify detail-bound regions
+  (host-native zoom/crop or a full-resolution code-execution crop) before reading
+  them, per the confidently-wrong sub-patch-detail failure documented in Anthropic's
+  crop-tool cookbook. Additive guidance only; the skills' no-image-transport honesty
+  boundary is unchanged.
+
+### agent-collab 4.3.5 — 2026-07-25
+
+#### Fixed
+
+- Accept exact legacy Gemini governance proof v1 and recovery-capable proof v2
+  as disjoint public success contracts so a verified retained v1 lane remains
+  callable while a v2 runtime is staged.
+- Select v2 validation whenever any recovery discriminator is present. Reject
+  partial, hybrid, coerced, contradictory, or cross-field-mismatched results
+  instead of falling back to the legacy contract.
+- Name both exact public proof keysets explicitly and document the verified
+  child-runtime/private-pipe trust boundary. The proof hash is a consistency
+  check rather than a signature; complete v1 remains accepted only for
+  retained-lane rollback continuity.
+
 <!-- changelog-fragments:end -->
 
 ---
