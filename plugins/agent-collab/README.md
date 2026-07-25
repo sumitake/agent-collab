@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.3.5**
+Current: **4.4.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -64,7 +64,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.3.5 package.
+identify this same 4.4.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -264,6 +264,16 @@ time; a listed skill does not imply that its native route is currently active.
 | Reproducible workflows | `chain`, `chain-configurator`, `orchestrate` |
 | Integration and conflict handling | `merge-resolve` |
 | Visual guidance | `ui-to-code`, `visual-review` |
+| Domain expertise - languages (pack, v4.4.0) | `rust-engineer`, `go-engineer`, `elixir-engineer`, `sql-engineer` |
+| Domain expertise - infrastructure and reliability (pack, v4.4.0) | `kubernetes-specialist`, `terraform-engineer`, `sre-engineer`, `incident-responder` |
+| Domain expertise - data and AI (pack, v4.4.0) | `mlops-engineer`, `llm-architect`, `postgres-engineer`, `data-engineer` |
+| Domain expertise - LLM evaluation and writing quality (pack, v4.4.0) | `eval-engineer`, `prompt-regression-tester`, `hallucination-investigator`, `ai-writing-auditor` |
+
+The sixteen domain-expertise skills were authored for this repository. Their
+scope selection was informed by two MIT-licensed VoltAgent reference corpora,
+reviewed as untrusted input at pinned commits and fully re-authored (zero
+copied passages, verified by shingle comparison): awesome-claude-code-subagents
+(commit 947b44ca) and awesome-codex-subagents (commit 5605c9c1).
 
 `visual-review` and `ui-to-code` currently provide primary-only guidance because
 the managed protocol does not accept image attachments. They never reinterpret
