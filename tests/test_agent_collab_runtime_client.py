@@ -6931,7 +6931,7 @@ print(json.dumps({{
             "observation_sequence": 1,
         }
 
-        def parse(result):
+        def parse(result, *, deadline=None):
             response = {
                 "protocol_version": 2,
                 "request_id": envelope.request_id,
@@ -6943,6 +6943,7 @@ print(json.dumps({{
                 json.dumps(response, ensure_ascii=False).encode("utf-8"),
                 envelope,
                 0,
+                deadline=deadline,
             )
 
         for value in corpus["substantive"]:
@@ -6994,6 +6995,25 @@ print(json.dumps({{
             self.client.RuntimeStatus.PROTOCOL_ERROR,
         )
 
+        clock_reads = 0
+
+        def crossing_deadline():
+            nonlocal clock_reads
+            clock_reads += 1
+            return 0.0 if clock_reads < 3 else 2.0
+
+        with mock.patch.object(
+            self.client.time,
+            "monotonic",
+            side_effect=crossing_deadline,
+        ):
+            expired = parse({"text": " " * (64 * 1024)}, deadline=1.0)
+        self.assertEqual(expired.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(
+            expired.error,
+            "provider request deadline expired during response validation",
+        )
+
         readiness = replace(envelope, operation="readiness")
         readiness_response = {
             "protocol_version": 2,
@@ -7022,6 +7042,7 @@ print(json.dumps({{
                 json.dumps(typed_failure).encode("utf-8"),
                 envelope,
                 0,
+                deadline=0.0,
             ).status,
             self.client.RuntimeStatus.CONTAINMENT_ERROR,
         )

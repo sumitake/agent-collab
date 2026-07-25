@@ -388,7 +388,10 @@ content-addressed contract supplies the frozen Unicode-16 blankness table, so
 host Unicode updates cannot silently change classification. The public client
 enforces this independently of the signed runtime so a stale runtime cannot
 manufacture a false-positive result. The canonical archive ships the contract
-as `runtime_client.py`'s sibling and verifies byte identity. `readiness`
+as `runtime_client.py`'s sibling and verifies byte identity. Direct and broker
+response parsing retain the original absolute request deadline; a large
+blank/control stream that consumes the remaining budget returns typed
+`timeout`. `readiness`
 responses keep their route-specific shape and are exempt. Typed native
 failures such as `containment_error`, `timeout`, and `teardown_error` are
 mapped before success validation and are never reclassified by this rule.

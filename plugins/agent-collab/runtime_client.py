@@ -13,6 +13,7 @@ lower-privilege substitution windows.
 from __future__ import annotations
 
 import base64
+from bisect import bisect_right
 from contextlib import contextmanager
 import ctypes
 import hashlib
@@ -199,6 +200,11 @@ def _read_execute_blank_ranges() -> tuple[tuple[int, int], ...] | None:
 
 
 _NON_SUBSTANTIVE_RANGES = _read_execute_blank_ranges()
+_NON_SUBSTANTIVE_STARTS = (
+    tuple(start for start, _end in _NON_SUBSTANTIVE_RANGES)
+    if _NON_SUBSTANTIVE_RANGES is not None
+    else None
+)
 BROKER_FRAME_KEYS = frozenset(
     {
         "broker_protocol_version",
@@ -3318,6 +3324,8 @@ def _parse_broker_response(
     document: dict[str, Any],
     envelope: object,
     anchor: RuntimeContractAnchor | None,
+    *,
+    deadline: float | None = None,
 ) -> RuntimeResult:
     status = document.get("status")
     local_mapping = {
@@ -3344,7 +3352,13 @@ def _parse_broker_response(
         ensure_ascii=True,
         allow_nan=False,
     ).encode("utf-8")
-    return _parse_response(encoded, envelope, 0, anchor=anchor)
+    return _parse_response(
+        encoded,
+        envelope,
+        0,
+        anchor=anchor,
+        deadline=deadline,
+    )
 
 
 def _closed_dispatcher_bridge_response(raw: bytes) -> dict[str, Any]:
@@ -3572,7 +3586,12 @@ def _launch_broker(
                         RuntimeStatus.TEARDOWN_ERROR,
                         error="legacy provider dispatcher did not return idle",
                     )
-                return _parse_broker_response(response, envelope, lane.anchor)
+                return _parse_broker_response(
+                    response,
+                    envelope,
+                    lane.anchor,
+                    deadline=deadline,
+                )
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -3614,7 +3633,12 @@ def _launch_broker(
                     max_bytes=BROKER_MAX_RESPONSE_BYTES,
                     deadline=deadline,
                 )
-            return _parse_broker_response(response, envelope, lane.anchor)
+            return _parse_broker_response(
+                response,
+                envelope,
+                lane.anchor,
+                deadline=deadline,
+            )
         return RuntimeResult(
             RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
         )
@@ -7011,7 +7035,27 @@ def _gemini_result_valid(
     return False
 
 
-def _canonical_execute_text(text: object) -> str | None:
+class _ResponseValidationDeadlineExpired(RuntimeError):
+    """The sealed request deadline elapsed during response classification."""
+
+
+def _check_response_validation_deadline(
+    deadline: float | None,
+    index: int,
+) -> None:
+    if (
+        deadline is not None
+        and index % 1024 == 0
+        and time.monotonic() >= deadline
+    ):
+        raise _ResponseValidationDeadlineExpired
+
+
+def _canonical_execute_text(
+    text: object,
+    *,
+    deadline: float | None = None,
+) -> str | None:
     """Apply the v1 terminal contract without rewriting caller-visible text."""
 
     if type(text) is not str:
@@ -7020,6 +7064,7 @@ def _canonical_execute_text(text: object) -> str | None:
     index = 0
     length = len(text)
     while index < length:
+        _check_response_validation_deadline(deadline, index)
         char = text[index]
         code = ord(char)
         if char == "\x1b" or code in (0x9B, 0x9D):
@@ -7044,6 +7089,7 @@ def _canonical_execute_text(text: object) -> str | None:
                 complete = False
                 intermediate_seen = False
                 while index < length:
+                    _check_response_validation_deadline(deadline, index)
                     value = ord(text[index])
                     if 0x40 <= value <= 0x7E:
                         index += 1
@@ -7064,6 +7110,7 @@ def _canonical_execute_text(text: object) -> str | None:
                 continue
             complete = False
             while index < length:
+                _check_response_validation_deadline(deadline, index)
                 current = text[index]
                 value = ord(current)
                 if current == "\x07":
@@ -7101,25 +7148,21 @@ def _canonical_execute_text(text: object) -> str | None:
     return canonical
 
 
-def _execute_text_is_substantive(text: object) -> bool:
-    canonical = _canonical_execute_text(text)
+def _execute_text_is_substantive(
+    text: object,
+    *,
+    deadline: float | None = None,
+) -> bool:
+    canonical = _canonical_execute_text(text, deadline=deadline)
     ranges = _NON_SUBSTANTIVE_RANGES
-    if canonical is None or ranges is None:
+    starts = _NON_SUBSTANTIVE_STARTS
+    if canonical is None or ranges is None or starts is None:
         return False
-    for char in canonical:
+    for index, char in enumerate(canonical):
+        _check_response_validation_deadline(deadline, index)
         code = ord(char)
-        low = 0
-        high = len(ranges)
-        while low < high:
-            middle = (low + high) // 2
-            start, end = ranges[middle]
-            if code < start:
-                high = middle
-            elif code > end:
-                low = middle + 1
-            else:
-                break
-        else:
+        position = bisect_right(starts, code) - 1
+        if position < 0 or code > ranges[position][1]:
             return True
     return False
 
@@ -7130,6 +7173,7 @@ def _parse_response(
     returncode: int,
     *,
     anchor: RuntimeContractAnchor | None = None,
+    deadline: float | None = None,
 ) -> RuntimeResult:
     try:
         response = json.loads(out.decode("utf-8"))
@@ -7171,6 +7215,11 @@ def _parse_response(
         or not isinstance(response.get("result"), dict)
     ):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime response contract mismatch")
+    if deadline is not None and time.monotonic() >= deadline:
+        return RuntimeResult(
+            RuntimeStatus.TIMEOUT,
+            error="provider request deadline expired during response validation",
+        )
     provenance = response.get("provenance")
     expected_keys = {
         "route",
@@ -7226,13 +7275,24 @@ def _parse_response(
             RuntimeStatus.PROTOCOL_ERROR,
             error="runtime operation contract mismatch",
         )
-    if envelope.operation == "execute" and not _execute_text_is_substantive(
-        response["result"].get("text")
-    ):
-        return RuntimeResult(
-            RuntimeStatus.PROTOCOL_ERROR,
-            error="runtime execute result contract mismatch",
-        )
+    if envelope.operation == "execute":
+        try:
+            substantive = _execute_text_is_substantive(
+                response["result"].get("text"),
+                deadline=deadline,
+            )
+        except _ResponseValidationDeadlineExpired:
+            return RuntimeResult(
+                RuntimeStatus.TIMEOUT,
+                error=(
+                    "provider request deadline expired during response validation"
+                ),
+            )
+        if not substantive:
+            return RuntimeResult(
+                RuntimeStatus.PROTOCOL_ERROR,
+                error="runtime execute result contract mismatch",
+            )
     if not _gemini_result_valid(response["result"], envelope, provenance, anchor):
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
@@ -7399,6 +7459,7 @@ def _launch_runtime(
     management_request_id: str = "",
     relay_stderr: bool = False,
 ) -> RuntimeResult:
+    deadline = time.monotonic() + timeout_ms / 1000.0
     if resolution.path is None or resolution.identity is None:
         return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime is unavailable")
     if _safe_source_identity(resolution.path, executable=True) != resolution.identity:
@@ -7433,6 +7494,7 @@ def _launch_runtime(
                         envelope,
                         returncode,
                         anchor=resolution.anchor,
+                        deadline=deadline,
                     )
                 return _parse_management_response(
                     out,

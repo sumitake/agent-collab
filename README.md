@@ -140,7 +140,9 @@ Contributors need no access to the private build/sign system. See
   The public client independently enforces the same content-addressed
   conformance contract and frozen Unicode-16 blankness table against stale
   signed runtimes. The canonical release archive carries the exact contract
-  beside the client. Readiness remains
+  beside the client. Response classification retains the original absolute
+  request deadline and returns typed `timeout` if a large blank/control stream
+  consumes the remaining budget. Readiness remains
   structurally separate, while typed containment, deadline, teardown, and
   provider failures retain their existing classifications.
 

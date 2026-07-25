@@ -18,3 +18,7 @@
 - Enforce exact CSI byte-class ordering and a closed OSC/C1 support matrix,
   rejecting malformed sequences and unsupported control strings rather than
   stripping printable residue into an apparent answer.
+
+- Retain the original absolute request deadline through direct and broker
+  response parsing. Classification of a near-limit blank/control stream now
+  returns typed `timeout` if it consumes the remaining budget.
