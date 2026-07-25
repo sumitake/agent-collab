@@ -13,6 +13,7 @@ lower-privilege substitution windows.
 from __future__ import annotations
 
 import base64
+from bisect import bisect_right
 from contextlib import contextmanager
 import ctypes
 import hashlib
@@ -52,6 +53,26 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
+EXECUTE_OUTPUT_CONTRACT_NAME = "execute-output-contract-v1.json"
+EXECUTE_OUTPUT_CONTRACT_SHA256 = (
+    "4c3b63877ca379d83a1bcd68a0682bc81ed49f741063e0dbc3ccb67e2940540b"
+)
+EXECUTE_OUTPUT_CONTRACT_ALGORITHM = (
+    "terminal-canonical-v1/frozen-unicode16-blank-v1"
+)
+_EXECUTE_OUTPUT_CONTRACT_KEYS = frozenset(
+    {
+        "algorithm",
+        "contract_version",
+        "invalid",
+        "non_substantive",
+        "non_substantive_ranges",
+        "schema_version",
+        "substantive",
+        "unicode_version",
+    }
+)
+_C1_CONTROL_STRING_INTRODUCERS = frozenset({0x90, 0x98, 0x9E, 0x9F})
 PROTOCOL_VERSION = 2
 LEGACY_BLUE_PROTOCOL_VERSION = 1
 CONTRACT_VERSION = 3
@@ -122,6 +143,67 @@ BROKER_DISPATCHER_STATE_KEYS = frozenset(
         "manifest_sha256",
         "plist_sha256",
     }
+)
+
+
+def _read_execute_blank_ranges() -> tuple[tuple[int, int], ...] | None:
+    """Read the installed sibling contract once and fail closed on any skew."""
+
+    try:
+        raw = (PLUGIN_ROOT / EXECUTE_OUTPUT_CONTRACT_NAME).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != EXECUTE_OUTPUT_CONTRACT_SHA256:
+            return None
+        contract = json.loads(raw.decode("utf-8", errors="strict"))
+        if (
+            type(contract) is not dict
+            or frozenset(contract) != _EXECUTE_OUTPUT_CONTRACT_KEYS
+        ):
+            return None
+        if (
+            type(contract["schema_version"]) is not int
+            or contract["schema_version"] != 1
+            or type(contract["contract_version"]) is not int
+            or contract["contract_version"] != 1
+            or contract["algorithm"] != EXECUTE_OUTPUT_CONTRACT_ALGORITHM
+            or contract["unicode_version"] != "16.0.0"
+        ):
+            return None
+        for field in ("invalid", "non_substantive", "substantive"):
+            values = contract[field]
+            if (
+                type(values) is not list
+                or not all(type(value) is str for value in values)
+                or len(values) != len(set(values))
+            ):
+                return None
+        encoded_ranges = contract["non_substantive_ranges"]
+        if type(encoded_ranges) is not list or not encoded_ranges:
+            return None
+        ranges: list[tuple[int, int]] = []
+        last_end = -2
+        for encoded in encoded_ranges:
+            if (
+                type(encoded) is not list
+                or len(encoded) != 2
+                or type(encoded[0]) is not int
+                or type(encoded[1]) is not int
+            ):
+                return None
+            start, end = encoded
+            if not (0 <= start <= end <= 0x10FFFF) or start <= last_end + 1:
+                return None
+            ranges.append((start, end))
+            last_end = end
+        return tuple(ranges)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+
+
+_NON_SUBSTANTIVE_RANGES = _read_execute_blank_ranges()
+_NON_SUBSTANTIVE_STARTS = (
+    tuple(start for start, _end in _NON_SUBSTANTIVE_RANGES)
+    if _NON_SUBSTANTIVE_RANGES is not None
+    else None
 )
 BROKER_FRAME_KEYS = frozenset(
     {
@@ -3242,6 +3324,8 @@ def _parse_broker_response(
     document: dict[str, Any],
     envelope: object,
     anchor: RuntimeContractAnchor | None,
+    *,
+    deadline: float | None = None,
 ) -> RuntimeResult:
     status = document.get("status")
     local_mapping = {
@@ -3268,7 +3352,13 @@ def _parse_broker_response(
         ensure_ascii=True,
         allow_nan=False,
     ).encode("utf-8")
-    return _parse_response(encoded, envelope, 0, anchor=anchor)
+    return _parse_response(
+        encoded,
+        envelope,
+        0,
+        anchor=anchor,
+        deadline=deadline,
+    )
 
 
 def _closed_dispatcher_bridge_response(raw: bytes) -> dict[str, Any]:
@@ -3496,7 +3586,12 @@ def _launch_broker(
                         RuntimeStatus.TEARDOWN_ERROR,
                         error="legacy provider dispatcher did not return idle",
                     )
-                return _parse_broker_response(response, envelope, lane.anchor)
+                return _parse_broker_response(
+                    response,
+                    envelope,
+                    lane.anchor,
+                    deadline=deadline,
+                )
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -3538,7 +3633,12 @@ def _launch_broker(
                     max_bytes=BROKER_MAX_RESPONSE_BYTES,
                     deadline=deadline,
                 )
-            return _parse_broker_response(response, envelope, lane.anchor)
+            return _parse_broker_response(
+                response,
+                envelope,
+                lane.anchor,
+                deadline=deadline,
+            )
         return RuntimeResult(
             RuntimeStatus.UNAVAILABLE, error="provider broker is unavailable"
         )
@@ -6935,12 +7035,145 @@ def _gemini_result_valid(
     return False
 
 
+class _ResponseValidationDeadlineExpired(RuntimeError):
+    """The sealed request deadline elapsed during response classification."""
+
+
+def _check_response_validation_deadline(
+    deadline: float | None,
+    index: int,
+) -> None:
+    if (
+        deadline is not None
+        and index % 1024 == 0
+        and time.monotonic() >= deadline
+    ):
+        raise _ResponseValidationDeadlineExpired
+
+
+def _canonical_execute_text(
+    text: object,
+    *,
+    deadline: float | None = None,
+) -> str | None:
+    """Apply the v1 terminal contract without rewriting caller-visible text."""
+
+    if type(text) is not str:
+        return None
+    output: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        _check_response_validation_deadline(deadline, index)
+        char = text[index]
+        code = ord(char)
+        if char == "\x1b" or code in (0x9B, 0x9D):
+            if code == 0x9B:
+                kind = "csi"
+                index += 1
+            elif code == 0x9D:
+                kind = "osc"
+                index += 1
+            else:
+                if index + 1 >= length:
+                    return None
+                marker = text[index + 1]
+                if marker == "[":
+                    kind = "csi"
+                elif marker == "]":
+                    kind = "osc"
+                else:
+                    return None
+                index += 2
+            if kind == "csi":
+                complete = False
+                intermediate_seen = False
+                while index < length:
+                    _check_response_validation_deadline(deadline, index)
+                    value = ord(text[index])
+                    if 0x40 <= value <= 0x7E:
+                        index += 1
+                        complete = True
+                        break
+                    if 0x30 <= value <= 0x3F:
+                        if intermediate_seen:
+                            return None
+                        index += 1
+                        continue
+                    if 0x20 <= value <= 0x2F:
+                        intermediate_seen = True
+                        index += 1
+                        continue
+                    return None
+                if not complete:
+                    return None
+                continue
+            complete = False
+            while index < length:
+                _check_response_validation_deadline(deadline, index)
+                current = text[index]
+                value = ord(current)
+                if current == "\x07":
+                    index += 1
+                    complete = True
+                    break
+                if value == 0x9C:
+                    index += 1
+                    complete = True
+                    break
+                if current == "\x1b":
+                    if index + 1 < length and text[index + 1] == "\\":
+                        index += 2
+                        complete = True
+                        break
+                    return None
+                if value < 0x20 or 0x7F <= value <= 0x9F:
+                    return None
+                index += 1
+            if not complete:
+                return None
+            continue
+        if code in _C1_CONTROL_STRING_INTRODUCERS:
+            return None
+        if char in ("\t", "\n", "\r"):
+            output.append(char)
+        elif code < 0x20 or 0x7F <= code <= 0x9F:
+            pass
+        else:
+            output.append(char)
+        index += 1
+    canonical = "".join(output).replace("\r\n", "\n")
+    if "\r" in canonical:
+        return None
+    return canonical
+
+
+def _execute_text_is_substantive(
+    text: object,
+    *,
+    deadline: float | None = None,
+) -> bool:
+    canonical = _canonical_execute_text(text, deadline=deadline)
+    ranges = _NON_SUBSTANTIVE_RANGES
+    starts = _NON_SUBSTANTIVE_STARTS
+    if canonical is None or ranges is None or starts is None:
+        return False
+    for index, char in enumerate(canonical):
+        _check_response_validation_deadline(deadline, index)
+        code = ord(char)
+        position = bisect_right(starts, code) - 1
+        if position < 0 or code > ranges[position][1]:
+            return True
+    return False
+
+
 def _parse_response(
     out: bytes,
     envelope: object,
     returncode: int,
     *,
     anchor: RuntimeContractAnchor | None = None,
+    deadline: float | None = None,
 ) -> RuntimeResult:
     try:
         response = json.loads(out.decode("utf-8"))
@@ -6982,6 +7215,11 @@ def _parse_response(
         or not isinstance(response.get("result"), dict)
     ):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime response contract mismatch")
+    if deadline is not None and time.monotonic() >= deadline:
+        return RuntimeResult(
+            RuntimeStatus.TIMEOUT,
+            error="provider request deadline expired during response validation",
+        )
     provenance = response.get("provenance")
     expected_keys = {
         "route",
@@ -7032,6 +7270,29 @@ def _parse_response(
         or provenance["observation_sequence"] < 0
     ):
         return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="runtime provenance contract mismatch")
+    if envelope.operation not in {"execute", "readiness"}:
+        return RuntimeResult(
+            RuntimeStatus.PROTOCOL_ERROR,
+            error="runtime operation contract mismatch",
+        )
+    if envelope.operation == "execute":
+        try:
+            substantive = _execute_text_is_substantive(
+                response["result"].get("text"),
+                deadline=deadline,
+            )
+        except _ResponseValidationDeadlineExpired:
+            return RuntimeResult(
+                RuntimeStatus.TIMEOUT,
+                error=(
+                    "provider request deadline expired during response validation"
+                ),
+            )
+        if not substantive:
+            return RuntimeResult(
+                RuntimeStatus.PROTOCOL_ERROR,
+                error="runtime execute result contract mismatch",
+            )
     if not _gemini_result_valid(response["result"], envelope, provenance, anchor):
         return RuntimeResult(
             RuntimeStatus.PROTOCOL_ERROR,
@@ -7198,6 +7459,7 @@ def _launch_runtime(
     management_request_id: str = "",
     relay_stderr: bool = False,
 ) -> RuntimeResult:
+    deadline = time.monotonic() + timeout_ms / 1000.0
     if resolution.path is None or resolution.identity is None:
         return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="native runtime is unavailable")
     if _safe_source_identity(resolution.path, executable=True) != resolution.identity:
@@ -7232,6 +7494,7 @@ def _launch_runtime(
                         envelope,
                         returncode,
                         anchor=resolution.anchor,
+                        deadline=deadline,
                     )
                 return _parse_management_response(
                     out,

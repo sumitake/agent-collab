@@ -229,6 +229,7 @@ print(json.dumps({
     "request_id": request["request_id"],
     "status": "ok",
     "result": {
+        "text": "fixture response",
         "argv": sys.argv[1:],
         "secret_present": "LEAK_ME" in os.environ,
         "tmpdir": os.environ.get("TMPDIR", ""),
@@ -3646,6 +3647,7 @@ print(json.dumps({{
                     "request_id": envelope.request_id,
                     "status": "ok",
                     "result": {
+                        "text": "fixture review",
                         "review": "ok",
                         "governance_evidence": False,
                     },
@@ -6745,7 +6747,7 @@ print(json.dumps({{
     "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
-    "result": {{"review": "ok"}},
+    "result": {{"text": "fixture review", "review": "ok"}},
     "provenance": {{
         "route": request["route"],
         "action": request["action"],
@@ -6783,7 +6785,7 @@ print(json.dumps({{
     "protocol_version": 2,
     "request_id": request["request_id"],
     "status": "ok",
-    "result": {{"review": "ok"}},
+    "result": {{"text": "fixture review", "review": "ok"}},
     "provenance": {{
         "route": request["route"],
         "action": request["action"],
@@ -6901,6 +6903,149 @@ print(json.dumps({{
         ).encode("utf-8")
         parsed = self.client._parse_response(stale, envelope, 0)
         self.assertEqual(parsed.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
+
+    def test_execute_success_requires_pinned_substantive_text_contract(self) -> None:
+        self._fixture()
+        corpus_path = CLIENT.with_name("execute-output-contract-v1.json")
+        corpus_bytes = corpus_path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(corpus_bytes).hexdigest(),
+            "4c3b63877ca379d83a1bcd68a0682bc81ed49f741063e0dbc3ccb67e2940540b",
+        )
+        corpus = json.loads(corpus_bytes)
+        self.assertEqual(
+            corpus["algorithm"],
+            "terminal-canonical-v1/frozen-unicode16-blank-v1",
+        )
+        self.assertEqual(corpus["unicode_version"], "16.0.0")
+        self.assertGreater(len(corpus["non_substantive_ranges"]), 700)
+        envelope = self._envelope(route="opencode", action="plan")
+        provenance = {
+            "route": "opencode",
+            "action": "plan",
+            "authority": envelope.authority,
+            "author_model": "opencode/glm-5.2",
+            "author_family": "zhipu",
+            "host_runtime": "fixture-runtime",
+            "session_identifier": "fixture-session",
+            "observation_sequence": 1,
+        }
+
+        def parse(result, *, deadline=None):
+            response = {
+                "protocol_version": 2,
+                "request_id": envelope.request_id,
+                "status": "ok",
+                "result": result,
+                "provenance": provenance,
+            }
+            return self.client._parse_response(
+                json.dumps(response, ensure_ascii=False).encode("utf-8"),
+                envelope,
+                0,
+                deadline=deadline,
+            )
+
+        for value in corpus["substantive"]:
+            with self.subTest(kind="substantive", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.OK,
+                )
+        for kind in ("non_substantive", "invalid"):
+            for value in corpus[kind]:
+                with self.subTest(kind=kind, value=repr(value)):
+                    self.assertEqual(
+                        parse({"text": value}).status,
+                        self.client.RuntimeStatus.PROTOCOL_ERROR,
+                    )
+        for value in (
+            "\u115f",
+            "\u1160",
+            "\u2800",
+            "\u3164",
+            "\uffa0",
+            "\ufffd",
+            "\x1b[ 0manswer",
+            "\x1b[🙂manswer",
+            "\x90hidden-control-payload\x9csafe",
+        ):
+            with self.subTest(kind="adversarial", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+        self.assertEqual(
+            parse({"text": "\x9d0;hidden title\x9canswer"}).status,
+            self.client.RuntimeStatus.OK,
+        )
+        with mock.patch.object(self.client, "_NON_SUBSTANTIVE_RANGES", None):
+            self.assertEqual(
+                parse({"text": "answer"}).status,
+                self.client.RuntimeStatus.PROTOCOL_ERROR,
+            )
+        for value in (None, 0, False, [], {}):
+            with self.subTest(kind="wrong-type", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+        self.assertEqual(
+            parse({}).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+        clock_reads = 0
+
+        def crossing_deadline():
+            nonlocal clock_reads
+            clock_reads += 1
+            return 0.0 if clock_reads < 3 else 2.0
+
+        with mock.patch.object(
+            self.client.time,
+            "monotonic",
+            side_effect=crossing_deadline,
+        ):
+            expired = parse({"text": " " * (64 * 1024)}, deadline=1.0)
+        self.assertEqual(expired.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(
+            expired.error,
+            "provider request deadline expired during response validation",
+        )
+
+        readiness = replace(envelope, operation="readiness")
+        readiness_response = {
+            "protocol_version": 2,
+            "request_id": readiness.request_id,
+            "status": "ok",
+            "result": {"ready": True},
+            "provenance": provenance,
+        }
+        self.assertEqual(
+            self.client._parse_response(
+                json.dumps(readiness_response).encode("utf-8"),
+                readiness,
+                0,
+            ).status,
+            self.client.RuntimeStatus.OK,
+        )
+
+        typed_failure = {
+            "protocol_version": 2,
+            "request_id": envelope.request_id,
+            "status": "containment_error",
+            "error": "managed provider containment is unavailable",
+        }
+        self.assertEqual(
+            self.client._parse_response(
+                json.dumps(typed_failure).encode("utf-8"),
+                envelope,
+                0,
+                deadline=0.0,
+            ).status,
+            self.client.RuntimeStatus.CONTAINMENT_ERROR,
+        )
 
     def test_manifest_schema_allows_only_exact_route_action_pairs(self) -> None:
         schema = json.loads(

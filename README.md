@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.4.1), and is
+This public repository distributes that one package, **agent-collab** (v4.4.2), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,22 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.4.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.4.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.4.2
+
+- **Execute success now requires usable output at both trust boundaries.**
+  The private runtime rejects provider executions that complete with missing,
+  empty, whitespace-only, Unicode-invisible/filler-only,
+  replacement-glyph-only, terminal-control-only, or malformed-terminal text.
+  The public client independently enforces the same content-addressed
+  conformance contract and frozen Unicode-16 blankness table against stale
+  signed runtimes. The canonical release archive carries the exact contract
+  beside the client. Response classification retains the original absolute
+  request deadline and returns typed `timeout` if a large blank/control stream
+  consumes the remaining budget. Readiness remains
+  structurally separate, while typed containment, deadline, teardown, and
+  provider failures retain their existing classifications.
 
 ## What's new - v4.4.1
 

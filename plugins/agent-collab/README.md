@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.4.1**
+Current: **4.4.2**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -64,7 +64,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.4.1 package.
+identify this same 4.4.2 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -377,6 +377,26 @@ applicable explicit Gemini/Codex/OpenCode/Grok review action may
 optionally carry that same exact `artifact` snapshot. No other
 non-governance request accepts it. The captured artifact-author family is
 excluded from every applicable review, fallback, and worker selection.
+
+A successful `execute` response must contain substantive string
+`result.text`. Empty, whitespace-only, Unicode-invisible/filler-only,
+replacement-glyph-only, terminal-control-only, malformed-terminal, missing,
+and non-string text fail closed as `protocol_error`; provider stderr cannot
+turn empty stdout into success. Exact CSI byte-class ordering and a closed
+OSC/C1 matrix reject malformed control residue. A co-packaged,
+content-addressed contract supplies the frozen Unicode-16 blankness table, so
+host Unicode updates cannot silently change classification. The public client
+enforces this independently of the signed runtime so a stale runtime cannot
+manufacture a false-positive result. The canonical archive ships the contract
+as `runtime_client.py`'s sibling and verifies byte identity. Direct and broker
+response parsing retain the original absolute request deadline; a large
+blank/control stream that consumes the remaining budget returns typed
+`timeout`. `readiness`
+responses keep their route-specific shape and are exempt. Typed native
+failures such as `containment_error`, `timeout`, and `teardown_error` are
+mapped before success validation and are never reclassified by this rule.
+Automatic route selection may fall back only after a pre-acceptance
+`unavailable`; an invalid-success `protocol_error` is terminal.
 
 The coordinator captures `artifact.content` as exact UTF-8 bytes and seals it
 separately from `prompt`. Its private native-protocol representation is:

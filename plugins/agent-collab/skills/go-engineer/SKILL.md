@@ -1,6 +1,6 @@
 ---
 name: go-engineer
-version: 4.4.1
+version: 4.4.2
 description: Senior Go engineer for concurrent, service-oriented, and cloud-native code. Use when the user says "review this Go service for concurrency bugs", "help me design this Go interface", "why is this goroutine leaking", or "/agent-collab:go-engineer." Also offer this proactively when a change adds a goroutine, channel, or context-cancellation path without an obvious termination guarantee.
 ---
 

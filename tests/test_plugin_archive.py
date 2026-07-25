@@ -192,9 +192,43 @@ class PluginArchiveTests(unittest.TestCase):
             self.assertIn(".claude-plugin/plugin.json", names)
             self.assertIn(".codex-plugin/plugin.json", names)
             self.assertIn("runtime_client.py", names)
+            self.assertIn("execute-output-contract-v1.json", names)
             self.assertIn("runtime_setup.py", names)
             self.assertIn("signing_policy.py", names)
             self.assertIn("runtime-manifest.json", names)
+            contract = bundle.getmember("execute-output-contract-v1.json")
+            self.assertEqual(
+                bundle.extractfile(contract).read(),
+                (self.plugin / "execute-output-contract-v1.json").read_bytes(),
+            )
+            installed = self.root / "installed"
+            installed.mkdir()
+            for name in (
+                "runtime_client.py",
+                "runtime_bundle.py",
+                "signing_policy.py",
+                "execute-output-contract-v1.json",
+            ):
+                member = bundle.getmember(name)
+                (installed / name).write_bytes(bundle.extractfile(member).read())
+            spec = importlib.util.spec_from_file_location(
+                "installed_archive_runtime_client", installed / "runtime_client.py"
+            )
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            client = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = client
+            try:
+                spec.loader.exec_module(client)
+                self.assertTrue(client._execute_text_is_substantive("answer"))
+                self.assertFalse(client._execute_text_is_substantive("\u3164"))
+            finally:
+                for name in (
+                    spec.name,
+                    "agent_collab_runtime_bundle",
+                    "agent_collab_signing_policy",
+                ):
+                    sys.modules.pop(name, None)
             for name in LEGAL_FILES:
                 self.assertIn(name, names)
                 member = bundle.getmember(name)
