@@ -25,32 +25,49 @@ hallucination can propagate into governing documents and tooling unchecked.
 This project exists to close those three gaps structurally rather than by
 trust:
 
-- **Cross-family review independence.** Changes in the highest governance
-  tier — security-sensitive logic, schemas and contracts, and anything
-  touching merge authority — require review by a model family *different
-  from* both the author and the first reviewer, resolved dynamically at decision time and enforced fail-closed by
-  CI — not by convention. Different vendors' models fail differently; the
-  triangle catches what any one family pattern-matches past.
-- **Verifiable evidence, not narrative.** Merges carry machine-validated
-  compliance traces: quoted verdicts, reviewer identity and family, reviewed
-  commit SHA, and (for the Gemini leg) a signed broker proof. An agent's
-  self-report is never the evidence of record.
-- **Operator final-say with minimal operator load.** Agents coordinate with
-  each other by default and self-merge only inside codified tiers; anything
-  destructive, security-sensitive, or authority-changing routes to the human
-  operator. The operator can revert, redirect, or revoke at any time.
+- **Cross-family reviewer independence, enforced at selection.** The
+  coordinator resolves the active primary's family and the artifact author's
+  family at call time and *excludes both* from reviewer, worker, tiebreaker,
+  and fallback selection — fail-closed, so an unknown family refuses a
+  governance route rather than guessing. Review therefore comes from a
+  different vendor's model than the one that wrote the change. Different
+  families fail differently; that is the point.
+- **Written evidence with an honest boundary.** Every governed merge carries a
+  compliance trace — tier, cross-check verdict, and the standing directives
+  followed — and CI hard-fails a PR whose trace is missing, malformed, or
+  under-declares its tier. Two different mechanisms do two different jobs: the
+  coordinator enforces family independence when it *selects* a route
+  (fail-closed), and CI validates the **form and presence** of the recorded
+  evidence. What neither does today is cryptographically authenticate a quoted
+  verdict — that is discrepancy detection, with per-agent signing on the
+  roadmap. The managed Gemini leg additionally returns a signed broker
+  proof, and this project's own workspace layers stricter requirements
+  (reviewer identity, reviewed SHA, distinct-family peer review) on top for
+  its highest tier.
+- **Operator final-say where it is codified.** Agents coordinate with each
+  other and self-merge converged, green, recorded changes; operator-reserved
+  paths (CODEOWNERS-gated files, including the governance contract itself) and
+  the codified operator-required classes route to the human instead. Not every
+  sensitive change is machine-forced to a human — the reserved set and tier
+  rules define the boundary — and the operator can revert, redirect, or revoke
+  the arrangement at any time.
 
 ## What it delivers in practice
 
-- **Coverage a single model cannot give you.** Adversarial review legs from
-  three or more vendor families on governance-grade changes; in production use
-  on this project, cross-family reviewers have repeatedly caught real defects
-  — silently drifted CI gates, falsified historical records, contract-weakening
-  edits — that same-family review missed.
-- **Cost-tiered delegation.** Bulk reading, mechanical codegen, and triage
-  route to the cheapest capable provider pool through managed routes; frontier
-  reasoning and merge judgment stay with the primary. Model and reasoning
-  effort are disclosed per invocation, so cost and quality are auditable.
+- **Coverage a single model cannot give you.** At minimum one adversarial
+  review leg from a family other than the author's — and on the highest tier,
+  this project runs a three-family triangle (author, cross-check, and a peer
+  reviewer distinct from both), the direction the contract is converging on. In production use on this project, cross-family
+  reviewers have repeatedly caught real defects — silently drifted CI gates,
+  falsified historical records, contract-weakening edits, overclaiming
+  documentation — that same-family review missed.
+- **Cost-tiered delegation, explicitly targeted.** Bulk reading, mechanical
+  codegen, and long-context work can be sent to cheaper provider pools while
+  frontier reasoning and the merge decision stay with the primary. Targets are
+  named explicitly per call today, with automatic cost-aware worker routing the
+  next step on that path; an explicit target never silently substitutes another
+  provider, and model plus reasoning effort are disclosed per invocation, so
+  cost and quality stay auditable.
 - **A hard security boundary around providers.** Provider CLIs are reached
   only through a signed, notarized native runtime with per-member digest
   verification, socket-activated zero-idle execution, and typed-unavailable
