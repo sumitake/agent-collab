@@ -36,6 +36,11 @@ class _GitStub:
     def __call__(self, *args, capture=True, check=True):
         out = mock.Mock()
         if args[:3] == ("log", "-1", "--format=%H"):
+            # Watermark must be computed from the bundle dir ONLY — including
+            # runtime-manifest.json here reopens the manifest-only-advance
+            # false negative (cross-check round 1).
+            assert args[3] == "--"
+            assert list(args[4:]) == ["plugins/agent-collab/runtime/"], args
             out.stdout = self.staged_sha
         elif args[:2] == ("log", "--format=%s"):
             out.stdout = "\n".join(self.subjects)

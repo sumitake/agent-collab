@@ -46,11 +46,11 @@ def _tag_exists(tag: str) -> bool:
     return bool(local or remote)
 
 
-# Paths whose last-touching commit defines when the native runtime was staged.
-_RUNTIME_STAGE_PATHS = (
-    "plugins/agent-collab/runtime/",
-    "plugins/agent-collab/runtime-manifest.json",
-)
+# The staleness watermark is the last commit touching the runtime BUNDLE dir
+# only. Deliberately NOT runtime-manifest.json: a manifest/contract-only commit
+# would advance the watermark past unaddressed `runtime:` merges and let a
+# stale binary pass (cross-check round 1, high-residual finding).
+_RUNTIME_STAGE_PATHS = ("plugins/agent-collab/runtime/",)
 
 
 def _runtime_currency_or_fail(allow_stale: bool) -> None:
