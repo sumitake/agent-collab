@@ -138,9 +138,9 @@ Contributors need no access to the private build/sign system. See
   writing quality) join the collaboration/governance set, grouped separately
   in the skills table so the package's collaboration core stays scannable.
   Authored under workspace ownership after an untrusted-input audit of the
-  MIT-licensed VoltAgent subagent corpora (pinned SHAs in
-  THIRD-PARTY-NOTICES.txt); no coordinator, provider, or routing surface is
-  touched.
+  MIT-licensed VoltAgent subagent corpora (pinned source SHAs recorded in the
+  package README's attribution note and the changelog fragment); no
+  coordinator, provider, or routing surface is touched.
 
 ## What's new - v4.3.5
 
