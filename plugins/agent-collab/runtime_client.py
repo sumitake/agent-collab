@@ -34,7 +34,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import unicodedata
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -53,6 +52,26 @@ except ImportError:  # pragma: no cover - exercised by a simulated non-POSIX imp
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
+EXECUTE_OUTPUT_CONTRACT_NAME = "execute-output-contract-v1.json"
+EXECUTE_OUTPUT_CONTRACT_SHA256 = (
+    "4c3b63877ca379d83a1bcd68a0682bc81ed49f741063e0dbc3ccb67e2940540b"
+)
+EXECUTE_OUTPUT_CONTRACT_ALGORITHM = (
+    "terminal-canonical-v1/frozen-unicode16-blank-v1"
+)
+_EXECUTE_OUTPUT_CONTRACT_KEYS = frozenset(
+    {
+        "algorithm",
+        "contract_version",
+        "invalid",
+        "non_substantive",
+        "non_substantive_ranges",
+        "schema_version",
+        "substantive",
+        "unicode_version",
+    }
+)
+_C1_CONTROL_STRING_INTRODUCERS = frozenset({0x90, 0x98, 0x9E, 0x9F})
 PROTOCOL_VERSION = 2
 LEGACY_BLUE_PROTOCOL_VERSION = 1
 CONTRACT_VERSION = 3
@@ -124,6 +143,62 @@ BROKER_DISPATCHER_STATE_KEYS = frozenset(
         "plist_sha256",
     }
 )
+
+
+def _read_execute_blank_ranges() -> tuple[tuple[int, int], ...] | None:
+    """Read the installed sibling contract once and fail closed on any skew."""
+
+    try:
+        raw = (PLUGIN_ROOT / EXECUTE_OUTPUT_CONTRACT_NAME).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != EXECUTE_OUTPUT_CONTRACT_SHA256:
+            return None
+        contract = json.loads(raw.decode("utf-8", errors="strict"))
+        if (
+            type(contract) is not dict
+            or frozenset(contract) != _EXECUTE_OUTPUT_CONTRACT_KEYS
+        ):
+            return None
+        if (
+            type(contract["schema_version"]) is not int
+            or contract["schema_version"] != 1
+            or type(contract["contract_version"]) is not int
+            or contract["contract_version"] != 1
+            or contract["algorithm"] != EXECUTE_OUTPUT_CONTRACT_ALGORITHM
+            or contract["unicode_version"] != "16.0.0"
+        ):
+            return None
+        for field in ("invalid", "non_substantive", "substantive"):
+            values = contract[field]
+            if (
+                type(values) is not list
+                or not all(type(value) is str for value in values)
+                or len(values) != len(set(values))
+            ):
+                return None
+        encoded_ranges = contract["non_substantive_ranges"]
+        if type(encoded_ranges) is not list or not encoded_ranges:
+            return None
+        ranges: list[tuple[int, int]] = []
+        last_end = -2
+        for encoded in encoded_ranges:
+            if (
+                type(encoded) is not list
+                or len(encoded) != 2
+                or type(encoded[0]) is not int
+                or type(encoded[1]) is not int
+            ):
+                return None
+            start, end = encoded
+            if not (0 <= start <= end <= 0x10FFFF) or start <= last_end + 1:
+                return None
+            ranges.append((start, end))
+            last_end = end
+        return tuple(ranges)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+
+
+_NON_SUBSTANTIVE_RANGES = _read_execute_blank_ranges()
 BROKER_FRAME_KEYS = frozenset(
     {
         "broker_protocol_version",
@@ -6967,18 +7042,23 @@ def _canonical_execute_text(text: object) -> str | None:
                 index += 2
             if kind == "csi":
                 complete = False
+                intermediate_seen = False
                 while index < length:
                     value = ord(text[index])
-                    if (
-                        text[index] == "\x1b"
-                        or value < 0x20
-                        or 0x7F <= value <= 0x9F
-                    ):
-                        return None
-                    index += 1
                     if 0x40 <= value <= 0x7E:
+                        index += 1
                         complete = True
                         break
+                    if 0x30 <= value <= 0x3F:
+                        if intermediate_seen:
+                            return None
+                        index += 1
+                        continue
+                    if 0x20 <= value <= 0x2F:
+                        intermediate_seen = True
+                        index += 1
+                        continue
+                    return None
                 if not complete:
                     return None
                 continue
@@ -6987,6 +7067,10 @@ def _canonical_execute_text(text: object) -> str | None:
                 current = text[index]
                 value = ord(current)
                 if current == "\x07":
+                    index += 1
+                    complete = True
+                    break
+                if value == 0x9C:
                     index += 1
                     complete = True
                     break
@@ -7002,6 +7086,8 @@ def _canonical_execute_text(text: object) -> str | None:
             if not complete:
                 return None
             continue
+        if code in _C1_CONTROL_STRING_INTRODUCERS:
+            return None
         if char in ("\t", "\n", "\r"):
             output.append(char)
         elif code < 0x20 or 0x7F <= code <= 0x9F:
@@ -7017,10 +7103,25 @@ def _canonical_execute_text(text: object) -> str | None:
 
 def _execute_text_is_substantive(text: object) -> bool:
     canonical = _canonical_execute_text(text)
-    return canonical is not None and any(
-        not char.isspace() and unicodedata.category(char)[0] not in {"C", "M"}
-        for char in canonical
-    )
+    ranges = _NON_SUBSTANTIVE_RANGES
+    if canonical is None or ranges is None:
+        return False
+    for char in canonical:
+        code = ord(char)
+        low = 0
+        high = len(ranges)
+        while low < high:
+            middle = (low + high) // 2
+            start, end = ranges[middle]
+            if code < start:
+                high = middle
+            elif code > end:
+                low = middle + 1
+            else:
+                break
+        else:
+            return True
+    return False
 
 
 def _parse_response(

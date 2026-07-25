@@ -379,11 +379,16 @@ non-governance request accepts it. The captured artifact-author family is
 excluded from every applicable review, fallback, and worker selection.
 
 A successful `execute` response must contain substantive string
-`result.text`. Empty, whitespace-only, Unicode-invisible-only,
-terminal-control-only, malformed-terminal, missing, and non-string text fail
-closed as `protocol_error`; provider stderr cannot turn empty stdout into
-success. The public client enforces this independently of the signed runtime so
-a stale runtime cannot manufacture a false-positive result. `readiness`
+`result.text`. Empty, whitespace-only, Unicode-invisible/filler-only,
+replacement-glyph-only, terminal-control-only, malformed-terminal, missing,
+and non-string text fail closed as `protocol_error`; provider stderr cannot
+turn empty stdout into success. Exact CSI byte-class ordering and a closed
+OSC/C1 matrix reject malformed control residue. A co-packaged,
+content-addressed contract supplies the frozen Unicode-16 blankness table, so
+host Unicode updates cannot silently change classification. The public client
+enforces this independently of the signed runtime so a stale runtime cannot
+manufacture a false-positive result. The canonical archive ships the contract
+as `runtime_client.py`'s sibling and verifies byte identity. `readiness`
 responses keep their route-specific shape and are exempt. Typed native
 failures such as `containment_error`, `timeout`, and `teardown_error` are
 mapped before success validation and are never reclassified by this rule.

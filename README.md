@@ -135,9 +135,12 @@ Contributors need no access to the private build/sign system. See
 
 - **Execute success now requires usable output at both trust boundaries.**
   The private runtime rejects provider executions that complete with missing,
-  empty, whitespace-only, Unicode-invisible-only, or terminal-control-only
-  text, and the public client independently enforces the same content-addressed
-  conformance contract against stale signed runtimes. Readiness remains
+  empty, whitespace-only, Unicode-invisible/filler-only,
+  replacement-glyph-only, terminal-control-only, or malformed-terminal text.
+  The public client independently enforces the same content-addressed
+  conformance contract and frozen Unicode-16 blankness table against stale
+  signed runtimes. The canonical release archive carries the exact contract
+  beside the client. Readiness remains
   structurally separate, while typed containment, deadline, teardown, and
   provider failures retain their existing classifications.
 

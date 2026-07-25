@@ -98,6 +98,7 @@ REQUIRED_ROOTS = (
     "README.md",
     "skills",
     "coordinator.py",
+    "execute-output-contract-v1.json",
     "runtime_client.py",
     "runtime_bundle.py",
     "runtime_setup.py",

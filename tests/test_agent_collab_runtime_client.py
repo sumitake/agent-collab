@@ -6910,13 +6910,15 @@ print(json.dumps({{
         corpus_bytes = corpus_path.read_bytes()
         self.assertEqual(
             hashlib.sha256(corpus_bytes).hexdigest(),
-            "395b0e369c077d4324d4cbd28b79efdbc0921aa3e90468de07618df403e2c70b",
+            "4c3b63877ca379d83a1bcd68a0682bc81ed49f741063e0dbc3ccb67e2940540b",
         )
         corpus = json.loads(corpus_bytes)
         self.assertEqual(
             corpus["algorithm"],
-            "terminal-canonical-v1/python-unicode-category-v1",
+            "terminal-canonical-v1/frozen-unicode16-blank-v1",
         )
+        self.assertEqual(corpus["unicode_version"], "16.0.0")
+        self.assertGreater(len(corpus["non_substantive_ranges"]), 700)
         envelope = self._envelope(route="opencode", action="plan")
         provenance = {
             "route": "opencode",
@@ -6956,6 +6958,31 @@ print(json.dumps({{
                         parse({"text": value}).status,
                         self.client.RuntimeStatus.PROTOCOL_ERROR,
                     )
+        for value in (
+            "\u115f",
+            "\u1160",
+            "\u2800",
+            "\u3164",
+            "\uffa0",
+            "\ufffd",
+            "\x1b[ 0manswer",
+            "\x1b[🙂manswer",
+            "\x90hidden-control-payload\x9csafe",
+        ):
+            with self.subTest(kind="adversarial", value=repr(value)):
+                self.assertEqual(
+                    parse({"text": value}).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+        self.assertEqual(
+            parse({"text": "\x9d0;hidden title\x9canswer"}).status,
+            self.client.RuntimeStatus.OK,
+        )
+        with mock.patch.object(self.client, "_NON_SUBSTANTIVE_RANGES", None):
+            self.assertEqual(
+                parse({"text": "answer"}).status,
+                self.client.RuntimeStatus.PROTOCOL_ERROR,
+            )
         for value in (None, 0, False, [], {}):
             with self.subTest(kind="wrong-type", value=repr(value)):
                 self.assertEqual(
