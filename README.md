@@ -145,6 +145,14 @@ Contributors need no access to the private build/sign system. See
   Authentication, protocol/output, timeout, provider, teardown, and cleanup
   failures remain orthogonal. Managed execution does not use output/stderr
   heuristics or routine direct CLI fallbacks.
+- **The repaired runtime is co-packaged again.** The darwin-arm64 standalone
+  runtime was rebuilt from final workspace `1.0.823` commit
+  `d08b6382710d6d5910d64cf011bcac873a2e1c03`, Developer-ID signed, and Apple
+  notarized as submission `c6d29dec-5351-467d-883e-0b862734567d`. The closed
+  activation manifest pins bundle SHA-256
+  `2cea10cff2030d0238661667cf8d1b83cf9885dc6f4a03b0db4365e891b04f47`;
+  release verification rejects any byte, member, signature, contract, or
+  notarization drift.
 
 ## What's new - v4.5.0
 

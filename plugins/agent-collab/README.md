@@ -172,21 +172,23 @@ retained-lane rollback continuity; any received v2 discriminator selects only
 v2. Dual-version callers use `GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
 `GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only.
 
-No signed artifact is present in this source tree yet. Native **Gemini
-advisory/governance/long-context**, **Codex advisory**, **OpenCode plan/build**,
-and **Grok 4.5 read-only architecture consultation, governance review,
-huge-context ingestion, and output-only code/patch generation through the
-`composer/codegen` compatibility route**
-roles are therefore **temporarily unavailable**. Policy-only safe mode keeps
-all native model routes unavailable. A host inbox is eligible only after a
-current availability observation, and the public coordinator exposes readiness
-only rather than a send primitive.
-This package may still be distributed as a policy-only release: its manifest
-has no artifact rows, its archive has no runtime bundle, and invocation
-continues to return typed unavailable until an activation release is verified.
-An activation archive must add the complete digest-pinned third-party legal
-tree and component-aware SPDX evidence alongside the signed runtime.
-Reinstalling a retired plugin is never a rollback.
+This 4.5.1 source tree carries the rebuilt darwin-arm64 activation artifact
+from final workspace `1.0.823` commit
+`d08b6382710d6d5910d64cf011bcac873a2e1c03`. Its manifest pins the complete
+standalone bundle at SHA-256
+`2cea10cff2030d0238661667cf8d1b83cf9885dc6f4a03b0db4365e891b04f47`;
+the bundle is Developer-ID signed and Apple-notarized under submission
+`c6d29dec-5351-467d-883e-0b862734567d`. Native **Gemini
+advisory/governance/long-context**, **Codex advisory/governance**,
+**OpenCode plan/build**, and **Grok 4.5 read-only architecture consultation,
+governance review, huge-context ingestion, and output-only code/patch
+generation through the `composer/codegen` compatibility route** become
+available only after the installed lifecycle has positively proven the exact
+artifact, manifest, dispatcher, broker, and provider tuple. Safe mode or an
+unproven host still returns typed unavailable. A host inbox is eligible only
+after a current availability observation, and the public coordinator exposes
+readiness only rather than a send primitive. Reinstalling a retired plugin is
+never a rollback.
 
 To enter rollback mode, set `AGENT_COLLAB_SAFE_MODE=1` in the active host
 runtime environment and restart the host. Unset it and restart only after the
