@@ -89,7 +89,7 @@ AUTHORITIES = {
     ("codex", "advisory"): "read_only",
     ("codex", "governance"): "read_only",
     ("opencode", "plan"): "read_only",
-    ("opencode", "build"): "workspace_write",
+    ("opencode", "build"): "output_only",
     ("grok", "architecture"): "read_only",
     ("grok", "governance"): "read_only",
     ("grok", "huge_context"): "read_only",

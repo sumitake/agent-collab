@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.0), and is
+This public repository distributes that one package, **agent-collab** (v4.5.1), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,22 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.5.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.5.1
+
+- **Containment is structural, provider-agnostic, and rare by design.** Managed
+  providers authenticate from the canonical user HOME while the caller
+  checkout remains read-only. Each request receives a private temporary
+  workspace in which the provider may use tools, edit, build, and reason
+  agentically; OpenCode build returns output-only material for trusted-primary
+  application. A blocked access attempt is containment success, not an
+  invocation failure. Structural containment failure is reserved for a
+  pre-launch boundary that cannot be established or positive evidence that a
+  write escaped the allowed paths or changed protected source/credentials.
+  Authentication, protocol/output, timeout, provider, teardown, and cleanup
+  failures remain orthogonal. Managed execution does not use output/stderr
+  heuristics or routine direct CLI fallbacks.
 
 ## What's new - v4.5.0
 
@@ -261,6 +276,24 @@ roots and selected-provider auth; Codex keeps a sealed per-call `CODEX_HOME`,
 SQLite, and XDG overlay. Provider-specific policy overlays may narrow
 credentials or tools without replacing process HOME. Broker frames cannot
 invoke local runtime-management actions.
+The runtime resolves the canonical user HOME from passwd for provider
+authentication while keeping the caller checkout read-only by default. Every
+request receives a private temporary workspace where the selected provider may
+clone or copy inputs, edit, build, use tools, and reason agentically. Only
+explicit provider-state paths are writable outside that workspace, in-request
+binary auto-update is disabled, execution is bounded, descendants are reaped,
+and temporary cleanup is positively verified. OpenCode build is sealed
+output-only: its private-workspace changes are returned for trusted-primary
+review and application rather than written into the caller checkout.
+
+A blocked access attempt inside an established boundary is containment success
+and does not by itself fail an invocation. A structural containment failure is
+reserved for failure to establish the boundary before launch or positive
+evidence that a write escaped allowed paths or changed protected
+source/credentials. Authentication, protocol/output, timeout, provider,
+teardown, and cleanup failures stay orthogonal; `rc=0`, empty output, or stderr
+wording never manufacture a containment result. Direct CLI use is not a normal
+reliability fallback for a managed route.
 If the client disconnects, the broker propagates cancellation through every
 managed provider route, reaps provider child groups,
 and discards partial output. Disconnect-driven cancellation is never retried;
@@ -533,8 +566,9 @@ path-based attachment or raw-provider fallback.
 
 Explicit `target=gemini`, `target=codex`, and `target=opencode` requests are
 fail-closed and never silently substituted. Gemini has separate read-only
-advisory, governance, and long-context actions; Codex advisory and OpenCode plan/workspace-write authority are
-sealed separately and never promote or demote into one another. Codex build is
+advisory, governance, and long-context actions; Codex advisory, OpenCode plan,
+and OpenCode private-workspace/output-only build authority are sealed
+separately and never promote or demote into one another. Codex build is
 a resolvable mutation-capable request but returns typed unavailable until a
 hardened mutation backend exists; it never widens advisory.
 
@@ -552,8 +586,9 @@ deadline. Final UTF-8 input above the inclusive 1,048,576-byte managed ceiling
 returns `input_limit` before provider authentication or spawn.
 Grok 4.5 is reachable only through sealed `architecture`, `governance`, or
 `huge_context` actions; generic advisory, brainstorm, debate, QA, and fallback
-requests cannot select it. OpenCode build is a distinct mutation-capable
-workspace-write action and never aliases its read-only plan action.
+requests cannot select it. OpenCode build is a distinct tool-capable,
+private-workspace/output-only action and never aliases its read-only plan
+action or writes the caller checkout.
 Applicable non-governance review, fallback, and worker requests may include an
 exact immutable artifact snapshot; its author model is resolved independently
 and that family is excluded from selection alongside the active primary family. An

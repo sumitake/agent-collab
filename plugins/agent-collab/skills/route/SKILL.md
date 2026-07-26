@@ -1,6 +1,6 @@
 ---
 name: route
-version: 4.5.0
+version: 4.5.1
 description: Use when the operator says "ask Codex," "target=gemini," "target=grok," "target=composer," or explicitly names a managed backend. Also offer this proactively when routing needs dynamic primary-family exclusion.
 ---
 
@@ -32,19 +32,21 @@ managed worker target.
 
 Seal only supported native contracts: Gemini advisory, governance, and long-context are
 read-only; Codex advisory is read-only; OpenCode plan is read-only and OpenCode
-build is mutation-capable workspace-write; Grok architecture, governance, and
-huge-context are read-only; the `composer/codegen` compatibility route invokes
-Grok 4.5 with output-only authority. Codex build
+build is tool-capable only inside a private temporary workspace with output-only
+authority to the caller; Grok architecture, governance, and huge-context are
+read-only; the `composer/codegen` compatibility route invokes Grok 4.5 with
+output-only authority. Codex build
 resolves as a separate mutation-capable role but is typed unavailable until the
 hardened backend exists, never advisory. Safe mode makes all five model-
 execution targets unavailable. A host async inbox is eligible only after an
 availability observation and exposes readiness only; the public coordinator
 never sends.
 
-Managed provider execution uses canonical passwd HOME for reliable interactive
-authentication state. This does not relax family exclusion, route authority,
-the signed broker boundary, bounded lifecycle, or the prohibition on raw CLI
-fallbacks.
+Managed provider execution uses the canonical user HOME resolved from passwd
+for reliable interactive authentication state. The caller checkout stays
+read-only by default while each request receives a private temporary workspace.
+This does not relax family exclusion, route authority, the signed broker
+boundary, bounded lifecycle, or the prohibition on raw CLI fallbacks.
 
 Execution mechanics belong to the verified co-packaged native artifact. This
 skill contains no provider command and authorizes no direct invocation.
