@@ -1,6 +1,6 @@
 ---
 name: worker
-version: 4.5.0
+version: 4.5.1
 description: Use when the operator says "delegate this implementation," "use Gemini for this corpus," "ask Codex to build," or "use Composer for codegen." Also offer this proactively when a bounded non-governance task benefits from a managed worker.
 ---
 
@@ -19,9 +19,10 @@ plan and build never promote, demote, or silently fall back into one another.
 
 Honor an explicit target only through the matching sealed route/action.
 Gemini long-context and Grok huge-context are read-only; Grok has no generic
-worker action. OpenCode build is mutation-capable workspace-write, while the
-`composer/codegen` compatibility route invokes Grok 4.5 with constrained
-output-only authority. Codex build remains a distinct
+worker action. OpenCode build may use tools and modify a private temporary
+workspace, but it returns output-only material and cannot write the caller
+checkout. The `composer/codegen` compatibility route likewise invokes Grok 4.5
+with constrained output-only authority. Codex build remains a distinct
 mutation-capable role but is typed unavailable until its hardened backend
 exists and may not fall back to advisory. Automatic worker routing is
 temporarily unavailable in the closed coordinator schema; require an explicit

@@ -19,8 +19,9 @@ and preserves artifact provenance. Never discover a provider executable.
 ## Supported model routes
 
 - OpenCode `plan`: read-only plan in one contained cwd.
-- OpenCode `build`: mutation-capable workspace-write execution within one
-  contained cwd; no `.git`, commit, push, PR, merge, or deploy authority.
+- OpenCode `build`: tool-capable execution in one private temporary workspace,
+  returning output-only material; the caller checkout stays read-only and the
+  route has no `.git`, commit, push, PR, merge, or deploy authority.
 - Grok 4.5 through the `composer/codegen` compatibility route: output-only
   patch/code JSON; no workspace tools. Seal simple work as low effort, standard
   fixes/features as medium, and complex multi-file or architecture work as high.

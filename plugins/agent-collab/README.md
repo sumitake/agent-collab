@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.5.0**
+Current: **4.5.1**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -65,7 +65,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.5.0 package.
+identify this same 4.5.1 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -125,6 +125,29 @@ private XDG roots and selected-provider auth; Codex keeps a sealed per-call
 `CODEX_HOME`, SQLite, and XDG overlay. A provider-specific policy overlay may
 narrow credentials or tools without replacing process HOME. Broker transport cannot invoke local `status`,
 `prepare`, or `grok_login` management authority.
+The runtime resolves that canonical user HOME from passwd for provider
+authentication while keeping the caller checkout read-only by default. Every
+request receives a private temporary workspace where the provider may clone or
+copy inputs, edit, build, use tools, and reason agentically. Only explicit
+provider-state paths are writable outside that workspace, in-request binary
+auto-update is disabled, execution is bounded, descendants are reaped, and
+temporary cleanup is positively verified. OpenCode build is sealed output-only:
+its private-workspace changes are returned for trusted-primary review and
+application rather than written into the caller checkout.
+Canonical HOME is not a deny-all-read confidentiality boundary: providers
+operate under explicit same-UID read trust so authenticated CLIs,
+loaders, and tools remain reliable. The structural boundary confines writes,
+execution/lifecycle, provider-state access, protected paths, and request
+cleanup; provider-specific overlays may narrow reads further.
+
+A blocked access attempt inside an established boundary is containment success,
+not an invocation failure. Structural containment failure is reserved for a
+boundary that cannot be established before launch or positive evidence that a
+write escaped allowed paths or changed protected source/credentials.
+Authentication, protocol/output, timeout, provider, teardown, and cleanup
+failures remain orthogonal; `rc=0`, empty output, or stderr wording never
+manufacture a containment result. Direct CLI use is not a normal reliability
+fallback for a managed route.
 Client disconnect propagates cancellation through every managed provider
 route, reaps provider child groups, and discards partial
 output. Disconnect cancellation is never retried; a deadline below the managed
@@ -226,7 +249,7 @@ mutation-capable authority never promote or demote into one another.
 | `target=codex` second opinion, high-stakes advice, or tiebreaker | Read-only | Codex advisory |
 | `target=codex` bounded implementation | Mutation-capable worker | Typed unavailable pending hardened mutation backend; no advisory fallback |
 | `target=opencode` analysis or implementation plan | Read-only | OpenCode plan |
-| `target=opencode` implementation | Mutation-capable worker | OpenCode build with exact workspace-write authority |
+| `target=opencode` implementation | Output-only worker | OpenCode build with tools in a private temporary workspace; trusted primary applies the returned material |
 | `target=grok` architecture consultation | Read-only | Grok 4.5 `architecture` action |
 | `target=grok` governance review | Read-only | Grok 4.5 `governance` action |
 | `target=grok` large-corpus extraction | Read-only | Grok 4.5 huge-context ingestion |
@@ -442,7 +465,7 @@ Exact row contracts are:
 | `gemini/long_context` | Gemini advisory fields plus `"documents":[{"label":"...","content":"..."}]` |
 | `codex/advisory` | `{"model":"openai/...","effort":"low|medium|high|xhigh","mode":"prompt-only"}` or `mode=repo-review` plus absolute `cwd` |
 | `opencode/plan` | Absolute `cwd`; optional explicitly observed `model` and `variant` |
-| `opencode/build` | Absolute `cwd`; optional explicitly observed `model` and `variant`; mutation-capable workspace authority |
+| `opencode/build` | Absolute read-only caller `cwd`; optional explicitly observed `model` and `variant`; private temporary workspace with output-only caller authority |
 | `grok/architecture` | `{"mode":"prompt-only"}` or `mode=repo-review` plus absolute `cwd` |
 | `grok/governance` | Same exact row as architecture; requires `governance=true` and an artifact snapshot |
 | `grok/huge_context` | `{"documents":[{"label":"...","content":"..."}]}` |
