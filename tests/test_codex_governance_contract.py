@@ -60,26 +60,31 @@ class CodexGovernanceContractTests(unittest.TestCase):
             frozenset({CONTRACT}),
         )
 
-    def test_signed_public_manifest_now_ships_the_route_and_keeps_it_optional(
+    def test_activation_manifest_ships_route_and_policy_only_has_no_runtime(
         self,
     ) -> None:
-        """The route is shipped as of v4.4.1, and stays OPTIONAL, not required.
+        """Activation ships the route; policy-only source carries no runtime.
 
         Until v4.4.1 the client and schema accepted ``codex/governance`` while
         the signed runtime deliberately did not advertise it, and this test
-        pinned that gap. The v4.4.1 runtime is built from a workspace source
-        closure where the route is a real read-only contract, so it now
-        advertises it. The invariant that still matters is the partition: the
-        route must remain accepted-but-not-required, so a runtime that omits
-        it continues to verify rather than being forced to claim it.
+        pinned that gap. An activation bundle built from the current workspace
+        source closure must advertise the real read-only contract. Between
+        activation cuts, the public source may instead be canonical
+        policy-only state: an empty manifest and no runtime directory. In both
+        states the public client keeps the route accepted-but-not-required so
+        older installed artifacts remain valid.
         """
-        advertised = {
-            (row["route"], row["action"])
-            for row in self.manifest["artifacts"][0]["contracts"]
-        }
-        self.assertIn(CONTRACT, advertised)
         self.assertNotIn(CONTRACT, self.client.REQUIRED_CONTRACTS)
-        self.assertTrue(self.client.REQUIRED_CONTRACTS <= advertised)
+        artifacts = self.manifest["artifacts"]
+        if artifacts:
+            advertised = {
+                (row["route"], row["action"])
+                for row in artifacts[0]["contracts"]
+            }
+            self.assertIn(CONTRACT, advertised)
+            self.assertTrue(self.client.REQUIRED_CONTRACTS <= advertised)
+        else:
+            self.assertFalse((PLUGIN / "runtime").exists())
 
     def test_optional_route_is_accepted_but_not_required_for_readiness(
         self,
@@ -106,14 +111,20 @@ class CodexGovernanceContractTests(unittest.TestCase):
             self.client.REQUIRED_CONTRACTS & self.client.OPTIONAL_CONTRACTS
         )
 
-        # The shipped signed manifest satisfies the required baseline in full.
-        advertised = {
-            (row["route"], row["action"])
-            for row in self.manifest["artifacts"][0]["contracts"]
-        }
-        self.assertEqual(
-            set(self.client.REQUIRED_CONTRACTS).difference(advertised), set()
-        )
+        # Any committed activation manifest satisfies the required baseline in
+        # full. A policy-only source manifest has no runtime to judge ready.
+        artifacts = self.manifest["artifacts"]
+        if artifacts:
+            advertised = {
+                (row["route"], row["action"])
+                for row in artifacts[0]["contracts"]
+            }
+            self.assertEqual(
+                set(self.client.REQUIRED_CONTRACTS).difference(advertised),
+                set(),
+            )
+        else:
+            self.assertFalse((PLUGIN / "runtime").exists())
 
     def test_doctor_readiness_uses_the_required_baseline(self) -> None:
         """Guard the call site itself, not just the constants."""
