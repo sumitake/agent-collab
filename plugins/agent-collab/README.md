@@ -134,6 +134,11 @@ auto-update is disabled, execution is bounded, descendants are reaped, and
 temporary cleanup is positively verified. OpenCode build is sealed output-only:
 its private-workspace changes are returned for trusted-primary review and
 application rather than written into the caller checkout.
+Canonical HOME is not a deny-all-read confidentiality boundary: providers
+operate under explicit same-UID read trust so authenticated CLIs,
+loaders, and tools remain reliable. The structural boundary confines writes,
+execution/lifecycle, provider-state access, protected paths, and request
+cleanup; provider-specific overlays may narrow reads further.
 
 A blocked access attempt inside an established boundary is containment success,
 not an invocation failure. Structural containment failure is reserved for a

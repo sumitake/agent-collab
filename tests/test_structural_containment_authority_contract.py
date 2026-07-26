@@ -62,6 +62,8 @@ class StructuralContainmentAuthorityContractTests(unittest.TestCase):
         normalized = " ".join(combined.split()).lower()
         for phrase in (
             "canonical user home",
+            "same-uid read trust",
+            "not a deny-all-read confidentiality boundary",
             "blocked access attempt",
             "containment success",
             "structural containment failure",
