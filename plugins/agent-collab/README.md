@@ -7,15 +7,16 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.4.2**
+Current: **4.5.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
 model changes are re-observed before routing; OpenCode is a runtime, while the
-selected model determines artifact family. The current `opencode/glm-5.2`
-preset therefore records **Zhipu** provenance. Exact provider/model segments
-produce lineage; conflicting family signals or incidental substrings resolve
-to unknown and fail the applicable independence check.
+selected model determines artifact family. The current
+`opencode-go/glm-5.2` preset therefore records **Zhipu** provenance. Kimi
+models record **Moonshot** provenance. Exact provider/model segments produce
+lineage; conflicting family signals or incidental substrings resolve to
+unknown and fail the applicable independence check.
 
 Governance requires a complete trustworthy primary identity: current
 `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
@@ -64,7 +65,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.4.2 package.
+identify this same 4.5.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -461,10 +462,16 @@ same author model, `xai/grok-4.5`.
 For OpenCode, a `model` field in the row is compatibility input only and never
 selects a backend. Selection is recomputed for every request from the strong
 live OpenCode or ZCode active-model observation, then explicit central
-`primary.opencode_model`, then the fixed `opencode/glm-5.2` preset. Ambient
-environment and row values are not fallbacks. The selected model must resolve
-to a known non-Anthropic family, and its family supplies artifact provenance
-and independence exclusion.
+`primary.opencode_model`, then the fixed `opencode-go/glm-5.2` preset. Row
+values are not fallbacks. The selected model must resolve to a known
+non-Anthropic family, and its family supplies artifact provenance and
+independence exclusion. Set
+`AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go` to enforce the OpenCode Go
+subscription on a host. With that guard set, malformed policy values and every
+model outside the exact `opencode-go/<model>` namespace fail closed both when
+the policy envelope is issued and immediately before runtime launch. The guard
+therefore rejects the standard metered OpenCode Zen namespace and prefix
+lookalikes rather than silently switching providers.
 
 The inbox row is exact: `target_id=claude` requires
 `target_family=anthropic`, while `target_id=antigravity` requires

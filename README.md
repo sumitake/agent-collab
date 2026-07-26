@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.4.2), and is
+This public repository distributes that one package, **agent-collab** (v4.5.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,16 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.4.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.5.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.5.0
+
+- **OpenCode Go is the packaged default.** Managed OpenCode requests now
+  default to `opencode-go/glm-5.2`, Kimi models carry Moonshot provenance, and
+  hosts can enforce the subscription with
+  `AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go`. The guard rejects standard
+  metered OpenCode Zen models, malformed policy, namespace lookalikes, live
+  provider drift, and late envelope drift before native execution.
 
 ## What's new - v4.4.2
 
@@ -386,7 +395,7 @@ The retired standalone packages migrate to the unified `agent-collab`:
 
 - `codex-tools →` managed Codex backend in `agent-collab`
 - `glm-worker →` managed OpenCode backend in `agent-collab`, with
-  `opencode/glm-5.2` as the current Zhipu-family model preset
+  `opencode-go/glm-5.2` as the current Zhipu-family model preset
 - host-specific collaboration packages → dynamic host profiles in
   `agent-collab`
 
@@ -488,9 +497,15 @@ fails governance closed; no model is guessed from configuration or defaults.
 The OpenCode model is selected on every request in this order: a strong live
 OpenCode or ZCode active-model observation, explicit central
 `primary.opencode_model` configuration, then the fixed current preset
-`opencode/glm-5.2`. Ambient environment values and row-level model fields are
-not selection fallbacks. A live session switch therefore changes provenance on
-the next request; an Anthropic or unknown selected model is prohibited.
+`opencode-go/glm-5.2`. Row-level model fields are not selection fallbacks. A
+live session switch therefore changes provenance on the next request; an
+Anthropic or unknown selected model is prohibited. Hosts that require the
+OpenCode Go subscription set
+`AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go`; while that guard is present, the
+policy rejects malformed provider configuration and every selected model
+outside the exact `opencode-go/<model>` namespace before native execution.
+This blocks the standard metered OpenCode Zen namespace without enabling its
+optional balance fallback.
 
 `AGENT_COLLAB_ASYNC_INBOX=available` (or request field
 `primary.async_inbox="available"`) is an availability observation, not a send

@@ -1,6 +1,6 @@
 ---
 name: chain-configurator
-version: 4.4.2
+version: 4.5.0
 defaults:
   tier: Standard
   effort: medium

@@ -36,8 +36,10 @@ except ImportError:  # pragma: no cover - non-POSIX hosts cannot prove Codex sta
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
-KNOWN_FAMILIES = frozenset({"anthropic", "google", "openai", "xai", "zhipu"})
-DEFAULT_OPENCODE_MODEL = "opencode/glm-5.2"
+KNOWN_FAMILIES = frozenset(
+    {"anthropic", "google", "openai", "xai", "zhipu", "moonshot"}
+)
+DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.2"
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_EFFORTS = frozenset({"high", "xhigh"})
 CODEX_GOVERNANCE_MODEL = "openai/gpt-5.6-sol"
@@ -141,6 +143,7 @@ _MODEL_FAMILY_PATTERNS = (
     (re.compile(r"^(?:codex(?:[-_.].*)?|gpt(?:[-_.].*)?|o[34](?:[-_.].*)?)$"), "openai"),
     (re.compile(r"^(?:grok|composer)(?:[-_.].*)?$"), "xai"),
     (re.compile(r"^(?:glm|zhipu)(?:[-_.].*)?$"), "zhipu"),
+    (re.compile(r"^(?:kimi|moonshot)(?:[-_.].*)?$"), "moonshot"),
 )
 
 
@@ -835,6 +838,50 @@ def _resolve_opencode_model(
     return DEFAULT_OPENCODE_MODEL
 
 
+def _opencode_provider_policy_error(
+    model: str,
+    explicit_config: Mapping[str, str] | None,
+) -> str:
+    policy_key = "AGENT_COLLAB_OPENCODE_PROVIDER"
+    if policy_key not in os.environ:
+        return ""
+    configured_provider = os.environ[policy_key]
+    if configured_provider != "opencode-go":
+        return (
+            "OpenCode provider policy is invalid; expected "
+            "AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go"
+        )
+    configured_model = (explicit_config or {}).get("opencode_model", "")
+    if (
+        not isinstance(model, str)
+        or model != model.strip()
+        or (
+            configured_model
+            and (
+                not isinstance(configured_model, str)
+                or configured_model != configured_model.strip()
+            )
+        )
+        or "/" not in model
+    ):
+        return (
+            "OpenCode Go provider policy requires model namespace "
+            "opencode-go/<model>"
+        )
+    provider, model_name = model.split("/", 1)
+    if (
+        provider != "opencode-go"
+        or not model_name
+        or model_name != model_name.strip()
+        or any(character.isspace() for character in model_name)
+    ):
+        return (
+            "OpenCode Go provider policy requires model namespace "
+            "opencode-go/<model>"
+        )
+    return ""
+
+
 def _validate_row(
     route: str,
     action: str,
@@ -910,6 +957,9 @@ def _validate_row(
         if not {"cwd"}.issubset(row) or not set(row).issubset({"model", "variant", "cwd"}):
             return None, "unknown", "OpenCode row fields are invalid"
         model = _resolve_opencode_model(profile, explicit_config, row)
+        provider_error = _opencode_provider_policy_error(model, explicit_config)
+        if provider_error:
+            return None, "unknown", provider_error
         model_family = resolve_model_family(model)
         if not model:
             return None, "unknown", "OpenCode model is not observed"
@@ -1187,9 +1237,20 @@ def startup_preflight(
     # Preflight and issuance must resolve the same selected OpenCode model.
     # Ambient variables and caller-supplied route rows are not central policy
     # and therefore cannot change either eligibility or artifact provenance.
-    families["opencode"] = resolve_model_family(
-        _resolve_opencode_model(profile, explicit_config, {})
-    )
+    opencode_model = _resolve_opencode_model(profile, explicit_config, {})
+    if any(route == "opencode" for route, _ in rows):
+        provider_error = _opencode_provider_policy_error(
+            opencode_model,
+            explicit_config,
+        )
+        if provider_error:
+            return PreflightOutcome(
+                PreflightStatus.CONFIG_ERROR,
+                profile,
+                (),
+                provider_error,
+            )
+    families["opencode"] = resolve_model_family(opencode_model)
     native_routes = tuple(
         route
         for route in ("gemini", "codex", "opencode", "grok", "composer")

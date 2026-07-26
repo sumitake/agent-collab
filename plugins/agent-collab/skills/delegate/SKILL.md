@@ -1,6 +1,6 @@
 ---
 name: delegate
-version: 4.4.2
+version: 4.5.0
 defaults:
   tier: Fast
   effort: low
