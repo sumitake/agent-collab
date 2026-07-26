@@ -727,6 +727,13 @@ and safe-envelope checks both rejected.
   check rather than a signature; complete v1 remains accepted only for
   retained-lane rollback continuity.
 
+agent-collab 4.5.0 routes the packaged OpenCode default through
+`opencode-go/glm-5.2`, recognizes
+Kimi as Moonshot-family provenance, and adds an opt-in
+`AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go` host guard that rejects standard
+metered OpenCode Zen models, malformed provider policy, namespace lookalikes,
+and late policy drift before runtime launch.
+
 <!-- release: agent-collab 4.4.1 -->
 ### Changed
 
@@ -765,6 +772,63 @@ and safe-envelope checks both rejected.
   moment the required set changed; deriving them makes that impossible.
 - Update the route-shipping test to the new reality (route now advertised) while
   still asserting it remains accepted-but-not-required.
+
+### Fixed
+
+- Restore the unreleased v4.5.0 source line to the canonical policy-only
+  package shape by removing the retained v4.4.2 production runtime bundle and
+  publishing an empty, schema-v3 runtime manifest.
+- Keep the OpenCode Go policy and skill changes in v4.5.0 while making the
+  source tree eligible for the governed private build/sign/notarize pipeline.
+
+### Why
+
+- A populated runtime is admissible to the private builder only when the
+  requested source is the exact commit behind a trusted signed release tag.
+  Carrying the older runtime into an untagged v4.5.0 commit made the source
+  neither a valid policy-only input nor a valid signed activation input.
+
+<!-- release: agent-collab 4.5.1 -->
+### Changed
+
+- Rebuild the darwin-arm64 provider runtime from final workspace `1.0.823`
+  commit `d08b6382710d6d5910d64cf011bcac873a2e1c03`, Developer-ID sign it, and
+  notarize it through Apple submission
+  `c6d29dec-5351-467d-883e-0b862734567d`.
+- Replace the policy-only placeholder with a closed activation manifest that
+  pins the complete standalone bundle at SHA-256
+  `2cea10cff2030d0238661667cf8d1b83cf9885dc6f4a03b0db4365e891b04f47`.
+  The rebuilt runtime includes the v4.5.1 provider-agnostic containment,
+  canonical-user-HOME authentication, private request workspace, bounded
+  execution/teardown/cleanup, OpenCode Go, output conformance, and lifecycle
+  continuity repairs from the final merged workspace.
+
+### Tests
+
+- Verify the imported handoff byte-for-byte, re-run the Developer ID,
+  hardened-runtime, secure-timestamp, Apple-notarization, Mach-O, contract,
+  member-inventory, and whole-bundle gates, then build and reopen the canonical
+  activation archive.
+
+### Fixed
+
+- agent-collab 4.5.1 makes managed containment a rare structural signal rather
+  than an output heuristic.
+- Make managed containment provider-agnostic and structural: authenticated
+  provider state resolves from the canonical user HOME, caller checkouts stay
+  read-only by default, and each request receives a private temporary workspace
+  for agentic tools, edits, builds, and reasoning.
+- Seal `opencode/build` as output-only to the caller. OpenCode may work inside
+  its private workspace, but the trusted primary reviews and applies returned
+  material instead of granting the provider direct caller-worktree mutation.
+- Reserve `containment_error` for failure to establish the boundary before
+  launch or positive write-escape/protected-state evidence. A successfully
+  blocked access attempt proves containment worked; return code, empty output,
+  and stderr wording cannot manufacture a containment failure.
+- Keep authentication, protocol/output, timeout, provider, teardown, and
+  cleanup failures orthogonal. Disable in-request binary updates, require
+  bounded descendant teardown and positively verified temporary cleanup, and
+  treat routine direct-CLI fallback as a managed-path reliability defect.
 
 <!-- changelog-fragments:end -->
 
