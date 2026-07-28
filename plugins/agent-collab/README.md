@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.5.3**
+Current: **4.5.4**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -65,7 +65,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.5.3 package.
+identify this same 4.5.4 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -170,9 +170,17 @@ path, so a runtime rewrite fails before that private pipe opens. Within this
 explicit boundary, complete legacy v1 remains intentionally acceptable for
 retained-lane rollback continuity; any received v2 discriminator selects only
 v2. Dual-version callers use `GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
-`GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only.
+`GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only. Containment is
+version-scoped by exact raw case-sensitive string: v1 admits exactly
+`write_contained_shared_home` (`GEMINI_GOVERNANCE_V1_CONTAINMENTS`), while v2
+admits exactly that mode or the producer's access-only
+`nonwriteback_ephemeral_home` (`GEMINI_GOVERNANCE_V2_CONTAINMENTS`), and a v2
+result's containment must equal the independently supplied proof containment
+exactly - dual set membership without equality fails closed, as do mixed,
+hybrid, unknown, or non-string values. Governance readiness recognizes either
+exact mode as capability-only; readiness never authorizes execution.
 
-This 4.5.3 source tree retains the rebuilt darwin-arm64 activation artifact
+This 4.5.4 source tree retains the rebuilt darwin-arm64 activation artifact
 from final workspace `1.0.823` commit
 `d08b6382710d6d5910d64cf011bcac873a2e1c03`. Its manifest pins the complete
 standalone bundle at SHA-256
