@@ -1,0 +1,26 @@
+gui/501/com.agent-collab.provider-broker = {
+	active count = 0
+	path = /Library/Application Support/AgentCollab/provider-dispatcher-0123456789abcdef0123456789abcdef.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /Library/Application Support/AgentCollab/versions/example/agent-collab-runtime
+	arguments = {
+		/Library/Application Support/AgentCollab/versions/example/agent-collab-runtime
+		dispatcher
+		--protocol
+		2
+	}
+
+	sockets = {
+		"ProviderBroker" = {
+			type = stream
+			path = /Library/Application Support/AgentCollab/provider-dispatcher-0123456789abcdef0123456789abcdef.sock
+			active = 1
+			passive = 1
+		}
+	}
+
+	jetsamproperties category = daemon
+	properties =
+}

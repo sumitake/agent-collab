@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.5.1**
+Current: **4.5.2**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -65,7 +65,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.5.1 package.
+identify this same 4.5.2 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -172,7 +172,7 @@ retained-lane rollback continuity; any received v2 discriminator selects only
 v2. Dual-version callers use `GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
 `GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only.
 
-This 4.5.1 source tree carries the rebuilt darwin-arm64 activation artifact
+This 4.5.2 source tree retains the rebuilt darwin-arm64 activation artifact
 from final workspace `1.0.823` commit
 `d08b6382710d6d5910d64cf011bcac873a2e1c03`. Its manifest pins the complete
 standalone bundle at SHA-256
@@ -347,11 +347,22 @@ atomically activates a closed plist, proves the job/socket and one-request
 process exit, and retains one verified prior record. Failed updates restore the
 complete prior state; same-version reactivation preserves its rollback target,
 and an unverified version is never recorded as rollback-safe. `broker-status`
-is read-only and emits no prompt, credential, provider output, or private path;
-an exact selected-lane ping proves callability, while a separate one-second
-quiescence observation reports `persistent_process` without making an active
-request look unavailable. Lifecycle mutations still require their full idle
-proof. Bounded `launchctl` collection failures return a typed lifecycle error.
+is read-only and emits no prompt, credential, provider output, or private path.
+Before the exact selected-lane ping may prove callability, the live launchd
+job's closed transcript must contain one valid top-level `properties =` line
+and no `KeepAlive`, `RunAtLoad`, or structured event-trigger evidence. Any
+event-trigger block is intentionally persistence-like: ambiguous lifecycle
+configuration blocks readiness rather than being mislabeled socket-only.
+`persistence_state` reports `nonpersistent`, `persistent`, or `unproven`; the
+matching `persistent_process` value is `false`, `true`, or `null`, and an
+unproven diagnostic format fails readiness closed. A separate optional
+one-second quiescence observation reports `process_idle=true|false` only after
+that probe runs; otherwise it is null, meaning unmeasured rather than idle.
+Bounded request activity or post-request grace therefore does not masquerade
+as configured persistence. Both new status observations are additive and
+optional for rolling-upgrade consumers. Lifecycle mutations never use either
+observation and still require their full idle proof. Bounded `launchctl`
+collection failures remain typed and auditable.
 
 Use the closed rollback/removal actions only when needed:
 

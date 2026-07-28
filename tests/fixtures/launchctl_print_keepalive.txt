@@ -1,0 +1,14 @@
+gui/501/com.agent-collab.provider-broker = {
+	active count = 1
+	path = /Library/LaunchAgents/com.example.keepalive.plist
+	type = LaunchAgent
+	state = running
+
+	program = /usr/bin/example
+	minimum runtime = 10
+	runs = 1
+	pid = 123
+
+	jetsamproperties category = daemon
+	properties = keepalive | runatload | inferred program | managed LWCR | has LWCR
+}

@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.1), and is
+This public repository distributes that one package, **agent-collab** (v4.5.2), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,25 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.1 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.5.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.5.2
+
+- **Broker status separates process configuration from momentary activity.**
+  Successful status reports `persistent_process=false` only after the exact
+  live launchd transcript proves that neither top-level
+  `KeepAlive`/`RunAtLoad` properties nor structured event triggers are
+  configured. Any event-trigger block is intentionally persistence-like:
+  ambiguity blocks readiness instead of being mislabeled socket-only.
+  `persistence_state` preserves the full `nonpersistent` / `persistent` /
+  `unproven` result; an unproven live format yields
+  `persistent_process=null` and fails readiness closed. A separate, optional
+  `process_idle` boolean-or-null reports bounded point-in-time quiescence only
+  when that idle probe actually ran; null means unmeasured, never idle. An
+  in-flight request or post-request grace therefore cannot make an otherwise
+  proven callable lane unavailable. Both new status observations are additive
+  and optional for rolling-upgrade consumers. Mutating lifecycle operations
+  never use either observation and still require their full idle proof.
 
 ## What's new - v4.5.1
 

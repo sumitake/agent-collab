@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 try:
     import fcntl as _fcntl
@@ -321,6 +321,15 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _JOB_LABEL_RE = re.compile(
     r"com\.agent-collab\.provider-(?:broker|dispatcher\.[0-9a-f]{32})"
 )
+_LAUNCHCTL_PROPERTIES_VALUE_RE = re.compile(r"^[A-Za-z0-9_ |\-]*$")
+_LAUNCHCTL_KEY_VALUE_LINE_RE = re.compile(
+    r"^(?P<indent>[ \t]+)"
+    r"(?P<key>[A-Za-z][A-Za-z0-9 _-]*?)"
+    r"[ \t]*=[ \t]*(?P<value>.*)$"
+)
+_PERSISTENCE_NONPERSISTENT = "nonpersistent"
+_PERSISTENCE_PERSISTENT = "persistent"
+_PERSISTENCE_UNPROVEN = "unproven"
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _DEVELOPER_ID_RE = re.compile(
     r"^Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)$"
@@ -4435,6 +4444,109 @@ def _job_loaded(label: str, *, deadline: float | None = None) -> bool:
     ).returncode == 0
 
 
+def _job_persistence_state(label: str) -> str:
+    """Observe one live job's closed launchd persistence projection."""
+
+    if not isinstance(label, str) or _JOB_LABEL_RE.fullmatch(label) is None:
+        raise ValueError("provider job label is invalid")
+    uid = os.getuid()
+    try:
+        result = _launchctl(["print", f"gui/{uid}/{label}"])
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return _PERSISTENCE_UNPROVEN
+    if result.returncode != 0 or not isinstance(result.stdout, str):
+        return _PERSISTENCE_UNPROVEN
+    lines = result.stdout.splitlines()
+    expected_header = f"gui/{uid}/{label} = {{"
+    if (
+        not lines
+        or lines[0] != expected_header
+        or lines[-1] != "}"
+        or not _launchctl_transcript_structure_closed(lines)
+    ):
+        return _PERSISTENCE_UNPROVEN
+
+    properties: list[str] = []
+    event_triggers = 0
+    nested_keepalive = 0
+    malformed_persistence_shape = False
+    for line in lines[1:-1]:
+        match = _LAUNCHCTL_KEY_VALUE_LINE_RE.fullmatch(line)
+        if match is None:
+            continue
+        indent = match.group("indent")
+        key = " ".join(match.group("key").casefold().split())
+        value = match.group("value").strip()
+        if key == "properties":
+            if (
+                indent != "\t"
+                or _LAUNCHCTL_PROPERTIES_VALUE_RE.fullmatch(value) is None
+            ):
+                malformed_persistence_shape = True
+            else:
+                properties.append(value)
+        elif key == "event triggers":
+            if indent != "\t" or value != "{":
+                malformed_persistence_shape = True
+            else:
+                event_triggers += 1
+        elif key == "keepalive":
+            if indent != "\t\t\t" or value not in {"0", "1"}:
+                malformed_persistence_shape = True
+            else:
+                nested_keepalive += 1
+        elif key == "runatload":
+            # Current launchctl projects RunAtLoad through the top-level
+            # properties token. A standalone key is an unknown transcript
+            # shape, never evidence that the job is nonpersistent.
+            malformed_persistence_shape = True
+
+    if (
+        malformed_persistence_shape
+        or len(properties) != 1
+        or event_triggers > 1
+        or (nested_keepalive and event_triggers != 1)
+    ):
+        return _PERSISTENCE_UNPROVEN
+    tokens = {
+        token
+        for token in re.split(r"[|\s]+", properties[0].casefold())
+        if token
+    }
+    if (
+        tokens.intersection({"keepalive", "runatload"})
+        or event_triggers == 1
+        or nested_keepalive
+    ):
+        return _PERSISTENCE_PERSISTENT
+    return _PERSISTENCE_NONPERSISTENT
+
+
+def _launchctl_transcript_structure_closed(lines: Sequence[str]) -> bool:
+    """Require a complete tab-indented launchctl brace transcript."""
+
+    depth = 1
+    last_index = len(lines) - 1
+    for index, line in enumerate(lines[1:], start=1):
+        stripped = line.lstrip("\t")
+        indent = len(line) - len(stripped)
+        if stripped == "}":
+            if indent != depth - 1:
+                return False
+            depth -= 1
+            if depth == 0 and index != last_index:
+                return False
+            continue
+        if stripped.endswith(" = {") or stripped.endswith(" => {"):
+            if indent != depth:
+                return False
+            depth += 1
+            continue
+        if stripped and (indent != depth or "{" in stripped or "}" in stripped):
+            return False
+    return depth == 0
+
+
 def _broker_job_loaded() -> bool:
     return _job_loaded(BROKER_LABEL)
 
@@ -4449,8 +4561,9 @@ def _broker_job_loaded() -> bool:
 # skips the ping and so silently masked the miscalibration.
 BROKER_COLD_START_TIMEOUT_SECONDS = 30.0
 # Status needs only a short point-in-time quiescence observation after a
-# successful liveness ping. Lifecycle mutations keep their full idle-proof
-# bound and still require ``persistent_process`` to be false.
+# successful liveness ping. ``process_idle`` reports that observation;
+# ``persistence_state`` separately records the live launchd-properties proof.
+# Lifecycle mutations keep their full idle-proof bound.
 BROKER_STATUS_IDLE_OBSERVATION_SECONDS = 1.0
 # Upper bound on how long teardown may poll to reap a SIGKILLed leader when no
 # caller deadline is supplied (preserves the pre-existing wait bound). When a
@@ -6284,26 +6397,37 @@ def broker_status() -> RuntimeResult:
                 lane.socket_path, expected_type=stat.S_IFSOCK, mode=0o600
             ) is not None
             ready = False
-            persistent_process = False
+            process_idle: bool | None = None
+            persistence_state = _PERSISTENCE_UNPROVEN
+            persistent_process: bool | None = None
             if loaded and socket_valid:
-                if lane.transport == "dispatcher":
-                    ping = invoke_dispatcher_ping(lane=lane)
-                    live = ping.status is RuntimeStatus.OK
+                persistence_state = _job_persistence_state(lane.label)
+                if persistence_state == _PERSISTENCE_NONPERSISTENT:
+                    persistent_process = False
+                    if lane.transport == "dispatcher":
+                        ping = invoke_dispatcher_ping(lane=lane)
+                        live = ping.status is RuntimeStatus.OK
+                    else:
+                        live = _broker_ping(lane.socket_path)
+                    idle = _wait_for_job_idle(
+                        lane.label,
+                        deadline=(
+                            time.monotonic()
+                            + BROKER_STATUS_IDLE_OBSERVATION_SECONDS
+                        ),
+                    )
+                    # Liveness proves the selected lane is callable. Idleness
+                    # is a separate lifecycle/quiescence signal: a legitimate
+                    # in-flight request can keep the socket-activated job
+                    # running after this ping without making the lane
+                    # unavailable. Keep the observation even when liveness
+                    # fails; overall status still follows liveness.
+                    ready = live
+                    process_idle = idle
+                elif persistence_state == _PERSISTENCE_PERSISTENT:
+                    persistent_process = True
                 else:
-                    live = _broker_ping(lane.socket_path)
-                idle = _wait_for_job_idle(
-                    lane.label,
-                    deadline=(
-                        time.monotonic()
-                        + BROKER_STATUS_IDLE_OBSERVATION_SECONDS
-                    ),
-                )
-                # Liveness proves the selected lane is callable. Idleness is a
-                # separate lifecycle/quiescence signal: a legitimate in-flight
-                # provider request can keep the socket-activated job running
-                # after this ping without making the lane unavailable.
-                ready = live
-                persistent_process = not idle
+                    persistence_state = _PERSISTENCE_UNPROVEN
 
             rollback_available = False
             retained = selector.get("retained")
@@ -6327,11 +6451,23 @@ def broker_status() -> RuntimeResult:
                     "rollback_available": rollback_available,
                     "dispatcher_ready": ready and lane.transport == "dispatcher",
                     "persistent_process": persistent_process,
+                    "persistence_state": persistence_state,
+                    "process_idle": process_idle,
                 },
                 error=(
                     ""
                     if status is RuntimeStatus.OK
-                    else "provider selected lane is installed but not executable"
+                    else (
+                        "provider selected lane is configured for process persistence"
+                        if persistence_state == _PERSISTENCE_PERSISTENT
+                        else (
+                            "provider selected lane live persistence configuration is unproven"
+                            if loaded
+                            and socket_valid
+                            and persistence_state == _PERSISTENCE_UNPROVEN
+                            else "provider selected lane is installed but not executable"
+                        )
+                    )
                 ),
             )
         state = _read_current_broker_state(root)

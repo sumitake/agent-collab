@@ -1,0 +1,28 @@
+gui/501/com.agent-collab.provider-broker = {
+	active count = 0
+	path = /Library/LaunchAgents/com.example.conditional.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /usr/bin/example
+	minimum runtime = 1
+	runs = 0
+	last exit code = (never exited)
+
+	event triggers = {
+		com.example.launchd.PathState => {
+			keepalive = 0
+			service = com.example.conditional
+			stream = com.example.events
+			monitor = com.example.monitor
+			descriptor = {
+				"PathState" => {
+					"/var/run/example.ready" => true
+				}
+			}
+		}
+	}
+
+	jetsamproperties category = daemon
+	properties = inferred program
+}

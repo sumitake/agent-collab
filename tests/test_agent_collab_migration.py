@@ -977,7 +977,30 @@ enabled = true
                 result={
                     "active": True,
                     "dispatcher_ready": True,
-                    "persistent_process": True,
+                    "persistent_process": False,
+                    "process_idle": False,
+                },
+            ),
+        )
+        with mock.patch.object(
+            self.doctor, "_load_runtime_client", return_value=runtime
+        ):
+            self.assertEqual(self.doctor._broker_runtime_state(), "ready")
+
+    def test_doctor_accepts_pre_process_idle_broker_status_shape(self) -> None:
+        statuses = types.SimpleNamespace(
+            OK="ok",
+            UNAVAILABLE="unavailable",
+            INTEGRITY_ERROR="integrity_error",
+        )
+        runtime = types.SimpleNamespace(
+            RuntimeStatus=statuses,
+            broker_status=lambda: types.SimpleNamespace(
+                status=statuses.OK,
+                result={
+                    "active": True,
+                    "dispatcher_ready": True,
+                    "persistent_process": False,
                 },
             ),
         )
