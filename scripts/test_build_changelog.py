@@ -102,14 +102,14 @@ class ListFragmentsTests(_RepoCase):
     def test_empty_dir(self) -> None:
         self.assertEqual(build_changelog.list_fragments(), [])
 
-    def test_picks_up_md_files_in_sorted_order(self) -> None:
+    def test_picks_up_md_files_in_reverse_sorted_order(self) -> None:
         self.write_fragment("0002-second.md", "second")
         self.write_fragment("0001-first.md", "first")
         self.write_fragment("0010-tenth.md", "tenth")
         result = build_changelog.list_fragments()
         self.assertEqual(
             [p.name for p in result],
-            ["0001-first.md", "0002-second.md", "0010-tenth.md"],
+            ["0010-tenth.md", "0002-second.md", "0001-first.md"],
         )
 
     def test_skips_reserved_names(self) -> None:
@@ -141,7 +141,7 @@ class ReadFragmentsTests(_RepoCase):
         self.write_fragment("0002-b.md", "content-b\n")
         fragments = build_changelog.list_fragments()
         self.assertEqual(
-            build_changelog.read_fragments(fragments), ["content-a", "content-b"]
+            build_changelog.read_fragments(fragments), ["content-b", "content-a"]
         )
 
     def test_strips_trailing_whitespace_only(self) -> None:

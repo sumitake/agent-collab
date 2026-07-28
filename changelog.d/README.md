@@ -27,7 +27,7 @@ This directory holds **per-PR changelog fragments** that compile into `CHANGELOG
 
 `scripts/build-changelog.py` is the compiler:
 
-- **Build mode** (default): reads `changelog.d/*.md` in sorted order, concatenates content, inserts the result into the `## [Unreleased]` section of `CHANGELOG.md`. Idempotent.
+- **Build mode** (default): reads `changelog.d/*.md` in reverse-sorted order (newest filename first), concatenates content, inserts the result into the `## [Unreleased]` section of `CHANGELOG.md`. Idempotent.
 - **Check mode** (`--check`): builds to a temp file and diffs against the current `CHANGELOG.md`. Exit 0 if they match; exit 1 with diff if they don't. CI uses this mode.
 - **Dry-run mode** (`--dry-run`): prints what would be compiled without writing.
 

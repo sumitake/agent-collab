@@ -27,8 +27,11 @@ DESIGN
       - changelog.d/README.md
       - changelog.d/.gitkeep
       - changelog.d/.skip-* (any file starting with `.skip-`)
-  * Fragment ordering: lexical sort of filename. Conventional naming uses
-    zero-padded incrementing IDs or PR numbers so order is intentional.
+  * Fragment ordering: reverse-lexical sort of filename (newest first).
+    Conventional naming uses date-prefixed or zero-padded incrementing IDs, so
+    reverse order puts the most recently landed change nearest the top of
+    ``[Unreleased]`` — matching Keep a Changelog's most-recent-on-top
+    convention instead of burying it at the bottom of the section.
   * The compiler inserts fragments BETWEEN the ``## [Unreleased]`` line and
     the first ``###`` sub-heading (or end of section if no sub-headings).
     Existing inline entries under ``## [Unreleased]`` are PRESERVED below the
@@ -64,14 +67,16 @@ FRAGMENT_BLOCK_END = "<!-- changelog-fragments:end -->"
 
 
 def list_fragments() -> list[Path]:
-    """Return sorted list of fragment files under changelog.d/.
+    """Return reverse-sorted list of fragment files under changelog.d/.
 
+    Reverse-lexical by filename, so the newest-dated/highest-numbered
+    fragment comes first (most recent on top of ``[Unreleased]``).
     Reserved names skipped: README.md, .gitkeep, .skip-*
     """
     if not FRAGMENTS_DIR.is_dir():
         return []
     fragments: list[Path] = []
-    for entry in sorted(FRAGMENTS_DIR.iterdir()):
+    for entry in sorted(FRAGMENTS_DIR.iterdir(), reverse=True):
         if not entry.is_file():
             continue
         if entry.name == "README.md":
