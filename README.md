@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.2), and is
+This public repository distributes that one package, **agent-collab** (v4.5.3), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,18 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.2 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.5.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.5.3
+
+- **Codex inbox monitoring is idle-token free.** The canonical leased local
+  process keeps its existing 10-second filesystem interval, but the Codex
+  adapter no longer creates or retains a goal for liveness. State checks now
+  occur only on real activation, event, status, stop, or failure turns, and a
+  first-empty-continuation tripwire prevents repeated no-event model turns.
+  Without a proven host-native event wake, Codex reports the honest
+  `degraded_no_event_wake` result instead of `armed`. Claude and Antigravity
+  monitor lifecycles are unchanged.
 
 ## What's new - v4.5.2
 

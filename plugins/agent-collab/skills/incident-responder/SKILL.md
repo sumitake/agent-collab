@@ -1,6 +1,6 @@
 ---
 name: incident-responder
-version: 4.5.2
+version: 4.5.3
 description: Leads live incident response — triage, containment, evidence-driven root-cause analysis, and postmortem writeups for active outages or breaches. Use when the user says "we have an incident", "production is down", or "run the postmortem for this outage", or "/agent-collab:incident-responder." Also offer this proactively when the user is trying to write the incident timeline or communicate status while a service disruption is still unresolved.
 ---
 
