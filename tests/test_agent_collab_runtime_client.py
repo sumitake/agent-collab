@@ -4191,6 +4191,8 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_job_loaded", return_value=True
         ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="nonpersistent"
+        ), mock.patch.object(
             self.client, "invoke_dispatcher_ping", return_value=ping
         ), mock.patch.object(
             self.client, "_wait_for_job_idle", return_value=True
@@ -4201,6 +4203,9 @@ print(json.dumps({{
         self.assertTrue(result.result["active"])
         self.assertTrue(result.result["dispatcher_ready"])
         self.assertFalse(result.result["rollback_available"])
+        self.assertFalse(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "nonpersistent")
+        self.assertTrue(result.result["process_idle"])
         self.assertEqual(
             result.result["selected"]["artifact_sha256"], lane.artifact_digest
         )
@@ -4242,6 +4247,8 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_job_loaded", return_value=True
         ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="nonpersistent"
+        ), mock.patch.object(
             self.client, "invoke_dispatcher_ping", return_value=unavailable
         ), mock.patch.object(
             self.client, "_wait_for_job_idle", return_value=True
@@ -4251,8 +4258,157 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertFalse(result.result["active"])
         self.assertFalse(result.result["dispatcher_ready"])
+        self.assertFalse(result.result["persistent_process"])
+        self.assertTrue(
+            result.result["process_idle"],
+            "quiescence is independent from the failed liveness proof",
+        )
 
-    def test_broker_status_reports_responsive_dispatcher_ready_while_busy(
+    def test_broker_status_rejects_observed_live_process_persistence(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="persistent"
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping"
+        ) as ping, mock.patch.object(
+            self.client, "_wait_for_job_idle"
+        ) as wait_for_idle:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertTrue(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "persistent")
+        self.assertIsNone(result.result["process_idle"])
+        self.assertEqual(
+            result.error,
+            "provider selected lane is configured for process persistence",
+        )
+        ping.assert_not_called()
+        wait_for_idle.assert_not_called()
+
+    def test_broker_status_preserves_unproven_live_persistence_as_unknown(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="unproven"
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping"
+        ) as ping, mock.patch.object(
+            self.client, "_wait_for_job_idle"
+        ) as wait_for_idle:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertFalse(result.result["active"])
+        self.assertFalse(result.result["dispatcher_ready"])
+        self.assertIsNone(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "unproven")
+        self.assertIsNone(result.result["process_idle"])
+        self.assertEqual(
+            result.error,
+            "provider selected lane live persistence configuration is unproven",
+        )
+        ping.assert_not_called()
+        wait_for_idle.assert_not_called()
+
+    def test_broker_status_reports_idle_unmeasured_when_selected_job_is_unloaded(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=False
+        ), mock.patch.object(
+            self.client, "_job_persistence_state"
+        ) as persistence, mock.patch.object(
+            self.client, "invoke_dispatcher_ping"
+        ) as ping, mock.patch.object(
+            self.client, "_wait_for_job_idle"
+        ) as wait_for_idle:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertFalse(result.result["launchd_job"])
+        self.assertIsNone(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "unproven")
+        self.assertIsNone(result.result["process_idle"])
+        persistence.assert_not_called()
+        ping.assert_not_called()
+        wait_for_idle.assert_not_called()
+
+    def test_broker_status_reports_idle_unmeasured_when_selected_socket_is_invalid(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        selector = self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ):
+            lane = self.client._load_selector_v2_lane(
+                root, selector["selected"], role="selected"
+            )
+        exact_mode = self.client._exact_mode
+
+        def invalidate_socket(path, *args, **kwargs):
+            if str(path).endswith(".sock"):
+                return None
+            return exact_mode(path, *args, **kwargs)
+
+        with mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client, "_read_broker_selector_view", return_value=selector
+        ), mock.patch.object(
+            self.client, "_load_selector_v2_lane", return_value=lane
+        ), mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_exact_mode", side_effect=invalidate_socket
+        ), mock.patch.object(
+            self.client, "_job_persistence_state"
+        ) as persistence, mock.patch.object(
+            self.client, "invoke_dispatcher_ping"
+        ) as ping, mock.patch.object(
+            self.client, "_wait_for_job_idle"
+        ) as wait_for_idle:
+            result = self.client.broker_status()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
+        self.assertTrue(result.result["launchd_job"])
+        self.assertFalse(result.result["socket"])
+        self.assertIsNone(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "unproven")
+        self.assertIsNone(result.result["process_idle"])
+        persistence.assert_not_called()
+        ping.assert_not_called()
+        wait_for_idle.assert_not_called()
+
+    def test_broker_status_separates_bounded_process_activity_from_persistence(
         self,
     ) -> None:
         root = self.root / "broker-state"
@@ -4270,6 +4426,8 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_job_loaded", return_value=True
         ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="nonpersistent"
+        ), mock.patch.object(
             self.client, "invoke_dispatcher_ping", return_value=ping
         ), mock.patch.object(
             self.client, "_wait_for_job_idle", return_value=False
@@ -4279,7 +4437,9 @@ print(json.dumps({{
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertTrue(result.result["active"])
         self.assertTrue(result.result["dispatcher_ready"])
-        self.assertTrue(result.result["persistent_process"])
+        self.assertFalse(result.result["persistent_process"])
+        self.assertEqual(result.result["persistence_state"], "nonpersistent")
+        self.assertFalse(result.result["process_idle"])
         wait_for_idle.assert_called_once()
         idle_deadline = wait_for_idle.call_args.kwargs["deadline"]
         self.assertGreater(idle_deadline, started)
@@ -4313,6 +4473,8 @@ print(json.dumps({{
             side_effect=(selected_lane, ValueError("retained lane is invalid")),
         ), mock.patch.object(
             self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_job_persistence_state", return_value="nonpersistent"
         ), mock.patch.object(
             self.client, "invoke_dispatcher_ping", return_value=ping
         ), mock.patch.object(
@@ -4358,6 +4520,8 @@ print(json.dumps({{
         ), mock.patch.object(
             self.client, "_job_loaded", side_effect=(True, False)
         ) as job_loaded, mock.patch.object(
+            self.client, "_job_persistence_state", return_value="nonpersistent"
+        ), mock.patch.object(
             self.client, "_exact_mode", return_value=object()
         ), mock.patch.object(
             self.client, "invoke_dispatcher_ping", return_value=ping
@@ -4601,6 +4765,58 @@ print(json.dumps({{
         self.assertTrue((root / f"provider-dispatcher-{token}.json").is_file())
         self.assertTrue((root / f"provider-dispatcher-{token}.plist").is_file())
         self.assertTrue((root / f"provider-dispatcher-{token}.sock").exists())
+
+    def test_stage_dispatcher_restores_baseline_when_full_idle_proof_fails(
+        self,
+    ) -> None:
+        root = self.root / "broker-state"
+        self._install_modern_selected(root, body="#!/bin/sh\nexit 0\n")
+        selector_path = root / self.client.BROKER_SELECTOR_V2_FILENAME
+        selector_before = selector_path.read_bytes()
+        self._fixture(body="#!/bin/sh\nexit 7\n")
+        ping = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK,
+            result={"ready": True},
+            provenance={"operation": "dispatcher_ping"},
+        )
+
+        with mock.patch.object(
+            self.client, "_verify_macos_signature", return_value=(True, "")
+        ), mock.patch.object(self.client, "PLUGIN_ROOT", self.root), mock.patch.object(
+            self.client, "_broker_root", return_value=root
+        ), mock.patch.object(
+            self.client,
+            "_bootstrap_broker",
+            side_effect=self._dispatcher_bootstrap(root),
+        ), mock.patch.object(
+            self.client, "_bootout_broker", return_value=True
+        ), mock.patch.object(
+            self.client, "_job_loaded", return_value=True
+        ), mock.patch.object(
+            self.client, "_wait_for_job_idle", return_value=False
+        ), mock.patch.object(
+            self.client, "invoke_dispatcher_ping", return_value=ping
+        ):
+            result = self.client.stage_dispatcher()
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+        self.assertEqual(selector_path.read_bytes(), selector_before)
+        selector = json.loads(selector_before)
+        self.assertIsNone(selector["candidate"])
+        candidate_files = [
+            path
+            for path in root.glob("provider-dispatcher-*")
+            if path.suffix in {".json", ".plist", ".sock"}
+            and path.stem
+            != (
+                "provider-dispatcher-"
+                + self.client._dispatcher_lane_token(
+                    selector["selected"]["artifact_sha256"],
+                    selector["selected"]["manifest_sha256"],
+                )
+            )
+        ]
+        self.assertEqual(candidate_files, [])
 
     def test_stage_dispatcher_failure_restores_selector_and_blue_byte_for_byte(self) -> None:
         root = self.root / "broker-state"
@@ -5765,6 +5981,241 @@ print(json.dumps({{
         ) as lc:
             self.client._job_loaded(self.client.BROKER_LABEL)
         self.assertIsNone(lc.call_args.kwargs.get("deadline"))
+
+    def test_job_persistence_state_parses_sanitized_live_golden_transcripts(
+        self,
+    ) -> None:
+        fixtures = ROOT / "tests" / "fixtures"
+        cases = (
+            ("launchctl_print_nonpersistent.txt", "nonpersistent"),
+            ("launchctl_print_keepalive.txt", "persistent"),
+            ("launchctl_print_keepalive_dictionary.txt", "persistent"),
+        )
+        for filename, expected in cases:
+            with self.subTest(filename=filename), mock.patch.object(
+                self.client,
+                "_launchctl",
+                return_value=subprocess.CompletedProcess(
+                    [],
+                    0,
+                    (fixtures / filename).read_text(encoding="utf-8"),
+                    "",
+                ),
+            ), mock.patch.object(
+                self.client.os, "getuid", return_value=501
+            ):
+                self.assertEqual(
+                    self.client._job_persistence_state(self.client.BROKER_LABEL),
+                    expected,
+                )
+
+    def test_job_persistence_state_uses_exact_top_level_casefolded_tokens(
+        self,
+    ) -> None:
+        for token in ("KeEpAlIvE", "RuNaTlOaD"):
+            transcript = (
+                "gui/501/com.agent-collab.provider-broker = {\n"
+                f"\tproperties = InFeRrEd PrOgRaM | {token} | BeNiGn\n"
+                "}\n"
+            )
+            with self.subTest(token=token), mock.patch.object(
+                self.client,
+                "_launchctl",
+                return_value=subprocess.CompletedProcess([], 0, transcript, ""),
+            ) as launchctl, mock.patch.object(
+                self.client.os, "getuid", return_value=501
+            ):
+                self.assertEqual(
+                    self.client._job_persistence_state(self.client.BROKER_LABEL),
+                    "persistent",
+                )
+            launchctl.assert_called_once_with(
+                ["print", "gui/501/com.agent-collab.provider-broker"]
+            )
+
+    def test_job_persistence_state_treats_any_exact_event_trigger_as_persistent(
+        self,
+    ) -> None:
+        transcript = (
+            "gui/501/com.agent-collab.provider-broker = {\n"
+            "\tevent triggers = {\n"
+            "\t\tcom.example.trigger => {\n"
+            "\t\t\tservice = com.example.service\n"
+            "\t\t}\n"
+            "\t}\n"
+            "\tproperties = inferred program\n"
+            "}\n"
+        )
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, transcript, ""),
+        ), mock.patch.object(self.client.os, "getuid", return_value=501):
+            self.assertEqual(
+                self.client._job_persistence_state(self.client.BROKER_LABEL),
+                "persistent",
+            )
+
+    def test_job_persistence_state_accepts_nested_keepalive_one_projection(
+        self,
+    ) -> None:
+        transcript = (
+            "gui/501/com.agent-collab.provider-broker = {\n"
+            "\tevent triggers = {\n"
+            "\t\tcom.example.trigger => {\n"
+            "\t\t\tkeepalive = 1\n"
+            "\t\t}\n"
+            "\t}\n"
+            "\tproperties = inferred program\n"
+            "}\n"
+        )
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, transcript, ""),
+        ), mock.patch.object(self.client.os, "getuid", return_value=501):
+            self.assertEqual(
+                self.client._job_persistence_state(self.client.BROKER_LABEL),
+                "persistent",
+            )
+
+    def test_job_persistence_state_does_not_scan_path_substrings(self) -> None:
+        transcript = (
+            "gui/501/com.agent-collab.provider-broker = {\n"
+            "\tpath = /Library/LaunchAgents/com.example.keepalive-runatload.plist\n"
+            "\tprogram = /usr/bin/keepalive-helper\n"
+            "\tproperties = inferred program\n"
+            "}\n"
+        )
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, transcript, ""),
+        ), mock.patch.object(self.client.os, "getuid", return_value=501):
+            self.assertEqual(
+                self.client._job_persistence_state(self.client.BROKER_LABEL),
+                "nonpersistent",
+            )
+
+    def test_job_persistence_state_normalizes_insignificant_key_spacing(
+        self,
+    ) -> None:
+        transcript = (
+            "gui/501/com.agent-collab.provider-broker = {\n"
+            "\tevent  triggers = {\n"
+            "\t}\n"
+            "\tproperties = inferred program\n"
+            "}\n"
+        )
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            return_value=subprocess.CompletedProcess([], 0, transcript, ""),
+        ), mock.patch.object(self.client.os, "getuid", return_value=501):
+            self.assertEqual(
+                self.client._job_persistence_state(self.client.BROKER_LABEL),
+                "persistent",
+            )
+
+    def test_job_persistence_state_fails_closed_on_unproven_print_shape(
+        self,
+    ) -> None:
+        header = "gui/501/com.agent-collab.provider-broker = {\n"
+        cases = (
+            (1, header + "\tproperties =\n}\n"),
+            (0, ""),
+            (0, "gui/501/example = {\n\tproperties =\n}\n"),
+            (0, header + "}\n"),
+            (0, header + "\tproperties =\n"),
+            (0, header + "\tproperties =\n\tproperties = keepalive\n}\n"),
+            (0, header + "\t\tproperties = keepalive\n}\n"),
+            (0, header + "\tproperties = keepalive,runatload\n}\n"),
+            (0, header + "state = running\n\tproperties =\n}\n"),
+            (0, header + "\tmystery = { trailing\n\tproperties =\n}\n"),
+            (
+                0,
+                header
+                + "\tproperties =\n"
+                + " event triggers = {\n"
+                + " }\n"
+                + "}\n",
+            ),
+            (
+                0,
+                header
+                + "\tproperties =\n"
+                + "\tevent triggers = maybe\n"
+                + "}\n",
+            ),
+            (
+                0,
+                header
+                + "\tevent triggers = {\n"
+                + "\t\tcom.example => {\n"
+                + "\t\t\tkeepalive = maybe\n"
+                + "\t\t}\n"
+                + "\t}\n"
+                + "\tproperties =\n"
+                + "}\n",
+            ),
+            (
+                0,
+                header
+                + "\tevent triggers = {\n"
+                + "\t}\n"
+                + "\tevent triggers = {\n"
+                + "\t}\n"
+                + "\tproperties =\n"
+                + "}\n",
+            ),
+            (
+                0,
+                header
+                + "\t\tkeepalive = 1\n"
+                + "\tproperties =\n"
+                + "}\n",
+            ),
+            (
+                0,
+                header
+                + "\trunatload = 1\n"
+                + "\tproperties =\n"
+                + "}\n",
+            ),
+        )
+        for returncode, stdout in cases:
+            with self.subTest(returncode=returncode, stdout=stdout), mock.patch.object(
+                self.client,
+                "_launchctl",
+                return_value=subprocess.CompletedProcess([], returncode, stdout, ""),
+            ), mock.patch.object(
+                self.client.os, "getuid", return_value=501
+            ):
+                self.assertEqual(
+                    self.client._job_persistence_state(self.client.BROKER_LABEL),
+                    "unproven",
+                )
+
+    def test_job_persistence_state_rejects_invalid_label_before_launchctl(
+        self,
+    ) -> None:
+        with mock.patch.object(self.client, "_launchctl") as launchctl:
+            with self.assertRaises(ValueError):
+                self.client._job_persistence_state("invalid label")
+        launchctl.assert_not_called()
+
+    def test_job_persistence_state_fails_closed_on_launchctl_collection_error(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            self.client,
+            "_launchctl",
+            side_effect=RuntimeError("launchctl collection timed out"),
+        ):
+            self.assertEqual(
+                self.client._job_persistence_state(self.client.BROKER_LABEL),
+                "unproven",
+            )
 
     def test_capture_broker_lanes_bounds_retained_probe_by_deadline(self) -> None:
         # _capture_broker_lanes threads the request deadline into the retained
