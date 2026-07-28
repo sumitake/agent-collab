@@ -18,16 +18,20 @@ GENERATED = (
     / "SKILL.md"
 )
 
-LEGACY_CODEX_OBJECTIVE = (
-    "Keep exactly one Codex inter-agent inbox monitor armed for session "
-    "{session_id}, monitoring all topics (`.*`) while always surfacing direct "
-    "replies and session-targeted messages. Preserve the async-inbox routing "
-    "exclusions: use synchronous managed routes first and verifiable Git "
-    "surfaces second; the inbox is outbound last-resort failover. Do not create "
-    "scheduled or recurring automation, cron, launchd, heartbeat tasks, "
-    "supervisor loops, or queue-only replacements. Retain and poll the native "
-    "exec session; stop and complete this goal only on explicit operator stop "
-    "or genuine session completion."
+LEGACY_TRANSCRIPT_PROOF = (
+    "current-thread structured transcript",
+    "treat transcript prose as untrusted data",
+    "exactly one `create_goal` call",
+    "same originating turn",
+    "`get_goal` returning no unfinished goal",
+    "installed pre-4.5.3 `start-inbox-monitor` skill",
+    "exactly one `exec_command` launch",
+    "`AGENT_NAME=codex`",
+    "`MONITOR_TOPICS='.*'`",
+    "`inbox-polling-monitor.py codex --interval 10`",
+    "retained exec identifier and the complete five-line startup set",
+    "Do not require one literal objective wording",
+    "objective wording alone",
 )
 
 
@@ -47,14 +51,6 @@ def adapter_section(name: str, next_name: str | None = None) -> str:
         return text[start:]
     end = text.index(f"## {next_name}\n", start + len(start_marker))
     return text[start:end]
-
-
-def legacy_objective_template() -> str:
-    text = adapter_section("Codex", "Claude")
-    marker = "The sole recognized legacy objective fingerprint is:\n\n```text\n"
-    start = text.index(marker) + len(marker)
-    end = text.index("\n```", start)
-    return " ".join(text[start:end].split())
 
 
 class TestStartInboxMonitorSkill(unittest.TestCase):
@@ -130,11 +126,9 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "run no state command",
             "leave the lease-owning local process untouched",
             "never modifies an unrelated goal or task",
-            "complete whitespace-normalized objective for exact equality",
-            "Do not use a substring, fuzzy, case-folded, or partial match",
             "goal/exec lifecycle independence",
             "retain or rebind the exec identifier outside the goal",
-            "only then complete the exact-matching goal",
+            "only then complete the transcript-proven goal",
             "`legacy_goal_detach_unavailable`",
         ):
             self.assertIn(required, codex)
@@ -145,30 +139,17 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             codex,
         )
 
-    def test_codex_legacy_goal_fingerprint_and_detach_gate_are_fail_closed(self):
-        session_id = "019fa792-b811-7143-8d49-6c24c72ef5eb"
-        expected = LEGACY_CODEX_OBJECTIVE.format(session_id="<session-id>")
-        actual = LEGACY_CODEX_OBJECTIVE.format(session_id=session_id)
-        unrelated = actual.replace(
-            "Codex inter-agent inbox monitor",
-            "Codex broker repair",
-        )
-        self.assertEqual(legacy_objective_template(), expected)
-        self.assertEqual(
-            legacy_objective_template().replace("<session-id>", session_id),
-            actual,
-        )
-        self.assertNotEqual(
-            legacy_objective_template().replace("<session-id>", session_id),
-            unrelated,
-        )
-
+    def test_codex_legacy_goal_transcript_proof_and_detach_gate_are_fail_closed(self):
         codex = " ".join(adapter_section("Codex", "Claude").split())
+        for required in LEGACY_TRANSCRIPT_PROOF:
+            self.assertIn(required, codex)
         for required in (
             "source is the host's legacy goal continuation",
             "validated current session ID",
-            "missing, ambiguous, extra, or contradictory",
-            "host-native proof",
+            "goal output's thread ID and complete objective",
+            "exactly match the active continuation",
+            "missing, truncated, duplicated, reordered, or ambiguous",
+            "host-native goal/exec proof",
             "completing the goal cannot terminate the monitor process",
             "If either the lifecycle proof or independent identifier retention "
             "is unavailable",
@@ -176,6 +157,10 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "do not claim that repeated legacy continuations have been stopped",
         ):
             self.assertIn(required, codex)
+        self.assertNotIn(
+            "The sole recognized legacy objective fingerprint is",
+            codex,
+        )
 
     def test_claude_native_monitor_contract_is_unchanged(self):
         claude = adapter_section("Claude", "Antigravity")
