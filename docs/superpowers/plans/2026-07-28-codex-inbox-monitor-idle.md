@@ -23,6 +23,9 @@ hermetic skill/marketplace generators, JSON package metadata.
 
 - Change only the Codex adapter behavior; preserve Claude and Antigravity
   lifecycle behavior.
+- Preserve shared `armed` as native startup plus a retained task/exec ID,
+  unconditional native task inspection, and the existing shared continuation
+  status rule; apply wake proof and empty-continuation exceptions only in Codex.
 - Preserve the canonical installed process, 10-second local interval, session
   identity validation, startup proof, kernel lease, and explicit stopped state.
 - Do not add automation, a supervisor, a model-level polling loop, a queue-only
@@ -145,8 +148,10 @@ Remove `goal_conflict`. Add:
   adapter created no recurring model continuation.
 ```
 
-Keep `armed` for a host whose native startup and event-driven wake are both
-positively observed, and keep all other shared results unchanged.
+Keep the shared `armed` meaning byte-for-byte at native startup plus a retained
+task/exec identifier. Keep the shared native-task singleton check and
+activation/continuation/re-arm status rule unchanged. Codex applies its stricter
+event-wake and empty-continuation exceptions only in its own section.
 
 - [ ] **Step 2: Replace the Codex section**
 

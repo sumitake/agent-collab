@@ -23,9 +23,8 @@ not translate one host's recipe into another host's tools.
 - Do not start, stop, or replace the independent inbox-triage daemon.
 
 Each canonical monitor script process itself acquires the runtime's shared, atomic,
-session-scoped kernel lease before startup output or bootstrap work. Host-native
-task/exec inspection is still the first singleton check when a retained
-current-session identifier is available. A clean
+session-scoped kernel lease before startup output or bootstrap work. Native
+task inspection is still the first singleton check. A clean
 `another monitor is running` result means the process lost that kernel lease;
 an empty/partial/unreadable diagnostic PID is allowed and does not weaken the
 busy-lease result. Host adapters never hold the close-on-exec descriptor across
@@ -68,11 +67,10 @@ Return `session_id_unavailable`, `workspace_unavailable`, `sandbox_blocked`, or
 
 Use exactly one typed result:
 
-- `armed`: native startup and an event-driven wake were positively observed,
-  and the task/exec identifier was retained.
+- `armed`: native startup was positively observed and the task/exec identifier
+  was retained.
 - `already_armed`: a compatible same-host, same-session monitor is positively
-  live, or the canonical process reports a busy kernel lease. Codex still uses
-  `degraded_no_event_wake` when that live process lacks proven event wake.
+  live, or the canonical process reports a busy kernel lease.
 - `degraded_no_event_wake`: Codex's canonical local process is positively live,
   but no host-native event mechanism has been proven to wake the model; the
   adapter created no recurring model continuation.
@@ -101,11 +99,10 @@ python3 scripts/monitor-session-state.py --agent <host> --session-id <session-id
 ```
 
 Only a new explicit invocation of this skill runs `start` to clear a stopped
-marker. Automatic activation, event-bearing continuation, and re-arm paths run
-`status`; a true marker returns `stopped` without launching. The Codex empty-
-continuation tripwire below runs no state command. For explicit stop, persist
-`stop` successfully before terminating the native task/exec. Any unsafe or failed
-state operation is `startup_failed`.
+marker. Automatic activation, continuation, and re-arm paths run `status`; a
+true marker returns `stopped` without launching. For explicit stop, persist
+`stop` successfully before terminating the native task/exec. Any unsafe or
+failed state operation is `startup_failed`.
 
 ## Codex
 

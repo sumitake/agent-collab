@@ -60,10 +60,14 @@ Add `degraded_no_event_wake` for the normal current Codex state:
 
 This is intentionally honest. The process can continue collecting monitor
 events at zero idle model-token cost, but automatic model wake is not promised.
-`armed` remains available only if a future Codex host positively proves an
-event-driven wake bound to the retained exec. A clean busy-lease observation
-without that wake proof remains `degraded_no_event_wake`; `already_armed`
-requires both a compatible retained process and proven event wake.
+The shared `armed` result keeps its existing native-startup-plus-retained-ID
+meaning for Claude and other adapters; the Codex section alone refuses
+`armed` or `already_armed` without separate event-wake proof.
+Within Codex, `armed` remains available only if a future host positively proves
+an event-driven wake bound to the retained exec. A clean busy-lease observation
+without that wake proof remains `degraded_no_event_wake`; Codex
+`already_armed` requires both a compatible retained process and proven event
+wake.
 
 `goal_conflict` is removed because the monitor no longer consumes Codex's goal
 slot. An unrelated user goal is neither inspected nor modified.
@@ -104,6 +108,8 @@ Repository regression tests will lock the distributed instruction contract:
   result, zero-idle requirement, and first-empty-turn tripwire;
 - the Codex section contains no `get_goal`, `create_goal`, or persistent-goal
   lifecycle;
+- shared `armed`, singleton inspection, and continuation status semantics stay
+  unchanged for Claude and Antigravity;
 - the shared result set replaces `goal_conflict` with
   `degraded_no_event_wake`;
 - Claude retains `Monitor(persistent: true)` and Antigravity retains its
