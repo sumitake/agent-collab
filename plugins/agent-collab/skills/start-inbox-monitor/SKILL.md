@@ -23,8 +23,9 @@ not translate one host's recipe into another host's tools.
 - Do not start, stop, or replace the independent inbox-triage daemon.
 
 Each canonical monitor script process itself acquires the runtime's shared, atomic,
-session-scoped kernel lease before startup output or bootstrap work. Native
-goal/task inspection is still the first singleton check. A clean
+session-scoped kernel lease before startup output or bootstrap work. Host-native
+task/exec inspection is still the first singleton check when a retained
+current-session identifier is available. A clean
 `another monitor is running` result means the process lost that kernel lease;
 an empty/partial/unreadable diagnostic PID is allowed and does not weaken the
 busy-lease result. Host adapters never hold the close-on-exec descriptor across
@@ -67,12 +68,13 @@ Return `session_id_unavailable`, `workspace_unavailable`, `sandbox_blocked`, or
 
 Use exactly one typed result:
 
-- `armed`: native startup was positively observed and the task/exec identifier
-  was retained.
+- `armed`: native startup and an event-driven wake were positively observed,
+  and the task/exec identifier was retained.
 - `already_armed`: a compatible same-host, same-session monitor is positively
   live, or the canonical process reports a busy kernel lease.
-- `goal_conflict`: Codex has a different unfinished persistent goal; do not
-  overwrite it.
+- `degraded_no_event_wake`: Codex's canonical local process is positively live,
+  but no host-native event mechanism has been proven to wake the model; the
+  adapter created no recurring model continuation.
 - `session_id_unavailable`: no strong current-session identifier is available.
 - `workspace_unavailable`: the canonical installed monitor program is unavailable.
 - `native_tool_unavailable`: the required host-native lifecycle tool is absent.
@@ -98,30 +100,27 @@ python3 scripts/monitor-session-state.py --agent <host> --session-id <session-id
 ```
 
 Only a new explicit invocation of this skill runs `start` to clear a stopped
-marker. Automatic activation, continuation, and re-arm paths run `status`; a
-true marker returns `stopped` without launching. For explicit stop, persist
-`stop` successfully before terminating the native task/exec. Any unsafe or
-failed state operation is `startup_failed`.
+marker. Automatic activation, event-bearing continuation, and re-arm paths run
+`status`; a true marker returns `stopped` without launching. The Codex empty-
+continuation tripwire below runs no state command. For explicit stop, persist
+`stop` successfully before terminating the native task/exec. Any unsafe or failed
+state operation is `startup_failed`.
 
 ## Codex
 
-Codex uses `get_goal`/`create_goal` plus a long-running `exec_command` session;
-poll or stop it through the returned exec-session control surface.
+Codex uses one long-running `exec_command` session plus the canonical process
+lease. Do not use Codex goals for monitor liveness. The local process may poll
+the inbox, but the model must not run a liveness loop.
 
-1. Read the current goal before creating one.
-2. If another unfinished goal exists, return `goal_conflict`; never replace it.
-3. A matching monitor goal is `already_armed` when its retained exec session
-   identifier is available in current task state and a non-mutating poll proves
-   that exec is still running. If the prior exec is positively terminal, or no
-   retained exec identifier survived task-state compaction, make exactly one
-   replacement launch attempt under the shared kernel lease: a busy-lease line
-   adopts the existing live process as `already_armed`; acquired live startup
-   is `armed`; ambiguity is `startup_failed`. Never self-retry.
-4. With no goal conflict, create one persistent goal whose objective records
-   the resolved session ID, monitoring scope, routing exclusions, and the rule
-   that no scheduled or recurring automation may be created.
-5. Start this command as a long-running exec from the canonical runtime root,
-   using the resolved session ID as data rather than executable shell text:
+Inspect or adopt monitor state only when a real turn already exists because of
+an explicit start, status, or stop request; genuine session activation or
+reactivation; an actual monitor or native exec event delivered by the host; or
+concrete evidence that the retained exec failed. The startup turn may perform
+one bounded exec observation to prove startup. After that, perform no
+timer-driven or empty-continuation liveness polls.
+
+Start this command as a long-running exec from the canonical runtime root,
+using the resolved session ID as data rather than executable shell text:
 
 ```bash
 AGENT_NAME=codex \
@@ -130,8 +129,9 @@ MONITOR_TOPICS='.*' \
 python3 scripts/inbox-polling-monitor.py codex --interval 10
 ```
 
-Retain the returned exec session identifier. Require a running exec plus this
-complete startup set before returning `armed`:
+Retain the returned exec session identifier and use its native control surface
+only on the real turns listed above. Require a running exec plus this complete
+startup set:
 
 - `Starting inbox-polling-monitor for codex`
 - `Polling directory: <channel-root>/inbox/codex`
@@ -139,16 +139,36 @@ complete startup set before returning `armed`:
 - `Monitoring topics filter (secondary): .*`
 - `Always surfacing: direct replies ... + session-targeted messages ...`
 
-A clean
-`another monitor is running` line is `already_armed`. A lease error, early exit,
-or missing exec identifier is `startup_failed`.
+Complete local startup without a separately proven host-native event wake is
+`degraded_no_event_wake`, not `armed`. A future Codex host may return `armed`
+only after it positively proves an event-driven model wake bound to the retained
+exec. A clean `another monitor is running` line is `already_armed`. A lease
+error, early exit, missing exec identifier, or incomplete startup set is
+`startup_failed`.
 
-Keep the goal unfinished and the exec alive across turns while unresolved work
-or inter-agent coordination remains. Stop through the retained exec session and
-complete the matching goal only on explicit operator stop or genuine session
-completion. If an armed exec later terminates unexpectedly, the next persistent-
-goal continuation may make the same single lease-guarded replacement attempt;
-it must not create a supervisor loop or schedule.
+After startup returns, this lifecycle must cause zero model turns while idle.
+The script's 10-second local filesystem poll remains allowed because it does
+not invoke a model. Use the lowest-cost capable Codex tier at low effort for a
+real monitor-event triage turn, and escalate only when the message content
+requires deeper reasoning.
+
+On the first empty monitor-only continuation from a legacy monitor-owned
+lifecycle, perform no exec poll, run no state command, and emit no routine
+status. End only a goal or task positively identified as that legacy monitor
+lifecycle before the turn completes, never recreate it, and leave the
+lease-owning local process untouched. This tripwire permits at most one empty
+model wake and never modifies an unrelated goal or task.
+
+If the retained exec identifier is lost during task-state compaction, wait for
+the next real turn listed above and make exactly one lease-guarded launch
+attempt. Complete startup returns `degraded_no_event_wake`; a clean busy-lease
+line adopts the existing process as `already_armed`; ambiguity is
+`startup_failed`. Apply the same one-attempt rule after positive terminal
+evidence. Never self-retry, create a supervisor, or schedule a check.
+
+On explicit stop, persist the stopped marker before stopping the retained exec.
+If no retained identifier is available, report that stop limitation separately;
+do not launch another process merely to obtain a control handle.
 
 ## Claude
 
