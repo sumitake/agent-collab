@@ -71,6 +71,24 @@ RENAMED_EXECUTOR_MARKERS = (
     b"exact_binary_qualification",
     b"provider_credential_isolation",
 )
+LINEAGE_NOTE_TIMEOUT_SECONDS = 10
+# History mode walks every ref in the LOCAL clone, so a clone retaining pre-rewrite
+# lineage fails even when the canonical remote is clean. This note reports that
+# topology signal ONLY. Topology carries no provenance, so the wording must never
+# clear a remote, never attribute a FAIL line, and never read as a pass.
+LOCAL_LINEAGE_NOTE = (
+    "NOTE: this clone contains commit history that is not reachable from any "
+    "remote-tracking ref. This may result from retained pre-rewrite refs, from "
+    "ordinary unpushed local work, or from contamination in the current publication "
+    "candidate. It does not identify the source of any FAIL line above and does not "
+    "establish that any remote is clean. The verdict remains UNSAFE. Compare against "
+    "a disposable full clone of the canonical remote and record the snapshot checked; "
+    "a clean comparison is evidence only about that recorded snapshot, not clearance "
+    "of this clone. If the publication candidate itself fails, a canonical fetched ref "
+    "fails, credential material appears, or provenance stays uncertain, stop "
+    "publication and follow SECURITY.md. Do not paste this output publicly: FAIL lines "
+    "contain paths, object IDs, and ref names."
+)
 MAX_SCANNED_FILE_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_MEMBER_BYTES = 64 * 1024 * 1024
@@ -1050,6 +1068,47 @@ def scan_history(root: Path) -> list[Violation]:
     return sorted(set(violations), key=lambda item: (item.kind, item.evidence))
 
 
+def _local_lineage_note(root: Path) -> str | None:
+    """Advisory triage note for history-mode failures; never affects the verdict.
+
+    Fires only on the topology signal "this clone holds commits no remote-tracking
+    ref reaches". Multiple root commits is deliberately NOT a trigger: every root can
+    still be remote-reachable, which would make the note assert something false.
+    Any error, timeout, or absent remote yields no note.
+    """
+    try:
+        remotes = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/remotes/",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=LINEAGE_NOTE_TIMEOUT_SECONDS,
+        )
+        # Without a remote-tracking ref, `--not --remotes` excludes nothing and every
+        # commit would look local-only. Stay silent rather than assert a false signal.
+        if remotes.returncode != 0 or not remotes.stdout.strip():
+            return None
+        outside = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "--all", "--not", "--remotes"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=LINEAGE_NOTE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if outside.returncode != 0 or not outside.stdout.strip():
+        return None
+    return LOCAL_LINEAGE_NOTE
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export-root", type=Path, default=REPO_ROOT)
@@ -1058,14 +1117,28 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.active_tree and not args.history:
         parser.error("select --active-tree and/or --history")
-    violations: list[Violation] = []
+    active_violations: list[Violation] = []
+    history_violations: list[Violation] = []
     if args.active_tree:
-        violations.extend(scan_active_tree(args.export_root))
+        active_violations = scan_active_tree(args.export_root)
     if args.history:
-        violations.extend(scan_history(args.export_root))
+        history_violations = scan_history(args.export_root)
+    violations = active_violations + history_violations
     for item in violations:
         print(f"FAIL [{item.kind}] {item.evidence}")
     if violations:
+        # Gate on a clean active tree: an active-tree violation is present-state
+        # contamination, and a lineage note beside it would reassure an operator out
+        # of escalating. Both modes must have run, or "active tree is clean" is unproven.
+        if (
+            args.active_tree
+            and args.history
+            and not active_violations
+            and history_violations
+        ):
+            note = _local_lineage_note(args.export_root)
+            if note is not None:
+                print(note)
         print("RESULT: UNSAFE FOR PUBLIC EXPORT")
         return 1
     print("RESULT: SAFE FOR REQUESTED PUBLIC EXPORT CHECKS")

@@ -84,6 +84,25 @@ python3 scripts/secret_scan.py
 git diff --check
 ```
 
+### Scope of history mode
+
+`--history` inspects every ref reachable in the *local* clone, not live remote
+state. A clone that retains pre-rewrite refs therefore fails this gate even when
+the canonical remote is clean. Run the gate on a disposable full clone of the
+canonical remote and record the commit and refs it checked.
+
+A large `legacy_history` or `legacy_release_ref` wall naming retired package
+trees is consistent with retained pre-rewrite refs, but violation kind and volume
+carry no provenance. A clean disposable-clone comparison is evidence only about
+the snapshot it recorded. It does not clear the failing clone, the current
+publication candidate, refs the comparison did not fetch, or the possibility of
+prior public exposure.
+
+Stop publication and use `SECURITY.md` when the publication candidate itself
+fails, a canonical fetched ref fails, credential material appears, prior exposure
+is possible, or provenance stays uncertain. Scanner output is not safe to paste
+publicly: `FAIL` lines carry paths, object identifiers, and ref names.
+
 Suspected source-boundary or secret exposure is a security incident. Stop
 publication and use `SECURITY.md`; do not preserve suspect material in a public
 issue, PR body, fixture, or log.
