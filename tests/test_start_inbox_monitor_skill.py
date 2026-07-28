@@ -34,6 +34,14 @@ LEGACY_TRANSCRIPT_PROOF = (
     "objective wording alone",
 )
 
+LEGACY_FAILURE_CASES = (
+    "missing_required_field",
+    "truncated_evidence",
+    "duplicated_record",
+    "reordered_record",
+    "ambiguous_match",
+)
+
 
 def read_spec() -> str:
     return SPEC.read_text(encoding="utf-8") if SPEC.is_file() else ""
@@ -51,6 +59,18 @@ def adapter_section(name: str, next_name: str | None = None) -> str:
         return text[start:]
     end = text.index(f"## {next_name}\n", start + len(start_marker))
     return text[start:end]
+
+
+def decision_table_rows(section: str, heading: str) -> dict[str, tuple[str, ...]]:
+    """Return keyed cells from the Markdown table following *heading*."""
+    table = section.split(heading, 1)[1].split("\n\n", 1)[0]
+    rows: dict[str, tuple[str, ...]] = {}
+    for line in table.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = tuple(cell.strip() for cell in line.strip("|").split("|"))
+        rows[cells[0].strip("`")] = cells[1:]
+    return rows
 
 
 class TestStartInboxMonitorSkill(unittest.TestCase):
@@ -74,6 +94,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "already_armed",
             "degraded_no_event_wake",
             "legacy_goal_detach_unavailable",
+            "stop_incomplete_legacy_goal",
             "session_id_unavailable",
             "workspace_unavailable",
             "native_tool_unavailable",
@@ -111,8 +132,8 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "Do not use Codex goals for monitor liveness",
             "`exec_command`",
             "`degraded_no_event_wake`",
-            "zero model turns while idle",
-            "first empty monitor-only continuation",
+            "new goal-free lifecycle causes zero model turns while idle",
+            "every empty legacy monitor continuation",
             "perform no exec poll",
             "never recreate",
             "genuine session activation or reactivation",
@@ -130,10 +151,12 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "retain or rebind the exec identifier outside the goal",
             "only then complete the transcript-proven goal",
             "`legacy_goal_detach_unavailable`",
+            "`stop_incomplete_legacy_goal`",
+            "never `already_armed`",
         ):
             self.assertIn(required, codex)
         new_lifecycle = codex.split(
-            "On the first empty monitor-only continuation",
+            "On every empty legacy monitor continuation",
             1,
         )[0]
         for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
@@ -161,11 +184,44 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "is unavailable",
             "do not complete or otherwise mutate the goal",
             "do not claim that repeated legacy continuations have been stopped",
+            "idle model turns may continue",
+            "do not start a second monitoring lifecycle",
+            "32 structured tool-call/result records",
+            "128 KiB",
+            "2 seconds",
         ):
             self.assertIn(required, codex)
         self.assertNotIn(
             "The sole recognized legacy objective fingerprint is",
             codex,
+        )
+
+    def test_codex_legacy_decision_tables_cover_failure_and_stop_cases(self):
+        codex = adapter_section("Codex", "Claude")
+        continuation_rows = decision_table_rows(
+            codex,
+            "### Legacy continuation decision table",
+        )
+        self.assertIn("safe_detach", continuation_rows)
+        self.assertIn("`degraded_no_event_wake`", continuation_rows["safe_detach"])
+        for case in LEGACY_FAILURE_CASES:
+            self.assertIn(case, continuation_rows)
+            cells = " ".join(continuation_rows[case])
+            self.assertIn("no exec poll, state command, goal mutation, or exec mutation", cells)
+            self.assertIn("`legacy_goal_detach_unavailable`", cells)
+
+        stop_rows = decision_table_rows(codex, "### Explicit-stop decision table")
+        self.assertIn("stop_bound_legacy_goal", stop_rows)
+        self.assertIn("complete or cancel the bound legacy goal", " ".join(stop_rows["stop_bound_legacy_goal"]))
+        self.assertIn("`stopped`", stop_rows["stop_bound_legacy_goal"])
+        self.assertIn("stop_unbound_legacy_goal", stop_rows)
+        self.assertIn(
+            "`stop_incomplete_legacy_goal`",
+            stop_rows["stop_unbound_legacy_goal"],
+        )
+        self.assertIn(
+            "must not claim the monitor lifecycle is fully stopped",
+            " ".join(stop_rows["stop_unbound_legacy_goal"]),
         )
 
     def test_claude_native_monitor_contract_is_unchanged(self):
@@ -184,6 +240,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         ):
             self.assertIn(required, claude)
         self.assertNotIn("`degraded_no_event_wake`", claude)
+        self.assertNotIn("`stop_incomplete_legacy_goal`", claude)
 
     def test_antigravity_native_monitor_contract_is_unchanged(self):
         antigravity = adapter_section("Antigravity")
@@ -197,6 +254,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         ):
             self.assertIn(required, antigravity)
         self.assertNotIn("`degraded_no_event_wake`", antigravity)
+        self.assertNotIn("`stop_incomplete_legacy_goal`", antigravity)
 
     def test_skill_has_no_operative_universal_loop_schedule_or_bypass(self):
         text = read_spec()
