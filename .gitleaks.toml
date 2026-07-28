@@ -1,0 +1,45 @@
+# Gitleaks configuration for agent-collab.
+#
+# Why this file exists rather than `.gitleaksignore`:
+#
+# `.gitleaksignore` entries are fingerprints of the form
+# `<commit>:<file>:<rule>:<line>`, so every entry is bound to a specific commit
+# SHA. The 4.2.0 clean-slate history rewrite re-parented every tracked file into
+# a single squash commit, which silently invalidated the fingerprints covering
+# the synthetic protocol fixture below -- they still named the pre-rewrite SHA
+# `eec4c7a7`, a commit that no longer exists in this repository.
+#
+# The dead exemption was invisible on `push` and `pull_request`, because
+# gitleaks-action scans only the commits in the event range there. It surfaced
+# only on the weekly `schedule` run, which scans full history and therefore
+# re-reads the squash commit.
+#
+# Allowlisting by content instead of by SHA keeps the exemption correct across
+# any future rebase, squash, or history rewrite.
+
+[extend]
+useDefault = true
+
+# Top-level allowlist is the singular `[allowlist]` table. The plural
+# `[[allowlists]]` form with `condition` is parsed only inside `[[rules]]`
+# (gitleaks 8.24 config/config.go); at top level it is silently ignored, which
+# is a quiet way to disable your own exemption.
+#
+# `paths` is deliberately NOT used here: top-level `paths` and `regexes` are
+# OR'd (no `condition` at this level), so adding a path entry would exempt the
+# whole fixture file. Matching `regexTarget = "line"` against a regex that pins
+# both the key and the literal value keeps the exemption to exactly one line
+# shape -- any other secret added to that fixture is still reported.
+[allowlist]
+description = """
+Synthetic dispatcher lane token in the cross-repository protocol fixture.
+
+The value is deterministically derived from fixed all-'a'/all-'b' digests by
+runtime_client._dispatcher_lane_token, and is pinned byte-for-byte by
+tests/test_agent_collab_runtime_client.py::
+test_dispatcher_protocol_matches_the_cross_repository_fixture, which holds the
+wire protocol in parity with the workspace-side counterpart. It is not a
+credential and grants access to nothing.
+"""
+regexTarget = "line"
+regexes = ['''"lane_token": "3b73a0ffbe3426ef5761f5c09b756ef6"''']
