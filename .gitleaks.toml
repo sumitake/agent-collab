@@ -27,9 +27,24 @@ useDefault = true
 #
 # `paths` is deliberately NOT used here: top-level `paths` and `regexes` are
 # OR'd (no `condition` at this level), so adding a path entry would exempt the
-# whole fixture file. Matching `regexTarget = "line"` against a regex that pins
-# both the key and the literal value keeps the exemption to exactly one line
-# shape -- any other secret added to that fixture is still reported.
+# whole fixture file.
+#
+# The regex is matched against the **secret** (gitleaks' default target when
+# `regexTarget` is omitted) and fully anchored, so a finding is suppressed only
+# when the detected secret IS exactly this literal.
+#
+# An earlier revision used `regexTarget = "line"` with an unanchored regex. That
+# was wider than intended in two ways:
+#
+#   1. Same-line co-occurrence -- a second, unrelated credential sharing this
+#      line would be suppressed too, since the allowlist regex is tested against
+#      the whole line and still matches.
+#   2. Reformatting -- `json.dumps` without `indent`, or any compacting rewrite,
+#      collapses this fixture to a SINGLE line containing the literal. A
+#      line-target regex would then match on every finding in the file and
+#      silently exempt the entire fixture.
+#
+# Anchoring on the secret closes both: layout cannot change what the secret is.
 [allowlist]
 description = """
 Synthetic dispatcher lane token in the cross-repository protocol fixture.
@@ -41,5 +56,4 @@ test_dispatcher_protocol_matches_the_cross_repository_fixture, which holds the
 wire protocol in parity with the workspace-side counterpart. It is not a
 credential and grants access to nothing.
 """
-regexTarget = "line"
-regexes = ['''"lane_token": "3b73a0ffbe3426ef5761f5c09b756ef6"''']
+regexes = ['''^3b73a0ffbe3426ef5761f5c09b756ef6$''']
