@@ -44,10 +44,13 @@ for one of these reasons:
 3. an actual monitor or native exec event delivered by the host; or
 4. concrete evidence that the retained exec failed.
 
-An empty monitor-only continuation is not a liveness event. The first such turn
-is a migration tripwire: perform no exec poll or state command and emit no
-routine status. Goal ownership is proven from the current thread's structured
-creation transcript, not from natural-language similarity. The closed proof
+An empty monitor-only continuation is not a liveness event. Every empty legacy
+monitor continuation is a migration tripwire: perform no exec poll or state
+command, mutate no lifecycle, emit no routine status, and do no unrelated
+model work. Reapply that fail-closed rule on every such turn; a prior
+unavailable result never authorizes a later liveness check. Goal ownership is
+proven from the current thread's structured creation transcript, not from
+natural-language similarity. The closed proof
 requires one successful `create_goal` record bound to the current goal and
 session, a captured read of the old installed monitor skill, the preceding
 empty `get_goal` and explicit-start transition, and the following exact
@@ -62,6 +65,9 @@ in non-goal state, and confirms that goal completion cannot terminate the
 process. Without both proofs, return `legacy_goal_detach_unavailable` and leave
 the goal and exec unchanged. This means a host without safe-detach evidence may
 continue its pre-4.5.3 scheduler turns; the new lifecycle does not create them.
+Each unavailable result identifies the goal/thread when known, warns that idle
+turns may continue until explicit stop, and never starts a second lifecycle as
+a workaround.
 
 ## Result Semantics
 
@@ -91,6 +97,11 @@ creation transcript or safe-detach proof was incomplete, so the host could not
 prove both monitor ownership and that its exec would survive goal completion
 while remaining independently controllable.
 
+Add `stop_incomplete_legacy_goal` for an explicit stop that persisted the
+stopped marker and stopped only monitor-bound retained exec identifiers, but
+could not bind and end the legacy goal. It identifies that goal/thread when
+known and never claims the complete monitor lifecycle is stopped.
+
 ## Compaction, Adoption, and Failure
 
 Loss of the retained exec identifier during compaction does not authorize a
@@ -104,19 +115,24 @@ lease-guarded launch attempt:
 - ambiguity or an unsafe/terminal startup returns `startup_failed`.
 
 There is no self-retry. Explicit stop persists the stopped marker before
-terminating a retained exec. A legacy monitor goal may be ended only after the
-transcript-proven ownership and independent-exec proofs above; unrelated or
-ambiguous goals remain untouched.
+terminating only retained monitor exec identifiers known to this lifecycle; it
+never stops another session exec. After the exec is stopped, a legacy monitor
+goal may be completed or cancelled without the normal exec-survival proof only
+when the host supplies a native stop-scoped goal handle bound to the current
+session, thread, and monitor continuation. Without that binding, leave the goal
+untouched and return `stop_incomplete_legacy_goal`.
 
 ## Token-Efficiency Contract
 
-Once the startup turn ends, the monitor lifecycle itself must cause zero model
-turns while idle. Model selection and reasoning effort therefore affect only
-real message handling, not liveness. When the host exposes a per-turn model and
-effort choice, real event triage should use the lowest-cost capable Codex tier
-at low effort and escalate only when the message content requires deeper
-reasoning. The adapter must not create another monitoring lifecycle merely to
-change models.
+Once a new goal-free startup turn ends, that monitor lifecycle itself must
+cause zero model turns while idle. An undetachable pre-4.5.3 goal may still
+cause host-scheduled turns, but every such turn follows the no-poll,
+no-mutation rule above. Model selection and reasoning effort therefore affect
+only real message handling and unavoidable legacy migration turns, not new
+liveness. When the host exposes a per-turn model and effort choice, real event
+triage should use the lowest-cost capable Codex tier at low effort and escalate
+only when the message content requires deeper reasoning. The adapter must not
+create another monitoring lifecycle merely to change models.
 
 ## Verification
 
@@ -125,14 +141,16 @@ contract produced repeated no-event turns without performing exec polls.
 Repository regression tests will lock the distributed instruction contract:
 
 - the Codex section contains the event-bounded lifecycle, honest degraded
-  result, zero-idle requirement, structured legacy-transcript proof, and
-  independent-exec detach gate;
+  result, new-lifecycle zero-idle requirement, every-turn legacy no-op,
+  structured legacy-transcript proof, independent-exec detach gate, and
+  monitor-bound explicit-stop authority;
 - the new Codex lifecycle before the migration tripwire contains no operative
   `get_goal`, `create_goal`, or persistent-goal lifecycle;
 - shared `armed`, singleton inspection, and continuation status semantics stay
   unchanged for Claude and Antigravity;
 - the shared result set replaces `goal_conflict` with
-  `degraded_no_event_wake` and `legacy_goal_detach_unavailable`;
+  `degraded_no_event_wake`, `legacy_goal_detach_unavailable`, and
+  `stop_incomplete_legacy_goal`;
 - Claude retains `Monitor(persistent: true)` and Antigravity retains its
   one-shot asynchronous task contract; and
 - generated skill output remains in exact parity with its source spec.

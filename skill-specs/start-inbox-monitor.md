@@ -83,9 +83,9 @@ Use exactly one typed result:
   controllable; the goal and process were left unchanged, so host-scheduled
   idle model turns may continue until that goal is explicitly stopped.
 - `stop_incomplete_legacy_goal`: an explicit Codex stop persisted the stopped
-  marker and stopped every controllable local exec, but the host could not bind
-  and end a still-live legacy monitor goal; the monitor lifecycle must not be
-  reported as fully stopped.
+  marker and stopped only retained monitor exec identifiers bound to that
+  lifecycle, but the host could not bind and end a still-live legacy monitor
+  goal; the monitor lifecycle must not be reported as fully stopped.
 - `session_id_unavailable`: no strong current-session identifier is available.
 - `workspace_unavailable`: the canonical installed monitor program is unavailable.
 - `native_tool_unavailable`: the required host-native lifecycle tool is absent.
@@ -265,7 +265,7 @@ reaches a terminal state before returning `stopped`.
 | Case | Stop evidence | Required action | Typed result |
 |---|---|---|---|
 | `stop_bound_legacy_goal` | explicit operator stop plus a native stop-scoped goal handle bound to this session, thread, and monitor continuation | persist the marker, stop the exec, complete or cancel the bound legacy goal, and verify both lifecycles terminal | `stopped` |
-| `stop_unbound_legacy_goal` | an unfinished legacy goal is known but no safe stop-scoped binding is available | persist the marker, stop every controllable exec, leave the goal unchanged, identify its goal/thread when known, and must not claim the monitor lifecycle is fully stopped | `stop_incomplete_legacy_goal` |
+| `stop_unbound_legacy_goal` | an unfinished legacy goal is known but no safe stop-scoped binding is available | persist the marker, stop only retained monitor exec identifiers known to this lifecycle, leave the goal unchanged, identify its goal/thread when known, do not stop any other session exec, and must not claim the monitor lifecycle is fully stopped | `stop_incomplete_legacy_goal` |
 
 If no retained exec identifier is available, report that stop limitation
 separately; do not launch another process merely to obtain a control handle.

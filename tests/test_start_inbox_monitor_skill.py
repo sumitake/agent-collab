@@ -241,11 +241,15 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             / "specs"
             / "2026-07-28-codex-inbox-monitor-idle-design.md"
         ).read_text(encoding="utf-8")
+        design_normalized = " ".join(design.split())
         self.assertIn(
             "Every empty legacy monitor continuation is a migration tripwire",
-            design,
+            design_normalized,
         )
-        self.assertNotIn("The first such turn is a migration tripwire", design)
+        self.assertNotIn(
+            "The first such turn is a migration tripwire",
+            design_normalized,
+        )
 
     def test_claude_native_monitor_contract_is_unchanged(self):
         claude = adapter_section("Claude", "Antigravity")
