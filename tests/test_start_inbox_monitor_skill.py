@@ -63,7 +63,7 @@ def adapter_section(name: str, next_name: str | None = None) -> str:
 
 def decision_table_rows(section: str, heading: str) -> dict[str, tuple[str, ...]]:
     """Return keyed cells from the Markdown table following *heading*."""
-    table = section.split(heading, 1)[1].split("\n\n", 1)[0]
+    table = section.split(heading, 1)[1].lstrip("\n").split("\n\n", 1)[0]
     rows: dict[str, tuple[str, ...]] = {}
     for line in table.splitlines():
         if not line.startswith("| `"):
@@ -185,7 +185,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "do not complete or otherwise mutate the goal",
             "do not claim that repeated legacy continuations have been stopped",
             "idle model turns may continue",
-            "do not start a second monitoring lifecycle",
+            "Do not start a second monitoring lifecycle",
             "32 structured tool-call/result records",
             "128 KiB",
             "2 seconds",

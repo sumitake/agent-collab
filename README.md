@@ -133,14 +133,17 @@ Contributors need no access to the private build/sign system. See
 
 ## What's new - v4.5.3
 
-- **Codex inbox monitoring is idle-token free.** The canonical leased local
-  process keeps its existing 10-second filesystem interval, but the Codex
-  adapter no longer creates or retains a goal for liveness. State checks now
-  occur only on real activation, event, status, stop, or failure turns.
+- **New Codex inbox-monitor starts are idle-token free.** The canonical leased
+  local process keeps its existing 10-second filesystem interval, but the
+  Codex adapter no longer creates or retains a goal for liveness. State checks
+  now occur only on real activation, event, status, stop, or failure turns.
   Legacy cleanup completes only a monitor goal proven by its structured
   creation transcript and after the host proves its exec remains independently
   live and controllable; otherwise it returns
   `legacy_goal_detach_unavailable` without mutating either lifecycle.
+  Pre-4.5.3 sessions whose legacy goal cannot be safely detached may continue
+  receiving host-scheduled empty model turns until that goal is explicitly
+  stopped; every such turn is constrained to no exec or state poll.
   Without a proven host-native event wake, Codex reports the honest
   `degraded_no_event_wake` result instead of `armed`. Claude and Antigravity
   monitor lifecycles are unchanged.
