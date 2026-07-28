@@ -188,16 +188,23 @@ same originating turn:
 1. The originating turn must contain exactly one `create_goal` call and its
    successful result. The call's objective, the goal output's thread ID and
    complete objective, and the validated current session ID must exactly match
-   the active continuation after JSON decoding. Do not require one literal
-   objective wording; objective wording alone, even an exact paragraph match,
-   never proves ownership.
+   the active continuation after JSON decoding. Also require that the objective
+   semantically records the validated session ID, monitoring scope, routing
+   exclusions, and the rule that no scheduled or recurring automation may be
+   created, as required by the captured old skill. These fields are necessary
+   but not sufficient. Do not require one literal objective wording; objective
+   wording alone, even an exact paragraph match, never proves ownership.
 2. A completed read of the installed pre-4.5.3 `start-inbox-monitor` skill
    whose captured Codex section contains its old `get_goal`/`create_goal`
    contract, the rule to keep the goal unfinished with the exec alive, and the
    canonical 10-second command.
 3. The `create_goal` call is preceded by `get_goal` returning no unfinished
-   goal and by a successful explicit-start state transition for the validated
-   current session.
+   goal and by exactly one successful state operation for the validated current
+   session: a successful explicit `start` transition when the originating
+   trigger is an explicit start, or a successful automatic `status` observation
+   with the stopped marker clear when the trigger is automatic activation,
+   continuation, or re-arm. A missing, duplicated, cross-trigger, failed, or
+   stopped-marker-positive state record does not match.
 4. The call is followed by exactly one `exec_command` launch from the canonical
    runtime using `AGENT_NAME=codex`, the validated
    `AGENT_COLLAB_SESSION_ID`, `MONITOR_TOPICS='.*'`, and
@@ -232,6 +239,8 @@ that lifecycle.
 |---|---|---|---|---|
 | `safe_detach` | complete, same-turn, and unambiguous | goal/exec independence and non-goal exec retention are positive | complete the goal once, retain the exec, and perform no liveness poll | `degraded_no_event_wake` |
 | `missing_required_field` | one or more required structured fields are absent | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
+| `objective_contract_mismatch` | the objective lacks the exact session value or any monitor scope, routing-exclusion, or no-scheduling semantic | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
+| `state_transition_mismatch` | the state operation is missing, duplicated, failed, stopped, or does not match the explicit or automatic trigger | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `truncated_evidence` | a read limit or truncation hides required evidence | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `duplicated_record` | a lifecycle call or result is duplicated | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `reordered_record` | required lifecycle ordering is violated | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
