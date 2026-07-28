@@ -38,12 +38,15 @@ LEGACY_TRANSCRIPT_PROOF = (
     "no scheduled or recurring automation",
     "successful explicit `start` transition",
     "successful automatic `status` observation",
+    "positive current liveness",
+    "historical startup proof is not current liveness",
 )
 
 LEGACY_FAILURE_CASES = (
     "missing_required_field",
     "objective_contract_mismatch",
     "state_transition_mismatch",
+    "liveness_unproven_or_terminal",
     "truncated_evidence",
     "duplicated_record",
     "reordered_record",
@@ -191,6 +194,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "duplicated or reordered lifecycle record",
             "ambiguous match",
             "host-native goal/exec proof",
+            "exact retained exec or lease-owning process is currently running",
             "completing the goal cannot terminate the monitor process",
             "If either the lifecycle proof or independent identifier retention "
             "is unavailable",
@@ -215,6 +219,8 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "### Legacy continuation decision table",
         )
         self.assertIn("safe_detach", continuation_rows)
+        safe_detach = " ".join(continuation_rows["safe_detach"])
+        self.assertIn("positive current liveness", safe_detach)
         self.assertIn("`degraded_no_event_wake`", continuation_rows["safe_detach"])
         for case in LEGACY_FAILURE_CASES:
             self.assertIn(case, continuation_rows)
@@ -264,6 +270,14 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         )
         self.assertIn(
             "session ID, monitoring scope, routing exclusions, and no-scheduling rule",
+            design_normalized,
+        )
+        self.assertIn(
+            "positive current liveness of the exact retained exec or lease-owning process",
+            design_normalized,
+        )
+        self.assertIn(
+            "Historical startup proof is not current liveness",
             design_normalized,
         )
         self.assertNotIn(
