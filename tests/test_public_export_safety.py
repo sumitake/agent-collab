@@ -520,5 +520,164 @@ class PublicExportSafetyTests(unittest.TestCase):
         self.assertFalse(any(item.kind == "unmanifested_runtime" for item in violations))
 
 
+class LocalLineageNoteTests(unittest.TestCase):
+    """The history-mode triage note must inform without ever excusing a failure."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.audit = _load()
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.origin = self.root / "origin"
+        self.clone = self.root / "clone"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    @staticmethod
+    def _git(cwd: Path, *args: str) -> None:
+        subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+    def _identify(self, cwd: Path) -> None:
+        self._git(cwd, "config", "user.email", "test@example.com")
+        self._git(cwd, "config", "user.name", "Test")
+
+    def _clone_with_origin(self) -> None:
+        """A published origin plus a clone of it, so refs/remotes/* exists."""
+        self.origin.mkdir()
+        self._git(self.origin, "init", "-q", "-b", "main")
+        self._identify(self.origin)
+        (self.origin / "README.md").write_text("safe", encoding="utf-8")
+        self._git(self.origin, "add", ".")
+        self._git(self.origin, "commit", "-q", "-m", "published")
+        subprocess.run(
+            ["git", "clone", "-q", str(self.origin), str(self.clone)],
+            check=True,
+            capture_output=True,
+        )
+        self._identify(self.clone)
+
+    def _add_unpushed_history_violation(self) -> None:
+        """A retired package tree in an unpushed commit: history-only contamination."""
+        retired = self.clone / "plugins" / "codex-tools"
+        retired.mkdir(parents=True)
+        (retired / "README.md").write_text("retired", encoding="utf-8")
+        self._git(self.clone, "add", ".")
+        self._git(self.clone, "commit", "-q", "-m", "retired tree")
+        subprocess.run(["rm", "-rf", str(retired)], check=True)
+        self._git(self.clone, "add", "-A")
+        self._git(self.clone, "commit", "-q", "-m", "remove retired tree")
+
+    def _run(self, *flags: str) -> tuple[int, list[str]]:
+        buffer = io.StringIO()
+        with mock.patch("sys.stdout", buffer):
+            code = self.audit.main(["--export-root", str(self.clone), *flags])
+        return code, buffer.getvalue().splitlines()
+
+    def test_note_emitted_when_only_history_fails_with_local_only_commits(self) -> None:
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        code, lines = self._run("--active-tree", "--history")
+        self.assertEqual(code, 1)
+        self.assertTrue(any(line.startswith("NOTE:") for line in lines), lines)
+        self.assertEqual(lines[-1], "RESULT: UNSAFE FOR PUBLIC EXPORT")
+
+    def test_note_names_current_candidate_contamination_and_clears_nothing(self) -> None:
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        _, lines = self._run("--active-tree", "--history")
+        note = next(line for line in lines if line.startswith("NOTE:"))
+        # Must offer the incriminating reading, not only the exculpatory one.
+        self.assertIn("contamination in the current publication candidate", note)
+        self.assertIn("does not establish that any remote is clean", note)
+        self.assertIn("The verdict remains UNSAFE", note)
+        self.assertIn("SECURITY.md", note)
+
+    def test_note_suppressed_when_the_active_tree_is_contaminated(self) -> None:
+        """Present-state contamination must never be accompanied by a reassuring note."""
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        # Any active-tree violation must suppress the note. This uses an executor-source
+        # filename because that literal is already allowlisted in HARMLESS_AUDIT_LITERALS
+        # for this file; embedding a fresh credential pattern here would trip the
+        # active-tree gate on this very repository.
+        (self.clone / "codex_exec.py").write_text("x", encoding="utf-8")
+        code, lines = self._run("--active-tree", "--history")
+        self.assertEqual(code, 1)
+        self.assertTrue(any("executor_source" in line for line in lines), lines)
+        self.assertFalse(any(line.startswith("NOTE:") for line in lines), lines)
+
+    def test_note_suppressed_when_history_mode_was_not_requested(self) -> None:
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        (self.clone / "leak.md").write_text("/Users/private/project", encoding="utf-8")
+        _, lines = self._run("--active-tree")
+        self.assertFalse(any(line.startswith("NOTE:") for line in lines), lines)
+
+    def test_note_suppressed_when_every_root_is_remote_reachable(self) -> None:
+        """Multiple roots alone must not assert history outside remote-tracking refs."""
+        self._clone_with_origin()
+        self._git(self.clone, "checkout", "-q", "--orphan", "second-root")
+        self._git(self.clone, "rm", "-rqf", ".")
+        retired = self.clone / "plugins" / "grok-worker"
+        retired.mkdir(parents=True)
+        (retired / "README.md").write_text("retired", encoding="utf-8")
+        self._git(self.clone, "add", ".")
+        self._git(self.clone, "commit", "-q", "-m", "second root")
+        # Publish every local commit, so nothing is outside refs/remotes/*.
+        self._git(self.clone, "push", "-q", "origin", "second-root")
+        self._git(self.clone, "fetch", "-q", "origin")
+        roots = subprocess.run(
+            ["git", "-C", str(self.clone), "rev-list", "--all", "--max-parents=0"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(len(roots.stdout.split()), 2)
+        code, lines = self._run("--active-tree", "--history")
+        self.assertEqual(code, 1)
+        self.assertFalse(any(line.startswith("NOTE:") for line in lines), lines)
+
+    def test_note_suppressed_without_any_remote_tracking_ref(self) -> None:
+        self.clone.mkdir()
+        self._git(self.clone, "init", "-q", "-b", "main")
+        self._identify(self.clone)
+        self._add_unpushed_history_violation()
+        code, lines = self._run("--active-tree", "--history")
+        self.assertEqual(code, 1)
+        self.assertFalse(any(line.startswith("NOTE:") for line in lines), lines)
+
+    def test_note_never_reduces_the_reported_violation_set(self) -> None:
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        _, lines = self._run("--active-tree", "--history")
+        reported = [line for line in lines if line.startswith("FAIL [")]
+        expected = [
+            f"FAIL [{item.kind}] {item.evidence}"
+            for item in self.audit.scan_history(self.clone)
+        ]
+        self.assertEqual(reported, expected)
+        self.assertTrue(expected)
+
+    def test_diagnostic_failure_is_non_fatal(self) -> None:
+        self._clone_with_origin()
+        self._add_unpushed_history_violation()
+        with mock.patch.object(
+            self.audit.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
+        ):
+            self.assertIsNone(self.audit._local_lineage_note(self.clone))
+
+    def test_clean_clone_reports_success_without_a_note(self) -> None:
+        self._clone_with_origin()
+        code, lines = self._run("--active-tree", "--history")
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[-1], "RESULT: SAFE FOR REQUESTED PUBLIC EXPORT CHECKS")
+        self.assertFalse(any(line.startswith("NOTE:") for line in lines), lines)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -120,6 +120,14 @@ Cumulative archive depth, member count, per-member size, and decompressed-size
 limits fail closed; static Python argv construction is scanned semantically
 rather than by raw substrings alone.
 
+"Every reachable ref" is scoped to the clone the gate runs in. A migration clone
+that retains pre-rewrite refs fails history mode even when the canonical remote
+is clean, so compare against a disposable full clone of the canonical remote and
+record the snapshot checked. That comparison is evidence only about the recorded
+snapshot; it does not clear the failing clone, the current publication candidate,
+unfetched refs, or prior public exposure. See
+[`public-governance.md`](public-governance.md) for the full triage rule.
+
 If a migration exposes suspect material, stop and use the private reporting
 path in [`SECURITY.md`](../SECURITY.md). Do not attach the material to a public
 issue or pull request.

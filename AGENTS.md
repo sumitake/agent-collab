@@ -68,6 +68,12 @@ Every active path, reachable ref, and release archive must remain free of
 provider executor source, raw provider invocation recipes, private absolute
 paths, credentials, retired package trees, and unreviewed native artifacts.
 Before publication or release, run both active-tree and history modes of
-`scripts/check-public-export-safety.py`. If contamination is suspected, stop
+`scripts/check-public-export-safety.py`. History mode covers refs reachable in
+the *local* clone, so a clone retaining pre-rewrite refs fails it even when the
+canonical remote is clean; compare against a disposable full clone of the
+canonical remote and record the snapshot checked. That comparison clears only
+the recorded snapshot, never the failing clone, the publication candidate,
+unfetched refs, or prior exposure. If contamination is suspected, stop
 publication and follow `SECURITY.md`; never paste suspect material into a public
-issue or pull request.
+issue or pull request. See
+[`docs/public-governance.md`](docs/public-governance.md) for the full rule.

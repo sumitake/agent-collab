@@ -26,7 +26,9 @@ List the exact deterministic tests, schema/generation checks, secret scan, and p
 - [ ] `python3 -m unittest discover -s scripts -p 'test_*.py' -v`
 - [ ] `python3 scripts/check_release_consistency.py`
 - [ ] `python3 scripts/secret_scan.py`
-- [ ] `python3 scripts/check-public-export-safety.py --active-tree --history`
+- [ ] `python3 scripts/check-public-export-safety.py --active-tree --history` (history
+      mode covers refs reachable in the *local* clone; see the history-mode scope rule in
+      `docs/public-governance.md` before treating a failure as public contamination)
 - [ ] `git diff --check`
 
 ## Review and post-condition
