@@ -29,8 +29,9 @@ hermetic skill/marketplace generators, JSON package metadata.
   substitute, provider executor source, or native-runtime changes.
 - Once Codex startup returns, the monitor lifecycle itself causes zero idle
   model turns.
-- Do not create, retain, inspect, or conflict with a Codex goal for monitor
-  liveness.
+- Do not create, retain, or reserve a Codex goal slot for monitor liveness.
+  Inspect or end a goal only when the current turn positively identifies it as
+  the legacy monitor-owned lifecycle; never inspect or modify an unrelated goal.
 - A first empty legacy monitor continuation performs no exec poll or routine
   status and ends only the positively matching legacy monitor-owned goal.
 - `degraded_no_event_wake` means the local monitor is live without a proven
