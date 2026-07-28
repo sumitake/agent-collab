@@ -216,6 +216,14 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         self.assertIn("`stopped`", stop_rows["stop_bound_legacy_goal"])
         self.assertIn("stop_unbound_legacy_goal", stop_rows)
         self.assertIn(
+            "stop only retained monitor exec identifiers known to this lifecycle",
+            " ".join(stop_rows["stop_unbound_legacy_goal"]),
+        )
+        self.assertIn(
+            "do not stop any other session exec",
+            " ".join(stop_rows["stop_unbound_legacy_goal"]),
+        )
+        self.assertIn(
             "`stop_incomplete_legacy_goal`",
             stop_rows["stop_unbound_legacy_goal"],
         )
@@ -223,6 +231,21 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "must not claim the monitor lifecycle is fully stopped",
             " ".join(stop_rows["stop_unbound_legacy_goal"]),
         )
+        self.assertNotIn("stop every controllable exec", codex)
+
+    def test_design_requires_every_legacy_continuation_to_fail_closed(self):
+        design = (
+            ROOT
+            / "docs"
+            / "superpowers"
+            / "specs"
+            / "2026-07-28-codex-inbox-monitor-idle-design.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "Every empty legacy monitor continuation is a migration tripwire",
+            design,
+        )
+        self.assertNotIn("The first such turn is a migration tripwire", design)
 
     def test_claude_native_monitor_contract_is_unchanged(self):
         claude = adapter_section("Claude", "Antigravity")
