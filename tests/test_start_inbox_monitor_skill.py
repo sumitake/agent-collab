@@ -52,6 +52,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
 
     def test_shared_results_and_all_native_adapters_are_present(self):
         text = read_spec()
+        normalized = " ".join(text.split())
         for result in (
             "armed",
             "already_armed",
@@ -67,6 +68,19 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         ):
             self.assertIn(f"`{result}`", text)
         self.assertNotIn("`goal_conflict`", text)
+        self.assertIn(
+            "`armed`: native startup was positively observed and the task/exec "
+            "identifier was retained.",
+            normalized,
+        )
+        self.assertIn(
+            "Native task inspection is still the first singleton check.",
+            normalized,
+        )
+        self.assertIn(
+            "Automatic activation, continuation, and re-arm paths run `status`",
+            normalized,
+        )
         for adapter in ("## Codex", "## Claude", "## Antigravity"):
             self.assertIn(adapter, text)
 
@@ -88,6 +102,9 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "without that wake proof is also `degraded_no_event_wake`",
             "When the host exposes a per-turn model and effort choice",
             "do not create another monitoring lifecycle only to change models",
+            "run no state command",
+            "leave the lease-owning local process untouched",
+            "never modifies an unrelated goal or task",
         ):
             self.assertIn(required, codex)
         for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
@@ -109,8 +126,10 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "Seen-files path",
             "stale inherited `AGENT_COLLAB_SESSION_ID`",
             "canonical busy-lease observation",
+            "before returning `armed`",
         ):
             self.assertIn(required, claude)
+        self.assertNotIn("`degraded_no_event_wake`", claude)
 
     def test_antigravity_native_monitor_contract_is_unchanged(self):
         antigravity = adapter_section("Antigravity")
@@ -120,8 +139,10 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "agent-collab-monitor.py --exit-on-new --session-id",
             "Monitoring inbox:",
             "another monitor is running",
+            "`degraded_no_heartbeat`",
         ):
             self.assertIn(required, antigravity)
+        self.assertNotIn("`degraded_no_event_wake`", antigravity)
 
     def test_skill_has_no_operative_universal_loop_schedule_or_bypass(self):
         text = read_spec()
