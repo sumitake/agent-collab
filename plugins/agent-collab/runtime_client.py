@@ -446,6 +446,13 @@ FIXED_AUTHOR_MODELS = {
 GEMINI_GOVERNANCE_MODEL = "google/gemini-3.1-pro"
 GEMINI_GOVERNANCE_DISPLAY = "Gemini 3.1 Pro (High)"
 GEMINI_GOVERNANCE_CONTAINMENT = "write_contained_shared_home"
+GEMINI_GOVERNANCE_V1_CONTAINMENTS = frozenset(
+    {GEMINI_GOVERNANCE_CONTAINMENT}
+)
+GEMINI_GOVERNANCE_V2_CONTAINMENTS = (
+    GEMINI_GOVERNANCE_V1_CONTAINMENTS
+    | frozenset({"nonwriteback_ephemeral_home"})
+)
 GEMINI_GOVERNANCE_RESULT_V1_KEYS = frozenset(
     {
         "text",
@@ -6970,7 +6977,9 @@ def _gemini_governance_readiness_result_valid(
     return (
         set(result) == expected_keys
         and result.get("ready") is True
-        and result.get("containment_level") == GEMINI_GOVERNANCE_CONTAINMENT
+        and type(result.get("containment_level")) is str
+        and result.get("containment_level")
+        in GEMINI_GOVERNANCE_V2_CONTAINMENTS
         and result.get("tools_disabled") is False
         and result.get("pty_used") is True
         and result.get("lock_acquired") is True
@@ -7020,11 +7029,18 @@ def _gemini_governance_execute_result_valid(
         if recovery_contract
         else GEMINI_GOVERNANCE_PROOF_V1_KEYS
     )
+    containment_level = result.get("containment_level")
+    expected_containments = (
+        GEMINI_GOVERNANCE_V2_CONTAINMENTS
+        if recovery_contract
+        else GEMINI_GOVERNANCE_V1_CONTAINMENTS
+    )
     if (
         set(result) != expected_result_keys
         or type(text) is not str
         or len(text.encode("utf-8")) > MAX_RESPONSE_BYTES
-        or result.get("containment_level") != GEMINI_GOVERNANCE_CONTAINMENT
+        or type(containment_level) is not str
+        or containment_level not in expected_containments
         or result.get("tools_disabled") is not False
         or result.get("pty_used") is not True
         or result.get("lock_acquired") is not True
@@ -7035,6 +7051,8 @@ def _gemini_governance_execute_result_valid(
         or result.get("artifact_author_model") != envelope.artifact_author_model
         or result.get("artifact_author_family") != envelope.artifact_author_family
         or set(proof) != expected_proof_keys
+        or type(proof.get("containment_level")) is not str
+        or proof.get("containment_level") != containment_level
     ):
         return False
 
@@ -7054,7 +7072,6 @@ def _gemini_governance_execute_result_valid(
         "reviewer_family": "google",
         "selected_display": GEMINI_GOVERNANCE_DISPLAY,
         "effective_effort": "high",
-        "containment_level": GEMINI_GOVERNANCE_CONTAINMENT,
         "tools_disabled": False,
         "pty_used": True,
         "lock_acquired": True,

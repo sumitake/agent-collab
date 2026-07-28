@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.3), and is
+This public repository distributes that one package, **agent-collab** (v4.5.4), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,21 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.3 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.5.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.5.4
+
+- **Gemini governance accepts the access-only ephemeral containment mode.**
+  The public client's proof v1 contract still admits exactly
+  `write_contained_shared_home`. The proof v2 contract now admits exactly two
+  raw case-sensitive containment strings, `write_contained_shared_home` and
+  `nonwriteback_ephemeral_home`, matching the producer's access-only canary
+  mode. A v2 result's containment must equal the independently supplied proof
+  containment exactly; mixed, crossed, hybrid, unknown, or non-string values
+  fail closed, and v1 responses remain shared-home-only. Governance readiness
+  recognizes either exact mode as capability-only and never authorizes
+  execution. This closes the false `runtime Gemini result contract mismatch`
+  protocol error on both lanes (workspace issue #2422).
 
 ## What's new - v4.5.3
 

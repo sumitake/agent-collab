@@ -247,6 +247,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         envelope,
         text: str,
         *,
+        containment_level: str = "write_contained_shared_home",
         runtime_version: str = "2.0.0",
         contract_version: int = 2,
     ) -> dict[str, object]:
@@ -266,7 +267,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "reviewer_family": "google",
             "selected_display": "Gemini 3.1 Pro (High)",
             "effective_effort": "high",
-            "containment_level": "write_contained_shared_home",
+            "containment_level": containment_level,
             "tools_disabled": False,
             "pty_used": True,
             "lock_acquired": True,
@@ -298,12 +299,14 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         text: str,
         *,
         recovered: bool,
+        containment_level: str = "write_contained_shared_home",
         runtime_version: str = "2.0.0",
         contract_version: int = 2,
     ) -> dict[str, object]:
         proof = self._proof(
             envelope,
             text,
+            containment_level=containment_level,
             runtime_version=runtime_version,
             contract_version=contract_version,
         )
@@ -325,13 +328,14 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         envelope,
         *,
         text: str = "approved",
+        containment_level: str = "write_contained_shared_home",
         runtime_version: str = "2.0.0",
         contract_version: int = 2,
         provenance_host_runtime: object = "agent-collab-provider-runtime/2.0.0",
     ) -> dict[str, object]:
         result = {
             "text": text,
-            "containment_level": "write_contained_shared_home",
+            "containment_level": containment_level,
             "tools_disabled": False,
             "pty_used": True,
             "lock_acquired": True,
@@ -345,6 +349,7 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         result["governance_proof"] = self._proof(
             envelope,
             text,
+            containment_level=containment_level,
             runtime_version=runtime_version,
             contract_version=contract_version,
         )
@@ -365,12 +370,18 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
         *,
         recovered: bool,
         text: str = "approved",
+        containment_level: str = "write_contained_shared_home",
     ) -> dict[str, object]:
-        response = self._response(envelope, text=text)
+        response = self._response(
+            envelope,
+            text=text,
+            containment_level=containment_level,
+        )
         proof = self._proof_v2(
             envelope,
             text,
             recovered=recovered,
+            containment_level=containment_level,
         )
         response["result"]["governance_proof"] = proof
         for key in (
@@ -452,6 +463,156 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
                     self.client.RuntimeStatus.OK,
                     result.error,
                 )
+
+    def test_execute_accepts_access_only_v2_containment_with_full_binding(
+        self,
+    ) -> None:
+        envelope = self._envelope()
+        response = self._response_v2(
+            envelope,
+            recovered=False,
+            containment_level="nonwriteback_ephemeral_home",
+        )
+        accepted = self._parse(response, envelope)
+        self.assertEqual(
+            accepted.status,
+            self.client.RuntimeStatus.OK,
+            accepted.error,
+        )
+
+        proof = response["result"]["governance_proof"]
+        proof["artifact_sha256"] = "d" * 64
+        self._resign_proof(proof)
+        rejected = self._parse(response, envelope)
+        self.assertEqual(
+            rejected.status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+    def test_execute_keeps_v1_shared_home_only_and_rejects_v2_crossings(
+        self,
+    ) -> None:
+        envelope = self._envelope()
+        legacy = self._response(
+            envelope,
+            containment_level="nonwriteback_ephemeral_home",
+        )
+        self.assertEqual(
+            self._parse(legacy, envelope).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+        for result_level, proof_level in (
+            (
+                "nonwriteback_ephemeral_home",
+                "write_contained_shared_home",
+            ),
+            (
+                "write_contained_shared_home",
+                "nonwriteback_ephemeral_home",
+            ),
+        ):
+            with self.subTest(
+                result_level=result_level,
+                proof_level=proof_level,
+            ):
+                response = self._response_v2(
+                    envelope,
+                    recovered=False,
+                    containment_level=result_level,
+                )
+                proof = response["result"]["governance_proof"]
+                proof["containment_level"] = proof_level
+                self._resign_proof(proof)
+                self.assertEqual(
+                    self._parse(response, envelope).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+    def test_execute_rejects_noncanonical_or_hybrid_v2_containment(
+        self,
+    ) -> None:
+        envelope = self._envelope()
+        for containment_level in (
+            "",
+            "NONWRITEBACK_EPHEMERAL_HOME",
+            " nonwriteback_ephemeral_home",
+            "nonwriteback_ephemeral_home ",
+            "unknown_containment",
+        ):
+            with self.subTest(containment_level=containment_level):
+                response = self._response_v2(
+                    envelope,
+                    recovered=False,
+                    containment_level=containment_level,
+                )
+                self.assertEqual(
+                    self._parse(response, envelope).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        for containment_level in (None, False):
+            with self.subTest(containment_level=containment_level):
+                response = self._response_v2(
+                    envelope,
+                    recovered=False,
+                )
+                response["result"]["containment_level"] = containment_level
+                proof = response["result"]["governance_proof"]
+                proof["containment_level"] = containment_level
+                self._resign_proof(proof)
+                self.assertEqual(
+                    self._parse(response, envelope).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        for location in ("result", "proof"):
+            with self.subTest(location=location, containment_level="missing"):
+                response = self._response_v2(
+                    envelope,
+                    recovered=False,
+                    containment_level="nonwriteback_ephemeral_home",
+                )
+                if location == "result":
+                    response["result"].pop("containment_level")
+                else:
+                    response["result"]["governance_proof"].pop(
+                        "containment_level"
+                    )
+                self.assertEqual(
+                    self._parse(response, envelope).status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        hybrid = self._response_v2(
+            envelope,
+            recovered=False,
+            containment_level="nonwriteback_ephemeral_home",
+        )
+        hybrid["result"].pop("recovery_reason")
+        self.assertEqual(
+            self._parse(hybrid, envelope).status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
+        )
+
+    def test_public_containment_contract_names_exact_v1_and_v2_sets(self) -> None:
+        self.assertEqual(
+            self.client.GEMINI_GOVERNANCE_CONTAINMENT,
+            "write_contained_shared_home",
+        )
+        self.assertEqual(
+            self.client.GEMINI_GOVERNANCE_V1_CONTAINMENTS,
+            frozenset({"write_contained_shared_home"}),
+        )
+        self.assertEqual(
+            self.client.GEMINI_GOVERNANCE_V2_CONTAINMENTS,
+            frozenset(
+                {
+                    "write_contained_shared_home",
+                    "nonwriteback_ephemeral_home",
+                }
+            ),
+        )
 
     def test_public_proof_keyset_registry_names_both_exact_contracts(self) -> None:
         self.assertEqual(
@@ -749,7 +910,9 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             self.client.RuntimeStatus.PROTOCOL_ERROR,
         )
 
-    def test_governance_readiness_requires_shared_home_pty_proof_tuple(self) -> None:
+    def test_governance_readiness_accepts_only_closed_containment_tuple(
+        self,
+    ) -> None:
         envelope = self._envelope(operation="readiness")
         result = {
             "ready": True,
@@ -771,13 +934,71 @@ class GeminiGovernanceResponseTests(unittest.TestCase):
             "result": result,
             "provenance": self._provenance(envelope),
         }
-        accepted = self._parse(response, envelope)
+        for containment_level in (
+            "write_contained_shared_home",
+            "nonwriteback_ephemeral_home",
+        ):
+            with self.subTest(containment_level=containment_level):
+                result["containment_level"] = containment_level
+                accepted = self._parse(response, envelope)
+                self.assertEqual(
+                    accepted.status,
+                    self.client.RuntimeStatus.OK,
+                    accepted.error,
+                )
+
+        for containment_level in (
+            None,
+            "",
+            "NONWRITEBACK_EPHEMERAL_HOME",
+            " nonwriteback_ephemeral_home",
+            "nonwriteback_ephemeral_home ",
+            "unknown_containment",
+        ):
+            with self.subTest(containment_level=containment_level):
+                result["containment_level"] = containment_level
+                rejected = self._parse(response, envelope)
+                self.assertEqual(
+                    rejected.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        invalid_tuple_values = {
+            "ready": False,
+            "tools_disabled": True,
+            "pty_used": False,
+            "lock_acquired": False,
+            "cleanup_confirmed": False,
+            "selected_display": "Gemini 3.1 Pro",
+            "governance_ready": False,
+            "artifact_sha256": "d" * 64,
+            "artifact_author_model": "openai/other-model",
+            "artifact_author_family": "anthropic",
+        }
+        for key, value in invalid_tuple_values.items():
+            with self.subTest(
+                containment_level="nonwriteback_ephemeral_home",
+                invalid_tuple_key=key,
+            ):
+                candidate = dict(result)
+                candidate["containment_level"] = (
+                    "nonwriteback_ephemeral_home"
+                )
+                candidate[key] = value
+                response["result"] = candidate
+                rejected = self._parse(response, envelope)
+                self.assertEqual(
+                    rejected.status,
+                    self.client.RuntimeStatus.PROTOCOL_ERROR,
+                )
+
+        response["result"] = result
+        result.pop("containment_level")
+        missing = self._parse(response, envelope)
         self.assertEqual(
-            accepted.status, self.client.RuntimeStatus.OK, accepted.error
+            missing.status,
+            self.client.RuntimeStatus.PROTOCOL_ERROR,
         )
-        result["pty_used"] = False
-        rejected = self._parse(response, envelope)
-        self.assertEqual(rejected.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
 
     def test_advisory_cannot_emit_governance_evidence(self) -> None:
         envelope = self._envelope(action="advisory")
