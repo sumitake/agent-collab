@@ -27,6 +27,16 @@ def read_generated() -> str:
     return GENERATED.read_text(encoding="utf-8") if GENERATED.is_file() else ""
 
 
+def adapter_section(name: str, next_name: str | None = None) -> str:
+    text = read_spec()
+    start_marker = f"## {name}\n"
+    start = text.index(start_marker)
+    if next_name is None:
+        return text[start:]
+    end = text.index(f"## {next_name}\n", start + len(start_marker))
+    return text[start:end]
+
+
 class TestStartInboxMonitorSkill(unittest.TestCase):
     def test_source_and_generated_skill_exist(self):
         self.assertTrue(SPEC.is_file(), f"missing source spec: {SPEC}")
@@ -45,7 +55,7 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         for result in (
             "armed",
             "already_armed",
-            "goal_conflict",
+            "degraded_no_event_wake",
             "session_id_unavailable",
             "workspace_unavailable",
             "native_tool_unavailable",
@@ -56,16 +66,33 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "unsupported_host",
         ):
             self.assertIn(f"`{result}`", text)
+        self.assertNotIn("`goal_conflict`", text)
         for adapter in ("## Codex", "## Claude", "## Antigravity"):
             self.assertIn(adapter, text)
 
-    def test_native_tool_and_command_contracts_are_exact(self):
-        text = read_spec()
+    def test_codex_monitor_is_goal_free_and_idle_token_free(self):
+        codex = " ".join(adapter_section("Codex", "Claude").split())
         for required in (
-            "`get_goal`/`create_goal`",
+            "Do not use Codex goals for monitor liveness",
             "`exec_command`",
-            "persistent goal",
+            "`degraded_no_event_wake`",
+            "zero model turns while idle",
+            "first empty monitor-only continuation",
+            "perform no exec poll",
+            "never recreate",
+            "genuine session activation or reactivation",
+            "actual monitor or native exec event",
             "inbox-polling-monitor.py codex --interval 10",
+            "Seen-files path",
+            "another monitor is running",
+        ):
+            self.assertIn(required, codex)
+        for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
+            self.assertNotIn(forbidden, codex)
+
+    def test_claude_native_monitor_contract_is_unchanged(self):
+        claude = adapter_section("Claude", "Antigravity")
+        for required in (
             "`Monitor`",
             "`TaskStop`",
             "persistent: true",
@@ -74,13 +101,20 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "AGENT_COLLAB_SESSION_ID=<session-id>",
             "Seen-files path",
             "stale inherited `AGENT_COLLAB_SESSION_ID`",
+            "canonical busy-lease observation",
+        ):
+            self.assertIn(required, claude)
+
+    def test_antigravity_native_monitor_contract_is_unchanged(self):
+        antigravity = adapter_section("Antigravity")
+        for required in (
             "`run_command`",
             "WaitMsBeforeAsync: 100",
             "agent-collab-monitor.py --exit-on-new --session-id",
             "Monitoring inbox:",
             "another monitor is running",
         ):
-            self.assertIn(required, text)
+            self.assertIn(required, antigravity)
 
     def test_skill_has_no_operative_universal_loop_schedule_or_bypass(self):
         text = read_spec()
