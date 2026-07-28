@@ -62,7 +62,8 @@ This is intentionally honest. The process can continue collecting monitor
 events at zero idle model-token cost, but automatic model wake is not promised.
 `armed` remains available only if a future Codex host positively proves an
 event-driven wake bound to the retained exec. A clean busy-lease observation
-remains `already_armed`.
+without that wake proof remains `degraded_no_event_wake`; `already_armed`
+requires both a compatible retained process and proven event wake.
 
 `goal_conflict` is removed because the monitor no longer consumes Codex's goal
 slot. An unrelated user goal is neither inspected nor modified.
@@ -75,7 +76,8 @@ lease-guarded launch attempt:
 
 - a complete startup proof returns `degraded_no_event_wake` unless native wake
   is independently proven;
-- a clean busy-lease line adopts the process as `already_armed`; and
+- a clean busy-lease line adopts the process as `degraded_no_event_wake` unless
+  native wake is independently proven; and
 - ambiguity or an unsafe/terminal startup returns `startup_failed`.
 
 There is no self-retry. Explicit stop persists the stopped marker before
@@ -86,9 +88,11 @@ positively identified as monitor-owned; unrelated goals remain untouched.
 
 Once the startup turn ends, the monitor lifecycle itself must cause zero model
 turns while idle. Model selection and reasoning effort therefore affect only
-real message handling, not liveness. Real event triage should use the
-lowest-cost capable Codex tier at low effort and escalate only when the message
-content requires deeper reasoning.
+real message handling, not liveness. When the host exposes a per-turn model and
+effort choice, real event triage should use the lowest-cost capable Codex tier
+at low effort and escalate only when the message content requires deeper
+reasoning. The adapter must not create another monitoring lifecycle merely to
+change models.
 
 ## Verification
 

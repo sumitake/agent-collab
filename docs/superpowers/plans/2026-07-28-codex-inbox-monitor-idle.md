@@ -36,6 +36,9 @@ hermetic skill/marketplace generators, JSON package metadata.
   status and ends only the positively matching legacy monitor-owned goal.
 - `degraded_no_event_wake` means the local monitor is live without a proven
   native model-wake mechanism; it must not be flattened to `armed`.
+- A Codex busy-lease adoption without proven event wake also remains
+  `degraded_no_event_wake`; `already_armed` requires both the retained process
+  and its event wake to be proven.
 - `goal_conflict` is removed because the monitor no longer owns the goal slot.
 - Package version is 4.5.3, sequenced after broker PR #70's 4.5.2.
 - Commit only a unique changelog fragment; never commit generated
@@ -88,6 +91,9 @@ def test_codex_monitor_is_goal_free_and_idle_token_free(self):
         "never recreate",
         "genuine session activation or reactivation",
         "actual monitor or native exec event",
+        "without that wake proof is also `degraded_no_event_wake`",
+        "When the host exposes a per-turn model and effort choice",
+        "do not create another monitoring lifecycle only to change models",
     ):
         self.assertIn(required, codex)
     for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
@@ -159,10 +165,10 @@ one bounded exec observation to prove the complete startup set. After that,
 perform no timer-driven or empty-continuation liveness polls.
 ```
 
-Classify a complete local startup as `degraded_no_event_wake` unless the current
-host independently proves an event-driven model wake bound to that exec. A
-clean busy lease remains `already_armed`; unsafe or ambiguous startup remains
-`startup_failed`.
+Classify a complete local startup or clean busy-lease adoption as
+`degraded_no_event_wake` unless the current host independently proves an
+event-driven model wake bound to that exec. Use `already_armed` only with that
+wake proof; unsafe or ambiguous startup remains `startup_failed`.
 
 Add the explicit idle contract and tripwire:
 

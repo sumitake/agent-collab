@@ -71,7 +71,8 @@ Use exactly one typed result:
 - `armed`: native startup and an event-driven wake were positively observed,
   and the task/exec identifier was retained.
 - `already_armed`: a compatible same-host, same-session monitor is positively
-  live, or the canonical process reports a busy kernel lease.
+  live, or the canonical process reports a busy kernel lease. Codex still uses
+  `degraded_no_event_wake` when that live process lacks proven event wake.
 - `degraded_no_event_wake`: Codex's canonical local process is positively live,
   but no host-native event mechanism has been proven to wake the model; the
   adapter created no recurring model continuation.
@@ -142,15 +143,18 @@ startup set:
 Complete local startup without a separately proven host-native event wake is
 `degraded_no_event_wake`, not `armed`. A future Codex host may return `armed`
 only after it positively proves an event-driven model wake bound to the retained
-exec. A clean `another monitor is running` line is `already_armed`. A lease
-error, early exit, missing exec identifier, or incomplete startup set is
-`startup_failed`.
+exec. A clean `another monitor is running` line without that wake proof is also
+`degraded_no_event_wake`; use `already_armed` only when the compatible retained
+process and its event wake are both proven. A lease error, early exit, missing
+exec identifier, or incomplete startup set is `startup_failed`.
 
 After startup returns, this lifecycle must cause zero model turns while idle.
 The script's 10-second local filesystem poll remains allowed because it does
-not invoke a model. Use the lowest-cost capable Codex tier at low effort for a
-real monitor-event triage turn, and escalate only when the message content
-requires deeper reasoning.
+not invoke a model. When the host exposes a per-turn model and effort choice,
+use the lowest-cost capable Codex tier at low effort for a real monitor-event
+triage turn, and escalate only when the message content requires deeper
+reasoning. Otherwise keep the current turn configuration; do not create another
+monitoring lifecycle only to change models.
 
 On the first empty monitor-only continuation from a legacy monitor-owned
 lifecycle, perform no exec poll, run no state command, and emit no routine
@@ -161,8 +165,8 @@ model wake and never modifies an unrelated goal or task.
 
 If the retained exec identifier is lost during task-state compaction, wait for
 the next real turn listed above and make exactly one lease-guarded launch
-attempt. Complete startup returns `degraded_no_event_wake`; a clean busy-lease
-line adopts the existing process as `already_armed`; ambiguity is
+attempt. Complete startup and a clean busy-lease adoption both return
+`degraded_no_event_wake` unless event wake is separately proven; ambiguity is
 `startup_failed`. Apply the same one-attempt rule after positive terminal
 evidence. Never self-retry, create a supervisor, or schedule a check.
 
