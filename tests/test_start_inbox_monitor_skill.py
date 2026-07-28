@@ -32,10 +32,18 @@ LEGACY_TRANSCRIPT_PROOF = (
     "retained exec identifier and the complete five-line startup set",
     "Do not require one literal objective wording",
     "objective wording alone",
+    "objective semantically records the validated session ID",
+    "monitoring scope",
+    "routing exclusions",
+    "no scheduled or recurring automation",
+    "successful explicit `start` transition",
+    "successful automatic `status` observation",
 )
 
 LEGACY_FAILURE_CASES = (
     "missing_required_field",
+    "objective_contract_mismatch",
+    "state_transition_mismatch",
     "truncated_evidence",
     "duplicated_record",
     "reordered_record",
@@ -175,6 +183,10 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "validated current session ID",
             "goal output's thread ID and complete objective",
             "exactly match the active continuation",
+            "necessary but not sufficient",
+            "originating trigger is an explicit start",
+            "automatic activation, continuation, or re-arm",
+            "marker clear",
             "truncation that hides a required field or proof anchor",
             "duplicated or reordered lifecycle record",
             "ambiguous match",
@@ -244,6 +256,14 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
         design_normalized = " ".join(design.split())
         self.assertIn(
             "Every empty legacy monitor continuation is a migration tripwire",
+            design_normalized,
+        )
+        self.assertIn(
+            "explicit `start` transition or the successful automatic `status`",
+            design_normalized,
+        )
+        self.assertIn(
+            "session ID, monitoring scope, routing exclusions, and no-scheduling rule",
             design_normalized,
         )
         self.assertNotIn(
