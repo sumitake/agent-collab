@@ -45,9 +45,18 @@ for one of these reasons:
 4. concrete evidence that the retained exec failed.
 
 An empty monitor-only continuation is not a liveness event. The first such turn
-is a tripwire: perform no exec poll, emit no routine status, end only a matching
-legacy monitor-owned goal or task if one exists, and never recreate it. Leave
-the lease-owning local process untouched.
+is a migration tripwire: perform no exec poll or state command and emit no
+routine status. A legacy goal matches only when its complete
+whitespace-normalized objective exactly equals the 4.5.2 monitor objective
+template after substitution of the validated current session ID. Substring,
+fuzzy, case-folded, partial, ambiguous, or augmented matches fail closed.
+
+Even an exact match may be completed only after the host positively proves
+goal/exec lifecycle independence, retains or rebinds the exec identifier in
+non-goal state, and confirms that goal completion cannot terminate the process.
+Without both proofs, return `legacy_goal_detach_unavailable` and leave the goal
+and exec unchanged. This means a host without safe-detach evidence may continue
+its pre-4.5.3 scheduler turns; the new lifecycle does not create them.
 
 ## Result Semantics
 
@@ -72,6 +81,10 @@ wake.
 `goal_conflict` is removed because the monitor no longer consumes Codex's goal
 slot. An unrelated user goal is neither inspected nor modified.
 
+Add `legacy_goal_detach_unavailable` for the fail-closed migration case: the
+exact legacy objective was found, but the host could not prove that its exec
+would survive goal completion and remain independently controllable.
+
 ## Compaction, Adoption, and Failure
 
 Loss of the retained exec identifier during compaction does not authorize a
@@ -85,8 +98,9 @@ lease-guarded launch attempt:
 - ambiguity or an unsafe/terminal startup returns `startup_failed`.
 
 There is no self-retry. Explicit stop persists the stopped marker before
-terminating a retained exec. A legacy monitor goal may be ended only when it is
-positively identified as monitor-owned; unrelated goals remain untouched.
+terminating a retained exec. A legacy monitor goal may be ended only after the
+exact-objective and independent-exec proofs above; unrelated or ambiguous goals
+remain untouched.
 
 ## Token-Efficiency Contract
 
@@ -105,13 +119,14 @@ contract produced repeated no-event turns without performing exec polls.
 Repository regression tests will lock the distributed instruction contract:
 
 - the Codex section contains the event-bounded lifecycle, honest degraded
-  result, zero-idle requirement, and first-empty-turn tripwire;
+  result, zero-idle requirement, exact legacy-objective fingerprint, and
+  independent-exec detach gate;
 - the Codex section contains no `get_goal`, `create_goal`, or persistent-goal
   lifecycle;
 - shared `armed`, singleton inspection, and continuation status semantics stay
   unchanged for Claude and Antigravity;
 - the shared result set replaces `goal_conflict` with
-  `degraded_no_event_wake`;
+  `degraded_no_event_wake` and `legacy_goal_detach_unavailable`;
 - Claude retains `Monitor(persistent: true)` and Antigravity retains its
   one-shot asynchronous task contract; and
 - generated skill output remains in exact parity with its source spec.

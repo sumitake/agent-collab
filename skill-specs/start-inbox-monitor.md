@@ -70,10 +70,16 @@ Use exactly one typed result:
 - `armed`: native startup was positively observed and the task/exec identifier
   was retained.
 - `already_armed`: a compatible same-host, same-session monitor is positively
-  live, or the canonical process reports a busy kernel lease.
+  live, or the canonical process reports a busy kernel lease. Codex must not
+  map a bare busy lease to `already_armed`; its adapter requires separate
+  event-wake proof and otherwise uses `degraded_no_event_wake`.
 - `degraded_no_event_wake`: Codex's canonical local process is positively live,
   but no host-native event mechanism has been proven to wake the model; the
   adapter created no recurring model continuation.
+- `legacy_goal_detach_unavailable`: an exact legacy Codex monitor goal was
+  identified, but the host did not prove that its retained exec would survive
+  goal completion and remain independently controllable; the goal and process
+  were left unchanged.
 - `session_id_unavailable`: no strong current-session identifier is available.
 - `workspace_unavailable`: the canonical installed monitor program is unavailable.
 - `native_tool_unavailable`: the required host-native lifecycle tool is absent.
@@ -155,10 +161,36 @@ monitoring lifecycle only to change models.
 
 On the first empty monitor-only continuation from a legacy monitor-owned
 lifecycle, perform no exec poll, run no state command, and emit no routine
-status. End only a goal or task positively identified as that legacy monitor
-lifecycle before the turn completes, never recreate it, and leave the
-lease-owning local process untouched. This tripwire permits at most one empty
-model wake and never modifies an unrelated goal or task.
+status. Require that the continuation source is the host's legacy goal
+continuation and that the complete objective is available.
+The sole recognized legacy objective fingerprint is:
+
+```text
+Keep exactly one Codex inter-agent inbox monitor armed for session <session-id>, monitoring all topics (`.*`) while always surfacing direct replies and session-targeted messages. Preserve the async-inbox routing exclusions: use synchronous managed routes first and verifiable Git surfaces second; the inbox is outbound last-resort failover. Do not create scheduled or recurring automation, cron, launchd, heartbeat tasks, supervisor loops, or queue-only replacements. Retain and poll the native exec session; stop and complete this goal only on explicit operator stop or genuine session completion.
+```
+
+Compare the complete whitespace-normalized objective for exact equality after
+substituting `<session-id>` with the validated current session ID. Do not use a
+substring, fuzzy, case-folded, or partial match. Treat any missing, ambiguous,
+extra, or contradictory field as non-matching and never modify that goal or
+task.
+
+Before ending an exact match, require positive host-native proof of goal/exec
+lifecycle independence: retain or rebind the exec identifier outside the goal,
+confirm that independent identifier is readable from non-goal task state, and
+confirm that completing the goal cannot terminate the monitor process; only
+then complete the exact-matching goal once, never recreate it, and leave the
+lease-owning local process untouched. If native metadata also proves the
+process remains live without event-wake proof, return
+`degraded_no_event_wake`.
+
+If either the lifecycle proof or independent identifier retention is
+unavailable, return `legacy_goal_detach_unavailable`, do not complete or
+otherwise mutate the goal, do not touch the exec, and do not claim that
+repeated legacy continuations have been stopped. This fail-closed path never
+modifies an unrelated goal or task. Hosts that cannot prove safe detachment may
+continue scheduling their pre-4.5.3 legacy goal; new invocations never create
+that lifecycle.
 
 If the retained exec identifier is lost during task-state compaction, wait for
 the next real turn listed above and make exactly one lease-guarded launch

@@ -13,8 +13,9 @@ wake honestly.
 session lease, but make its lifecycle independent of Codex goals. A startup
 turn performs one bounded proof; later state checks occur only inside a turn
 that already exists for a real activation, event, status/stop request, or
-concrete failure signal. The distributed skill contract carries a first-empty-
-continuation tripwire and a typed `degraded_no_event_wake` state.
+concrete failure signal. The distributed skill contract carries an
+exact-objective, safe-detach legacy tripwire plus the typed
+`degraded_no_event_wake` and `legacy_goal_detach_unavailable` states.
 
 **Tech Stack:** Markdown skill specs, Python 3 standard-library `unittest`,
 hermetic skill/marketplace generators, JSON package metadata.
@@ -36,7 +37,9 @@ hermetic skill/marketplace generators, JSON package metadata.
   Inspect or end a goal only when the current turn positively identifies it as
   the legacy monitor-owned lifecycle; never inspect or modify an unrelated goal.
 - A first empty legacy monitor continuation performs no exec poll or routine
-  status and ends only the positively matching legacy monitor-owned goal.
+  status. It ends only the exact 4.5.2 objective after host-native proof that
+  the exec survives goal completion and its identifier is retained outside the
+  goal. Otherwise return `legacy_goal_detach_unavailable` without mutation.
 - `degraded_no_event_wake` means the local monitor is live without a proven
   native model-wake mechanism; it must not be flattened to `armed`.
 - A Codex busy-lease adoption without proven event wake also remains
@@ -135,8 +138,8 @@ git commit -S -m "test: lock idle-free Codex monitor lifecycle"
 **Interfaces:**
 - Consumes: canonical monitor command, startup-line proof, session stop-state
   helper, and the shared kernel lease.
-- Produces: the `degraded_no_event_wake` Codex lifecycle and first-empty-turn
-  tripwire.
+- Produces: the `degraded_no_event_wake` Codex lifecycle and a fail-closed
+  first-empty-turn legacy migration tripwire.
 
 - [ ] **Step 1: Correct the shared result contract**
 
@@ -183,10 +186,12 @@ The script's 10-second local filesystem poll remains allowed because it does
 not invoke a model.
 
 On the first empty monitor-only continuation from a legacy monitor-owned
-lifecycle, perform no exec poll and emit no routine status. End only the
-positively matching legacy monitor goal or task, never recreate it, and leave
-the lease-owning local process untouched. This tripwire permits at most one
-empty model wake.
+lifecycle, perform no exec poll or state command and emit no routine status.
+Match only the complete normalized 4.5.2 objective with the validated current
+session ID. Require host-native proof that the exec survives goal completion
+and retain or rebind its identifier in non-goal state before completing the
+goal. Otherwise return `legacy_goal_detach_unavailable`, leave both lifecycles
+untouched, and make no claim that legacy scheduler turns stopped.
 ```
 
 Keep explicit stop-state handling and one-attempt lease adoption after
@@ -266,8 +271,9 @@ Create this fragment:
   interval, but liveness checks occur only on real activation, event, status,
   stop, or failure turns, so idle monitoring causes zero model turns.
 - Codex reports `degraded_no_event_wake` when the local process is live without
-  a proven host-native model wake, and a first-empty-continuation tripwire
-  prevents a legacy goal from producing repeated no-event turns.
+  a proven host-native model wake. Legacy cleanup completes only the exact
+  pre-4.5.3 monitor goal after independent-exec proof; otherwise it returns
+  `legacy_goal_detach_unavailable` without mutation.
 - Claude and Antigravity monitor lifecycles are unchanged.
 ```
 
