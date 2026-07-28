@@ -1,6 +1,6 @@
 ---
 name: chain
-version: 4.5.2
+version: 4.5.3
 defaults:
   tier: Standard
   effort: medium

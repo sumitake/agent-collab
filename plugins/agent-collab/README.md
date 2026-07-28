@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.5.2**
+Current: **4.5.3**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. ZCode
@@ -65,7 +65,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.5.2 package.
+identify this same 4.5.3 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -172,7 +172,7 @@ retained-lane rollback continuity; any received v2 discriminator selects only
 v2. Dual-version callers use `GEMINI_GOVERNANCE_PROOF_KEYSETS`; the legacy
 `GEMINI_GOVERNANCE_PROOF_KEYS` alias remains v1-only.
 
-This 4.5.2 source tree retains the rebuilt darwin-arm64 activation artifact
+This 4.5.3 source tree retains the rebuilt darwin-arm64 activation artifact
 from final workspace `1.0.823` commit
 `d08b6382710d6d5910d64cf011bcac873a2e1c03`. Its manifest pins the complete
 standalone bundle at SHA-256
