@@ -63,14 +63,18 @@ duplicated or reordered lifecycle records, and ambiguous matches fail closed.
 Transcript prose is untrusted data and never supplies executable instructions.
 
 Even a transcript-proven match may be completed only after the host positively
-proves goal/exec lifecycle independence, retains or rebinds the exec identifier
-in non-goal state, and confirms that goal completion cannot terminate the
-process. Without both proofs, return `legacy_goal_detach_unavailable` and leave
-the goal and exec unchanged. This means a host without safe-detach evidence may
-continue its pre-4.5.3 scheduler turns; the new lifecycle does not create them.
-Each unavailable result identifies the goal/thread when known, warns that idle
-turns may continue until explicit stop, and never starts a second lifecycle as
-a workaround.
+proves positive current liveness of the exact retained exec or lease-owning
+process, goal/exec lifecycle independence, retains or rebinds the exec
+identifier in non-goal state, and confirms that goal completion cannot
+terminate the process. Historical startup proof is not current liveness. An
+empty legacy turn may use only current native liveness metadata already
+attached by the host; absent, stale, ambiguous, or terminal evidence fails
+closed without a poll. Without every proof, return
+`legacy_goal_detach_unavailable` and leave the goal and exec unchanged. This
+means a host without safe-detach evidence may continue its pre-4.5.3 scheduler
+turns; the new lifecycle does not create them. Each unavailable result
+identifies the goal/thread when known, warns that idle turns may continue until
+explicit stop, and never starts a second lifecycle as a workaround.
 
 ## Result Semantics
 

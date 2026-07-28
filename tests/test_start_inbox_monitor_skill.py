@@ -39,7 +39,7 @@ LEGACY_TRANSCRIPT_PROOF = (
     "successful explicit `start` transition",
     "successful automatic `status` observation",
     "positive current liveness",
-    "historical startup proof is not current liveness",
+    "Historical startup proof is not current liveness",
 )
 
 LEGACY_FAILURE_CASES = (
@@ -196,8 +196,8 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "host-native goal/exec proof",
             "exact retained exec or lease-owning process is currently running",
             "completing the goal cannot terminate the monitor process",
-            "If either the lifecycle proof or independent identifier retention "
-            "is unavailable",
+            "If current liveness, lifecycle independence, or independent "
+            "identifier retention is unavailable",
             "do not complete or otherwise mutate the goal",
             "do not claim that repeated legacy continuations have been stopped",
             "idle model turns may continue",

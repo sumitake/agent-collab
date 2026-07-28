@@ -78,10 +78,11 @@ Use exactly one typed result:
   but no host-native event mechanism has been proven to wake the model; the
   adapter created no recurring model continuation.
 - `legacy_goal_detach_unavailable`: a legacy Codex monitor goal could not be
-  proven from its creation transcript, or the host did not prove that its
-  retained exec would survive goal completion and remain independently
-  controllable; the goal and process were left unchanged, so host-scheduled
-  idle model turns may continue until that goal is explicitly stopped.
+  proven from its creation transcript, or the host did not prove that the exact
+  retained exec or lease-owning process is currently live, would survive goal
+  completion, and would remain independently controllable; the goal and process
+  were left unchanged, so host-scheduled idle model turns may continue until
+  that goal is explicitly stopped.
 - `stop_incomplete_legacy_goal`: an explicit Codex stop persisted the stopped
   marker and stopped only retained monitor exec identifiers bound to that
   lifecycle, but the host could not bind and end a still-live legacy monitor
@@ -217,30 +218,37 @@ anchor, duplicated or reordered lifecycle record, or ambiguous match is
 `legacy_goal_detach_unavailable`; semantic similarity is not proof.
 
 Before ending a transcript-proven match, require positive host-native goal/exec
-proof. That proof must establish goal/exec lifecycle independence and retain or
-rebind the exec identifier outside the goal. Confirm that independent
-identifier is readable from non-goal task state and that completing the goal
-cannot terminate the monitor process, and only then complete the
-transcript-proven goal once; never recreate it, and leave the lease-owning
-local process untouched. If native metadata also proves the process remains
-live without event-wake proof, return `degraded_no_event_wake`.
+proof. That proof must include positive current liveness of the exact retained
+exec or lease-owning process bound to this session, establish goal/exec
+lifecycle independence, and retain or rebind the exec identifier outside the
+goal. Positive current liveness means the exact retained exec or lease-owning
+process is currently running under the validated session. Historical startup
+proof is not current liveness. On an empty legacy continuation, use only current
+native liveness metadata already attached by the host; absence, staleness,
+ambiguity, or a terminal process fails closed and never authorizes a poll.
+Confirm that the independent identifier is readable from non-goal task state
+and that completing the goal cannot terminate the monitor process, and only
+then complete the transcript-proven goal once; never recreate it, and leave the
+lease-owning local process untouched. Without event-wake proof, return
+`degraded_no_event_wake`.
 
-If either the lifecycle proof or independent identifier retention is
-unavailable, return `legacy_goal_detach_unavailable`, do not complete or
-otherwise mutate the goal, do not touch the exec, and do not claim that
-repeated legacy continuations have been stopped. This fail-closed path never
-modifies an unrelated goal or task. Hosts that cannot prove safe detachment may
-continue scheduling their pre-4.5.3 legacy goal; new invocations never create
-that lifecycle.
+If current liveness, lifecycle independence, or independent identifier
+retention is unavailable, return `legacy_goal_detach_unavailable`, do not
+complete or otherwise mutate the goal, do not touch the exec, and do not claim
+that repeated legacy continuations have been stopped. This fail-closed path
+never modifies an unrelated goal or task. Hosts that cannot prove safe
+detachment may continue scheduling their pre-4.5.3 legacy goal; new invocations
+never create that lifecycle.
 
 ### Legacy continuation decision table
 
 | Case | Transcript evidence | Host detach evidence | Required action | Typed result |
 |---|---|---|---|---|
-| `safe_detach` | complete, same-turn, and unambiguous | goal/exec independence and non-goal exec retention are positive | complete the goal once, retain the exec, and perform no liveness poll | `degraded_no_event_wake` |
+| `safe_detach` | complete, same-turn, and unambiguous | positive current liveness, goal/exec independence, and non-goal exec retention are all proven | complete the goal once, retain the exec, and perform no liveness poll | `degraded_no_event_wake` |
 | `missing_required_field` | one or more required structured fields are absent | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `objective_contract_mismatch` | the objective lacks the exact session value or any monitor scope, routing-exclusion, or no-scheduling semantic | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `state_transition_mismatch` | the state operation is missing, duplicated, failed, stopped, or does not match the explicit or automatic trigger | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
+| `liveness_unproven_or_terminal` | transcript proof may be complete | attached current native metadata is absent, stale, ambiguous, or terminal | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `truncated_evidence` | a read limit or truncation hides required evidence | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `duplicated_record` | a lifecycle call or result is duplicated | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |
 | `reordered_record` | required lifecycle ordering is violated | any | no exec poll, state command, goal mutation, or exec mutation; surface operator remediation | `legacy_goal_detach_unavailable` |

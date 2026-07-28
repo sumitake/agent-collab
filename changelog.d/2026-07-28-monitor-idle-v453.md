@@ -10,8 +10,9 @@
 - Codex reports `degraded_no_event_wake` when the local process is live without
   a proven host-native model wake. Legacy cleanup ends only a goal whose
   structured creation transcript proves the old monitor lifecycle and after
-  the host proves the retained exec survives independently; otherwise it
-  returns `legacy_goal_detach_unavailable` and leaves both lifecycles untouched.
+  the host proves the exact retained exec is currently live and survives
+  independently; otherwise it returns `legacy_goal_detach_unavailable` and
+  leaves both lifecycles untouched.
 - When legacy detach proof is unavailable, the host may continue pre-4.5.3 goal
   continuations until that goal is explicitly stopped. Every such empty turn is
   constrained to no exec/state poll or lifecycle mutation, and explicit stop
