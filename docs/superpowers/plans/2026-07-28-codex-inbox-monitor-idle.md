@@ -14,7 +14,7 @@ session lease, but make its lifecycle independent of Codex goals. A startup
 turn performs one bounded proof; later state checks occur only inside a turn
 that already exists for a real activation, event, status/stop request, or
 concrete failure signal. The distributed skill contract carries an
-exact-objective, safe-detach legacy tripwire plus the typed
+structured-transcript, safe-detach legacy tripwire plus the typed
 `degraded_no_event_wake` and `legacy_goal_detach_unavailable` states.
 
 **Tech Stack:** Markdown skill specs, Python 3 standard-library `unittest`,
@@ -37,9 +37,10 @@ hermetic skill/marketplace generators, JSON package metadata.
   Inspect or end a goal only when the current turn positively identifies it as
   the legacy monitor-owned lifecycle; never inspect or modify an unrelated goal.
 - A first empty legacy monitor continuation performs no exec poll or routine
-  status. It ends only the exact 4.5.2 objective after host-native proof that
-  the exec survives goal completion and its identifier is retained outside the
-  goal. Otherwise return `legacy_goal_detach_unavailable` without mutation.
+  status. It ends only a goal whose same-turn structured creation transcript
+  proves the old monitor lifecycle, and only after host-native proof that the
+  exec survives goal completion with its identifier retained outside the goal.
+  Otherwise return `legacy_goal_detach_unavailable` without mutation.
 - `degraded_no_event_wake` means the local monitor is live without a proven
   native model-wake mechanism; it must not be flattened to `armed`.
 - A Codex busy-lease adoption without proven event wake also remains
@@ -102,8 +103,12 @@ def test_codex_monitor_is_goal_free_and_idle_token_free(self):
         "do not create another monitoring lifecycle only to change models",
     ):
         self.assertIn(required, codex)
+    new_lifecycle = codex.split(
+        "On the first empty monitor-only continuation",
+        1,
+    )[0]
     for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
-        self.assertNotIn(forbidden, codex)
+        self.assertNotIn(forbidden, new_lifecycle)
 ```
 
 Keep separate assertions that Claude still contains `Monitor`,
@@ -187,11 +192,14 @@ not invoke a model.
 
 On the first empty monitor-only continuation from a legacy monitor-owned
 lifecycle, perform no exec poll or state command and emit no routine status.
-Match only the complete normalized 4.5.2 objective with the validated current
-session ID. Require host-native proof that the exec survives goal completion
-and retain or rebind its identifier in non-goal state before completing the
-goal. Otherwise return `legacy_goal_detach_unavailable`, leave both lifecycles
-untouched, and make no claim that legacy scheduler turns stopped.
+Require a same-turn structured transcript containing the old installed skill,
+one current-session `create_goal` call/result, the preceding empty `get_goal`
+and explicit-start transition, and the following exact canonical exec launch
+with retained identifier and complete startup proof. Then require host-native
+proof that the exec survives goal completion and retain or rebind its
+identifier in non-goal state before completing the goal. Otherwise return
+`legacy_goal_detach_unavailable`, leave both lifecycles untouched, and make no
+claim that legacy scheduler turns stopped.
 ```
 
 Keep explicit stop-state handling and one-attempt lease adoption after
@@ -271,9 +279,9 @@ Create this fragment:
   interval, but liveness checks occur only on real activation, event, status,
   stop, or failure turns, so idle monitoring causes zero model turns.
 - Codex reports `degraded_no_event_wake` when the local process is live without
-  a proven host-native model wake. Legacy cleanup completes only the exact
-  pre-4.5.3 monitor goal after independent-exec proof; otherwise it returns
-  `legacy_goal_detach_unavailable` without mutation.
+  a proven host-native model wake. Legacy cleanup completes only a
+  transcript-proven pre-4.5.3 monitor goal after independent-exec proof;
+  otherwise it returns `legacy_goal_detach_unavailable` without mutation.
 - Claude and Antigravity monitor lifecycles are unchanged.
 ```
 

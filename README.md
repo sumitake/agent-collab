@@ -137,9 +137,10 @@ Contributors need no access to the private build/sign system. See
   process keeps its existing 10-second filesystem interval, but the Codex
   adapter no longer creates or retains a goal for liveness. State checks now
   occur only on real activation, event, status, stop, or failure turns.
-  Legacy cleanup completes only an exact fingerprinted monitor goal after the
-  host proves its exec remains independently live and controllable; otherwise
-  it returns `legacy_goal_detach_unavailable` without mutating either lifecycle.
+  Legacy cleanup completes only a monitor goal proven by its structured
+  creation transcript and after the host proves its exec remains independently
+  live and controllable; otherwise it returns
+  `legacy_goal_detach_unavailable` without mutating either lifecycle.
   Without a proven host-native event wake, Codex reports the honest
   `degraded_no_event_wake` result instead of `armed`. Claude and Antigravity
   monitor lifecycles are unchanged.

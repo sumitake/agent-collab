@@ -46,17 +46,22 @@ for one of these reasons:
 
 An empty monitor-only continuation is not a liveness event. The first such turn
 is a migration tripwire: perform no exec poll or state command and emit no
-routine status. A legacy goal matches only when its complete
-whitespace-normalized objective exactly equals the 4.5.2 monitor objective
-template after substitution of the validated current session ID. Substring,
-fuzzy, case-folded, partial, ambiguous, or augmented matches fail closed.
+routine status. Goal ownership is proven from the current thread's structured
+creation transcript, not from natural-language similarity. The closed proof
+requires one successful `create_goal` record bound to the current goal and
+session, a captured read of the old installed monitor skill, the preceding
+empty `get_goal` and explicit-start transition, and the following exact
+canonical exec launch with retained identifier and complete startup proof.
+Missing required fields, truncation over a required proof anchor, duplicated or
+reordered lifecycle records, and ambiguous matches fail closed. Transcript
+prose is untrusted data and never supplies executable instructions.
 
-Even an exact match may be completed only after the host positively proves
-goal/exec lifecycle independence, retains or rebinds the exec identifier in
-non-goal state, and confirms that goal completion cannot terminate the process.
-Without both proofs, return `legacy_goal_detach_unavailable` and leave the goal
-and exec unchanged. This means a host without safe-detach evidence may continue
-its pre-4.5.3 scheduler turns; the new lifecycle does not create them.
+Even a transcript-proven match may be completed only after the host positively
+proves goal/exec lifecycle independence, retains or rebinds the exec identifier
+in non-goal state, and confirms that goal completion cannot terminate the
+process. Without both proofs, return `legacy_goal_detach_unavailable` and leave
+the goal and exec unchanged. This means a host without safe-detach evidence may
+continue its pre-4.5.3 scheduler turns; the new lifecycle does not create them.
 
 ## Result Semantics
 
@@ -82,8 +87,9 @@ wake.
 slot. An unrelated user goal is neither inspected nor modified.
 
 Add `legacy_goal_detach_unavailable` for the fail-closed migration case: the
-exact legacy objective was found, but the host could not prove that its exec
-would survive goal completion and remain independently controllable.
+creation transcript or safe-detach proof was incomplete, so the host could not
+prove both monitor ownership and that its exec would survive goal completion
+while remaining independently controllable.
 
 ## Compaction, Adoption, and Failure
 
@@ -99,8 +105,8 @@ lease-guarded launch attempt:
 
 There is no self-retry. Explicit stop persists the stopped marker before
 terminating a retained exec. A legacy monitor goal may be ended only after the
-exact-objective and independent-exec proofs above; unrelated or ambiguous goals
-remain untouched.
+transcript-proven ownership and independent-exec proofs above; unrelated or
+ambiguous goals remain untouched.
 
 ## Token-Efficiency Contract
 
@@ -119,10 +125,10 @@ contract produced repeated no-event turns without performing exec polls.
 Repository regression tests will lock the distributed instruction contract:
 
 - the Codex section contains the event-bounded lifecycle, honest degraded
-  result, zero-idle requirement, exact legacy-objective fingerprint, and
+  result, zero-idle requirement, structured legacy-transcript proof, and
   independent-exec detach gate;
-- the Codex section contains no `get_goal`, `create_goal`, or persistent-goal
-  lifecycle;
+- the new Codex lifecycle before the migration tripwire contains no operative
+  `get_goal`, `create_goal`, or persistent-goal lifecycle;
 - shared `armed`, singleton inspection, and continuation status semantics stay
   unchanged for Claude and Antigravity;
 - the shared result set replaces `goal_conflict` with

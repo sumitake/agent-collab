@@ -132,8 +132,12 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "`legacy_goal_detach_unavailable`",
         ):
             self.assertIn(required, codex)
+        new_lifecycle = codex.split(
+            "On the first empty monitor-only continuation",
+            1,
+        )[0]
         for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
-            self.assertNotIn(forbidden, codex)
+            self.assertNotIn(forbidden, new_lifecycle)
         self.assertNotIn(
             "`another monitor is running` line is `already_armed`",
             codex,
@@ -148,7 +152,9 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "validated current session ID",
             "goal output's thread ID and complete objective",
             "exactly match the active continuation",
-            "missing, truncated, duplicated, reordered, or ambiguous",
+            "truncation that hides a required field or proof anchor",
+            "duplicated or reordered lifecycle record",
+            "ambiguous match",
             "host-native goal/exec proof",
             "completing the goal cannot terminate the monitor process",
             "If either the lifecycle proof or independent identifier retention "
