@@ -214,14 +214,14 @@ git commit -S -m "skill: make Codex monitor idle-token free"
 **Files:**
 - Modify: `scripts/skill-build-config.json`
 - Modify: `.claude-plugin/marketplace.base.json`
+- Modify: `plugins/agent-collab/.claude-plugin/plugin.json`
+- Modify: `plugins/agent-collab/.codex-plugin/plugin.json`
 - Modify: `README.md`
 - Modify: `plugins/agent-collab/README.md`
 - Generate: `.claude-plugin/marketplace.json`
-- Generate: `plugins/agent-collab/.claude-plugin/plugin.json`
-- Generate: `plugins/agent-collab/.codex-plugin/plugin.json`
 - Generate: the existing `plugins/agent-collab/skills/` tree's version
   frontmatter as enumerated by `python3 scripts/build_skills.py --list`
-- Create: `changelog.d/2026-07-28-codex-monitor-idle.md`
+- Create: `changelog.d/2026-07-28-monitor-idle-v453.md`
 
 **Interfaces:**
 - Consumes: package version 4.5.2 from the broker PR base.
@@ -230,8 +230,10 @@ git commit -S -m "skill: make Codex monitor idle-token free"
 
 - [ ] **Step 1: Bump both generator inputs to 4.5.3**
 
-Set `skill_version` in `scripts/skill-build-config.json` and
-`metadata.version` in `.claude-plugin/marketplace.base.json` to `4.5.3`.
+Set `skill_version` in `scripts/skill-build-config.json`,
+`metadata.version` in `.claude-plugin/marketplace.base.json`, and both package
+manifest versions to `4.5.3`. The package manifests are authoritative generator
+inputs; `build_marketplace.py` does not bump them.
 
 - [ ] **Step 2: Add user-facing release notes**
 
@@ -287,7 +289,7 @@ git add \
   .claude-plugin/marketplace.base.json \
   .claude-plugin/marketplace.json \
   README.md \
-  changelog.d/2026-07-28-codex-monitor-idle.md \
+  changelog.d/2026-07-28-monitor-idle-v453.md \
   plugins/agent-collab/.claude-plugin/plugin.json \
   plugins/agent-collab/.codex-plugin/plugin.json \
   plugins/agent-collab/README.md \
