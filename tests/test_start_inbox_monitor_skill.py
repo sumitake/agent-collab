@@ -85,10 +85,17 @@ class TestStartInboxMonitorSkill(unittest.TestCase):
             "inbox-polling-monitor.py codex --interval 10",
             "Seen-files path",
             "another monitor is running",
+            "without that wake proof is also `degraded_no_event_wake`",
+            "When the host exposes a per-turn model and effort choice",
+            "do not create another monitoring lifecycle only to change models",
         ):
             self.assertIn(required, codex)
         for forbidden in ("`get_goal`", "`create_goal`", "persistent goal"):
             self.assertNotIn(forbidden, codex)
+        self.assertNotIn(
+            "`another monitor is running` line is `already_armed`",
+            codex,
+        )
 
     def test_claude_native_monitor_contract_is_unchanged(self):
         claude = adapter_section("Claude", "Antigravity")
