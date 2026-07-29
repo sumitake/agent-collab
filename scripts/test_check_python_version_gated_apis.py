@@ -215,6 +215,51 @@ class TestGuardedImportSuppression(unittest.TestCase):
         findings = cpvga.scan_source(source, "t.py", FLOOR_310)
         self.assertEqual(findings, [])
 
+    def test_typing_self_guarded_only_by_module_not_found_is_still_flagged(self) -> None:
+        # The two import failure modes raise DIFFERENT exceptions:
+        # `from typing import Self` on 3.10 raises a PLAIN ImportError (the
+        # `typing` module imports fine, it just has no `Self`), NOT
+        # ModuleNotFoundError. Since ModuleNotFoundError is a strict
+        # SUBCLASS of ImportError, this handler is narrower and can never
+        # fire -- so the import is genuinely unprotected and must be
+        # flagged, even though the same handler WOULD correctly guard a
+        # missing-module import like `import tomllib`.
+        source = (
+            "try:\n"
+            "    from typing import Self\n"
+            "except ModuleNotFoundError:\n"
+            "    Self = object\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["typing.Self"])
+
+    def test_typing_self_guarded_by_tuple_including_import_error_is_suppressed(self) -> None:
+        # A tuple that INCLUDES the genuinely-catching ImportError is a
+        # valid guard even though it also names the never-firing narrower
+        # ModuleNotFoundError.
+        source = (
+            "try:\n"
+            "    from typing import Self\n"
+            "except (ModuleNotFoundError, ImportError):\n"
+            "    Self = object\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
+    def test_tomllib_guarded_only_by_module_not_found_is_still_suppressed(self) -> None:
+        # The complement of the case above: a MISSING MODULE genuinely does
+        # raise ModuleNotFoundError, so this narrower handler IS a real
+        # guard here -- confirms the split is per-failure-mode, not a
+        # blanket tightening that would over-flag valid tomllib guards.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ModuleNotFoundError:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
     def test_unrelated_exception_handler_does_not_suppress(self) -> None:
         # except ValueError would not actually catch a missing-module error,
         # so this import is NOT considered safely guarded.

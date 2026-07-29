@@ -204,28 +204,53 @@ def _detect_except_star(tree: "ast.Module | None", source: str) -> Iterator[tupl
             yield lineno, len(match.group(1))
 
 
-_IMPORT_GUARD_EXCEPTION_NAMES = {
+# A MISSING MODULE (`import tomllib` on 3.10) raises ModuleNotFoundError,
+# which IS an ImportError subclass -- so `except ModuleNotFoundError:`,
+# `except ImportError:`, or either broad ancestor all genuinely catch it.
+_MISSING_MODULE_GUARD_EXCEPTION_NAMES = {
     "ImportError",
     "ModuleNotFoundError",
     "Exception",
     "BaseException",
 }
 
+# A MISSING NAME from an EXISTING module (`from typing import Self` on 3.10 --
+# `typing` imports fine, it just has no `Self`) raises a PLAIN ImportError,
+# NOT ModuleNotFoundError. Since ModuleNotFoundError is a strict SUBCLASS of
+# ImportError, `except ModuleNotFoundError:` is NARROWER and never fires for
+# this case -- so it must NOT be accepted as a guard here, or a genuinely
+# unprotected `from typing import Self` reads as safely guarded and the
+# finding is silently suppressed (the exact false negative this split fixes).
+_MISSING_NAME_GUARD_EXCEPTION_NAMES = {
+    "ImportError",
+    "Exception",
+    "BaseException",
+}
 
-def _handler_catches_import_error(handler: ast.ExceptHandler) -> bool:
-    """True if this handler's declared exception TYPE(s) would receive an
-    ImportError/ModuleNotFoundError at runtime -- a bare ``except:``,
-    ``except ImportError:``, ``except ModuleNotFoundError:``,
-    ``except (ImportError, ModuleNotFoundError):``, or a broad
-    ``except Exception:`` / ``except BaseException:`` (both ancestors of
-    ImportError, so they also catch it). A narrower, unrelated exception
-    type (e.g. ``except ValueError:``) does NOT match.
+
+def _handler_catches_import_error(
+    handler: ast.ExceptHandler,
+    guard_names: "set[str]" = None,  # noqa: RUF013 -- default resolved below
+) -> bool:
+    """True if this handler's declared exception TYPE(s) would receive the
+    relevant import failure at runtime -- a bare ``except:``, or a handler
+    naming any exception in `guard_names`. A narrower or unrelated type
+    (e.g. ``except ValueError:``) does NOT match.
+
+    `guard_names` selects WHICH exception set counts, because the two import
+    failure modes raise DIFFERENT exceptions and therefore accept different
+    guards (see the two module-level sets above): a missing MODULE raises
+    ModuleNotFoundError, but a missing NAME from an existing module raises a
+    plain ImportError that `except ModuleNotFoundError:` cannot catch.
+    Defaults to the missing-module set for backwards compatibility.
 
     Pure type-matching only -- does NOT consider whether the handler
     actually suppresses (vs. re-raises); see `_handler_reraises_unconditionally`
     for that, and `_first_import_matching_handler` for how the two combine
     with Python's actual handler-PRECEDENCE semantics (first-match-wins).
     """
+    if guard_names is None:
+        guard_names = _MISSING_MODULE_GUARD_EXCEPTION_NAMES
     if handler.type is None:
         return True
     names: list[str] = []
@@ -233,11 +258,12 @@ def _handler_catches_import_error(handler: ast.ExceptHandler) -> bool:
         names = [handler.type.id]
     elif isinstance(handler.type, ast.Tuple):
         names = [elt.id for elt in handler.type.elts if isinstance(elt, ast.Name)]
-    return any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names)
+    return any(name in guard_names for name in names)
 
 
 def _first_import_matching_handler(
     handlers: "list[ast.ExceptHandler]",
+    guard_names: "set[str]" = None,  # noqa: RUF013 -- default resolved in callee
 ) -> "ast.ExceptHandler | None":
     """Return the FIRST handler (declaration order) that would actually
     RECEIVE an ImportError/ModuleNotFoundError at runtime, per Python's own
@@ -258,7 +284,7 @@ def _first_import_matching_handler(
     exception at all.
     """
     for handler in handlers:
-        if _handler_catches_import_error(handler):
+        if _handler_catches_import_error(handler, guard_names):
             return handler
     return None
 
@@ -290,12 +316,23 @@ def _handler_reraises_unconditionally(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(stmt, ast.Raise) for stmt in handler.body)
 
 
-def _guarded_import_lines(tree: ast.Module) -> set[int]:
+def _guarded_import_lines(
+    tree: ast.Module,
+    guard_names: "set[str]" = None,  # noqa: RUF013 -- default resolved below
+) -> set[int]:
     """Line numbers inside a ``try:`` body whose ``except`` guards import errors.
 
     Used to suppress the ``tomllib`` / ``typing.Self`` import detectors for
     statements already wrapped in the standard optional-import idiom, so this
     checker doesn't cry wolf on the exact pattern it wants developers to use.
+
+    `guard_names` selects which exception names count as a real guard, and
+    MUST match the failure mode the calling detector is about (defaults to
+    the missing-MODULE set): `import tomllib` failing raises
+    ModuleNotFoundError, but `from typing import Self` failing raises a
+    PLAIN ImportError -- so `except ModuleNotFoundError:` guards the former
+    and NOT the latter. Passing the wrong set silently suppresses a real
+    finding; see the two `_*_GUARD_EXCEPTION_NAMES` sets for the details.
 
     Deliberately does NOT descend into nested function/async-function bodies
     when collecting protected lines: an import statement textually inside a
@@ -320,6 +357,8 @@ def _guarded_import_lines(tree: ast.Module) -> set[int]:
     unflagged. Verified via managed grok/governance review before this
     module's checked-in state.
     """
+    if guard_names is None:
+        guard_names = _MISSING_MODULE_GUARD_EXCEPTION_NAMES
     guarded: set[int] = set()
 
     def _walk_without_nested_functions(node: ast.AST):
@@ -337,7 +376,7 @@ def _guarded_import_lines(tree: ast.Module) -> set[int]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        matching = _first_import_matching_handler(node.handlers)
+        matching = _first_import_matching_handler(node.handlers, guard_names)
         if matching is None or _handler_reraises_unconditionally(matching):
             # No handler catches an ImportError-family exception at all, OR
             # the FIRST one that does re-raises without suppressing --
@@ -405,7 +444,12 @@ def _detect_typing_self(tree: "ast.Module | None", source: str) -> Iterator[tupl
             ):
                 yield lineno, len(line) - len(line.lstrip())
         return
-    guarded = _guarded_import_lines(tree)
+    # MISSING-NAME guard set, not the missing-module default: on 3.10,
+    # `from typing import Self` fails with a PLAIN ImportError (the `typing`
+    # module imports fine, it simply has no `Self`), so a narrower
+    # `except ModuleNotFoundError:` never fires and must NOT count as a
+    # guard here -- accepting it would silently suppress a real finding.
+    guarded = _guarded_import_lines(tree, _MISSING_NAME_GUARD_EXCEPTION_NAMES)
     # Resolve the local name(s) `typing` is bound to in this module, so the
     # common alias form `import typing as t` + `t.Self` is detected too --
     # a name-only `typing.Self` check misses it entirely, which would be a
