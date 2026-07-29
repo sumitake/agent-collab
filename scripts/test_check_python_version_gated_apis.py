@@ -253,6 +253,65 @@ class TestGuardedImportSuppression(unittest.TestCase):
         findings = cpvga.scan_source(source, "t.py", FLOOR_310)
         self.assertEqual([f.api for f in findings], ["tomllib"])
 
+    def test_bare_except_reraise_is_not_a_guard(self) -> None:
+        # Codex found: handler.type is None (bare `except:`) took an early
+        # `return True` in the old _handler_is_import_guard, bypassing the
+        # re-raise check entirely. `except: raise` provides no fallback and
+        # must still be flagged, exactly like a typed `except X: raise`.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except:\n"
+            "    raise\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_bare_except_with_real_fallback_is_still_a_guard(self) -> None:
+        # Bare `except:` that DOES suppress (sets a fallback, no raise)
+        # remains a valid guard -- only the re-raise case changed.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
+    def test_broad_reraising_handler_shadows_later_fallback_handler(self) -> None:
+        # Codex found: a broad `except Exception: raise` PRECEDING a
+        # narrower `except ImportError: tomllib = None` makes the fallback
+        # handler unreachable dead code -- Python's own handler-matching
+        # semantics mean the FIRST matching handler wins. The old `any(...)`
+        # check saw the later ImportError handler and wrongly suppressed.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except Exception:\n"
+            "    raise\n"
+            "except ImportError:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_narrow_handler_before_broad_reraising_handler_still_guards(self) -> None:
+        # Order reversed: the narrower, genuinely-suppressing ImportError
+        # handler comes FIRST, so it's the one that actually matches and
+        # the import remains correctly guarded -- confirms this is about
+        # ORDER, not merely "is there a re-raising handler anywhere".
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ImportError:\n"
+            "    tomllib = None\n"
+            "except Exception:\n"
+            "    raise\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
     def test_nested_function_import_inside_guarded_try_is_still_flagged(self) -> None:
         # A `def` nested inside a guarded try body only executes when
         # CALLED, not at try-time -- an import inside it is NOT actually

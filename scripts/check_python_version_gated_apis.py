@@ -212,27 +212,19 @@ _IMPORT_GUARD_EXCEPTION_NAMES = {
 }
 
 
-def _handler_is_import_guard(handler: ast.ExceptHandler) -> bool:
-    """True if an ``except`` clause plausibly guards a version-gated import.
+def _handler_catches_import_error(handler: ast.ExceptHandler) -> bool:
+    """True if this handler's declared exception TYPE(s) would receive an
+    ImportError/ModuleNotFoundError at runtime -- a bare ``except:``,
+    ``except ImportError:``, ``except ModuleNotFoundError:``,
+    ``except (ImportError, ModuleNotFoundError):``, or a broad
+    ``except Exception:`` / ``except BaseException:`` (both ancestors of
+    ImportError, so they also catch it). A narrower, unrelated exception
+    type (e.g. ``except ValueError:``) does NOT match.
 
-    Matches a bare ``except:``, ``except ImportError:``,
-    ``except ModuleNotFoundError:``, ``except (ImportError, ModuleNotFoundError):``,
-    or a broad ``except Exception:`` / ``except BaseException:`` -- all
-    legitimate ways to make an import optional/version-gated. This repo's own
-    ``plugins/agent-collab/migration_doctor.py`` uses exactly this pattern for
-    ``tomllib`` (``try: import tomllib / except ModuleNotFoundError: tomllib = None``),
-    and that pattern is the *correct* fix for the incident this script guards
-    against, not an instance of it -- so it must not be flagged. A narrower,
-    unrelated exception type (e.g. ``except ValueError:``) is NOT treated as a
-    guard, since it wouldn't actually catch the ImportError/ModuleNotFoundError
-    a missing stdlib module raises.
-
-    A handler that RE-RAISES is also not treated as a guard, even if its
-    exception type matches: ``except ImportError: raise`` (or any handler
-    whose top-level statements END in an unconditional bare ``raise``, e.g.
-    log-then-reraise) provides no actual fallback -- the import still fails
-    on an older interpreter, identically to having no try/except at all. See
-    ``_handler_reraises_unconditionally`` for the exact (conservative) check.
+    Pure type-matching only -- does NOT consider whether the handler
+    actually suppresses (vs. re-raises); see `_handler_reraises_unconditionally`
+    for that, and `_first_import_matching_handler` for how the two combine
+    with Python's actual handler-PRECEDENCE semantics (first-match-wins).
     """
     if handler.type is None:
         return True
@@ -241,9 +233,34 @@ def _handler_is_import_guard(handler: ast.ExceptHandler) -> bool:
         names = [handler.type.id]
     elif isinstance(handler.type, ast.Tuple):
         names = [elt.id for elt in handler.type.elts if isinstance(elt, ast.Name)]
-    if not any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names):
-        return False
-    return not _handler_reraises_unconditionally(handler)
+    return any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names)
+
+
+def _first_import_matching_handler(
+    handlers: "list[ast.ExceptHandler]",
+) -> "ast.ExceptHandler | None":
+    """Return the FIRST handler (declaration order) that would actually
+    RECEIVE an ImportError/ModuleNotFoundError at runtime, per Python's own
+    handler-matching semantics: handlers are tried in order and the first
+    one whose type matches wins -- any LATER handler for an
+    already-matched exception type is unreachable dead code.
+
+    This matters because a naive "does ANY handler in this try/except look
+    like a guard" check (this function's predecessor) would wrongly treat
+    e.g. ``except Exception: raise`` followed by
+    ``except ImportError: tomllib = None`` as guarded: the broad
+    ``Exception`` handler catches the ImportError FIRST and re-raises: the
+    later, syntactically-present ``except ImportError:`` fallback is never
+    actually reached. Only the FIRST matching handler's suppress-or-not
+    status is what determines whether the import is truly guarded.
+
+    Returns None if no handler in the list would catch an ImportError-family
+    exception at all.
+    """
+    for handler in handlers:
+        if _handler_catches_import_error(handler):
+            return handler
+    return None
 
 
 def _handler_reraises_unconditionally(handler: ast.ExceptHandler) -> bool:
@@ -301,7 +318,11 @@ def _guarded_import_lines(tree: ast.Module) -> set[int]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        if not any(_handler_is_import_guard(handler) for handler in node.handlers):
+        matching = _first_import_matching_handler(node.handlers)
+        if matching is None or _handler_reraises_unconditionally(matching):
+            # No handler catches an ImportError-family exception at all, OR
+            # the FIRST one that does re-raises without suppressing --
+            # either way, this try/except provides no real protection.
             continue
         for stmt in node.body:
             for sub in _walk_without_nested_functions(stmt):
