@@ -36,6 +36,12 @@ high effort to preserve that sealed role's mandatory floor.
    constraints, success criteria, and stop conditions.
 3. Capture artifact author-model provenance. If primary or artifact family is
    unknown, fail closed; do not accept a caller-provided family assertion.
+   Send `primary` as `{}` so the host is observed. Never supply
+   `session_identifier`: a caller cannot know it, so a supplied value is
+   invented, and because the real identifier is strongly observed the invented
+   one registers as an identity conflict that fails every route. If a route
+   reports incomplete identity, let it fail closed rather than assembling an
+   identity to satisfy it.
 4. Ask the dynamically selected independent reviewer to return exactly:
 
 ```text
