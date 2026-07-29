@@ -111,6 +111,23 @@ class TestScanSourceDetectors(unittest.TestCase):
         findings = cpvga.scan_source(source, "t.py", FLOOR_310)
         self.assertEqual([f.api for f in findings], ["typing.Self"])
 
+    def test_typing_self_via_module_alias_is_flagged(self) -> None:
+        # Codex found: `import typing as t` + `t.Self` was missed entirely
+        # by a name-only `typing.Self` check -- a silent miss of exactly
+        # the API this detector exists to catch (on 3.10 without postponed
+        # annotation evaluation, defining this raises AttributeError).
+        source = "import typing as t\n\ndef f() -> t.Self:\n    ...\n"
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["typing.Self"])
+
+    def test_unrelated_module_alias_dot_self_is_not_flagged(self) -> None:
+        # An unrelated module aliased to a name, with a .Self attribute,
+        # must NOT be flagged -- the alias resolution has to be bound to
+        # an actual `import typing [as X]`, not any name ending in .Self.
+        source = "import other as t\n\ndef f() -> t.Self:\n    ...\n"
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
     def test_clean_source_produces_no_findings(self) -> None:
         source = (
             "import json\n\n"

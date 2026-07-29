@@ -406,6 +406,18 @@ def _detect_typing_self(tree: "ast.Module | None", source: str) -> Iterator[tupl
                 yield lineno, len(line) - len(line.lstrip())
         return
     guarded = _guarded_import_lines(tree)
+    # Resolve the local name(s) `typing` is bound to in this module, so the
+    # common alias form `import typing as t` + `t.Self` is detected too --
+    # a name-only `typing.Self` check misses it entirely, which would be a
+    # silent miss of exactly the API this detector exists to catch (on
+    # Python 3.10 without postponed annotation evaluation, defining such an
+    # annotation raises AttributeError at definition time).
+    typing_aliases = {"typing"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "typing":
+                    typing_aliases.add(alias.asname or "typing")
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.ImportFrom)
@@ -419,7 +431,7 @@ def _detect_typing_self(tree: "ast.Module | None", source: str) -> Iterator[tupl
             isinstance(node, ast.Attribute)
             and node.attr == "Self"
             and isinstance(node.value, ast.Name)
-            and node.value.id == "typing"
+            and node.value.id in typing_aliases
         ):
             yield node.lineno, node.col_offset
 
@@ -427,6 +439,21 @@ def _detect_typing_self(tree: "ast.Module | None", source: str) -> Iterator[tupl
 def _detect_method_call(
     tree: "ast.Module | None", source: str, method_name: str
 ) -> Iterator[tuple[int, int]]:
+    """Flag any `<anything>.<method_name>(...)` call by METHOD NAME ALONE.
+
+    Known limitation (currently latent, deliberately not fixed): this
+    cannot establish the receiver's TYPE, so if the declared floor is ever
+    lowered below 3.9 -- activating the `str.removeprefix`/`removesuffix`
+    entries, which are inert at today's 3.10 floor -- a user-defined
+    `.removeprefix()` method on some non-str class would also be flagged,
+    a blocking CI false positive. Fixing that properly needs receiver type
+    inference (or a str-literal/annotation heuristic), which is
+    disproportionate while these entries cannot fire at all. If the floor
+    is ever lowered below 3.9, tighten this first. Deliberately NOT
+    generalized to `enterContext`, whose detector narrows on the receiver
+    name (`self`) precisely because that one IS active at the current
+    floor.
+    """
     if tree is None:
         pattern = re.compile(r"\." + re.escape(method_name) + r"\s*\(")
         for lineno, line in enumerate(source.splitlines(), start=1):
