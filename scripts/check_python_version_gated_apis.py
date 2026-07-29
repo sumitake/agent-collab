@@ -59,6 +59,7 @@ import os
 import re
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence
@@ -225,6 +226,13 @@ def _handler_is_import_guard(handler: ast.ExceptHandler) -> bool:
     unrelated exception type (e.g. ``except ValueError:``) is NOT treated as a
     guard, since it wouldn't actually catch the ImportError/ModuleNotFoundError
     a missing stdlib module raises.
+
+    A handler that RE-RAISES is also not treated as a guard, even if its
+    exception type matches: ``except ImportError: raise`` (or any handler
+    whose top-level statements END in an unconditional bare ``raise``, e.g.
+    log-then-reraise) provides no actual fallback -- the import still fails
+    on an older interpreter, identically to having no try/except at all. See
+    ``_handler_reraises_unconditionally`` for the exact (conservative) check.
     """
     if handler.type is None:
         return True
@@ -233,7 +241,29 @@ def _handler_is_import_guard(handler: ast.ExceptHandler) -> bool:
         names = [handler.type.id]
     elif isinstance(handler.type, ast.Tuple):
         names = [elt.id for elt in handler.type.elts if isinstance(elt, ast.Name)]
-    return any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names)
+    if not any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names):
+        return False
+    return not _handler_reraises_unconditionally(handler)
+
+
+def _handler_reraises_unconditionally(handler: ast.ExceptHandler) -> bool:
+    """True if `handler`'s LAST top-level statement is any `raise` -- a bare
+    `raise` (re-raising the currently-handled exception) OR `raise
+    SomeOtherError(...)` (raising a NEW exception). Neither provides an
+    actual fallback for the gated import: the import still fails, just
+    with a possibly different exception type than the original
+    ImportError/ModuleNotFoundError.
+
+    Deliberately conservative / top-level only: a `raise` nested inside an
+    `if`/`else` branch is NOT detected here (that would require real
+    control-flow analysis to know whether every path re-raises) -- this
+    catches the common, simple cases (`except ImportError: raise`,
+    log-then-reraise, and `raise RuntimeError(...) from e`) without
+    claiming to catch every conditional-reraise shape.
+    """
+    if not handler.body:
+        return False
+    return isinstance(handler.body[-1], ast.Raise)
 
 
 def _guarded_import_lines(tree: ast.Module) -> set[int]:
@@ -242,15 +272,39 @@ def _guarded_import_lines(tree: ast.Module) -> set[int]:
     Used to suppress the ``tomllib`` / ``typing.Self`` import detectors for
     statements already wrapped in the standard optional-import idiom, so this
     checker doesn't cry wolf on the exact pattern it wants developers to use.
+
+    Deliberately does NOT descend into nested function/async-function bodies
+    when collecting protected lines: an import statement textually inside a
+    guarded `try:` block but INSIDE A NESTED `def`/`async def` does not
+    actually execute at `try`-time -- it executes later, whenever that
+    function is called, entirely outside the try/except's protection (e.g.
+    `try:\\n    def load():\\n        import tomllib\\n except ImportError:
+    \\n    pass` -- the `import tomllib` only ever runs when `load()` is
+    called, by which point the enclosing try/except has already finished and
+    provides no protection). Marking it "guarded" would be a false negative
+    that lets an unguarded, still-broken-on-3.10 import through unflagged.
     """
     guarded: set[int] = set()
+
+    def _walk_without_nested_functions(node: ast.AST):
+        # Check the STARTING node itself, not just children encountered
+        # during recursion -- a top-level `try:` body statement can BE a
+        # FunctionDef directly (e.g. `try:\n    def load(): ...`), and that
+        # case must also be excluded, not just a FunctionDef found nested
+        # deeper inside some other statement.
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return
+        yield node
+        for child in ast.iter_child_nodes(node):
+            yield from _walk_without_nested_functions(child)
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
         if not any(_handler_is_import_guard(handler) for handler in node.handlers):
             continue
         for stmt in node.body:
-            for sub in ast.walk(stmt):
+            for sub in _walk_without_nested_functions(stmt):
                 lineno = getattr(sub, "lineno", None)
                 if lineno is not None:
                     guarded.add(lineno)
@@ -518,10 +572,49 @@ def scan_source(source: str, filename: str, min_version: tuple[int, int]) -> lis
     return findings
 
 
-def scan_file(path: Path, min_version: tuple[int, int]) -> list[Finding]:
+class SourceReadError(Exception):
+    """A tracked Python file could not be decoded even using its OWN
+    declared encoding (PEP 263) -- a genuine read failure, not merely "not
+    UTF-8 by default". Callers must fail CLOSED on this (surface it as a
+    scan failure), never silently treat the file as clean: a file this
+    checker can't read is still fully executable by Python and may contain
+    an unguarded gated API this checker would otherwise miss entirely.
+    """
+
+
+def _read_source(path: Path) -> str:
+    """Read a Python source file using its own declared encoding.
+
+    `tokenize.open` detects and honors a `# -*- coding: ... -*-` PEP 263
+    cookie (or assumes UTF-8 per PEP 3120 when none is present), unlike a
+    hardcoded `read_text(encoding="utf-8")`, which raised `UnicodeDecodeError`
+    -- and was silently swallowed -- for any legitimately non-UTF-8-declared
+    but otherwise valid, tracked, executable source file, letting a gated
+    API inside it slip past this checker unflagged.
+
+    `FileNotFoundError` is treated as benign (the file listing and the read
+    raced, e.g. a file deleted mid-scan) and re-raised as-is for the caller
+    to skip silently -- unlike a genuine decode/encoding-cookie failure on a
+    file that DOES exist, which raises `SourceReadError` for the caller to
+    fail closed on.
+    """
     try:
-        source = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        with tokenize.open(path) as fh:
+            return fh.read()
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeDecodeError, SyntaxError, tokenize.TokenError) as exc:
+        raise SourceReadError(f"{path}: {exc}") from exc
+
+
+def scan_file(path: Path, min_version: tuple[int, int]) -> list[Finding]:
+    """Raises `SourceReadError` on a genuine read/decode failure (see
+    `_read_source`) -- the caller must fail closed, not skip silently.
+    Returns `[]` (silently) only when the file vanished between listing and
+    reading (`FileNotFoundError`), the sole benign case."""
+    try:
+        source = _read_source(path)
+    except FileNotFoundError:
         return []
     return scan_source(source, str(path), min_version)
 
@@ -624,10 +717,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     files: Iterable[Path] = args.paths if args.paths else iter_python_files(args.root)
 
     all_findings: list[Finding] = []
+    read_errors: list[str] = []
     scanned = 0
     for path in files:
         scanned += 1
-        all_findings.extend(scan_file(path, min_version))
+        try:
+            all_findings.extend(scan_file(path, min_version))
+        except SourceReadError as exc:
+            # Fail closed: a tracked .py file this checker could not decode
+            # (even using its own declared encoding) is still fully
+            # executable by Python and may contain an unguarded gated API.
+            # Silently skipping it would be exactly how such a file evades
+            # this check entirely.
+            read_errors.append(str(exc))
+
+    if read_errors:
+        print(
+            f"ERROR: {len(read_errors)} tracked Python file(s) could not be "
+            "read/decoded (even using each file's own declared encoding) "
+            "and were NOT scanned -- refusing to silently treat them as "
+            "clean:"
+        )
+        for err in read_errors:
+            print("  " + err)
+        print(
+            "\nFix the file's encoding (or its PEP 263 encoding cookie) so "
+            "it can be read, then re-run this check."
+        )
+        return 1
 
     if all_findings:
         print(

@@ -214,6 +214,88 @@ class TestGuardedImportSuppression(unittest.TestCase):
         findings = cpvga.scan_source("import tomllib\n", "t.py", FLOOR_310)
         self.assertEqual([f.api for f in findings], ["tomllib"])
 
+    def test_reraising_handler_does_not_suppress(self) -> None:
+        # except ImportError: raise provides no actual fallback -- the
+        # import still fails identically to no try/except at all -- so it
+        # must NOT be treated as a guard.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ImportError:\n"
+            "    raise\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_log_then_reraise_handler_does_not_suppress(self) -> None:
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ImportError:\n"
+            "    log.warning('no tomllib')\n"
+            "    raise\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_reraise_with_explicit_exception_is_still_not_a_guard(self) -> None:
+        # `raise SomeError(...)` (a NEW exception, not a bare re-raise) also
+        # doesn't provide a compatible fallback for the gated import -- it
+        # just fails differently. Only a body that genuinely handles the
+        # error (e.g. sets a fallback value, as in the guarded tests above)
+        # counts as a guard.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ImportError as e:\n"
+            "    raise RuntimeError('tomllib required') from e\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_nested_function_import_inside_guarded_try_is_still_flagged(self) -> None:
+        # A `def` nested inside a guarded try body only executes when
+        # CALLED, not at try-time -- an import inside it is NOT actually
+        # protected by the enclosing try/except and must still be flagged.
+        source = (
+            "try:\n"
+            "    def load():\n"
+            "        import tomllib\n"
+            "        return tomllib\n"
+            "except ImportError:\n"
+            "    load = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_nested_async_function_import_inside_guarded_try_is_still_flagged(self) -> None:
+        source = (
+            "try:\n"
+            "    async def load():\n"
+            "        import tomllib\n"
+            "        return tomllib\n"
+            "except ImportError:\n"
+            "    load = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_top_level_guarded_import_alongside_nested_function_still_suppressed(self) -> None:
+        # Regression guard: excluding nested-function bodies from the
+        # guarded-lines collection must not also break suppression for a
+        # genuinely top-level guarded import that happens to share a try
+        # block with an (unrelated) nested function definition.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "    def unrelated():\n"
+            "        pass\n"
+            "except ImportError:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
 
 class TestRegexFallback(unittest.TestCase):
     """When a file fails to parse under the running interpreter, detectors fall
@@ -327,6 +409,71 @@ class TestDeclaredMinimumReader(unittest.TestCase):
             finally:
                 cpvga.CI_WORKFLOW_PATH = original
             self.assertEqual(exit_code, 2)
+
+
+class TestSourceEncodingHandling(unittest.TestCase):
+    """A tracked .py file with a non-UTF-8 PEP 263 declared encoding is
+    still fully valid, executable Python -- it must be correctly decoded
+    (not silently skipped-as-clean) and can still contain a flaggable
+    gated API. A genuinely unreadable file must fail CLOSED, not silently
+    pass."""
+
+    def test_latin1_declared_file_is_correctly_decoded_and_still_scanned(self) -> None:
+        # A PEP 263 encoding cookie + non-ASCII latin-1 content (a comment
+        # containing an accented character encodable in latin-1 but not
+        # valid as UTF-8 on its own) + an unguarded gated import. The OLD
+        # behavior (hardcoded read_text(encoding="utf-8")) would raise
+        # UnicodeDecodeError, silently swallow it, and report the file as
+        # having no findings -- letting the gated import through unflagged.
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "latin1_source.py"
+            content = (
+                "# -*- coding: latin-1 -*-\n"
+                "# Ren\xe9 wrote this module\n"
+                "import tomllib\n"
+            )
+            fixture.write_bytes(content.encode("latin-1"))
+            findings = cpvga.scan_file(fixture, FLOOR_310)
+            self.assertEqual([f.api for f in findings], ["tomllib"])
+
+    def test_latin1_declared_file_end_to_end_via_main(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "latin1_source.py"
+            content = (
+                "# -*- coding: latin-1 -*-\n"
+                "# Ren\xe9 wrote this module\n"
+                "import tomllib\n"
+            )
+            fixture.write_bytes(content.encode("latin-1"))
+            exit_code = cpvga.main(
+                ["--paths", str(fixture), "--min-version", "3.10"]
+            )
+            self.assertEqual(exit_code, 1)  # flagged as a finding, not silently clean
+
+    def test_read_source_raises_on_genuine_decode_failure(self) -> None:
+        # Bytes that are not valid under EITHER a UTF-8 default NOR any
+        # encoding a PEP 263 cookie could declare (raw invalid UTF-8 with
+        # no cookie at all) -- a genuine, unrecoverable read failure.
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "broken.py"
+            fixture.write_bytes(b"import tomllib\nx = '\xff\xfe invalid utf8'\n")
+            with self.assertRaises(cpvga.SourceReadError):
+                cpvga._read_source(fixture)
+
+    def test_main_fails_closed_not_silently_clean_on_unreadable_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp) / "broken.py"
+            fixture.write_bytes(b"import tomllib\nx = '\xff\xfe invalid utf8'\n")
+            exit_code = cpvga.main(
+                ["--paths", str(fixture), "--min-version", "3.10"]
+            )
+            self.assertEqual(exit_code, 1)  # fails closed, not exit 0 "clean"
+
+    def test_missing_file_between_listing_and_reading_is_silently_skipped(self) -> None:
+        # The sole benign case: FileNotFoundError (a listing/read race), as
+        # opposed to a genuine decode failure on a file that DOES exist.
+        missing = Path("/nonexistent/path/gone.py")
+        self.assertEqual(cpvga.scan_file(missing, FLOOR_310), [])
 
 
 class TestEndToEndFixtureFiles(unittest.TestCase):
