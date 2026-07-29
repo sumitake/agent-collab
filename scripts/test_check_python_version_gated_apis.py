@@ -312,6 +312,22 @@ class TestGuardedImportSuppression(unittest.TestCase):
         findings = cpvga.scan_source(source, "t.py", FLOOR_310)
         self.assertEqual(findings, [])
 
+    def test_dead_code_after_raise_is_still_not_a_guard(self) -> None:
+        # Round-3 finding (managed grok/governance): checking only the LAST
+        # top-level statement missed unconditional dead code after an
+        # EARLIER raise -- `tomllib = None` here never actually executes
+        # (the `raise` above it always exits first), so this handler
+        # provides no real fallback despite not literally ENDING in raise.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ImportError:\n"
+            "    raise\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["tomllib"])
+
     def test_nested_function_import_inside_guarded_try_is_still_flagged(self) -> None:
         # A `def` nested inside a guarded try body only executes when
         # CALLED, not at try-time -- an import inside it is NOT actually
@@ -626,6 +642,31 @@ class TestRealRepoIsClean(unittest.TestCase):
     def test_repo_scan_exits_zero(self) -> None:
         exit_code = cpvga.main([])
         self.assertEqual(exit_code, 0)
+
+
+class TestExceptStarGuardIsIntentionallyOutOfScope(unittest.TestCase):
+    """`except*` (ast.TryStar) is not recognized as a guard context -- this
+    is verified fail-closed (an extra, redundant finding), never a silent
+    miss: except* is itself a separate 3.11+ gated API with its own
+    detector, so a file relying on it to guard an import is flagged for
+    the except* usage regardless."""
+
+    def test_except_star_guarded_import_is_still_flagged_not_silently_passed(self) -> None:
+        # Requires the RUNNING interpreter to support parsing except* (3.11+)
+        # for the AST path to exercise ast.TryStar at all; on an older
+        # interpreter this falls back to a SyntaxError -> regex-fallback
+        # path for the whole file, which also does not recognize except* as
+        # a guard context, so the assertion holds either way.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except* ImportError:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        api_keys = {f.api for f in findings}
+        # tomllib must be flagged (not recognized as guarded via except*).
+        self.assertIn("tomllib", api_keys)
 
 
 if __name__ == "__main__":

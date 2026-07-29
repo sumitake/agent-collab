@@ -264,23 +264,30 @@ def _first_import_matching_handler(
 
 
 def _handler_reraises_unconditionally(handler: ast.ExceptHandler) -> bool:
-    """True if `handler`'s LAST top-level statement is any `raise` -- a bare
-    `raise` (re-raising the currently-handled exception) OR `raise
+    """True if ANY top-level statement in `handler`'s body is a `raise` --
+    a bare `raise` (re-raising the currently-handled exception) OR `raise
     SomeOtherError(...)` (raising a NEW exception). Neither provides an
     actual fallback for the gated import: the import still fails, just
     with a possibly different exception type than the original
     ImportError/ModuleNotFoundError.
 
-    Deliberately conservative / top-level only: a `raise` nested inside an
-    `if`/`else` branch is NOT detected here (that would require real
-    control-flow analysis to know whether every path re-raises) -- this
-    catches the common, simple cases (`except ImportError: raise`,
-    log-then-reraise, and `raise RuntimeError(...) from e`) without
-    claiming to catch every conditional-reraise shape.
+    Deliberately ANY top-level statement, not just the LAST one (round-3
+    finding, managed grok/governance): checking only `body[-1]` misses
+    unconditional dead code after an earlier raise, e.g.
+    `except ImportError:\\n    raise\\n    tomllib = None` -- the
+    `tomllib = None` assignment is genuinely unreachable (the `raise`
+    above it always exits first), so the handler still provides NO real
+    fallback despite its last statement not being the `raise` itself.
+    Fail-closed is the right bias for a CI compatibility gate: this is
+    STILL top-level-only (a `raise` nested inside an `if`/`else` branch is
+    not detected -- that would require real control-flow analysis to know
+    whether every path re-raises), but within that scope, ANY top-level
+    `raise` anywhere disqualifies the handler as a guard, not only a
+    trailing one.
     """
     if not handler.body:
         return False
-    return isinstance(handler.body[-1], ast.Raise)
+    return any(isinstance(stmt, ast.Raise) for stmt in handler.body)
 
 
 def _guarded_import_lines(tree: ast.Module) -> set[int]:
@@ -300,6 +307,18 @@ def _guarded_import_lines(tree: ast.Module) -> set[int]:
     called, by which point the enclosing try/except has already finished and
     provides no protection). Marking it "guarded" would be a false negative
     that lets an unguarded, still-broken-on-3.10 import through unflagged.
+
+    Only matches `ast.Try`, NOT `ast.TryStar` (PEP 654 `try: ... except*
+    X:` exception groups) -- intentional, not an oversight: an import
+    guarded only via `except*` is NOT recognized as protected here, but
+    this is fail-closed (an extra, redundant finding), never a silent
+    miss. `except*` itself is a separate 3.11+ gated API with its own
+    detector (`_detect_except_star`), so a file relying on it to guard an
+    import already gets flagged for the `except*` usage regardless of
+    whether the guarded import is *also* (redundantly) flagged -- there is
+    no path where this combination slips past the checker entirely
+    unflagged. Verified via managed grok/governance review before this
+    module's checked-in state.
     """
     guarded: set[int] = set()
 
