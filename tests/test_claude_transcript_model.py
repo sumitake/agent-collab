@@ -395,6 +395,69 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
         self.assertEqual(profile.session_identifier, "unknown")
         self.assertFalse(profile.governance_ready)
 
+    # -- the class invariant, not another instance of it ---------------------
+
+    _HOST_SCENARIOS = {
+        "resolved transcript": ({"CLAUDE_CODE_SESSION_ID": SESSION}, True),
+        "absent transcript": ({"CLAUDE_CODE_SESSION_ID": "99999999-9999-9999-9999-999999999999"}, False),
+        "malformed session": ({"CLAUDE_CODE_SESSION_ID": "not-a-uuid"}, False),
+        "entrypoint only": ({}, False),
+    }
+
+    _OVERRIDES = {
+        "primary_id": "codex",
+        "primary_family": "openai",
+        "active_model": "claude-opus-5",
+        "host_runtime": "codex",
+        "session_identifier": "invented-session",
+    }
+
+    def test_no_identity_field_is_ever_recorded_empty_on_a_claude_host(self):
+        """The invariant the fill class depends on: nothing is left fillable."""
+        self._write(_assistant("claude-opus-5"))
+        for name, (env, _) in self._HOST_SCENARIOS.items():
+            with self.subTest(scenario=name):
+                profile = self._profile(env)
+                for field in (
+                    "primary_id",
+                    "primary_family",
+                    "active_model",
+                    "host_runtime",
+                    "session_identifier",
+                ):
+                    self.assertTrue(
+                        str(getattr(profile, field)).strip(),
+                        f"{field} was empty and is therefore fillable",
+                    )
+
+    def test_no_identity_field_can_be_supplied_on_a_claude_host(self):
+        """Every field, every scenario, both fill paths -- none may be overridden."""
+        self._write(_assistant("claude-opus-5"))
+        for name, (env, _) in self._HOST_SCENARIOS.items():
+            baseline = self._profile(env)
+            for field, value in self._OVERRIDES.items():
+                with self.subTest(scenario=name, field=field, path="explicit"):
+                    profile = self._profile(env, {field: value})
+                    self.assertEqual(
+                        getattr(profile, field),
+                        getattr(baseline, field),
+                        f"explicit {field} overrode observation",
+                    )
+                with self.subTest(scenario=name, field=field, path="environment"):
+                    key = f"AGENT_COLLAB_{'SESSION_ID' if field == 'session_identifier' else field.upper()}"
+                    profile = self._profile({**env, key: value})
+                    self.assertEqual(
+                        getattr(profile, field),
+                        getattr(baseline, field),
+                        f"{key} overrode observation",
+                    )
+
+    def test_only_a_resolved_transcript_yields_governance_on_a_claude_host(self):
+        self._write(_assistant("claude-opus-5"))
+        for name, (env, expected) in self._HOST_SCENARIOS.items():
+            with self.subTest(scenario=name):
+                self.assertEqual(self._profile(env).governance_ready, expected)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

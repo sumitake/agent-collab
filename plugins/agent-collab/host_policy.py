@@ -807,21 +807,32 @@ def _environment_profile() -> dict[str, str]:
         else:
             # Claude detected by entrypoint alone: there is no session
             # identifier, so no transcript can be located and no current-session
-            # identity can be observed at all. An EMPTY identifier here is
-            # fillable, and a filled identifier paired with a filled model makes
-            # a wholly unobserved session governance-ready. Record an
-            # AUTHORITATIVE unknown identifier so neither field can be supplied.
-            # A genuine environment-exported model is still recorded; governance
-            # stays closed on the unfillable identifier.
+            # identity can be observed. A genuine environment-exported model is
+            # still recorded; the invariant below makes the missing identifier
+            # authoritative, which keeps governance closed.
             active_model = environment_model
-            session_identifier = "unknown"
+        # CLASS INVARIANT -- identity on a Claude host is OBSERVATION-ONLY.
+        #
+        # Every identity field is recorded non-empty, because
+        # `_overlay_profile_values` fills a field only when the observed value is
+        # empty (`if not current: continue`). A field that is never empty can
+        # never be supplied by `AGENT_COLLAB_*` or by an explicit `primary`; a
+        # supplied value that disagrees registers as a conflict instead of an
+        # override. Both the environment and explicit paths funnel through that
+        # same overlay, so this one invariant closes both.
+        #
+        # This deliberately closes the FAMILY of "an unobserved field is empty,
+        # and an empty field is fillable" defects rather than its members: the
+        # unfillable-model and unfillable-session-identifier fixes were two
+        # instances of it, and patching instances one at a time left a further
+        # paired-field bypass open each time.
         detected.append(
             {
                 "primary_id": "claude",
                 "primary_family": "anthropic",
-                "active_model": active_model,
+                "active_model": active_model or "unknown",
                 "host_runtime": "claude-code",
-                "session_identifier": session_identifier,
+                "session_identifier": session_identifier or "unknown",
                 "_identity_conflict": "1" if conflict else "",
             }
         )
