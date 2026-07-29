@@ -130,10 +130,20 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
 
     # -- path and identity hardening -----------------------------------------
 
-    def test_non_uuid_session_id_is_rejected_before_any_path_join(self):
-        for bad in ("../../etc/passwd", "*", "", "07A2AA37-F15C-4604-A184-D969EF9D01AC", "a/b"):
+    def test_empty_session_id_is_absent(self):
+        self.assertEqual(self._resolve(""), ("absent", ""))
+
+    def test_malformed_session_id_fails_closed_rather_than_reading_absent(self):
+        """A nonempty non-UUID id still reaches the profile, so it must conflict."""
+        for bad in (
+            "../../etc/passwd",
+            "*",
+            "07A2AA37-F15C-4604-A184-D969EF9D01AC",
+            "a/b",
+            "not-a-uuid-at-all",
+        ):
             with self.subTest(session=bad):
-                self.assertEqual(self._resolve(bad), ("absent", ""))
+                self.assertEqual(self._resolve(bad), ("invalid", ""))
 
     def test_missing_transcript_is_absent(self):
         self._project()
@@ -248,6 +258,113 @@ class ClaudeProfileWiringTests(unittest.TestCase):
             )
         self.assertEqual(profile.session_identifier, SESSION)
         self.assertTrue(profile.identity_conflict)
+
+
+class ClaudeUnfillableIdentityTests(unittest.TestCase):
+    """An unobserved Claude session must not be made governance-ready by config.
+
+    These exercise `resolve_profile` end to end against real files, WITHOUT
+    mocking `_claude_transcript_model`, so they prove the state labels cannot be
+    manoeuvred into eligibility rather than merely restating the wiring.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+        self.projects = self.home / ".claude" / "projects"
+        self.projects.mkdir(parents=True)
+        os.chmod(self.projects, 0o700)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _write(self, body: str, *, session: str = SESSION) -> None:
+        project = self.projects / "-Users-x-repo"
+        project.mkdir(exist_ok=True)
+        os.chmod(project, 0o700)
+        path = project / f"{session}.jsonl"
+        path.write_text(body, encoding="utf-8")
+        os.chmod(path, 0o600)
+
+    def _profile(self, env, explicit=None):
+        environ = {"CLAUDE_CODE_ENTRYPOINT": "cli"}
+        environ.update(env)
+        with mock.patch.dict(os.environ, environ, clear=True), mock.patch.object(
+            host_policy, "_claude_projects_root", return_value=self.projects
+        ):
+            return host_policy.resolve_profile(explicit)
+
+    def test_end_to_end_real_transcript_yields_governance_ready(self):
+        self._write(_assistant("claude-opus-5"))
+        profile = self._profile({"CLAUDE_CODE_SESSION_ID": SESSION})
+        self.assertEqual(profile.active_model, "claude-opus-5")
+        self.assertEqual(profile.primary_family, "anthropic")
+        self.assertFalse(profile.identity_conflict)
+        self.assertTrue(profile.governance_ready)
+
+    def test_absent_transcript_cannot_be_filled_by_environment(self):
+        profile = self._profile(
+            {
+                "CLAUDE_CODE_SESSION_ID": SESSION,
+                "AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5",
+            }
+        )
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_absent_transcript_cannot_be_filled_by_explicit_primary(self):
+        profile = self._profile(
+            {"CLAUDE_CODE_SESSION_ID": SESSION}, {"active_model": "claude-opus-5"}
+        )
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_malformed_session_with_filled_model_is_not_governance_ready(self):
+        profile = self._profile(
+            {"CLAUDE_CODE_SESSION_ID": "not-a-uuid-at-all"},
+            {"active_model": "claude-opus-5"},
+        )
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
+
+    def test_cross_family_transcript_record_cannot_be_rescued_by_config(self):
+        self._write(_assistant("gpt-4o"))
+        profile = self._profile(
+            {"CLAUDE_CODE_SESSION_ID": SESSION}, {"active_model": "claude-opus-5"}
+        )
+        self.assertEqual(profile.primary_family, "anthropic")
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
+
+    def test_unreadable_transcript_is_not_filled(self):
+        self._write(_assistant("claude-opus-5"))
+        project = self.projects / "-Users-x-repo"
+        os.chmod(project / f"{SESSION}.jsonl", 0o000)
+        self.addCleanup(os.chmod, project / f"{SESSION}.jsonl", 0o600)
+        profile = self._profile(
+            {
+                "CLAUDE_CODE_SESSION_ID": SESSION,
+                "AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5",
+            }
+        )
+        self.assertFalse(profile.governance_ready)
+
+    def test_assistant_record_evicted_from_the_bounded_window_is_not_filled(self):
+        """Padding the tail past the scan bound must not open an env fill path."""
+        limit = host_policy._CODEX_ROLLOUT_SCAN_LIMIT
+        filler = json.dumps({"type": "user", "sessionId": SESSION, "pad": "p" * 4096}) + "\n"
+        body = _assistant("claude-opus-5") + filler * ((limit // len(filler)) + 2)
+        self._write(body)
+        profile = self._profile(
+            {
+                "CLAUDE_CODE_SESSION_ID": SESSION,
+                "AGENT_COLLAB_ACTIVE_MODEL": "claude-sonnet-5",
+            }
+        )
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_no_session_identifier_leaves_governance_closed(self):
+        profile = self._profile({"AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5"})
+        self.assertFalse(profile.governance_ready)
 
 
 if __name__ == "__main__":  # pragma: no cover

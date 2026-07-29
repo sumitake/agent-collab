@@ -719,16 +719,33 @@ def _claude_transcript_model(session_id: str) -> tuple[str, str]:
     """Observe the live Claude session's model from its own transcript.
 
     Claude Code does not export the active model to the environment, so the
-    only current-session signal is the transcript it writes. This is same-uid
-    best-effort anti-confusion, NOT a forgery-resistant attestation: any writer
-    running as this user can append a record. It is deliberately not treated as
-    stronger evidence than the host-derived family binding -- a model that is
-    not anthropic-shaped fails closed rather than reassigning the family -- and
-    it is the same trust class as the `CLAUDE_CODE_SESSION_ID` this resolution
-    is keyed by, so it introduces no new root of trust.
+    only current-session signal is the transcript it writes.
+
+    Same-uid integrity is explicitly OUT OF SCOPE. This is best-effort
+    anti-confusion, NOT a forgery-resistant attestation: any process running as
+    this user can append to, rewrite, or truncate the transcript at any time.
+    It is a WEAKER signal than the `CLAUDE_CODE_SESSION_ID` it is keyed by --
+    that value is inherited at process start and a sibling same-uid process
+    cannot rewrite it, whereas this file can be modified mid-flight. The
+    identity re-checks below detect ordinary append races and replacement; they
+    do NOT detect a same-size in-place rewrite or an append-then-truncate.
+
+    What the observation therefore may NOT do is reassign identity: a model
+    that is not anthropic-shaped fails closed rather than changing the
+    host-derived `primary_family`, so a forged record cannot defeat reviewer
+    family-exclusion. The residual is asserting a different model WITHIN the
+    host family, which affects provenance accuracy, not independence.
     """
-    if _CLAUDE_SESSION_ID_RE.fullmatch(session_id) is None:
+    if not session_id:
         return "absent", ""
+    if _CLAUDE_SESSION_ID_RE.fullmatch(session_id) is None:
+        # A NONEMPTY identifier that fails the UUID contract is not merely an
+        # unresolvable session: the malformed value still reaches the profile as
+        # `session_identifier`, where it is non-"unknown" and therefore counts
+        # toward governance eligibility. Reporting "absent" here would let it
+        # combine with a filled model to manufacture a governance-ready profile
+        # for a session that cannot exist. Fail closed instead.
+        return "invalid", ""
     root = _claude_projects_root()
     if root is None:
         return "absent", ""
@@ -778,10 +795,18 @@ def _environment_profile() -> dict[str, str]:
                 conflict = True
         elif transcript_state == "invalid":
             active_model = "unknown"
+        elif session_identifier:
+            # A transcript was EXPECTED for this session and did not resolve.
+            # Record an AUTHORITATIVE unknown rather than an empty value: an
+            # empty model is fillable by `AGENT_COLLAB_ACTIVE_MODEL` or by a
+            # caller-supplied `primary.active_model`, which would manufacture a
+            # governance-ready profile for a session whose model was never
+            # observed. A non-empty "unknown" cannot be filled -- an explicit
+            # value that disagrees with it registers as a conflict instead.
+            active_model = "unknown"
         else:
-            # No observation available: preserve the prior environment-only
-            # behavior, which is non-authoritative and leaves governance closed
-            # unless the host later exports a model.
+            # No session identifier at all, so no transcript can be expected.
+            # Governance stays closed through the unknown session identifier.
             active_model = environment_model
         detected.append(
             {
