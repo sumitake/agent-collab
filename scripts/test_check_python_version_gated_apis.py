@@ -500,6 +500,42 @@ class TestDeclaredMinimumReader(unittest.TestCase):
             )
             self.assertEqual(cpvga._read_declared_minimum(workflow), (3, 11))
 
+    def test_commented_out_matrix_above_active_one_is_ignored(self) -> None:
+        # FAIL-OPEN regression: an unrestricted regex search matched a stale
+        # COMMENTED-OUT declaration sitting above the active matrix and
+        # adopted its higher floor, which silently disables every 3.11
+        # detector (applicable_apis() -> []) and lets incompatible code pass
+        # CI entirely. Comments must never contribute a candidate floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text(
+                "jobs:\n"
+                "  python:\n"
+                "    strategy:\n"
+                "      matrix:\n"
+                '        # python: ["3.12", "3.14"]\n'
+                '        python: ["3.10", "3.12", "3.14"]\n'
+            )
+            self.assertEqual(cpvga._parse_declared_minimum(workflow), (3, 10))
+
+    def test_trailing_comment_on_active_matrix_line_is_stripped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text(
+                'jobs:\n  matrix:\n    python: ["3.10", "3.12"]  # drop 3.10 in Q4\n'
+            )
+            self.assertEqual(cpvga._parse_declared_minimum(workflow), (3, 10))
+
+    def test_only_commented_matrix_fails_loud_not_silently_adopted(self) -> None:
+        # With every declaration commented out there is no active matrix at
+        # all -- must raise (fail loud), never silently adopt the comment's
+        # version as the floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text('jobs:\n  # python: ["3.12"]\n  build: x\n')
+            with self.assertRaises(cpvga.MinVersionDiscoveryError):
+                cpvga._parse_declared_minimum(workflow)
+
     def test_missing_file_falls_back_silently(self) -> None:
         # The ONLY benign case: no ci.yml at all (e.g. a stripped checkout).
         missing = Path("/nonexistent/path/ci.yml")

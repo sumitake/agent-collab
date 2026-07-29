@@ -356,6 +356,21 @@ def _guarded_import_lines(
     no path where this combination slips past the checker entirely
     unflagged. Verified via managed grok/governance review before this
     module's checked-in state.
+
+    KNOWN LIMITATION -- nested handlers that CONVERT the exception type.
+    An import inside a nested try whose inner handler converts the failure
+    (`except ImportError: raise RuntimeError(...)`), wrapped by an outer
+    try whose handler catches only the ORIGINAL type, is currently treated
+    as guarded even though the outer handler cannot catch the converted
+    RuntimeError and the import genuinely still fails. Correctly modeling
+    this requires tracking which exception type actually ESCAPES each
+    nested try -- i.e. real exception-flow analysis, materially beyond the
+    per-handler, top-level-statement heuristics this module is built on.
+    Recorded as a known false negative rather than patched: this detector
+    accumulated six consecutive rounds of semantic corrections during
+    review, and the right next step for this class of gap is a deliberate
+    redesign of the guard model, not a seventh incremental heuristic. See
+    the PR discussion on #75/#76 for the full history.
     """
     if guard_names is None:
         guard_names = _MISSING_MODULE_GUARD_EXCEPTION_NAMES
@@ -619,7 +634,21 @@ def _parse_declared_minimum(workflow_path: Path) -> tuple[int, int]:
     workflow file" (see ``_read_declared_minimum``, which is the fail-soft
     wrapper for that genuinely benign case only).
     """
-    text = workflow_path.read_text(encoding="utf-8")
+    raw_text = workflow_path.read_text(encoding="utf-8")
+    # Strip YAML comments BEFORE matching. Without this, a commented-out
+    # stale declaration (`# python: ["3.12"]`) sitting above the ACTIVE
+    # matrix wins the unrestricted `search`, and the checker adopts a
+    # WRONG, HIGHER floor -- which silently disables every 3.11 detector
+    # (applicable_apis() returns nothing) and lets genuinely incompatible
+    # code pass CI. That is a fail-OPEN, the worst failure direction for
+    # this gate, so comments must never contribute a candidate floor.
+    #
+    # Line-oriented and quote-naive by design: a `#` inside a quoted YAML
+    # scalar would also be treated as starting a comment. That can only
+    # ever DISCARD a candidate match (never invent one), so its failure
+    # direction is the safe one -- and it routes to the existing
+    # MinVersionDiscoveryError fail-loud path rather than to a wrong floor.
+    text = "\n".join(line.split("#", 1)[0] for line in raw_text.splitlines())
     match = _MATRIX_RE.search(text)
     if not match:
         raise MinVersionDiscoveryError(
