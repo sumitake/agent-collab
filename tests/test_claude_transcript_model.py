@@ -366,6 +366,35 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
         profile = self._profile({"AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5"})
         self.assertFalse(profile.governance_ready)
 
+    def test_entrypoint_only_paired_environment_fields_cannot_manufacture_identity(self):
+        """Supplying BOTH model and session id must not make an unobserved
+        session eligible -- filling only one field is not the whole bypass."""
+        profile = self._profile(
+            {
+                "AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5",
+                "AGENT_COLLAB_SESSION_ID": "invented-session",
+            }
+        )
+        self.assertEqual(profile.session_identifier, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_entrypoint_only_paired_explicit_fields_cannot_manufacture_identity(self):
+        profile = self._profile(
+            {},
+            {"active_model": "claude-opus-5", "session_identifier": "invented-session"},
+        )
+        self.assertEqual(profile.session_identifier, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_entrypoint_only_paired_fields_with_valid_uuid_also_rejected(self):
+        """A well-formed but unobserved UUID is still not an observation."""
+        profile = self._profile(
+            {},
+            {"active_model": "claude-opus-5", "session_identifier": SESSION},
+        )
+        self.assertEqual(profile.session_identifier, "unknown")
+        self.assertFalse(profile.governance_ready)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

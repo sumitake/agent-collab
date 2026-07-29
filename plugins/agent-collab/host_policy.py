@@ -805,9 +805,16 @@ def _environment_profile() -> dict[str, str]:
             # value that disagrees with it registers as a conflict instead.
             active_model = "unknown"
         else:
-            # No session identifier at all, so no transcript can be expected.
-            # Governance stays closed through the unknown session identifier.
+            # Claude detected by entrypoint alone: there is no session
+            # identifier, so no transcript can be located and no current-session
+            # identity can be observed at all. An EMPTY identifier here is
+            # fillable, and a filled identifier paired with a filled model makes
+            # a wholly unobserved session governance-ready. Record an
+            # AUTHORITATIVE unknown identifier so neither field can be supplied.
+            # A genuine environment-exported model is still recorded; governance
+            # stays closed on the unfillable identifier.
             active_model = environment_model
+            session_identifier = "unknown"
         detected.append(
             {
                 "primary_id": "claude",
