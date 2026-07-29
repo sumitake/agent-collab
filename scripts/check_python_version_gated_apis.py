@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""Flag stdlib/language APIs newer than this repo's declared minimum Python version.
+
+Incident this guards against
+-----------------------------
+A worker-tier model (Grok Composer) generated a unittest-style test file that
+called ``self.enterContext(...)`` -- a ``unittest.TestCase`` method added only
+in Python 3.11. The primary agent that reviewed and pushed the change ran the
+suite locally on a newer interpreter (Python 3.14), where the call resolved
+fine, and CI subsequently failed on this repo's Python 3.10 leg with::
+
+    AttributeError: '<TestCase>' object has no attribute 'enterContext'
+
+Root cause: a stdlib/language feature that post-dates the project's declared
+minimum Python version is invisible to a local run on a newer interpreter --
+a green local run proves nothing about the floor version. Documented in the
+sibling ``agent-collab-workspace`` repo's shared learning ledger as entry
+``LRN-20260722-074753-claude-6000``
+(pattern_key: ``worker.unittest.uses.version.gated.stdlib.api``); this script
+is the "prevention" half of that entry's recommendation, installed in the
+repo where the incident actually happened (this one -- the failure was in
+this plugin repo's test suite, not the workspace repo's).
+
+What this checks
+-----------------
+Walks the repository's tracked (and untracked-but-not-gitignored) ``*.py``
+files and flags known Python stdlib/language APIs that were introduced after
+this repo's DECLARED minimum supported Python version, read from the
+``python:`` test matrix in ``.github/workflows/ci.yml`` (see
+``_read_declared_minimum()``). An API introduced at-or-before the declared
+floor is never flagged, even though it's present in the ``KNOWN_APIS`` table
+below -- the table intentionally includes a couple of APIs that predate this
+repo's current floor (e.g. ``str.removeprefix``/``removesuffix``, 3.9+) so
+that lowering the floor in the future is a one-line change to
+``FALLBACK_MIN_VERSION`` / ``ci.yml``, not a rewrite of this script.
+
+Detection is AST-based where practical (precise: exact line/col, immune to
+false positives from comments or string literals) with a narrow, documented
+regex fallback for source that fails to parse under the running interpreter.
+The most likely case for that fallback is a file using ``except*`` syntax:
+that is a ``SyntaxError`` on Python < 3.11 even though the rest of the file
+is otherwise valid, so a checker itself invoked under an old interpreter
+cannot even parse the file it's trying to flag.
+
+Usage
+-----
+    python3 scripts/check_python_version_gated_apis.py              # scan repo
+    python3 scripts/check_python_version_gated_apis.py --paths a.py b.py
+    python3 scripts/check_python_version_gated_apis.py --min-version 3.11
+
+Exit status: 0 if no gated-API usage is found above the floor, 1 otherwise.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterable, Iterator, Sequence
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+# Fallback floor used only if the CI workflow's python matrix can't be found
+# or parsed (e.g. this script is copied into a repo without that file, or is
+# pointed at a stripped-down checkout). Keep this in sync by hand with the
+# lowest version actually listed in ci.yml's `python:` matrix -- but treat
+# `_read_declared_minimum()` as the source of truth whenever ci.yml is
+# present and parses cleanly; a regression test asserts the two agree
+# against the real repo file, so drift here is caught in CI rather than
+# discovered the hard way.
+FALLBACK_MIN_VERSION: tuple[int, int] = (3, 10)
+
+EXCLUDED_DIR_NAMES = {
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+}
+
+
+@dataclass(frozen=True)
+class Finding:
+    path: str
+    line: int
+    col: int
+    api: str
+    message: str
+
+    def format(self) -> str:
+        return f"{self.path}:{self.line}:{self.col}: [{self.api}] {self.message}"
+
+
+@dataclass(frozen=True)
+class GatedAPI:
+    """One stdlib/language feature tied to the Python version that introduced it."""
+
+    key: str
+    introduced: tuple[int, int]
+    message: str
+    # Each detector receives the parsed AST (or None if the source failed to
+    # parse under the running interpreter) plus the raw source text, and
+    # yields (line, col) tuples for every usage site it finds.
+    detector: Callable[["ast.Module | None", str], Iterator[tuple[int, int]]]
+
+
+def _version_str(version: tuple[int, int]) -> str:
+    return f"{version[0]}.{version[1]}"
+
+
+# ---------------------------------------------------------------------------
+# Individual detectors
+# ---------------------------------------------------------------------------
+
+
+def _detect_enter_context(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    """``self.enterContext(...)`` / ``<anything>.enterContext(...)`` calls.
+
+    ``unittest.TestCase.enterContext`` was added in Python 3.11
+    (https://docs.python.org/3/library/unittest.html#unittest.TestCase.enterContext).
+    We can't cheaply prove the receiver is actually a ``TestCase`` without
+    type inference, so this flags any ``.enterContext(...)`` call by name --
+    in practice that method name isn't used for anything unrelated in a
+    typical codebase, and a false positive here is a one-line suppression
+    away versus the cost of missing the real thing.
+    """
+    if tree is None:
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            match = re.search(r"\.enterContext\s*\(", line)
+            if match:
+                yield lineno, match.start() + 1
+        return
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "enterContext"
+        ):
+            yield node.lineno, node.col_offset
+
+
+_EXCEPT_STAR_RE = re.compile(r"^(\s*)except\s*\*")
+
+
+def _detect_except_star(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    r"""``except*`` exception-group syntax (PEP 654, Python 3.11+).
+
+    AST-based when the running interpreter's ``ast`` module models it
+    (``ast.TryStar``, itself only present on Python 3.11+): this gives exact
+    line/col and can't be confused by e.g. an ``except (A, B):`` clause or a
+    stray ``*`` elsewhere in the file. Falls back to a line-anchored regex
+    (``^\s*except\s*\*``) when the source failed to parse under the running
+    interpreter -- most notably, this checker being run on Python 3.10 or
+    older cannot parse ``except*`` AT ALL, so a genuine ``SyntaxError`` is
+    the *expected* signal there, not a bug to route around.
+
+    Regex-fallback limitation (documented, not silently accepted): this only
+    looks at the literal text of each line, so it cannot distinguish a real
+    ``except*`` clause from one that happens to appear inside a string or
+    comment at the start of a line. In practice an ``except*`` prefix
+    embedded in a string/comment at column 0 (ignoring leading whitespace)
+    is vanishingly unlikely in real code; if this ever produces a false
+    positive, tighten the pattern or special-case the file rather than
+    dropping the fallback path entirely -- the alternative is silently
+    missing real ``except*`` usage on exactly the interpreter version this
+    check exists to protect.
+    """
+    if tree is not None and hasattr(ast, "TryStar"):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.TryStar):
+                yield node.lineno, node.col_offset
+        return
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        match = _EXCEPT_STAR_RE.match(line)
+        if match:
+            yield lineno, len(match.group(1))
+
+
+_IMPORT_GUARD_EXCEPTION_NAMES = {
+    "ImportError",
+    "ModuleNotFoundError",
+    "Exception",
+    "BaseException",
+}
+
+
+def _handler_is_import_guard(handler: ast.ExceptHandler) -> bool:
+    """True if an ``except`` clause plausibly guards a version-gated import.
+
+    Matches a bare ``except:``, ``except ImportError:``,
+    ``except ModuleNotFoundError:``, ``except (ImportError, ModuleNotFoundError):``,
+    or a broad ``except Exception:`` / ``except BaseException:`` -- all
+    legitimate ways to make an import optional/version-gated. This repo's own
+    ``plugins/agent-collab/migration_doctor.py`` uses exactly this pattern for
+    ``tomllib`` (``try: import tomllib / except ModuleNotFoundError: tomllib = None``),
+    and that pattern is the *correct* fix for the incident this script guards
+    against, not an instance of it -- so it must not be flagged. A narrower,
+    unrelated exception type (e.g. ``except ValueError:``) is NOT treated as a
+    guard, since it wouldn't actually catch the ImportError/ModuleNotFoundError
+    a missing stdlib module raises.
+    """
+    if handler.type is None:
+        return True
+    names: list[str] = []
+    if isinstance(handler.type, ast.Name):
+        names = [handler.type.id]
+    elif isinstance(handler.type, ast.Tuple):
+        names = [elt.id for elt in handler.type.elts if isinstance(elt, ast.Name)]
+    return any(name in _IMPORT_GUARD_EXCEPTION_NAMES for name in names)
+
+
+def _guarded_import_lines(tree: ast.Module) -> set[int]:
+    """Line numbers inside a ``try:`` body whose ``except`` guards import errors.
+
+    Used to suppress the ``tomllib`` / ``typing.Self`` import detectors for
+    statements already wrapped in the standard optional-import idiom, so this
+    checker doesn't cry wolf on the exact pattern it wants developers to use.
+    """
+    guarded: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        if not any(_handler_is_import_guard(handler) for handler in node.handlers):
+            continue
+        for stmt in node.body:
+            for sub in ast.walk(stmt):
+                lineno = getattr(sub, "lineno", None)
+                if lineno is not None:
+                    guarded.add(lineno)
+    return guarded
+
+
+def _detect_tomllib_import(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    """``import tomllib`` / ``from tomllib import ...`` (stdlib module added in 3.11).
+
+    Regex-fallback limitation: an unparseable file's regex scan below cannot
+    tell whether the import is wrapped in a ``try/except ImportError`` guard
+    (the AST path can, and does -- see ``_guarded_import_lines``), so it may
+    flag an already-safe guarded import that the AST path would correctly
+    ignore. This is a documented precision trade-off specific to files the
+    running interpreter can't parse at all.
+    """
+    if tree is None:
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("import tomllib") or stripped.startswith(
+                "from tomllib import"
+            ):
+                yield lineno, len(line) - len(line.lstrip())
+        return
+    guarded = _guarded_import_lines(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if node.lineno in guarded:
+                continue
+            for alias in node.names:
+                if alias.name == "tomllib" or alias.name.startswith("tomllib."):
+                    yield node.lineno, node.col_offset
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and (node.module == "tomllib" or node.module.startswith("tomllib."))
+            and node.lineno not in guarded
+        ):
+            yield node.lineno, node.col_offset
+
+
+def _detect_typing_self(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    """``typing.Self`` / ``from typing import Self`` (PEP 673, added in Python 3.11).
+
+    The ``from typing import Self`` import form is suppressed inside a
+    ``try/except ImportError``-style guard, same as the ``tomllib`` detector
+    above (see ``_guarded_import_lines``). The ``typing.Self`` attribute-usage
+    form (e.g. in a type annotation) is flagged unconditionally regardless of
+    surrounding try/except -- it's materially harder to guard meaningfully
+    (annotations frequently aren't evaluated at runtime at all under
+    ``from __future__ import annotations``, so a runtime guard wouldn't even
+    fire), and unguarded is the common case in practice.
+    """
+    if tree is None:
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            if re.search(r"\bfrom\s+typing\s+import\b.*\bSelf\b", line) or re.search(
+                r"\btyping\.Self\b", line
+            ):
+                yield lineno, len(line) - len(line.lstrip())
+        return
+    guarded = _guarded_import_lines(tree)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "typing"
+            and node.lineno not in guarded
+        ):
+            for alias in node.names:
+                if alias.name == "Self":
+                    yield node.lineno, node.col_offset
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr == "Self"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "typing"
+        ):
+            yield node.lineno, node.col_offset
+
+
+def _detect_method_call(
+    tree: "ast.Module | None", source: str, method_name: str
+) -> Iterator[tuple[int, int]]:
+    if tree is None:
+        pattern = re.compile(r"\." + re.escape(method_name) + r"\s*\(")
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            match = pattern.search(line)
+            if match:
+                yield lineno, match.start() + 1
+        return
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == method_name
+        ):
+            yield node.lineno, node.col_offset
+
+
+def _detect_str_removeprefix(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    """``str.removeprefix(...)`` (PEP 616, added in Python 3.9)."""
+    yield from _detect_method_call(tree, source, "removeprefix")
+
+
+def _detect_str_removesuffix(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
+    """``str.removesuffix(...)`` (PEP 616, added in Python 3.9)."""
+    yield from _detect_method_call(tree, source, "removesuffix")
+
+
+# ---------------------------------------------------------------------------
+# Known-API table -- grow this list as new version-gated incidents surface.
+# Only APIs with `introduced > declared_minimum` are actually flagged; see
+# `applicable_apis()`.
+# ---------------------------------------------------------------------------
+
+KNOWN_APIS: tuple[GatedAPI, ...] = (
+    GatedAPI(
+        key="unittest.TestCase.enterContext",
+        introduced=(3, 11),
+        message=(
+            "unittest.TestCase.enterContext() was added in Python 3.11; use "
+            "addCleanup(cm.__exit__, ...) or a manual contextlib.ExitStack "
+            "for compatibility with the declared floor."
+        ),
+        detector=_detect_enter_context,
+    ),
+    GatedAPI(
+        key="except*",
+        introduced=(3, 11),
+        message=(
+            "except* exception-group syntax (PEP 654) was added in Python "
+            "3.11 and is a SyntaxError on older interpreters."
+        ),
+        detector=_detect_except_star,
+    ),
+    GatedAPI(
+        key="tomllib",
+        introduced=(3, 11),
+        message=(
+            "the tomllib stdlib module was added in Python 3.11; use the "
+            "third-party 'tomli' package (or equivalent) for compatibility "
+            "with the declared floor."
+        ),
+        detector=_detect_tomllib_import,
+    ),
+    GatedAPI(
+        key="typing.Self",
+        introduced=(3, 11),
+        message=(
+            "typing.Self (PEP 673) was added in Python 3.11; use a TypeVar "
+            "bound to the class instead for compatibility with the declared "
+            "floor."
+        ),
+        detector=_detect_typing_self,
+    ),
+    GatedAPI(
+        key="str.removeprefix",
+        introduced=(3, 9),
+        message="str.removeprefix() was added in Python 3.9 (PEP 616).",
+        detector=_detect_str_removeprefix,
+    ),
+    GatedAPI(
+        key="str.removesuffix",
+        introduced=(3, 9),
+        message="str.removesuffix() was added in Python 3.9 (PEP 616).",
+        detector=_detect_str_removesuffix,
+    ),
+)
+
+
+def applicable_apis(min_version: tuple[int, int]) -> tuple[GatedAPI, ...]:
+    """APIs introduced strictly after `min_version` -- i.e. actually gated for it."""
+    return tuple(api for api in KNOWN_APIS if api.introduced > min_version)
+
+
+# ---------------------------------------------------------------------------
+# Declared-minimum discovery
+# ---------------------------------------------------------------------------
+
+_MATRIX_RE = re.compile(r"python:\s*\[(?P<versions>[^\]]*)\]")
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
+
+
+def _read_declared_minimum(workflow_path: Path = CI_WORKFLOW_PATH) -> tuple[int, int]:
+    """Read the lowest Python version in ci.yml's ``python:`` test matrix.
+
+    This is a narrow, dependency-free regex extraction -- not a YAML parser
+    -- matched against the specific ``python: ["3.10", "3.12", "3.14"]``
+    shape used in ``.github/workflows/ci.yml`` today. If that shape changes
+    (multi-line matrix, YAML anchors, a renamed matrix key, ...) this
+    silently falls back to ``FALLBACK_MIN_VERSION`` rather than raising, so
+    a check that only runs this function still degrades to *some* floor
+    instead of crashing CI outright. ``test_check_python_version_gated_apis.py``
+    includes a regression test asserting this function's return value
+    against the real repo file matches ``FALLBACK_MIN_VERSION`` -- that
+    test is what actually catches the two drifting apart.
+    """
+    try:
+        text = workflow_path.read_text(encoding="utf-8")
+    except OSError:
+        return FALLBACK_MIN_VERSION
+    match = _MATRIX_RE.search(text)
+    if not match:
+        return FALLBACK_MIN_VERSION
+    versions = [
+        (int(vmatch.group(1)), int(vmatch.group(2)))
+        for vmatch in _VERSION_RE.finditer(match.group("versions"))
+    ]
+    if not versions:
+        return FALLBACK_MIN_VERSION
+    return min(versions)
+
+
+# ---------------------------------------------------------------------------
+# Scanning
+# ---------------------------------------------------------------------------
+
+
+def scan_source(source: str, filename: str, min_version: tuple[int, int]) -> list[Finding]:
+    """Scan one file's already-read source text for applicable gated APIs."""
+    apis = applicable_apis(min_version)
+    if not apis:
+        return []
+    try:
+        tree: "ast.Module | None" = ast.parse(source, filename=filename)
+    except SyntaxError:
+        tree = None
+    findings: list[Finding] = []
+    for api in apis:
+        for line, col in api.detector(tree, source):
+            findings.append(
+                Finding(path=filename, line=line, col=col, api=api.key, message=api.message)
+            )
+    findings.sort(key=lambda f: (f.line, f.col, f.api))
+    return findings
+
+
+def scan_file(path: Path, min_version: tuple[int, int]) -> list[Finding]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    return scan_source(source, str(path), min_version)
+
+
+def iter_python_files(root: Path) -> Iterator[Path]:
+    """Yield every tracked-or-untracked-but-not-gitignored ``*.py`` file under `root`."""
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*.py",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        for raw in result.stdout.split(b"\0"):
+            if not raw:
+                continue
+            relative = Path(raw.decode("utf-8", errors="surrogateescape"))
+            if any(part in EXCLUDED_DIR_NAMES for part in relative.parts):
+                continue
+            yield root / relative
+        return
+    # Not a git checkout (or git unavailable) -- fall back to a plain walk.
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in EXCLUDED_DIR_NAMES]
+        for name in files:
+            if name.endswith(".py"):
+                yield Path(current) / name
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Repository root to scan (default: this repo).",
+    )
+    parser.add_argument(
+        "--paths",
+        nargs="+",
+        type=Path,
+        default=None,
+        help="Scan only these specific files instead of the whole repo (mainly for tests).",
+    )
+    parser.add_argument(
+        "--min-version",
+        type=str,
+        default=None,
+        help='Override the declared minimum, e.g. "3.11" (default: read from ci.yml).',
+    )
+    args = parser.parse_args(argv)
+
+    if args.min_version:
+        major_str, _, minor_str = args.min_version.partition(".")
+        min_version = (int(major_str), int(minor_str))
+    else:
+        min_version = _read_declared_minimum()
+
+    apis = applicable_apis(min_version)
+    if not apis:
+        print(
+            "No known gated APIs post-date the declared minimum "
+            f"(Python {_version_str(min_version)}); nothing to check."
+        )
+        return 0
+
+    files: Iterable[Path] = args.paths if args.paths else iter_python_files(args.root)
+
+    all_findings: list[Finding] = []
+    scanned = 0
+    for path in files:
+        scanned += 1
+        all_findings.extend(scan_file(path, min_version))
+
+    if all_findings:
+        print(
+            f"Found {len(all_findings)} use(s) of Python-version-gated API(s) "
+            f"above the declared minimum (Python {_version_str(min_version)}):"
+        )
+        for finding in all_findings:
+            print("  " + finding.format())
+        print(
+            "\nThese will fail on the repo's Python "
+            f"{_version_str(min_version)} CI leg even though they may pass "
+            "locally on a newer interpreter. See LRN-20260722-074753-claude-6000 "
+            "in the agent-collab-workspace learning ledger for the incident "
+            "this check guards against."
+        )
+        return 1
+
+    print(
+        f"OK: scanned {scanned} Python file(s); no gated-API usage found above "
+        f"the declared minimum (Python {_version_str(min_version)})."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
