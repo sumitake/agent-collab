@@ -215,6 +215,51 @@ class TestGuardedImportSuppression(unittest.TestCase):
         findings = cpvga.scan_source(source, "t.py", FLOOR_310)
         self.assertEqual(findings, [])
 
+    def test_typing_self_guarded_only_by_module_not_found_is_still_flagged(self) -> None:
+        # The two import failure modes raise DIFFERENT exceptions:
+        # `from typing import Self` on 3.10 raises a PLAIN ImportError (the
+        # `typing` module imports fine, it just has no `Self`), NOT
+        # ModuleNotFoundError. Since ModuleNotFoundError is a strict
+        # SUBCLASS of ImportError, this handler is narrower and can never
+        # fire -- so the import is genuinely unprotected and must be
+        # flagged, even though the same handler WOULD correctly guard a
+        # missing-module import like `import tomllib`.
+        source = (
+            "try:\n"
+            "    from typing import Self\n"
+            "except ModuleNotFoundError:\n"
+            "    Self = object\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual([f.api for f in findings], ["typing.Self"])
+
+    def test_typing_self_guarded_by_tuple_including_import_error_is_suppressed(self) -> None:
+        # A tuple that INCLUDES the genuinely-catching ImportError is a
+        # valid guard even though it also names the never-firing narrower
+        # ModuleNotFoundError.
+        source = (
+            "try:\n"
+            "    from typing import Self\n"
+            "except (ModuleNotFoundError, ImportError):\n"
+            "    Self = object\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
+    def test_tomllib_guarded_only_by_module_not_found_is_still_suppressed(self) -> None:
+        # The complement of the case above: a MISSING MODULE genuinely does
+        # raise ModuleNotFoundError, so this narrower handler IS a real
+        # guard here -- confirms the split is per-failure-mode, not a
+        # blanket tightening that would over-flag valid tomllib guards.
+        source = (
+            "try:\n"
+            "    import tomllib\n"
+            "except ModuleNotFoundError:\n"
+            "    tomllib = None\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        self.assertEqual(findings, [])
+
     def test_unrelated_exception_handler_does_not_suppress(self) -> None:
         # except ValueError would not actually catch a missing-module error,
         # so this import is NOT considered safely guarded.
@@ -454,6 +499,42 @@ class TestDeclaredMinimumReader(unittest.TestCase):
                 '        python: ["3.11", "3.13"]\n'
             )
             self.assertEqual(cpvga._read_declared_minimum(workflow), (3, 11))
+
+    def test_commented_out_matrix_above_active_one_is_ignored(self) -> None:
+        # FAIL-OPEN regression: an unrestricted regex search matched a stale
+        # COMMENTED-OUT declaration sitting above the active matrix and
+        # adopted its higher floor, which silently disables every 3.11
+        # detector (applicable_apis() -> []) and lets incompatible code pass
+        # CI entirely. Comments must never contribute a candidate floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text(
+                "jobs:\n"
+                "  python:\n"
+                "    strategy:\n"
+                "      matrix:\n"
+                '        # python: ["3.12", "3.14"]\n'
+                '        python: ["3.10", "3.12", "3.14"]\n'
+            )
+            self.assertEqual(cpvga._parse_declared_minimum(workflow), (3, 10))
+
+    def test_trailing_comment_on_active_matrix_line_is_stripped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text(
+                'jobs:\n  matrix:\n    python: ["3.10", "3.12"]  # drop 3.10 in Q4\n'
+            )
+            self.assertEqual(cpvga._parse_declared_minimum(workflow), (3, 10))
+
+    def test_only_commented_matrix_fails_loud_not_silently_adopted(self) -> None:
+        # With every declaration commented out there is no active matrix at
+        # all -- must raise (fail loud), never silently adopt the comment's
+        # version as the floor.
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text('jobs:\n  # python: ["3.12"]\n  build: x\n')
+            with self.assertRaises(cpvga.MinVersionDiscoveryError):
+                cpvga._parse_declared_minimum(workflow)
 
     def test_missing_file_falls_back_silently(self) -> None:
         # The ONLY benign case: no ci.yml at all (e.g. a stripped checkout).
