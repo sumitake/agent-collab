@@ -58,6 +58,7 @@ import ast
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence
@@ -124,19 +125,33 @@ def _version_str(version: tuple[int, int]) -> str:
 
 
 def _detect_enter_context(tree: "ast.Module | None", source: str) -> Iterator[tuple[int, int]]:
-    """``self.enterContext(...)`` / ``<anything>.enterContext(...)`` calls.
+    """``self.enterContext(...)`` calls specifically.
 
     ``unittest.TestCase.enterContext`` was added in Python 3.11
     (https://docs.python.org/3/library/unittest.html#unittest.TestCase.enterContext).
     We can't cheaply prove the receiver is actually a ``TestCase`` without
-    type inference, so this flags any ``.enterContext(...)`` call by name --
-    in practice that method name isn't used for anything unrelated in a
-    typical codebase, and a false positive here is a one-line suppression
-    away versus the cost of missing the real thing.
+    type inference, so this narrows to the receiver being the bare name
+    ``self`` -- the only realistic call shape for a ``TestCase`` instance
+    method invoked from within a test method (and the exact shape of the
+    incident this check guards against: "replaced all 92 self.enterContext(cm)
+    call sites", per LRN-20260722-074753-claude-6000).
+
+    Deliberately does NOT flag ``<other-name>.enterContext(...)`` (e.g.
+    ``stack.enterContext(...)``, ``ExitStack().enterContext(...)``, or
+    ``self.stack.enterContext(...)`` where the immediate receiver is the
+    Attribute ``self.stack``, not the bare Name ``self``): ``contextlib.
+    ExitStack.enterContext`` has existed since Python 3.3 and is a standard,
+    fully 3.10-compatible pattern -- flagging it by name alone (the original
+    implementation's approach) would false-positive on legitimate code every
+    bit as often as it catches the real incident, defeating the purpose of a
+    precision-over-recall guard for a specific known API. A test method that
+    genuinely assigns ``self.enterContext = SomeCallable`` or otherwise
+    shadows the real method is out of scope -- vanishingly unlikely and not
+    worth the added complexity.
     """
     if tree is None:
         for lineno, line in enumerate(source.splitlines(), start=1):
-            match = re.search(r"\.enterContext\s*\(", line)
+            match = re.search(r"\bself\.enterContext\s*\(", line)
             if match:
                 yield lineno, match.start() + 1
         return
@@ -145,6 +160,8 @@ def _detect_enter_context(tree: "ast.Module | None", source: str) -> Iterator[tu
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "enterContext"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
         ):
             yield node.lineno, node.col_offset
 
@@ -416,34 +433,65 @@ _MATRIX_RE = re.compile(r"python:\s*\[(?P<versions>[^\]]*)\]")
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)")
 
 
-def _read_declared_minimum(workflow_path: Path = CI_WORKFLOW_PATH) -> tuple[int, int]:
-    """Read the lowest Python version in ci.yml's ``python:`` test matrix.
+class MinVersionDiscoveryError(Exception):
+    """The CI workflow file exists but its Python-version matrix could not
+    be parsed in the expected shape -- FORMAT DRIFT, distinct from the file
+    simply not existing. Never silently swallow this: a repo where ci.yml
+    genuinely exists but no longer parses means this checker's notion of the
+    declared floor may be stale, which is exactly the failure mode this
+    checker itself exists to prevent for OTHER version-gated assumptions."""
+
+
+def _parse_declared_minimum(workflow_path: Path) -> tuple[int, int]:
+    """Parse the lowest Python version from ci.yml's ``python:`` test matrix.
 
     This is a narrow, dependency-free regex extraction -- not a YAML parser
     -- matched against the specific ``python: ["3.10", "3.12", "3.14"]``
-    shape used in ``.github/workflows/ci.yml`` today. If that shape changes
-    (multi-line matrix, YAML anchors, a renamed matrix key, ...) this
-    silently falls back to ``FALLBACK_MIN_VERSION`` rather than raising, so
-    a check that only runs this function still degrades to *some* floor
-    instead of crashing CI outright. ``test_check_python_version_gated_apis.py``
-    includes a regression test asserting this function's return value
-    against the real repo file matches ``FALLBACK_MIN_VERSION`` -- that
-    test is what actually catches the two drifting apart.
+    shape used in ``.github/workflows/ci.yml`` today. Raises
+    ``MinVersionDiscoveryError`` if the file exists but doesn't match that
+    shape (multi-line matrix, YAML anchors, a renamed matrix key, an empty
+    version list, ...) -- callers must not treat that as equivalent to "no
+    workflow file" (see ``_read_declared_minimum``, which is the fail-soft
+    wrapper for that genuinely benign case only).
     """
-    try:
-        text = workflow_path.read_text(encoding="utf-8")
-    except OSError:
-        return FALLBACK_MIN_VERSION
+    text = workflow_path.read_text(encoding="utf-8")
     match = _MATRIX_RE.search(text)
     if not match:
-        return FALLBACK_MIN_VERSION
+        raise MinVersionDiscoveryError(
+            f"{workflow_path}: python-version matrix pattern not found "
+            "(ci.yml's matrix shape may have changed -- update _MATRIX_RE)"
+        )
     versions = [
         (int(vmatch.group(1)), int(vmatch.group(2)))
         for vmatch in _VERSION_RE.finditer(match.group("versions"))
     ]
     if not versions:
-        return FALLBACK_MIN_VERSION
+        raise MinVersionDiscoveryError(
+            f"{workflow_path}: matrix pattern matched but no version "
+            "strings were extracted from it (regex/format mismatch)"
+        )
     return min(versions)
+
+
+def _read_declared_minimum(workflow_path: Path = CI_WORKFLOW_PATH) -> tuple[int, int]:
+    """Read the lowest Python version in ci.yml's ``python:`` test matrix,
+    falling back to ``FALLBACK_MIN_VERSION`` ONLY when the workflow file
+    itself is absent (e.g. a stripped checkout that doesn't include
+    ``.github/``) -- that is the sole benign case. A workflow file that
+    EXISTS but no longer matches the expected matrix shape is FORMAT DRIFT,
+    not a benign absence, and must not be silently masked by this fallback:
+    see ``MinVersionDiscoveryError`` and ``main()``'s handling of it, which
+    fails loud instead of silently scanning against a possibly-stale
+    constant. ``test_check_python_version_gated_apis.py`` includes a
+    regression test that calls ``_parse_declared_minimum`` directly against
+    the real repo file and asserts it does NOT raise -- that is what
+    actually proves live discovery still works, as opposed to merely
+    observing that a silent fallback happens to equal the same constant.
+    """
+    try:
+        return _parse_declared_minimum(workflow_path)
+    except OSError:
+        return FALLBACK_MIN_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +595,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         major_str, _, minor_str = args.min_version.partition(".")
         min_version = (int(major_str), int(minor_str))
     else:
-        min_version = _read_declared_minimum()
+        try:
+            min_version = _parse_declared_minimum(CI_WORKFLOW_PATH)
+        except OSError:
+            # Genuinely benign: no ci.yml at all (e.g. a stripped checkout).
+            min_version = FALLBACK_MIN_VERSION
+        except MinVersionDiscoveryError as exc:
+            print(
+                f"ERROR: {exc}\n"
+                "Refusing to silently scan against a possibly-stale fallback "
+                f"(Python {_version_str(FALLBACK_MIN_VERSION)}) when the CI "
+                "workflow file exists but its version matrix could not be "
+                "parsed. Update _MATRIX_RE/_VERSION_RE in this script to "
+                "match the new ci.yml shape, or pass --min-version explicitly "
+                "to override.",
+                file=sys.stderr,
+            )
+            return 2
 
     apis = applicable_apis(min_version)
     if not apis:

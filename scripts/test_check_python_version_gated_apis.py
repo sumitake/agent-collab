@@ -44,6 +44,41 @@ class TestScanSourceDetectors(unittest.TestCase):
         keys = [f.api for f in findings]
         self.assertIn("unittest.TestCase.enterContext", keys)
 
+    def test_exitstack_enter_context_is_not_flagged(self) -> None:
+        # contextlib.ExitStack.enterContext has existed since Python 3.3 --
+        # a fully 3.10-compatible, standard pattern. Flagging by method name
+        # alone (the original implementation) would false-positive on this
+        # every bit as often as it catches the real unittest.TestCase
+        # incident. Only a bare `self.enterContext(...)` receiver is flagged.
+        source = (
+            "from contextlib import ExitStack\n\n"
+            "def f():\n"
+            "    stack = ExitStack()\n"
+            "    stack.enterContext(open('a'))\n"
+            "    with ExitStack() as es:\n"
+            "        es.enterContext(open('b'))\n"
+            "    ExitStack().enterContext(open('c'))\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        keys = [f.api for f in findings]
+        self.assertNotIn("unittest.TestCase.enterContext", keys)
+
+    def test_self_dot_attribute_enter_context_is_not_flagged(self) -> None:
+        # self.stack.enterContext(...) -- the immediate receiver of
+        # .enterContext is the Attribute `self.stack`, not the bare Name
+        # `self`. Not the unittest.TestCase pattern; must not be flagged.
+        source = (
+            "from contextlib import ExitStack\n\n"
+            "class T:\n"
+            "    def __init__(self):\n"
+            "        self.stack = ExitStack()\n"
+            "    def use(self):\n"
+            "        self.stack.enterContext(open('a'))\n"
+        )
+        findings = cpvga.scan_source(source, "t.py", FLOOR_310)
+        keys = [f.api for f in findings]
+        self.assertNotIn("unittest.TestCase.enterContext", keys)
+
     def test_except_star_is_flagged_above_floor(self) -> None:
         source = (
             "try:\n"
@@ -204,18 +239,35 @@ class TestRegexFallback(unittest.TestCase):
         hits = list(cpvga._detect_tomllib_import(None, "import tomllib\n"))
         self.assertEqual(len(hits), 1)
 
+    def test_enter_context_regex_fallback_direct(self) -> None:
+        hits = list(cpvga._detect_enter_context(None, "self.enterContext(open('a'))\n"))
+        self.assertEqual(len(hits), 1)
+
+    def test_exitstack_enter_context_regex_fallback_not_flagged(self) -> None:
+        # The regex fallback must apply the same self.-only narrowing as the
+        # AST path -- a `stack.enterContext(...)` receiver is standard,
+        # 3.10-compatible ExitStack usage and must not be flagged even when
+        # the file fails to parse under the running interpreter.
+        hits = list(cpvga._detect_enter_context(None, "stack.enterContext(open('a'))\n"))
+        self.assertEqual(hits, [])
+
 
 class TestDeclaredMinimumReader(unittest.TestCase):
     def test_reads_real_ci_workflow(self) -> None:
         self.assertEqual(cpvga._read_declared_minimum(), cpvga.FALLBACK_MIN_VERSION)
 
-    def test_regression_fallback_matches_real_repo_floor(self) -> None:
-        # This is the drift-detector: if ci.yml's matrix ever changes without
-        # updating FALLBACK_MIN_VERSION (or vice versa), this test fails.
-        self.assertEqual(
-            cpvga._read_declared_minimum(cpvga.CI_WORKFLOW_PATH),
-            cpvga.FALLBACK_MIN_VERSION,
-        )
+    def test_regression_live_discovery_actually_succeeds(self) -> None:
+        # The drift-detector, strengthened: call the STRICT parser directly
+        # and require it not to raise. Merely asserting the wrapper's return
+        # value equals FALLBACK_MIN_VERSION (the old form of this test) does
+        # NOT distinguish "successfully parsed today's matrix, which happens
+        # to floor at the same version as the fallback constant" from
+        # "parsing silently failed and fell back" -- both produced the same
+        # observable value under the old design. This calls the function
+        # that raises on format drift, so a shape change in ci.yml fails
+        # THIS test loudly instead of coincidentally still passing.
+        parsed = cpvga._parse_declared_minimum(cpvga.CI_WORKFLOW_PATH)
+        self.assertEqual(parsed, cpvga.FALLBACK_MIN_VERSION)
 
     def test_parses_synthetic_matrix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,17 +281,52 @@ class TestDeclaredMinimumReader(unittest.TestCase):
             )
             self.assertEqual(cpvga._read_declared_minimum(workflow), (3, 11))
 
-    def test_missing_file_falls_back(self) -> None:
+    def test_missing_file_falls_back_silently(self) -> None:
+        # The ONLY benign case: no ci.yml at all (e.g. a stripped checkout).
         missing = Path("/nonexistent/path/ci.yml")
         self.assertEqual(cpvga._read_declared_minimum(missing), cpvga.FALLBACK_MIN_VERSION)
 
-    def test_missing_matrix_key_falls_back(self) -> None:
+    def test_missing_matrix_key_raises_discovery_error_not_silent_fallback(self) -> None:
+        # A workflow file that EXISTS but no longer matches the expected
+        # matrix shape is FORMAT DRIFT, not a benign absence -- must raise,
+        # never silently return the (possibly now-stale) fallback constant.
         with tempfile.TemporaryDirectory() as tmp:
             workflow = Path(tmp) / "ci.yml"
             workflow.write_text("jobs:\n  build:\n    runs-on: ubuntu-latest\n")
-            self.assertEqual(
-                cpvga._read_declared_minimum(workflow), cpvga.FALLBACK_MIN_VERSION
+            with self.assertRaises(cpvga.MinVersionDiscoveryError):
+                cpvga._parse_declared_minimum(workflow)
+            # The fail-soft wrapper must NOT swallow this -- it only
+            # swallows OSError (missing file), not a parse-shape failure.
+            with self.assertRaises(cpvga.MinVersionDiscoveryError):
+                cpvga._read_declared_minimum(workflow)
+
+    def test_empty_version_list_raises_discovery_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = Path(tmp) / "ci.yml"
+            workflow.write_text(
+                "jobs:\n  python:\n    strategy:\n      matrix:\n        python: []\n"
             )
+            with self.assertRaises(cpvga.MinVersionDiscoveryError):
+                cpvga._parse_declared_minimum(workflow)
+
+    def test_main_fails_loud_with_exit_2_on_discovery_error(self) -> None:
+        # End-to-end: main() must not silently proceed with a stale floor
+        # when the real ci.yml (patched here) fails to parse -- it must
+        # exit distinctly (2, not the "findings" exit code 1) with a clear
+        # stderr message naming the problem.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = root / "ci.yml"
+            workflow.write_text("jobs:\n  build:\n    runs-on: ubuntu-latest\n")
+            clean = root / "clean.py"
+            clean.write_text("x = 1\n")
+            original = cpvga.CI_WORKFLOW_PATH
+            cpvga.CI_WORKFLOW_PATH = workflow
+            try:
+                exit_code = cpvga.main(["--paths", str(clean)])
+            finally:
+                cpvga.CI_WORKFLOW_PATH = original
+            self.assertEqual(exit_code, 2)
 
 
 class TestEndToEndFixtureFiles(unittest.TestCase):
