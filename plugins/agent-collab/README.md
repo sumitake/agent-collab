@@ -482,13 +482,24 @@ configuration error rather than an override. Complete explicit configuration
 is governance-eligible only when its id, family, active-model lineage, runtime,
 and session identifier are mutually consistent.
 
-**Never send `session_identifier`.** A caller cannot know its own host session
-identifier, so a supplied value is invented rather than observed. Because the
-identifier IS strongly observed, an invented one does not override it: it
-registers as an identity conflict and turns every route into a configuration
-error. If a governance route reports incomplete identity, do not construct an
-identity to satisfy it -- the correct response is to fix the missing observed
-signal, or to let the route fail closed.
+**Never invent a `session_identifier`.** A caller cannot know a session
+identifier the host did not expose, so a constructed value is invented rather
+than observed. Where the identifier IS observed, an invented one does not
+override it: it registers as an identity conflict and turns every route into a
+configuration error. If a governance route reports incomplete identity, do not
+assemble an identity to satisfy it -- fix the missing observed signal, or let
+the route fail closed. This does not withdraw complete explicit configuration
+for a host that genuinely cannot be observed; it forbids fabricating a signal
+the caller does not have.
+
+**On a detected Claude host, identity is observation-only.** Every Claude
+identity field is recorded non-empty, so none of `primary_id`,
+`primary_family`, `active_model`, `host_runtime`, or `session_identifier` can be
+supplied through `AGENT_COLLAB_*` or an explicit `primary`; a supplied value
+that disagrees registers as a conflict rather than an override. The active model
+is observed from the live session transcript, and only a resolved transcript
+yields a governance-ready Claude profile. This scoping is specific to that host
+and does not change the fill behavior of the other host runtimes.
 
 Exact row contracts are:
 

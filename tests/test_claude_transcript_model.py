@@ -412,12 +412,27 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
         "session_identifier": "invented-session",
     }
 
+    def _observed(self, env):
+        """Raw `_environment_profile()` output, BEFORE any normalization.
+
+        `HostProfile` maps empty values to "unknown" downstream, so asserting
+        the invariant against the profile is vacuous -- it holds whether or not
+        the record was written non-empty. The overlay reads the raw record, so
+        the raw record is where the invariant has to be pinned.
+        """
+        environ = {"CLAUDE_CODE_ENTRYPOINT": "cli"}
+        environ.update(env)
+        with mock.patch.dict(os.environ, environ, clear=True), mock.patch.object(
+            host_policy, "_claude_projects_root", return_value=self.projects
+        ):
+            return host_policy._environment_profile()
+
     def test_no_identity_field_is_ever_recorded_empty_on_a_claude_host(self):
         """The invariant the fill class depends on: nothing is left fillable."""
         self._write(_assistant("claude-opus-5"))
         for name, (env, _) in self._HOST_SCENARIOS.items():
             with self.subTest(scenario=name):
-                profile = self._profile(env)
+                observed = self._observed(env)
                 for field in (
                     "primary_id",
                     "primary_family",
@@ -426,8 +441,8 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
                     "session_identifier",
                 ):
                     self.assertTrue(
-                        str(getattr(profile, field)).strip(),
-                        f"{field} was empty and is therefore fillable",
+                        str(observed.get(field, "")).strip(),
+                        f"{field} was recorded empty and is therefore fillable",
                     )
 
     def test_no_identity_field_can_be_supplied_on_a_claude_host(self):
