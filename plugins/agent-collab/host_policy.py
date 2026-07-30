@@ -577,6 +577,14 @@ def _codex_rollout_model(thread_id: str) -> tuple[str, str]:
 
 
 def _claude_projects_root() -> Path | None:
+    # The POSIX capability guard governs BOTH root selections, not just the
+    # passwd-home one. Whichever root is chosen is then checked by an ownership
+    # predicate that calls os.getuid(), so a host lacking it must fail closed
+    # here; returning a configured root first would raise AttributeError from
+    # deeper in, and AttributeError is not in the caught tuple, so it would
+    # propagate out of resolve_profile instead of failing closed.
+    if _pwd is None or not hasattr(os, "getuid"):
+        return None
     # Claude Code stores session data beneath CLAUDE_CONFIG_DIR when that is
     # set, so a resolver pinned to the passwd home would read those supported
     # installations as having no transcript at all -- authoritative unknown, and
@@ -592,8 +600,6 @@ def _claude_projects_root() -> Path | None:
         ):
             return None
         return Path(configured) / "projects"
-    if _pwd is None or not hasattr(os, "getuid"):
-        return None
     try:
         home = _pwd.getpwuid(os.getuid()).pw_dir
     except (KeyError, OSError):

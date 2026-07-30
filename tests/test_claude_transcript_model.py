@@ -415,21 +415,70 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
         self.assertEqual(profile.active_model, "claude-sonnet-5")
         self.assertTrue(profile.governance_ready)
 
-    def test_malformed_config_dir_fails_closed(self):
-        # An EMPTY value means "unset" and correctly falls back to the passwd
-        # home, so it is not a malformed case. A NUL byte cannot be placed in
-        # os.environ at all, so that guard is unreachable through this path and
-        # exists as defence in depth for any other caller of the resolver.
-        for bad in ("relative/path", "~/claude", "also/relative"):
-            with self.subTest(value=bad):
-                environ = {
-                    "CLAUDE_CODE_ENTRYPOINT": "cli",
-                    "CLAUDE_CODE_SESSION_ID": SESSION,
-                    "CLAUDE_CONFIG_DIR": bad,
-                }
-                with mock.patch.dict(os.environ, environ, clear=True):
-                    profile = host_policy.resolve_profile(None)
-                self.assertFalse(profile.governance_ready)
+    def test_relative_config_dir_fails_closed(self):
+        """Build a REAL relative tree, so the validation is what fails it.
+
+        A relative path pointing at nothing would fail closed whether or not the
+        absolute-path check existed, and the assertion would hold for the wrong
+        reason. Here the relative path genuinely resolves from the working
+        directory to a well-formed transcript, so dropping the check would make
+        this resolve and the test fail.
+
+        An EMPTY value means "unset" and correctly falls back to the passwd
+        home, so it is not a malformed case. A NUL byte cannot be placed in
+        os.environ at all, so that guard is unreachable through this path and
+        exists as defence in depth for any other caller of the resolver.
+        """
+        relative = Path("relative-config")
+        projects = self.home / relative / "projects" / "-Users-x-repo"
+        projects.mkdir(parents=True)
+        (self.home / relative / "projects").chmod(0o700)
+        projects.chmod(0o700)
+        path = projects / f"{RELOCATED_SESSION}.jsonl"
+        path.write_text(
+            _assistant("claude-sonnet-5", session=RELOCATED_SESSION), encoding="utf-8"
+        )
+        path.chmod(0o600)
+        environ = {
+            "CLAUDE_CODE_ENTRYPOINT": "cli",
+            "CLAUDE_CODE_SESSION_ID": RELOCATED_SESSION,
+            "CLAUDE_CONFIG_DIR": str(relative),
+        }
+        cwd = os.getcwd()
+        os.chdir(self.home)
+        self.addCleanup(os.chdir, cwd)
+        with mock.patch.dict(os.environ, environ, clear=True):
+            profile = host_policy.resolve_profile(None)
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
+
+    def test_non_posix_host_fails_closed_with_a_configured_dir(self):
+        """The POSIX guard must gate BOTH root selections, not just the default.
+
+        With a configured root returned before the guard, the ownership
+        predicate raises AttributeError from deeper in -- which is not in the
+        caught tuple, so it escapes resolve_profile rather than failing closed.
+
+        Patching `_pwd` alone would NOT exercise this: the configured branch
+        never consults `_pwd`, so the assertion would hold for the wrong reason.
+        The hazard is specifically the missing `os.getuid`, so remove that
+        attribute for the duration and restore it unconditionally.
+        """
+        configured = self.home / "configured"
+        (configured / "projects").mkdir(parents=True)
+        (configured / "projects").chmod(0o700)
+        environ = {
+            "CLAUDE_CODE_ENTRYPOINT": "cli",
+            "CLAUDE_CODE_SESSION_ID": SESSION,
+            "CLAUDE_CONFIG_DIR": str(configured),
+        }
+        saved = os.getuid
+        del os.getuid
+        self.addCleanup(setattr, os, "getuid", saved)
+        with mock.patch.dict(os.environ, environ, clear=True):
+            profile = host_policy.resolve_profile(None)
+        self.assertEqual(profile.active_model, "unknown")
+        self.assertFalse(profile.governance_ready)
 
     def test_assistant_record_evicted_from_the_bounded_window_is_not_filled(self):
         """Padding the tail past the scan bound must not open an env fill path."""
