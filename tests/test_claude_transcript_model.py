@@ -167,27 +167,10 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
     def test_group_writable_transcript_is_rejected(self):
         path = self._write(_assistant("claude-opus-5"))
         # Deliberately insecure fixture: the permissive mode is the INPUT under
-        # test, and the assertion is that the resolver refuses the artifact.
-        #
-        # Set through Path.chmod rather than os.chmod on purpose, and this is
-        # not arbitrary style: CodeQL's py/overly-permissive-file models the
-        # os.chmod sink and flags these fixtures as high-severity. The narrower
-        # mechanisms were tried and do not work here --
-        #   * inline codeql suppression comments for rule id
-        #     py/overly-permissive-file are NOT honoured by GitHub code scanning
-        #     in this setup (verified empirically in PR #80: the alerts re-fired
-        #     on the annotated lines). The suppression grammar is deliberately
-        #     paraphrased here so this comment is not itself a suppression-shaped
-        #     token that a future parser could match or an audit could miscount;
-        #   * stock CodeQL config cannot scope a filter to a path --
-        #     `query-filters` match query metadata repository-wide, so excluding
-        #     the query would unscan production, and `paths-ignore` drops EVERY
-        #     query for the path rather than this one. Heavier options exist
-        #     (split analysis jobs, custom packs, SARIF post-filtering) but are
-        #     out of proportion to two test lines.
-        # Behaviour is identical either way. Do not "tidy" this back to
-        # os.chmod without re-checking CodeQL; see also tests/test_plugin_archive.py.
-        path.chmod(0o620)  # group-write transcript
+        # test, and the assertion is that the resolver refuses the artifact. No
+        # production path sets a permissive mode.
+        # codeql[py/overly-permissive-file]
+        os.chmod(path, 0o620)
         self.assertEqual(self._resolve(), ("invalid", ""))
 
     def test_hardlinked_transcript_is_rejected(self):
@@ -219,9 +202,10 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         planted.write_text(_assistant("claude-sonnet-5"), encoding="utf-8")
         planted.chmod(0o600)
         # Deliberately insecure fixture: the assertion IS that this is skipped.
-        # Path.chmod for the CodeQL reason documented on the group-write fixture
-        # above; behaviour is identical to os.chmod.
-        loose.chmod(0o777)  # world-write project directory
+        # Deliberately insecure fixture, as on the group-write case above: the
+        # assertion is that this directory is skipped.
+        # codeql[py/overly-permissive-file]
+        os.chmod(loose, 0o777)
         self.assertEqual(self._resolve(), ("ok", "claude-opus-5"))
 
     def test_secure_duplicate_project_directory_is_not_skipped(self):
