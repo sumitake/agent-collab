@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Document that `primary` should be sent as `{}` and that `session_identifier` must never be supplied by a caller, in both the coordinator request schema and the `intent-check` skill.
+- Document that `primary` should be sent as `{}` and that a `session_identifier` must never be fabricated by a caller, in both the coordinator request schema and the `intent-check` skill. Complete explicit configuration remains supported for a host that genuinely cannot be observed; what is prohibited is inventing a signal the caller does not have.
 
 ### Security
 
