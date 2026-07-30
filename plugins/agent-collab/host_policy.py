@@ -577,6 +577,21 @@ def _codex_rollout_model(thread_id: str) -> tuple[str, str]:
 
 
 def _claude_projects_root() -> Path | None:
+    # Claude Code stores session data beneath CLAUDE_CONFIG_DIR when that is
+    # set, so a resolver pinned to the passwd home would read those supported
+    # installations as having no transcript at all -- authoritative unknown, and
+    # therefore never governance-ready. The directory still has to pass the same
+    # ownership and permission predicate as the default root, so a hostile value
+    # redirects to a location that fails closed rather than one that is trusted.
+    configured = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if configured:
+        if (
+            "\0" in configured
+            or len(configured) > 4096
+            or not Path(configured).is_absolute()
+        ):
+            return None
+        return Path(configured) / "projects"
     if _pwd is None or not hasattr(os, "getuid"):
         return None
     try:

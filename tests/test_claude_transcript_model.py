@@ -27,6 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
 
 SESSION = "07a2aa37-f15c-4604-a184-d969ef9d01ac"
+# A session id that must NOT exist in the real ~/.claude, so relocation tests
+# cannot be satisfied by the passwd-home fallback.
+RELOCATED_SESSION = "11111111-2222-3333-4444-555555555555"
 
 
 def _load(name: str, path: Path):
@@ -361,17 +364,72 @@ class ClaudeUnfillableIdentityTests(unittest.TestCase):
         self.assertFalse(profile.governance_ready)
 
     def test_unreadable_transcript_is_not_filled(self):
+        """Inject the failure at the open boundary rather than via mode bits.
+
+        A mode-000 fixture does not block `os.open` when the suite runs as root,
+        so a permission-based fixture would silently stop testing anything in a
+        root container and the assertion would hold for the wrong reason.
+        """
         self._write(_assistant("claude-opus-5"))
-        project = self.projects / "-Users-x-repo"
-        os.chmod(project / f"{SESSION}.jsonl", 0o000)
-        self.addCleanup(os.chmod, project / f"{SESSION}.jsonl", 0o600)
-        profile = self._profile(
-            {
-                "CLAUDE_CODE_SESSION_ID": SESSION,
-                "AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5",
-            }
-        )
+        real_open = os.open
+
+        def denied(path, *args, **kwargs):
+            if str(path).endswith(f"{SESSION}.jsonl"):
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch.object(os, "open", denied):
+            profile = self._profile(
+                {
+                    "CLAUDE_CODE_SESSION_ID": SESSION,
+                    "AGENT_COLLAB_ACTIVE_MODEL": "claude-opus-5",
+                }
+            )
         self.assertFalse(profile.governance_ready)
+
+    def test_configured_config_dir_is_honoured(self):
+        """CLAUDE_CONFIG_DIR relocates the projects root; it must be followed.
+
+        Uses a session id that exists ONLY in the relocated root. Reusing the
+        live session id would let the passwd-home fallback resolve it from the
+        real ~/.claude, so the assertion would hold even with the honouring
+        removed -- the test would pass for the wrong reason.
+        """
+        relocated = self.home / "custom-config"
+        projects = relocated / "projects" / "-Users-x-repo"
+        projects.mkdir(parents=True)
+        (relocated / "projects").chmod(0o700)
+        projects.chmod(0o700)
+        path = projects / f"{RELOCATED_SESSION}.jsonl"
+        path.write_text(
+            _assistant("claude-sonnet-5", session=RELOCATED_SESSION), encoding="utf-8"
+        )
+        path.chmod(0o600)
+        environ = {
+            "CLAUDE_CODE_ENTRYPOINT": "cli",
+            "CLAUDE_CODE_SESSION_ID": RELOCATED_SESSION,
+            "CLAUDE_CONFIG_DIR": str(relocated),
+        }
+        with mock.patch.dict(os.environ, environ, clear=True):
+            profile = host_policy.resolve_profile(None)
+        self.assertEqual(profile.active_model, "claude-sonnet-5")
+        self.assertTrue(profile.governance_ready)
+
+    def test_malformed_config_dir_fails_closed(self):
+        # An EMPTY value means "unset" and correctly falls back to the passwd
+        # home, so it is not a malformed case. A NUL byte cannot be placed in
+        # os.environ at all, so that guard is unreachable through this path and
+        # exists as defence in depth for any other caller of the resolver.
+        for bad in ("relative/path", "~/claude", "also/relative"):
+            with self.subTest(value=bad):
+                environ = {
+                    "CLAUDE_CODE_ENTRYPOINT": "cli",
+                    "CLAUDE_CODE_SESSION_ID": SESSION,
+                    "CLAUDE_CONFIG_DIR": bad,
+                }
+                with mock.patch.dict(os.environ, environ, clear=True):
+                    profile = host_policy.resolve_profile(None)
+                self.assertFalse(profile.governance_ready)
 
     def test_assistant_record_evicted_from_the_bounded_window_is_not_filled(self):
         """Padding the tail past the scan bound must not open an env fill path."""
