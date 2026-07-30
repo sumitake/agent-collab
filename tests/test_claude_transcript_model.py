@@ -173,13 +173,18 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         # not arbitrary style: CodeQL's py/overly-permissive-file models the
         # os.chmod sink and flags these fixtures as high-severity. The narrower
         # mechanisms were tried and do not work here --
-        #   * inline `# codeql[py/overly-permissive-file]` suppressions are NOT
-        #     honoured by GitHub code scanning in this setup (verified
-        #     empirically in PR #80: the alerts re-fired on the annotated lines);
-        #   * a CodeQL config filter cannot be path-scoped -- `query-filters`
-        #     match query metadata repository-wide, so excluding the query would
-        #     unscan production, and `paths-ignore` drops EVERY query for the
-        #     path rather than this one.
+        #   * inline codeql suppression comments for rule id
+        #     py/overly-permissive-file are NOT honoured by GitHub code scanning
+        #     in this setup (verified empirically in PR #80: the alerts re-fired
+        #     on the annotated lines). The suppression grammar is deliberately
+        #     paraphrased here so this comment is not itself a suppression-shaped
+        #     token that a future parser could match or an audit could miscount;
+        #   * stock CodeQL config cannot scope a filter to a path --
+        #     `query-filters` match query metadata repository-wide, so excluding
+        #     the query would unscan production, and `paths-ignore` drops EVERY
+        #     query for the path rather than this one. Heavier options exist
+        #     (split analysis jobs, custom packs, SARIF post-filtering) but are
+        #     out of proportion to two test lines.
         # Behaviour is identical either way. Do not "tidy" this back to
         # os.chmod without re-checking CodeQL; see also tests/test_plugin_archive.py.
         path.chmod(0o620)  # group-write transcript
