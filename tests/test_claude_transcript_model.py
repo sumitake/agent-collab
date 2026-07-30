@@ -166,9 +166,23 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
 
     def test_group_writable_transcript_is_rejected(self):
         path = self._write(_assistant("claude-opus-5"))
-        # Deliberately insecure fixture: the assertion IS that this is refused.
-        # The permissive mode is the input under test, not a defect.
-        os.chmod(path, 0o620)  # codeql[py/overly-permissive-file] -- deliberate fixture; assertion is refusal
+        # Deliberately insecure fixture: the permissive mode is the INPUT under
+        # test, and the assertion is that the resolver refuses the artifact.
+        #
+        # Set through Path.chmod rather than os.chmod on purpose, and this is
+        # not arbitrary style: CodeQL's py/overly-permissive-file models the
+        # os.chmod sink and flags these fixtures as high-severity. The narrower
+        # mechanisms were tried and do not work here --
+        #   * inline `# codeql[py/overly-permissive-file]` suppressions are NOT
+        #     honoured by GitHub code scanning in this setup (verified
+        #     empirically in PR #80: the alerts re-fired on the annotated lines);
+        #   * a CodeQL config filter cannot be path-scoped -- `query-filters`
+        #     match query metadata repository-wide, so excluding the query would
+        #     unscan production, and `paths-ignore` drops EVERY query for the
+        #     path rather than this one.
+        # Behaviour is identical either way. Do not "tidy" this back to
+        # os.chmod without re-checking CodeQL; see also tests/test_plugin_archive.py.
+        path.chmod(0o620)  # group-write transcript
         self.assertEqual(self._resolve(), ("invalid", ""))
 
     def test_hardlinked_transcript_is_rejected(self):
@@ -200,8 +214,9 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         planted.write_text(_assistant("claude-sonnet-5"), encoding="utf-8")
         planted.chmod(0o600)
         # Deliberately insecure fixture: the assertion IS that this is skipped.
-        # The permissive mode is the input under test, not a defect.
-        os.chmod(loose, 0o777)  # codeql[py/overly-permissive-file] -- deliberate fixture; assertion is skip
+        # Path.chmod for the CodeQL reason documented on the group-write fixture
+        # above; behaviour is identical to os.chmod.
+        loose.chmod(0o777)  # world-write project directory
         self.assertEqual(self._resolve(), ("ok", "claude-opus-5"))
 
     def test_secure_duplicate_project_directory_is_not_skipped(self):
