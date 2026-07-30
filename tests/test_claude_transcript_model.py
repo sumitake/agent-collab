@@ -175,10 +175,15 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         # mechanisms were tried and do not work here --
         #   * inline codeql suppression comments for rule id
         #     py/overly-permissive-file are NOT honoured by GitHub code scanning
-        #     in this setup (verified empirically in PR #80: the alerts re-fired
-        #     on the annotated lines). The suppression grammar is deliberately
-        #     paraphrased here so this comment is not itself a suppression-shaped
-        #     token that a future parser could match or an audit could miscount;
+        #     in this setup. BOTH placements were tested and both re-fired the
+        #     alerts on the annotated lines: a trailing same-line comment (PR
+        #     #80, commit 0017b3f, CodeQL check run 90773472337) and the
+        #     documented standalone comment line immediately before the call
+        #     (PR #82, commit 27b697a, CodeQL check run 90784725147). Do not
+        #     spend a third cycle on a placement variant. The suppression grammar is
+        #     deliberately paraphrased here so this comment is not itself a
+        #     suppression-shaped token that a future parser could match or an
+        #     audit could miscount;
         #   * stock CodeQL config cannot scope a filter to a path --
         #     `query-filters` match query metadata repository-wide, so excluding
         #     the query would unscan production, and `paths-ignore` drops EVERY
