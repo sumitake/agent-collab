@@ -177,9 +177,10 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         #     py/overly-permissive-file are NOT honoured by GitHub code scanning
         #     in this setup. BOTH placements were tested and both re-fired the
         #     alerts on the annotated lines: a trailing same-line comment (PR
-        #     #80, run 0017b3f) and the documented standalone comment line
-        #     immediately before the call (PR #82, run 27b697a). Do not spend a
-        #     third cycle on a placement variant. The suppression grammar is
+        #     #80, commit 0017b3f, CodeQL check run 90773472337) and the
+        #     documented standalone comment line immediately before the call
+        #     (PR #82, commit 27b697a, CodeQL check run 90784725147). Do not
+        #     spend a third cycle on a placement variant. The suppression grammar is
         #     deliberately paraphrased here so this comment is not itself a
         #     suppression-shaped token that a future parser could match or an
         #     audit could miscount;
