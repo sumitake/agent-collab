@@ -168,7 +168,7 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         path = self._write(_assistant("claude-opus-5"))
         # Deliberately insecure fixture: the assertion IS that this is refused.
         # The permissive mode is the input under test, not a defect.
-        os.chmod(path, 0o620)  # codeql[py/overly-permissive-file]
+        os.chmod(path, 0o620)  # codeql[py/overly-permissive-file] -- deliberate fixture; assertion is refusal
         self.assertEqual(self._resolve(), ("invalid", ""))
 
     def test_hardlinked_transcript_is_rejected(self):
@@ -201,7 +201,7 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         planted.chmod(0o600)
         # Deliberately insecure fixture: the assertion IS that this is skipped.
         # The permissive mode is the input under test, not a defect.
-        os.chmod(loose, 0o777)  # codeql[py/overly-permissive-file]
+        os.chmod(loose, 0o777)  # codeql[py/overly-permissive-file] -- deliberate fixture; assertion is skip
         self.assertEqual(self._resolve(), ("ok", "claude-opus-5"))
 
     def test_secure_duplicate_project_directory_is_not_skipped(self):
