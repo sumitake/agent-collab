@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.4), and is
+This public repository distributes that one package, **agent-collab** (v4.6.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,26 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.6.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.6.0
+
+- **A Claude Code host observes its own active model.** Claude Code does not
+  export the model to the environment, so a Claude host resolved
+  `active_model='unknown'` and was the only host family that could never reach
+  a governance-ready identity; every governance route failed closed with
+  `unknown_family`. The model is now observed from the live session's own
+  transcript, mirroring the existing Codex rollout contract: strict
+  lowercase-UUID session key before any path join, the same ownership,
+  symlink, hardlink and permission predicates, post-open `fstat`
+  re-validation, a bounded tail read, and strict JSON decoding.
+  `CLAUDE_CONFIG_DIR` is honoured, so a relocated installation resolves too.
+  Model validation is by shape rather than a pinned list, so future models
+  resolve with no code change. Identity on a Claude host is observation-only:
+  every field is recorded non-empty, so configuration cannot fill an
+  unobserved session into governance eligibility, and a model that is not
+  anthropic-shaped fails closed rather than reassigning the host-derived
+  family.
 
 ## What's new - v4.5.4
 

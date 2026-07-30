@@ -1,6 +1,6 @@
 ---
 name: route
-version: 4.5.4
+version: 4.6.0
 description: Use when the operator says "ask Codex," "target=gemini," "target=grok," "target=composer," or explicitly names a managed backend. Also offer this proactively when routing needs dynamic primary-family exclusion.
 ---
 

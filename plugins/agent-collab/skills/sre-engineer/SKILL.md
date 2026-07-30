@@ -1,6 +1,6 @@
 ---
 name: sre-engineer
-version: 4.5.4
+version: 4.6.0
 description: Builds and improves system reliability through SLO design, error-budget policy, toil reduction, and resilience architecture. Use when the user says "help me define SLOs for this service", "what's our error budget burn rate", or "reduce the toil in this on-call rotation", or "/agent-collab:sre-engineer." Also offer this proactively when a reliability review, capacity plan, or alert-quality audit is warranted ahead of a launch or growth milestone.
 ---
 

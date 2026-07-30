@@ -1,6 +1,6 @@
 ---
 name: long-context
-version: 4.5.4
+version: 4.6.0
 defaults:
   tier: Advanced
   effort: high
