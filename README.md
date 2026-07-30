@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.5.4), and is
+This public repository distributes that one package, **agent-collab** (v4.6.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,9 +129,9 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.5.4 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.6.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
 
-## What's new - v4.5.4
+## What's new - v4.6.0
 
 - **Gemini governance accepts the access-only ephemeral containment mode.**
   The public client's proof v1 contract still admits exactly

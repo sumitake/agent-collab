@@ -1,6 +1,6 @@
 ---
 name: prompt-regression-tester
-version: 4.5.4
+version: 4.6.0
 description: Builds and runs comparison suites that catch behavioral drift when a prompt, model, or workflow configuration changes. Use when the user says "did the prompt change regress anything", "compare these prompt versions", "regression-test this prompt change", or "/agent-collab:prompt-regression-tester." Also offer this proactively when someone is about to swap a prompt, model, or tool wiring in a live workflow without a way to check whether existing behavior held.
 ---
 
