@@ -36,6 +36,16 @@ high effort to preserve that sealed role's mandatory floor.
    constraints, success criteria, and stop conditions.
 3. Capture artifact author-model provenance. If primary or artifact family is
    unknown, fail closed; do not accept a caller-provided family assertion.
+   Send `primary` as `{}` on any host that exposes strong identity signals, so
+   the host is observed; on a detected Claude host identity is observation-only
+   and no explicit identity field is accepted at all. Never invent a
+   `session_identifier` the host did not expose: where the real identifier is
+   observed, the invented one registers as an identity conflict that fails every
+   route. On a host that genuinely exposes no identity, a COMPLETE and mutually
+   consistent explicit configuration remains the supported path -- that is
+   configuration, not fabrication. What must never happen is assembling a
+   partial or guessed identity to satisfy a route that reported incomplete
+   identity; let that fail closed.
 4. Ask the dynamically selected independent reviewer to return exactly:
 
 ```text

@@ -125,6 +125,14 @@ _CODEX_THREAD_ID_RE = re.compile(
 )
 _CODEX_YEAR_RE = re.compile(r"^[0-9]{4}$")
 _CODEX_MONTH_DAY_RE = re.compile(r"^[0-9]{2}$")
+_CLAUDE_SESSION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+_CLAUDE_PROJECT_ENTRY_LIMIT = 100_000
+_CLAUDE_MODEL_LENGTH_LIMIT = 128
+# Host sentinel Claude Code writes for synthesized/error turns. Not a model
+# name, so it never goes stale as models ship or are deprecated.
+_CLAUDE_SYNTHETIC_MODEL = "<synthetic>"
 _CODEX_ROLLOUT_ENTRY_LIMIT = 100_000
 _CODEX_ROLLOUT_LINE_LIMIT = 4 * 1024 * 1024
 _CODEX_ROLLOUT_SCAN_LIMIT = 64 * 1024 * 1024
@@ -568,6 +576,219 @@ def _codex_rollout_model(thread_id: str) -> tuple[str, str]:
         return "invalid", ""
 
 
+def _claude_projects_root() -> Path | None:
+    # The POSIX capability guard governs BOTH root selections, not just the
+    # passwd-home one. Whichever root is chosen is then checked by an ownership
+    # predicate that calls os.getuid(), so a host lacking it must fail closed
+    # here; returning a configured root first would raise AttributeError from
+    # deeper in, and AttributeError is not in the caught tuple, so it would
+    # propagate out of resolve_profile instead of failing closed.
+    if _pwd is None or not hasattr(os, "getuid"):
+        return None
+    # Claude Code stores session data beneath CLAUDE_CONFIG_DIR when that is
+    # set, so a resolver pinned to the passwd home would read those supported
+    # installations as having no transcript at all -- authoritative unknown, and
+    # therefore never governance-ready. The directory still has to pass the same
+    # ownership and permission predicate as the default root, so a hostile value
+    # redirects to a location that fails closed rather than one that is trusted.
+    configured = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if configured:
+        if (
+            "\0" in configured
+            or len(configured) > 4096
+            or not Path(configured).is_absolute()
+        ):
+            return None
+        return Path(configured) / "projects"
+    try:
+        home = _pwd.getpwuid(os.getuid()).pw_dir
+    except (KeyError, OSError):
+        return None
+    if (
+        type(home) is not str
+        or not home
+        or "\0" in home
+        or len(home) > 4096
+        or not Path(home).is_absolute()
+    ):
+        return None
+    return Path(home) / ".claude" / "projects"
+
+
+def _claude_transcript_candidates(
+    root: Path, session_id: str
+) -> list[tuple[Path, os.stat_result]]:
+    if not _safe_codex_directory(root):
+        raise ValueError("Claude projects root identity is unsafe")
+    entry_count = 0
+    candidates: list[tuple[Path, os.stat_result]] = []
+    name = f"{session_id}.jsonl"
+    try:
+        with os.scandir(root) as iterator:
+            for entry in iterator:
+                entry_count += 1
+                # Bound incrementally so an oversized tree cannot be fully
+                # materialized before the limit is enforced.
+                if entry_count > _CLAUDE_PROJECT_ENTRY_LIMIT:
+                    raise ValueError("Claude projects tree exceeds the entry bound")
+                project = Path(entry.path)
+                # A project directory that is a symlink, foreign-owned, or
+                # group/other-writable is SKIPPED rather than fatal: skipping
+                # denies an attacker-planted redirect the chance to supply the
+                # transcript at all, while one stray directory elsewhere in the
+                # tree cannot deny resolution for every session. A hostile real
+                # directory holding the same session name still surfaces as a
+                # second candidate and fails closed on ambiguity below.
+                if not _safe_codex_directory(project):
+                    continue
+                path = project / name
+                try:
+                    identity = path.lstat()
+                except OSError:
+                    continue
+                if not _safe_codex_rollout_identity(identity):
+                    raise ValueError("Claude transcript identity is unsafe")
+                candidates.append((path, identity))
+    except OSError as exc:
+        raise ValueError("Claude projects directory is unreadable") from exc
+    return candidates
+
+
+def _claude_model_from_transcript(
+    path: Path, observed: os.stat_result, session_id: str
+) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(os.fspath(path), flags)
+    try:
+        opened = os.fstat(fd)
+        if (
+            not _safe_codex_rollout_identity(opened)
+            or (opened.st_dev, opened.st_ino) != (observed.st_dev, observed.st_ino)
+        ):
+            raise ValueError("Claude transcript changed before open")
+        captured_size = opened.st_size
+
+        model = ""
+        for raw in reversed(_codex_rollout_window(fd, captured_size).splitlines()):
+            record = _decode_codex_rollout_line(raw)
+            if record.get("type") != "assistant":
+                continue
+            sidechain = record.get("isSidechain")
+            if sidechain is not None and type(sidechain) is not bool:
+                raise ValueError("Claude transcript sidechain flag is malformed")
+            if sidechain:
+                # Subagent turns can run a different model than the session.
+                continue
+            if record.get("sessionId") != session_id:
+                raise ValueError("Claude transcript session identity does not match")
+            message = record.get("message")
+            if not isinstance(message, Mapping):
+                raise ValueError("Claude transcript message is malformed")
+            if message.get("role") != "assistant":
+                raise ValueError("Claude transcript message role is malformed")
+            candidate = message.get("model")
+            if type(candidate) is not str:
+                raise ValueError("Claude turn model identity is unproven")
+            # `<synthetic>` is a host sentinel written for synthesized/error
+            # turns, not a model claim. Skip it and keep scanning; anything
+            # else that fails the anthropic family shape IS a claim that
+            # contradicts the observed host, so it fails closed instead.
+            if candidate.strip() == _CLAUDE_SYNTHETIC_MODEL:
+                continue
+            if len(candidate) > _CLAUDE_MODEL_LENGTH_LIMIT or _model_family_signals(
+                candidate
+            ) != {"anthropic"}:
+                raise ValueError("Claude turn model identity is unproven")
+            model = candidate.strip()
+            break
+        if not model:
+            # A transcript carrying no qualifying assistant turn yet -- a new
+            # session, or a tail window holding only user/tool records -- is an
+            # ABSENT observation, not a contradictory one. Raising here would
+            # set a false identity-conflict signal on a healthy session. This
+            # deliberately diverges from the Codex rollout precedent, whose
+            # first record is always session metadata.
+            return ""
+        completed = os.fstat(fd)
+        if (
+            not _safe_codex_rollout_identity(completed)
+            or (
+                completed.st_dev,
+                completed.st_ino,
+                completed.st_uid,
+                stat.S_IFMT(completed.st_mode),
+                completed.st_mode & 0o777,
+                completed.st_nlink,
+            )
+            != (
+                opened.st_dev,
+                opened.st_ino,
+                opened.st_uid,
+                stat.S_IFMT(opened.st_mode),
+                opened.st_mode & 0o777,
+                opened.st_nlink,
+            )
+            or completed.st_size != captured_size
+        ):
+            raise ValueError("Claude transcript changed during identity proof")
+        return model
+    finally:
+        os.close(fd)
+
+
+def _claude_transcript_model(session_id: str) -> tuple[str, str]:
+    """Observe the live Claude session's model from its own transcript.
+
+    Claude Code does not export the active model to the environment, so the
+    only current-session signal is the transcript it writes.
+
+    Same-uid integrity is explicitly OUT OF SCOPE. This is best-effort
+    anti-confusion, NOT a forgery-resistant attestation: any process running as
+    this user can append to, rewrite, or truncate the transcript at any time.
+    It is a WEAKER signal than the `CLAUDE_CODE_SESSION_ID` it is keyed by --
+    that value is inherited at process start and a sibling same-uid process
+    cannot rewrite it, whereas this file can be modified mid-flight. The
+    identity re-checks below detect ordinary append races and replacement; they
+    do NOT detect a same-size in-place rewrite or an append-then-truncate.
+
+    What the observation therefore may NOT do is reassign identity: a model
+    that is not anthropic-shaped fails closed rather than changing the
+    host-derived `primary_family`, so a forged record cannot defeat reviewer
+    family-exclusion. The residual is asserting a different model WITHIN the
+    host family, which affects provenance accuracy, not independence.
+    """
+    if not session_id:
+        return "absent", ""
+    if _CLAUDE_SESSION_ID_RE.fullmatch(session_id) is None:
+        # A NONEMPTY identifier that fails the UUID contract is not merely an
+        # unresolvable session: the malformed value still reaches the profile as
+        # `session_identifier`, where it is non-"unknown" and therefore counts
+        # toward governance eligibility. Reporting "absent" here would let it
+        # combine with a filled model to manufacture a governance-ready profile
+        # for a session that cannot exist. Fail closed instead.
+        return "invalid", ""
+    root = _claude_projects_root()
+    if root is None:
+        return "absent", ""
+    try:
+        root.lstat()
+    except FileNotFoundError:
+        return "absent", ""
+    except OSError:
+        return "invalid", ""
+    try:
+        candidates = _claude_transcript_candidates(root, session_id)
+        if not candidates:
+            return "absent", ""
+        if len(candidates) != 1:
+            raise ValueError("Claude transcript identity is ambiguous")
+        path, identity = candidates[0]
+        model = _claude_model_from_transcript(path, identity, session_id)
+        return ("ok", model) if model else ("absent", "")
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return "invalid", ""
+
+
 def _environment_profile() -> dict[str, str]:
     env = os.environ
     overrides = {
@@ -580,13 +801,60 @@ def _environment_profile() -> dict[str, str]:
     }
     detected: list[dict[str, str]] = []
     if env.get("CLAUDE_CODE_SESSION_ID") or env.get("CLAUDE_CODE_ENTRYPOINT"):
+        session_identifier = env.get("CLAUDE_CODE_SESSION_ID", "")
+        environment_model = env.get("CLAUDE_CODE_MODEL", "").strip()
+        transcript_state, transcript_model = _claude_transcript_model(
+            session_identifier
+        )
+        conflict = transcript_state == "invalid"
+        if transcript_state == "ok":
+            active_model = transcript_model
+            if (
+                environment_model
+                and environment_model.casefold() != transcript_model.casefold()
+            ):
+                conflict = True
+        elif transcript_state == "invalid":
+            active_model = "unknown"
+        elif session_identifier:
+            # A transcript was EXPECTED for this session and did not resolve.
+            # Record an AUTHORITATIVE unknown rather than an empty value: an
+            # empty model is fillable by `AGENT_COLLAB_ACTIVE_MODEL` or by a
+            # caller-supplied `primary.active_model`, which would manufacture a
+            # governance-ready profile for a session whose model was never
+            # observed. A non-empty "unknown" cannot be filled -- an explicit
+            # value that disagrees with it registers as a conflict instead.
+            active_model = "unknown"
+        else:
+            # Claude detected by entrypoint alone: there is no session
+            # identifier, so no transcript can be located and no current-session
+            # identity can be observed. A genuine environment-exported model is
+            # still recorded; the invariant below makes the missing identifier
+            # authoritative, which keeps governance closed.
+            active_model = environment_model
+        # CLASS INVARIANT -- identity on a Claude host is OBSERVATION-ONLY.
+        #
+        # Every identity field is recorded non-empty, because
+        # `_overlay_profile_values` fills a field only when the observed value is
+        # empty (`if not current: continue`). A field that is never empty can
+        # never be supplied by `AGENT_COLLAB_*` or by an explicit `primary`; a
+        # supplied value that disagrees registers as a conflict instead of an
+        # override. Both the environment and explicit paths funnel through that
+        # same overlay, so this one invariant closes both.
+        #
+        # This deliberately closes the FAMILY of "an unobserved field is empty,
+        # and an empty field is fillable" defects rather than its members: the
+        # unfillable-model and unfillable-session-identifier fixes were two
+        # instances of it, and patching instances one at a time left a further
+        # paired-field bypass open each time.
         detected.append(
             {
                 "primary_id": "claude",
                 "primary_family": "anthropic",
-                "active_model": env.get("CLAUDE_CODE_MODEL", ""),
+                "active_model": active_model or "unknown",
                 "host_runtime": "claude-code",
-                "session_identifier": env.get("CLAUDE_CODE_SESSION_ID", ""),
+                "session_identifier": session_identifier or "unknown",
+                "_identity_conflict": "1" if conflict else "",
             }
         )
     if env.get("CODEX_THREAD_ID"):

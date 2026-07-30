@@ -10,8 +10,12 @@ reference; the repository README carries the purpose and governance narrative.
 Current: **4.5.4**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
-`session_identifier` from the current host or explicit configuration. ZCode
-model changes are re-observed before routing; OpenCode is a runtime, while the
+`session_identifier` from the current host or explicit configuration. On a
+Claude Code host the active model is observed from the live session's own
+transcript, because that host does not export it to the environment; the
+observation is bounded, fails closed, and cannot reassign the host-derived
+family.
+ZCode model changes are re-observed before routing; OpenCode is a runtime, while the
 selected model determines artifact family. The current
 `opencode-go/glm-5.2` preset therefore records **Zhipu** provenance. Kimi
 models record **Moonshot** provenance. Exact provider/model segments produce
@@ -468,14 +472,34 @@ nonblank content continues with an independence warning.
 
 `primary` is an object containing any subset of the string fields
 `primary_id`, `primary_family`, `active_model`, `host_runtime`,
-`session_identifier`, `opencode_model`, and `async_inbox`. Use `{}` for host
-observation; use explicit fields only when the host cannot expose strong
-current-session signals. Strong observed session identity, model, family,
-runtime, and session identifier are authoritative. Explicit values may fill
+`session_identifier`, `opencode_model`, and `async_inbox`. **Send `{}` and let
+the host be observed.** Supply an explicit field only when the host genuinely
+cannot expose that signal, and only for that one field. Strong observed session
+identity, model, family, runtime, and session identifier are authoritative.
+Explicit values may fill
 missing signals only; conflicting current-session and explicit identity is a
 configuration error rather than an override. Complete explicit configuration
 is governance-eligible only when its id, family, active-model lineage, runtime,
 and session identifier are mutually consistent.
+
+**Never invent a `session_identifier`.** A caller cannot know a session
+identifier the host did not expose, so a constructed value is invented rather
+than observed. Where the identifier IS observed, an invented one does not
+override it: it registers as an identity conflict and turns every route into a
+configuration error. If a governance route reports incomplete identity, do not
+assemble an identity to satisfy it -- fix the missing observed signal, or let
+the route fail closed. This does not withdraw complete explicit configuration
+for a host that genuinely cannot be observed; it forbids fabricating a signal
+the caller does not have.
+
+**On a detected Claude host, identity is observation-only.** Every Claude
+identity field is recorded non-empty, so none of `primary_id`,
+`primary_family`, `active_model`, `host_runtime`, or `session_identifier` can be
+supplied through `AGENT_COLLAB_*` or an explicit `primary`; a supplied value
+that disagrees registers as a conflict rather than an override. The active model
+is observed from the live session transcript, and only a resolved transcript
+yields a governance-ready Claude profile. This scoping is specific to that host
+and does not change the fill behavior of the other host runtimes.
 
 Exact row contracts are:
 
