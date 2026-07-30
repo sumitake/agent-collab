@@ -186,10 +186,34 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         self._write(_assistant("claude-opus-5"), project="-Users-x-repo")
         loose = self.projects / "-loose"
         loose.mkdir()
+        # Plant a same-session transcript INSIDE the loose directory, so the
+        # permission is the only thing under test. If the directory were
+        # honoured this would be a second candidate and resolution would fail
+        # closed on ambiguity; resolution succeeding is what proves the
+        # directory was skipped. Without this the directory contributes no
+        # candidate either way and the assertion holds for the wrong reason.
+        planted = loose / f"{SESSION}.jsonl"
+        planted.write_text(_assistant("claude-sonnet-5"), encoding="utf-8")
+        planted.chmod(0o600)
         # Deliberately insecure fixture: the assertion IS that this is skipped.
         loose.chmod(0o777)  # world-write project directory
-        # The loose directory is skipped; the well-formed one still resolves.
         self.assertEqual(self._resolve(), ("ok", "claude-opus-5"))
+
+    def test_secure_duplicate_project_directory_is_not_skipped(self):
+        """Control for the test above: identical fixture, secure permissions.
+
+        Proves the skip is caused by the permission and nothing else -- with a
+        secure directory the planted transcript IS a second candidate and
+        resolution fails closed on ambiguity.
+        """
+        self._write(_assistant("claude-opus-5"), project="-Users-x-repo")
+        secure = self.projects / "-secure-dupe"
+        secure.mkdir()
+        planted = secure / f"{SESSION}.jsonl"
+        planted.write_text(_assistant("claude-sonnet-5"), encoding="utf-8")
+        planted.chmod(0o600)
+        secure.chmod(0o700)
+        self.assertEqual(self._resolve(), ("invalid", ""))
 
     def test_malformed_json_fails_closed(self):
         self._write("{not json at all\n")
