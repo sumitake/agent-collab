@@ -163,7 +163,8 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
 
     def test_group_writable_transcript_is_rejected(self):
         path = self._write(_assistant("claude-opus-5"))
-        os.chmod(path, 0o620)
+        # Deliberately insecure fixture: the assertion IS that this is refused.
+        path.chmod(0o620)  # group-write transcript
         self.assertEqual(self._resolve(), ("invalid", ""))
 
     def test_hardlinked_transcript_is_rejected(self):
@@ -185,7 +186,8 @@ class ClaudeTranscriptModelTests(unittest.TestCase):
         self._write(_assistant("claude-opus-5"), project="-Users-x-repo")
         loose = self.projects / "-loose"
         loose.mkdir()
-        os.chmod(loose, 0o777)
+        # Deliberately insecure fixture: the assertion IS that this is skipped.
+        loose.chmod(0o777)  # world-write project directory
         # The loose directory is skipped; the well-formed one still resolves.
         self.assertEqual(self._resolve(), ("ok", "claude-opus-5"))
 
