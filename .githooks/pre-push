@@ -1,5 +1,52 @@
 #!/bin/bash
-# Pre-push hook wrapper
+# Pre-push hook wrapper.
+#
+# Gate 1 — full-suite test gate: run BOTH unittest roots (tests/ and scripts/,
+# mirroring CI's exact discovery invocations) before any push from a feature
+# branch. Motivated by ledger pattern partial.suite.run.hides.ci.failure: a
+# session ran one complete root not knowing the second existed and pushed a
+# red-CI commit. Both roots run in well under a minute in this repository.
+#   - Opt out of the TEST GATE ONLY with exactly AGENT_COLLAB_PREPUSH_TESTS=0
+#     (fail-closed: unset, empty, or any other value still runs the tests).
+#   - An affirmatively detected 'main' branch skips the test gate (direct main
+#     pushes are branch-protection-blocked anyway); detached HEAD or detection
+#     failure runs the tests.
+#
+# Gate 2 — compliance-trace check (scripts/hook-pre-push.py). Always runs,
+# including under the test-gate opt-out; exec'd so the hook's stdin ref data
+# stays available to it.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPT_DIR/../scripts/hook-pre-push.py"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+run_tests=1
+if [ "${AGENT_COLLAB_PREPUSH_TESTS-}" = "0" ]; then
+  echo "pre-push: WARNING — test gate SKIPPED (AGENT_COLLAB_PREPUSH_TESTS=0); compliance check still runs" >&2
+  run_tests=0
+fi
+
+branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)"
+if [ "$branch" = "main" ]; then
+  run_tests=0
+fi
+
+if [ "$run_tests" = "1" ]; then
+  echo "pre-push: running both unittest roots (set AGENT_COLLAB_PREPUSH_TESTS=0 to skip the test gate)" >&2
+  # git exports GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE into hook processes;
+  # tests that spawn git in temp directories then silently target THIS repo
+  # and fail (23 errors observed under a linked worktree's absolute GIT_DIR).
+  # Sanitize the suite subshells only; the exec'd compliance checker below
+  # operates on this repo and keeps the hook environment.
+  ( cd "$REPO_ROOT" && unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX && \
+    python3 -m unittest discover -s tests -t . -q < /dev/null ) || {
+    echo "pre-push: BLOCKED — tests/ suite failed" >&2
+    exit 1
+  }
+  ( cd "$REPO_ROOT" && unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX && \
+    python3 -m unittest discover -s scripts -p 'test_*.py' -q < /dev/null ) || {
+    echo "pre-push: BLOCKED — scripts/ suite failed" >&2
+    exit 1
+  }
+fi
+
+exec python3 "$SCRIPT_DIR/../scripts/hook-pre-push.py"
