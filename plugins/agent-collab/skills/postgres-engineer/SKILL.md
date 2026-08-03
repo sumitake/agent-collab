@@ -1,6 +1,6 @@
 ---
 name: postgres-engineer
-version: 4.6.0
+version: 4.7.0
 description: Administers and hardens PostgreSQL at the engine level — configuration, replication, vacuum behavior, and locking under real workloads. Use when the user says "tune postgres for this workload", "design a vacuum strategy", "set up replication", or "fix our connection pooling", or "/agent-collab:postgres-engineer." Also offer this proactively when a PostgreSQL deployment shows replication lag, bloat, connection exhaustion, or a failover plan that has never been tested.
 ---
 

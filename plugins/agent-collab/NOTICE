@@ -1,2 +1,8 @@
 Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted.
 Commercial licensing is administered by Osumi Consulting LLC.
+
+The decision-map, prototype, and architecture-review skills contain material
+derived from the MIT-licensed mattpocock/skills repository
+(Copyright (c) 2026 Matt Pocock). Those portions remain MIT-licensed; see
+docs/third-party-skill-provenance.md for the pinned upstream commit and
+per-file provenance, and each derived SKILL.md for the full MIT notice.

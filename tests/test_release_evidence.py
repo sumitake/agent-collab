@@ -235,7 +235,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(package["versionInfo"], PACKAGE_VERSION)
         self.assertEqual(
             package["licenseDeclared"],
-            "LicenseRef-PolyForm-Strict-1.0.0",
+            "LicenseRef-PolyForm-Strict-1.0.0 AND MIT",
         )
         self.assertEqual(package["licenseConcluded"], package["licenseDeclared"])
         files = {item["fileName"]: item for item in sbom["files"]}
@@ -256,11 +256,23 @@ class ReleaseEvidenceTests(unittest.TestCase):
             ["agent-collab"],
         )
         self.assertTrue(sbom["files"])
+        mit_members = {
+            "skills/architecture-review/SKILL.md",
+            "skills/decision-map/SKILL.md",
+            "skills/prototype/SKILL.md",
+        }
+        observed_mit = {
+            item["fileName"]
+            for item in sbom["files"]
+            if item["licenseConcluded"] == "MIT"
+        }
+        self.assertEqual(observed_mit, mit_members)
         self.assertTrue(
             all(
                 item["licenseConcluded"]
                 == "LicenseRef-PolyForm-Strict-1.0.0"
                 for item in sbom["files"]
+                if item["fileName"] not in mit_members
             )
         )
 
