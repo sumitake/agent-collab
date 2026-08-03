@@ -133,11 +133,7 @@ class TestLicenseContract(unittest.TestCase):
             encoding="utf-8",
         )
         license_bytes = (Path(__file__).resolve().parents[1] / "LICENSE").read_bytes()
-        notice = (
-            "Copyright (c) 2026 John Osumi. All rights reserved except as "
-            "expressly granted.\nCommercial licensing is administered by "
-            "Osumi Consulting LLC.\n"
-        ).encode()
+        notice = crc.NOTICE_TEXT.encode()
         commercial = (
             "PolyForm Strict License 1.0.0\nexplicit written approval\n"
             "Osumi Consulting LLC\nRepository access\ninstallation\n"

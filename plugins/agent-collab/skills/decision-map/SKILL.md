@@ -102,7 +102,7 @@ be answered now. **Out of scope** holds work consciously ruled beyond the
 destination; it never graduates. When an existing ticket turns out to sit past
 the destination, close it and leave one line here with the reason.
 
-## Invocation
+## Workflow
 
 Two modes. Either way, resolve at most one non-research ticket per session.
 

@@ -20,7 +20,7 @@ ambiguous and the user is not reachable, default to whichever branch better
 matches the surrounding code — a backend module suggests logic, a page or
 component suggests UI — and state the assumption at the top of the prototype.
 
-## Rules that apply to both branches
+## Workflow rules that apply to both branches
 
 1. **Isolate the prototype from the caller's work.** Build it on an isolated
    worktree or a clearly named throwaway branch. Never commit to, rebase, or

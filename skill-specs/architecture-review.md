@@ -39,7 +39,7 @@ Use these terms exactly in every suggestion — do not drift into "component,"
   a real interface, or just move it? "Concentrates" marks a shallow module
   worth deepening.
 
-## Process
+## Workflow
 
 ### 1. Explore — scope before you scan
 
