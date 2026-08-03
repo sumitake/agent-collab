@@ -64,6 +64,20 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertNotIn("route", native)
         self.assertNotIn("action", native)
 
+    def test_context_repository_request_uses_descriptor_source_mode(self) -> None:
+        request = {
+            "request_id": "context-repository-1",
+            "logical_action": "context.repository.extract",
+            "target_agent": "grok",
+            "timeout_ms": 5000,
+            "prompt": "Extract repository facts.",
+            "repo_root": str(ROOT),
+        }
+        native = self.coordinator.validate_request(request, self.wire, self.profile)
+        self.assertEqual(
+            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+        )
+
     def test_old_public_route_action_request_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "closed"):
             self.coordinator.validate_request(

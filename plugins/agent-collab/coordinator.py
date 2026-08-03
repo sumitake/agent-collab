@@ -122,19 +122,20 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
     action = document.get("logical_action")
     if type(action) is not str or action not in wire.logical_actions:
         raise ValueError("logical_action is not admitted by the wire descriptor")
-    if action.endswith(".repository"):
+    source_mode = wire.logical_action_source_modes[action]
+    if source_mode == "repository":
         expected = _COMMON_KEYS | {"repo_root"}
         if set(document) != expected:
             if "repo_root" not in document:
                 raise ValueError("repository action requires repo_root")
             raise ValueError("coordinator request is not closed")
         source = {"mode": "repository", "repo_root": _canonical_repo_root(document["repo_root"])}
-    elif action.startswith("context.documents."):
+    elif source_mode == "documents":
         expected = _COMMON_KEYS | {"documents"}
         if set(document) != expected:
             raise ValueError("coordinator request is not closed")
         source = {"mode": "documents", "documents": _documents(document["documents"])}
-    elif action == "architecture.conceptual":
+    elif source_mode == "conceptual_prompt":
         if set(document) != _COMMON_KEYS:
             raise ValueError("coordinator request is not closed")
         source = {"mode": "conceptual_prompt"}

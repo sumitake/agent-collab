@@ -13,6 +13,10 @@
   link counts while retaining the single-link rule for executable and manifest
   files, so a freshly installed production bundle resolves before invocation.
 
+- Derive every repository/document/conceptual source mode from the signed wire
+  descriptor, including repository context actions whose semantic names do not
+  end in `.repository`.
+
 - Preserve the public contribution boundary under the PolyForm Strict License
   1.0.0, with `AGENTS.md` as the local operating contract and commercial-use
   approval administered by Osumi Consulting LLC.
