@@ -34,17 +34,7 @@ class PublicDistributionContractTests(unittest.TestCase):
 
         self.assertEqual(
             notice,
-            "Copyright (c) 2026 John Osumi. All rights reserved except as "
-            "expressly granted.\nCommercial licensing is administered by "
-            "Osumi Consulting LLC.\n"
-            "\n"
-            "The decision-map, prototype, and architecture-review skills "
-            "contain material\nderived from the MIT-licensed "
-            "mattpocock/skills repository\n(Copyright (c) 2026 Matt Pocock). "
-            "Those portions remain MIT-licensed; see\n"
-            "docs/third-party-skill-provenance.md for the pinned upstream "
-            "commit and\nper-file provenance, and each derived SKILL.md for "
-            "the full MIT notice.\n",
+            'Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted.\nCommercial licensing is administered by Osumi Consulting LLC.\n\nSkills listed in docs/third-party-skill-provenance.md contain material derived\nfrom the MIT-licensed mattpocock/skills repository (Copyright (c) 2026 Matt\nPocock). Those portions remain MIT-licensed; see that provenance document for\nthe pinned upstream commit and per-file provenance, and each derived SKILL.md\nfor the full MIT notice.\n',
         )
         for phrase in (
             "explicit written approval",

@@ -42,17 +42,7 @@ _PLUGIN_JSON = f"plugins/{PLUGIN}/.claude-plugin/plugin.json"
 MANIFEST_LICENSE = "PolyForm-Strict-1.0.0"
 MARKETPLACE_LICENSE = "LicenseRef-PolyForm-Strict-1.0.0"
 LICENSE_SHA256 = "9eb48619fbc193ab7bb327b090cfcc703000265b83e670f81f231d0b1c43c56e"
-NOTICE_TEXT = (
-    "Copyright (c) 2026 John Osumi. All rights reserved except as expressly "
-    "granted.\nCommercial licensing is administered by Osumi Consulting LLC.\n"
-    "\n"
-    "The decision-map, prototype, and architecture-review skills contain "
-    "material\nderived from the MIT-licensed mattpocock/skills repository\n"
-    "(Copyright (c) 2026 Matt Pocock). Those portions remain MIT-licensed; "
-    "see\ndocs/third-party-skill-provenance.md for the pinned upstream "
-    "commit and\nper-file provenance, and each derived SKILL.md for the "
-    "full MIT notice.\n"
-)
+NOTICE_TEXT = 'Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted.\nCommercial licensing is administered by Osumi Consulting LLC.\n\nSkills listed in docs/third-party-skill-provenance.md contain material derived\nfrom the MIT-licensed mattpocock/skills repository (Copyright (c) 2026 Matt\nPocock). Those portions remain MIT-licensed; see that provenance document for\nthe pinned upstream commit and per-file provenance, and each derived SKILL.md\nfor the full MIT notice.\n'
 LEGAL_FILES = ("LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md")
 
 

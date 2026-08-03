@@ -30,6 +30,11 @@ MIT_DERIVED_SKILL_MEMBERS = frozenset(
     f"skills/{name}/SKILL.md"
     for name in ("architecture-review", "decision-map", "prototype")
 )
+# Skills that are package-original with an MIT-derived adapted portion carry
+# a mixed per-file expression (same provenance document).
+MIXED_LICENSE_SKILL_MEMBERS = frozenset(
+    f"skills/{name}/SKILL.md" for name in ("code-review",)
+)
 # The package as a whole contains PolyForm-owned material AND the MIT-derived
 # skill members above, so the package-level expression aggregates both.
 PACKAGE_LICENSE_EXPRESSION = f"{SPDX_LICENSE} AND MIT"
@@ -208,6 +213,8 @@ def _manifest(files: dict[str, bytes], path: str) -> dict[str, object]:
 def _file_license(name: str, *, mode: str) -> str:
     if name in MIT_DERIVED_SKILL_MEMBERS:
         return "MIT"
+    if name in MIXED_LICENSE_SKILL_MEMBERS:
+        return PACKAGE_LICENSE_EXPRESSION
     if mode == "activation" and (
         name.startswith(archive_builder.RUNTIME_BUNDLE_REL.as_posix() + "/")
         or name == archive_builder.THIRD_PARTY_NOTICE_REL.as_posix()

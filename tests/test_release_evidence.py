@@ -261,18 +261,26 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "skills/decision-map/SKILL.md",
             "skills/prototype/SKILL.md",
         }
+        mixed_members = {"skills/code-review/SKILL.md"}
         observed_mit = {
             item["fileName"]
             for item in sbom["files"]
             if item["licenseConcluded"] == "MIT"
         }
         self.assertEqual(observed_mit, mit_members)
+        observed_mixed = {
+            item["fileName"]
+            for item in sbom["files"]
+            if item["licenseConcluded"]
+            == "LicenseRef-PolyForm-Strict-1.0.0 AND MIT"
+        }
+        self.assertEqual(observed_mixed, mixed_members)
         self.assertTrue(
             all(
                 item["licenseConcluded"]
                 == "LicenseRef-PolyForm-Strict-1.0.0"
                 for item in sbom["files"]
-                if item["fileName"] not in mit_members
+                if item["fileName"] not in mit_members | mixed_members
             )
         )
 

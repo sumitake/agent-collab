@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-version: 4.7.0
+version: 4.8.0
 defaults:
   tier: Advanced
   effort: high
