@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.6.0), and is
+This public repository distributes that one package, **agent-collab** (v4.7.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,24 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.6.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.7.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.7.0
+
+- **Engineering-process skill pack (MIT-derived).** Three self-executed skills
+  join the package: `decision-map` (multi-session planning as a shared map of
+  decision tickets on the issue tracker, with an explicit user-approval gate
+  before any tracker write), `prototype` (throwaway logic/UI prototypes that
+  answer one design question, isolated from the caller's branch), and
+  `architecture-review` (a codebase sweep for module-deepening opportunities
+  with a self-contained visual report, composing with the routed `architect`
+  consultation). They are derived from the MIT-licensed
+  [mattpocock/skills](https://github.com/mattpocock/skills) repository at
+  pinned commit `2ab95809` and adapted for this package; the derived portions
+  remain MIT-licensed, each generated `SKILL.md` carries the full MIT notice,
+  release SPDX evidence declares those members `MIT`, and
+  `docs/third-party-skill-provenance.md` records per-file provenance. No
+  coordinator, provider, or routing surface is touched.
 
 ## What's new - v4.6.0
 
@@ -801,3 +818,11 @@ material, and their incorporated components under their own terms. The exact,
 digest-pinned inventory is shipped as `THIRD-PARTY-NOTICES.txt` and
 `third-party-licenses/` inside the plugin package. Those files are excluded from
 policy-only archives because no native runtime is present.
+
+The `decision-map`, `prototype`, and `architecture-review` skills contain
+material derived from the MIT-licensed
+[mattpocock/skills](https://github.com/mattpocock/skills) repository
+(Copyright (c) 2026 Matt Pocock). Those portions are and remain MIT-licensed
+in every archive; each derived `SKILL.md` carries the full MIT permission
+notice, and [docs/third-party-skill-provenance.md](docs/third-party-skill-provenance.md)
+records the pinned upstream commit and per-file provenance.

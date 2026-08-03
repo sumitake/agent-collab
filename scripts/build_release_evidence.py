@@ -24,6 +24,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_NAME = "agent-collab"
 MANIFEST_LICENSE = "PolyForm-Strict-1.0.0"
 SPDX_LICENSE = "LicenseRef-PolyForm-Strict-1.0.0"
+# Skills derived from MIT-licensed mattpocock/skills material remain MIT;
+# the file map lives in docs/third-party-skill-provenance.md.
+MIT_DERIVED_SKILL_MEMBERS = frozenset(
+    f"skills/{name}/SKILL.md"
+    for name in ("architecture-review", "decision-map", "prototype")
+)
 LICENSE_SHA256 = "9eb48619fbc193ab7bb327b090cfcc703000265b83e670f81f231d0b1c43c56e"
 COPYRIGHT_TEXT = (
     "Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted."
@@ -197,6 +203,8 @@ def _manifest(files: dict[str, bytes], path: str) -> dict[str, object]:
 
 
 def _file_license(name: str, *, mode: str) -> str:
+    if name in MIT_DERIVED_SKILL_MEMBERS:
+        return "MIT"
     if mode == "activation" and (
         name.startswith(archive_builder.RUNTIME_BUNDLE_REL.as_posix() + "/")
         or name == archive_builder.THIRD_PARTY_NOTICE_REL.as_posix()

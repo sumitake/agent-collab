@@ -7,7 +7,7 @@ verifiable compliance evidence, and operator final-say, delivered as one
 package for every supported host. This document is the package's technical
 reference; the repository README carries the purpose and governance narrative.
 
-Current: **4.6.0**
+Current: **4.7.0**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. On a
@@ -54,6 +54,15 @@ Nuitka 4.1.3 runtime material, and incorporated dependencies. Those exact files
 are digest-pinned by the archive builder and remain outside policy-only
 archives, which contain none of the corresponding runtime components.
 
+Exception to the PolyForm boundary: the `decision-map`, `prototype`, and
+`architecture-review` skills contain material derived from the MIT-licensed
+[mattpocock/skills](https://github.com/mattpocock/skills) repository
+(Copyright (c) 2026 Matt Pocock). Those portions are and remain MIT-licensed;
+each derived `SKILL.md` carries the full MIT permission notice, release SPDX
+evidence declares those members `MIT`, and
+[docs/third-party-skill-provenance.md](../../docs/third-party-skill-provenance.md)
+records the pinned upstream commit, per-file blob SHAs, and adaptations.
+
 ## Runtime and safe mode
 
 The package may contain a privately built signed native standalone bundle only
@@ -69,7 +78,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.6.0 package.
+identify this same 4.7.0 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -306,12 +315,23 @@ time; a listed skill does not imply that its native route is currently active.
 | Domain expertise - infrastructure and reliability (pack, v4.4.0) | `kubernetes-specialist`, `terraform-engineer`, `sre-engineer`, `incident-responder` |
 | Domain expertise - data and AI (pack, v4.4.0) | `mlops-engineer`, `llm-architect`, `postgres-engineer`, `data-engineer` |
 | Domain expertise - LLM evaluation and writing quality (pack, v4.4.0) | `eval-engineer`, `prompt-regression-tester`, `hallucination-investigator`, `ai-writing-auditor` |
+| Engineering process (pack, v4.7.0; MIT-derived) | `decision-map`, `prototype`, `architecture-review` |
 
 The sixteen domain-expertise skills were authored for this repository. Their
 scope selection was informed by two MIT-licensed VoltAgent reference corpora,
 reviewed as untrusted input at pinned commits and fully re-authored (zero
 copied passages, verified by shingle comparison): awesome-claude-code-subagents
 (commit 947b44ca) and awesome-codex-subagents (commit 5605c9c1).
+
+The three engineering-process skills are self-executed by the active primary
+(no coordinator route) and are derived from the MIT-licensed
+[mattpocock/skills](https://github.com/mattpocock/skills) repository at pinned
+commit `2ab95809`, adapted for this package. Those portions remain
+MIT-licensed; each derived `SKILL.md` carries the full MIT permission notice,
+and the file-level provenance map is
+[docs/third-party-skill-provenance.md](../../docs/third-party-skill-provenance.md).
+`architecture-review` is the self-executed sweep; `architect` remains the
+routed read-only consultation the sweep can hand its top candidates to.
 
 `visual-review` and `ui-to-code` currently provide primary-only guidance because
 the managed protocol does not accept image attachments. They never reinterpret
