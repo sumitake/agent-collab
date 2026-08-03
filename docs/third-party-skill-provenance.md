@@ -21,6 +21,7 @@ Upstream license file: `LICENSE` (blob `f1dd2c09108dde1a5f56097cee8461b3ea834499
 | (same, inlined) | `skills/engineering/prototype/UI.md` | `76c0f6012b016af04d6105fa696a9a0e29dfa53a` |
 | `skill-specs/architecture-review.md` → `plugins/agent-collab/skills/architecture-review/SKILL.md` | `skills/engineering/improve-codebase-architecture/SKILL.md` | `b56969e92f0705d70700f908b8ec929a1edfa782` |
 | (same, inlined vocabulary) | `skills/engineering/codebase-design/SKILL.md` | `16620c24528b737408e78d95dd6a0e01a98d3d63` |
+| `skill-specs/code-review.md` → `plugins/agent-collab/skills/code-review/SKILL.md` (adapted portions only; mixed `PolyForm AND MIT` member) | `skills/engineering/code-review/SKILL.md` | `2a0b5240731b927caa9ac0bf43c3e2af9dc3f0a7` |
 
 ## Adaptations applied (this package is not a verbatim mirror)
 
@@ -42,3 +43,12 @@ Upstream license file: `LICENSE` (blob `f1dd2c09108dde1a5f56097cee8461b3ea834499
 
 Re-pin procedure: when refreshing from upstream, update the pinned commit and
 every blob SHA above in the same change, and re-verify the adaptations list.
+
+## Adapted-portion (mixed-license) files
+
+- `code-review` (adapted portions, v4.8.0): the two-axis spec-fidelity
+  reporting structure and the Fowler smell-baseline treatment are adapted;
+  spec materialization/ambiguity/trust rules, the JSONL contract extension
+  (`Spec`/`Smell` severities, `spec_ref`), and everything else in that skill
+  are package-original. Per-file SPDX for this member is
+  `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`.

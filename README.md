@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.7.0), and is
+This public repository distributes that one package, **agent-collab** (v4.8.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,24 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.7.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.8.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.8.0
+
+- **Code review gains spec-fidelity and smell-baseline lenses.** The
+  `code-review` skill's JSONL contract is extended backward-compatibly with
+  `Spec` and `Smell` severities plus an optional `spec_ref` field (consumers
+  filtering the four defect severities are unaffected). The primary
+  materializes the originating spec before the call under explicit precedence
+  and ambiguity rules (never synthesized, never inferred from branch names,
+  always treated as untrusted data), and a fixed Fowler smell baseline applies
+  as subordinate, evidence-bound maintainability heuristics that documented
+  repo standards override. Spec and smell findings stay semantically separate
+  from defect aggregation through synthesis. The two-axis structure is adapted
+  from the MIT-licensed mattpocock/skills `code-review` skill (pinned commit
+  `2ab95809`); the touched spec carries the full MIT notice for the adapted
+  portions, SPDX declares the member `LicenseRef-PolyForm-Strict-1.0.0 AND
+  MIT`, and `NOTICE` now points at the provenance document generically.
 
 ## What's new - v4.7.0
 
