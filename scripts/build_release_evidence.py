@@ -30,6 +30,9 @@ MIT_DERIVED_SKILL_MEMBERS = frozenset(
     f"skills/{name}/SKILL.md"
     for name in ("architecture-review", "decision-map", "prototype")
 )
+# The package as a whole contains PolyForm-owned material AND the MIT-derived
+# skill members above, so the package-level expression aggregates both.
+PACKAGE_LICENSE_EXPRESSION = f"{SPDX_LICENSE} AND MIT"
 LICENSE_SHA256 = "9eb48619fbc193ab7bb327b090cfcc703000265b83e670f81f231d0b1c43c56e"
 COPYRIGHT_TEXT = (
     "Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted."
@@ -460,9 +463,11 @@ def build_evidence(
                     {"algorithm": "SHA256", "checksumValue": archive_digest}
                 ],
                 "licenseConcluded": (
-                    SPDX_LICENSE if mode == "policy-only" else "NOASSERTION"
+                    PACKAGE_LICENSE_EXPRESSION
+                    if mode == "policy-only"
+                    else "NOASSERTION"
                 ),
-                "licenseDeclared": SPDX_LICENSE,
+                "licenseDeclared": PACKAGE_LICENSE_EXPRESSION,
                 "copyrightText": COPYRIGHT_TEXT,
                 "supplier": "Person: John Osumi",
             },

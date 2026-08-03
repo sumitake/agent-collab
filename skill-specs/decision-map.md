@@ -34,16 +34,18 @@ and URL ride inside the name as a link, never stand in for it.
 
 Resolve the tracker in this order; never assume one:
 
-1. **GitHub Issues via the `gh` CLI** when the repo has a GitHub remote.
-   Feature-detect sub-issue and dependency support (`gh issue create --parent`,
-   `gh issue edit --blocked-by`) before relying on it; on older CLI versions
-   fall back to a `Blocked by: #N` body convention and a task-list of child
-   links in the map body.
-2. **Local markdown** when there is no usable remote tracker: the map at
+1. **Whatever the project's own docs designate**: when the repository's
+   documentation records a tracker workflow (an issue-tracker doc, a
+   contributing guide naming Jira/Linear/GitLab, or equivalent), follow that
+   documentation — it wins even when a GitHub remote exists.
+2. **GitHub Issues via the `gh` CLI** when the repo has a GitHub remote and no
+   documented tracker says otherwise. Feature-detect sub-issue and dependency
+   support (`gh issue create --parent`, `gh issue edit --blocked-by`) before
+   relying on it; on older CLI versions fall back to a `Blocked by: #N` body
+   convention and a task-list of child links in the map body.
+3. **Local markdown** when neither applies: the map at
    `.scratch/<effort>/map.md`, tickets as sibling files, blocking edges as
    body text.
-3. **Whatever the project's own docs designate**, when they document a
-   different tracker workflow — follow that documentation.
 
 **Write gate:** tracker issues are shared, outward-facing state. Before
 creating, editing, assigning, commenting on, or closing any tracker item,

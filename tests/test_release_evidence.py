@@ -235,7 +235,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(package["versionInfo"], PACKAGE_VERSION)
         self.assertEqual(
             package["licenseDeclared"],
-            "LicenseRef-PolyForm-Strict-1.0.0",
+            "LicenseRef-PolyForm-Strict-1.0.0 AND MIT",
         )
         self.assertEqual(package["licenseConcluded"], package["licenseDeclared"])
         files = {item["fileName"]: item for item in sbom["files"]}
