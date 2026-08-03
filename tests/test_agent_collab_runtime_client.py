@@ -232,6 +232,63 @@ class DirectRuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(result.error, "not_ready")
 
+    def test_child_stdin_epipe_does_not_abort_post_exit_output_drain(self) -> None:
+        event_write = self.client.selectors.EVENT_WRITE
+
+        class StdinThenNoEventsSelector:
+            def __init__(self) -> None:
+                self.stdin_key: object | None = None
+                self.returned_stdin = False
+
+            def register(self, stream: object, _events: int, kind: str) -> None:
+                if kind == "stdin":
+                    self.stdin_key = type(
+                        "SelectorKey", (), {"fileobj": stream, "data": kind}
+                    )()
+
+            def unregister(self, *_args: object) -> None:
+                pass
+
+            def select(self, _timeout: float) -> list[tuple[object, int]]:
+                if not self.returned_stdin:
+                    self.returned_stdin = True
+                    assert self.stdin_key is not None
+                    return [(self.stdin_key, event_write)]
+                return []
+
+            def close(self) -> None:
+                pass
+
+        class ExitedProcess:
+            def __init__(self, stdin: object, stdout: object, stderr: object) -> None:
+                self.stdin = stdin
+                self.stdout = stdout
+                self.stderr = stderr
+
+            def poll(self) -> int:
+                return 0
+
+        payload = b'{"status":"unavailable"}'
+        with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            stdout.write(payload)
+            stdout.seek(0)
+            process = ExitedProcess(stdin, stdout, stderr)
+            with mock.patch.object(
+                self.client.selectors,
+                "DefaultSelector",
+                StdinThenNoEventsSelector,
+            ), mock.patch.object(
+                self.client.os,
+                "write",
+                side_effect=BrokenPipeError("child closed stdin"),
+            ):
+                out, err, terminal = self.client._collect_bounded(
+                    process, b"request", time.monotonic() + 1.0
+                )
+        self.assertEqual(out, payload)
+        self.assertEqual(err, b"")
+        self.assertEqual(terminal, "")
+
     def test_post_exit_stdout_tail_overflow_returns_output_limit(self) -> None:
         class NoEventsSelector:
             def register(self, *_args: object) -> None:

@@ -1137,6 +1137,10 @@ def _collect_bounded(
                         written = os.write(stream.fileno(), request[sent : sent + 65536])
                     except BlockingIOError:
                         continue
+                    except BrokenPipeError:
+                        selector.unregister(stream)
+                        stream.close()
+                        continue
                     sent += written
                     if sent == len(request):
                         selector.unregister(stream)
