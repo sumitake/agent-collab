@@ -379,7 +379,7 @@ def _identity(path: Path, *, directory: bool = False, executable: bool = False) 
         not wanted
         or stat.S_ISLNK(info.st_mode)
         or info.st_uid != os.geteuid()
-        or info.st_nlink != 1
+        or (not directory and info.st_nlink != 1)
         or (executable and not info.st_mode & stat.S_IXUSR)
         or info.st_mode & 0o7000
     ):

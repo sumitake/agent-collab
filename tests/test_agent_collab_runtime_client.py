@@ -62,6 +62,15 @@ class DirectRuntimeClientTests(unittest.TestCase):
             "timeout_ms": timeout_ms,
         }
 
+    def test_owned_runtime_directory_with_children_has_a_valid_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bundle = Path(raw) / "agent-collab-runtime.bundle"
+            bundle.mkdir()
+            (bundle / "nested").mkdir()
+
+            self.assertGreater(bundle.lstat().st_nlink, 1)
+            self.assertIsNotNone(self.client._identity(bundle, directory=True))
+
     def test_outer_deadline_terminates_and_reaps_a_frozen_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             executable = Path(raw) / "agent-collab-runtime"
