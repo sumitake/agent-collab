@@ -22,6 +22,8 @@ Upstream license file: `LICENSE` (blob `f1dd2c09108dde1a5f56097cee8461b3ea834499
 | `skill-specs/architecture-review.md` → `plugins/agent-collab/skills/architecture-review/SKILL.md` | `skills/engineering/improve-codebase-architecture/SKILL.md` | `b56969e92f0705d70700f908b8ec929a1edfa782` |
 | (same, inlined vocabulary) | `skills/engineering/codebase-design/SKILL.md` | `16620c24528b737408e78d95dd6a0e01a98d3d63` |
 | `skill-specs/code-review.md` → `plugins/agent-collab/skills/code-review/SKILL.md` (adapted portions only; mixed `PolyForm AND MIT` member) | `skills/engineering/code-review/SKILL.md` | `2a0b5240731b927caa9ac0bf43c3e2af9dc3f0a7` |
+| `skill-specs/orchestrate.md` → `plugins/agent-collab/skills/orchestrate/SKILL.md` (adapted portions only; mixed member) | `skills/engineering/to-tickets/SKILL.md` | `96deac51d4391a3f691478d48f85f43261516c08` |
+| `skill-specs/teamwork.md` → `plugins/agent-collab/skills/teamwork/SKILL.md` (adapted portions only; mixed member) | `skills/engineering/to-tickets/SKILL.md` | `96deac51d4391a3f691478d48f85f43261516c08` |
 
 ## Adaptations applied (this package is not a verbatim mirror)
 
@@ -51,4 +53,10 @@ every blob SHA above in the same change, and re-verify the adaptations list.
   spec materialization/ambiguity/trust rules, the JSONL contract extension
   (`Spec`/`Smell` severities, `spec_ref`), and everything else in that skill
   are package-original. Per-file SPDX for this member is
+  `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`.
+- `orchestrate` + `teamwork` (adapted portions, v4.9.0): the conditional
+  tracer-bullet slice rules and expand–contract sequencing are adapted from
+  upstream `to-tickets`; the conditionality boundaries (feature-work-only,
+  codemoddable-batch alternative, coexistence-required trigger) and the rest
+  of both skills are package-original. Per-file SPDX for both members is
   `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`.
