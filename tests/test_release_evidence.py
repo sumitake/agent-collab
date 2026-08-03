@@ -261,7 +261,11 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "skills/decision-map/SKILL.md",
             "skills/prototype/SKILL.md",
         }
-        mixed_members = {"skills/code-review/SKILL.md"}
+        mixed_members = {
+            "skills/code-review/SKILL.md",
+            "skills/orchestrate/SKILL.md",
+            "skills/teamwork/SKILL.md",
+        }
         observed_mit = {
             item["fileName"]
             for item in sbom["files"]

@@ -33,7 +33,8 @@ MIT_DERIVED_SKILL_MEMBERS = frozenset(
 # Skills that are package-original with an MIT-derived adapted portion carry
 # a mixed per-file expression (same provenance document).
 MIXED_LICENSE_SKILL_MEMBERS = frozenset(
-    f"skills/{name}/SKILL.md" for name in ("code-review",)
+    f"skills/{name}/SKILL.md"
+    for name in ("code-review", "orchestrate", "teamwork")
 )
 # The package as a whole contains PolyForm-owned material AND the MIT-derived
 # skill members above, so the package-level expression aggregates both.

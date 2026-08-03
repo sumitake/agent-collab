@@ -78,7 +78,7 @@ trust:
   primary's identity, model, and session dynamically — no per-host forks to
   drift out of sync.
 
-This public repository distributes that one package, **agent-collab** (v4.8.0), and is
+This public repository distributes that one package, **agent-collab** (v4.9.0), and is
 the source of truth for the coordinator policy, skills, migration tooling, the
 fail-closed runtime client, contribution governance, and release-safety checks.
 The signed and notarized darwin-arm64 native runtime is committed in this
@@ -129,7 +129,23 @@ Contributors need no access to the private build/sign system. See
 
 | Package | Version | Role |
 |---|---:|---|
-| `agent-collab` | 4.8.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+| `agent-collab` | 4.9.0 | Unified skills, dynamic host policy, migration preflight, and verified native-runtime client |
+
+## What's new - v4.9.0
+
+- **Conditional decomposition guidance for `orchestrate` and `teamwork`.**
+  When a graph or milestone plan decomposes product-feature implementation,
+  both skills now prefer tracer-bullet vertical slices (complete narrow path
+  through every layer, demoable or independently verifiable, sized to one
+  bounded worker invocation with explicit acceptance criteria) and treat wide
+  refactors as the exception: atomically codemoddable changes run as
+  checkpointed, fully verified batches, and expand–contract sequencing is
+  reserved for migrations where old and new forms must genuinely coexist.
+  The guidance names its own inapplicability (research, operations,
+  configuration, decision-only work). Adapted portions from the MIT-licensed
+  mattpocock/skills `to-tickets` skill (pinned `2ab95809`); both specs carry
+  the full MIT notice and both members' SPDX expression is
+  `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`.
 
 ## What's new - v4.8.0
 
