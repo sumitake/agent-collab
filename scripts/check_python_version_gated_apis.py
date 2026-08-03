@@ -3,7 +3,7 @@
 
 Incident this guards against
 -----------------------------
-A worker-tier model (Grok Composer) generated a unittest-style test file that
+A worker-tier code-generation agent generated a unittest-style test file that
 called ``self.enterContext(...)`` -- a ``unittest.TestCase`` method added only
 in Python 3.11. The primary agent that reviewed and pushed the change ran the
 suite locally on a newer interpreter (Python 3.14), where the call resolved

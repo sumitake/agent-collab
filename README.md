@@ -88,8 +88,8 @@ contract.
 - Generate marketplace metadata with `python3 scripts/build_marketplace.py`.
 - Check it with `python3 scripts/build_marketplace.py --check`.
 
-`context` is the sole source-grounded corpus/repository skill. The retired
-`long-context` source and generated directory must not reappear.
+`context` is the sole source-grounded corpus/repository skill. No parallel
+size-branded source or generated skill surface is supported.
 
 ## Runtime trust boundary
 

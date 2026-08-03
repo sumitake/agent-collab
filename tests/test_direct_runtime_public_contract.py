@@ -29,6 +29,20 @@ LOGICAL_ACTIONS = (
     "review.repository",
 )
 
+LOGICAL_ACTION_SOURCE_MODES = {
+    "architecture.conceptual": "conceptual_prompt",
+    "architecture.repository": "repository",
+    "codegen.repository": "repository",
+    "context.documents.extract": "documents",
+    "context.documents.reason": "documents",
+    "context.repository.extract": "repository",
+    "context.repository.reason": "repository",
+    "frontend_codegen.repository": "repository",
+    "frontend_review.repository": "repository",
+    "governance.repository": "repository",
+    "review.repository": "repository",
+}
+
 TRANSPORT_ACTIONS = (
     ("codex", "advisory"),
     ("codex", "governance"),
@@ -65,58 +79,54 @@ ACTION_SOURCE_PAIRS = (
 
 
 def _wire_descriptor() -> tuple[dict[str, object], str]:
-    closed_schema = {"type": "object", "additionalProperties": False}
-    semantic_request = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": [
-            "wire_contract_sha256",
-            "request_id",
-            "logical_action",
-            "target_agent",
-            "author_lineage",
-            "timeout_ms",
-            "prompt",
-            "source",
-        ],
-        "properties": {
-            "wire_contract_sha256": {"type": "string"},
-            "request_id": {"type": "string"},
-            "logical_action": {"type": "string"},
-            "target_agent": {"type": ["string", "null"]},
-            "author_lineage": {"type": ["string", "null"]},
-            "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 600000},
-            "prompt": {"type": "string"},
-            "source": {"type": "object"},
-        },
+    manifest = json.loads(
+        (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
+    )
+    return manifest["wire_contract"], manifest["wire_contract_sha256"]
+
+
+def _readiness_response(
+    wire_sha256: str, *, author_lineage: str = "openai"
+) -> dict[str, object]:
+    actions = []
+    for logical_action in LOGICAL_ACTIONS:
+        source_mode = (
+            "conceptual_prompt"
+            if logical_action.endswith(".conceptual")
+            else "documents"
+            if ".documents." in logical_action
+            else "repository"
+        )
+        actions.append(
+            {
+                "logical_action": logical_action,
+                "source_mode": source_mode,
+                "candidates": [
+                    {
+                        "logical_agent": "gemini",
+                        "provider_surface": "native_cli",
+                        "model_lineage": "google",
+                        "shared_resource": "agy_pool",
+                        "activation": "active",
+                        "status": "unavailable",
+                        "implementation_fingerprint": None,
+                        "executable_content_sha256": None,
+                        "adapter_wire_sha256": None,
+                        "observed_model": None,
+                        "catalog_digest": None,
+                        "metadata_process_count": 0,
+                        "diagnostic_code": "not_ready",
+                    }
+                ],
+            }
+        )
+    return {
+        "wire_contract_sha256": wire_sha256,
+        "request_id": "runtime-status-1",
+        "author_lineage": author_lineage,
+        "status": "ok",
+        "result": {"actions": actions},
     }
-    descriptor: dict[str, object] = {
-        "schema_version": 2,
-        "runtime_protocol_version": 3,
-        "logical_actions": list(LOGICAL_ACTIONS),
-        "base_transport_actions": [list(row) for row in TRANSPORT_ACTIONS],
-        "valid_action_source_pairs": [list(row) for row in ACTION_SOURCE_PAIRS],
-        "semantic_request": semantic_request,
-        "success_response": dict(closed_schema),
-        "failure_response": dict(closed_schema),
-        "artifacts": {
-            name: dict(closed_schema)
-            for name in (
-                "review_findings",
-                "governance_verdict",
-                "context_text",
-                "private_patch",
-            )
-        },
-        "execution_receipt": dict(closed_schema),
-        "zero_inference_readiness": dict(closed_schema),
-        "bounded_diagnostics": dict(closed_schema),
-        "routing_source_sha256": "1" * 64,
-    }
-    encoded = json.dumps(
-        descriptor, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    return descriptor, hashlib.sha256(encoded).hexdigest()
 
 
 def _load(name: str, path: Path):
@@ -183,11 +193,30 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             descriptor, expected_sha256=descriptor_sha256
         )
         self.assertEqual(snapshot.logical_actions, frozenset(LOGICAL_ACTIONS))
+        self.assertEqual(
+            dict(snapshot.logical_action_source_modes),
+            LOGICAL_ACTION_SOURCE_MODES,
+        )
         self.assertEqual(snapshot.transport_actions, frozenset(TRANSPORT_ACTIONS))
         self.assertEqual(
             snapshot.action_source_pairs,
             frozenset(ACTION_SOURCE_PAIRS),
         )
+
+    def test_public_client_rejects_the_previous_wire_schema(self) -> None:
+        client = _load("wire_three_only_runtime_client", PLUGIN / "runtime_client.py")
+        descriptor, _digest = _wire_descriptor()
+        descriptor["schema_version"] = 2
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            client.validate_wire_descriptor(
+                descriptor, expected_sha256=hashlib.sha256(encoded).hexdigest()
+            )
 
     def test_manifest_schema_carries_only_the_top_level_wire_descriptor(self) -> None:
         schema = json.loads(
@@ -203,6 +232,55 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         artifact = properties["artifacts"]["items"]
         self.assertNotIn("contracts", artifact["properties"])
         self.assertNotIn("route_contract_version", artifact["properties"])
+        self.assertEqual(
+            properties["wire_contract"]["properties"]["schema_version"],
+            {"const": 3},
+        )
+
+    def test_committed_manifest_is_the_schema_four_descriptor_placeholder(self) -> None:
+        manifest = json.loads(
+            (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            set(manifest),
+            {
+                "schema_version",
+                "protocol_version",
+                "contract_version",
+                "wire_contract",
+                "wire_contract_sha256",
+                "channel",
+                "artifacts",
+            },
+        )
+        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["protocol_version"], 3)
+        self.assertEqual(manifest["contract_version"], 4)
+        self.assertEqual(manifest["channel"], "production")
+        self.assertEqual(manifest["artifacts"], [])
+
+        descriptor = manifest["wire_contract"]
+        self.assertEqual(descriptor["schema_version"], 3)
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+        self.assertEqual(
+            hashlib.sha256(encoded).hexdigest(),
+            manifest["wire_contract_sha256"],
+        )
+        self.assertEqual(descriptor["logical_actions"], list(LOGICAL_ACTIONS))
+        self.assertEqual(
+            descriptor["base_transport_actions"],
+            [list(row) for row in TRANSPORT_ACTIONS],
+        )
+        self.assertEqual(
+            descriptor["valid_action_source_pairs"],
+            [list(row) for row in ACTION_SOURCE_PAIRS],
+        )
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:
         client = _load("direct_runtime_client_no_broker", PLUGIN / "runtime_client.py")

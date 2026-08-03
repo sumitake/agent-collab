@@ -10,14 +10,22 @@ description: Use when the user says "agent runtime status," "check agent runtime
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON readiness request on stdin. Before constructing it, read the **Coordinator readiness request schema** in `<plugin-root>/README.md`; never invent fields. The public coordinator re-observes the active host, validates the zero-inference readiness request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. This single call asks the runtime for the complete all-action readiness matrix and never invokes a model.
 
 # Agent runtime status
 
 Report the installed package's verified direct-runtime state. Run
 `python3 "<plugin-root>/migration_doctor.py" --json` for legacy-package and host
 profile observations, then submit zero-inference readiness requests through
-`python3 "<plugin-root>/coordinator.py"` for the required logical actions.
+`python3 "<plugin-root>/coordinator.py"` once for the complete action matrix:
+
+```json coordinator-request
+{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
+```
+
+The coordinator derives the author lineage from the current host. Do not add a
+prompt, source, provider, action, model, or version field, and do not issue one
+request per action.
 
 Readiness is action- and source-mode-specific. Report logical agent, provider
 surface, lineage, shared pool, and observed executable/model/catalog identity

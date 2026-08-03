@@ -50,6 +50,19 @@ def _clean(value: object, *, limit: int = 4096) -> str:
     return candidate
 
 
+def _observed_session(*names: str) -> tuple[str, bool]:
+    """Return the first host session observation and whether aliases conflict."""
+
+    values = [
+        value
+        for name in names
+        if (value := _clean(os.environ.get(name), limit=256))
+    ]
+    if not values:
+        return "", False
+    return values[0], len(set(values)) > 1
+
+
 def _explicit_profile(config: Mapping[str, str]) -> HostProfile:
     allowed = {
         "primary_id",
@@ -80,7 +93,7 @@ def _explicit_profile(config: Mapping[str, str]) -> HostProfile:
         runtime,
         session,
         True,
-        governance_ready=family != "unknown" and bool(model),
+        governance_ready=family != "unknown",
     )
 
 
@@ -92,15 +105,41 @@ def resolve_profile(explicit_config: Mapping[str, str] | None = None) -> HostPro
             raise ValueError("explicit host profile is invalid")
         return _explicit_profile(explicit_config)
 
-    candidates = []
-    if _clean(os.environ.get("CODEX_THREAD_ID")):
-        candidates.append(("codex", os.environ["CODEX_THREAD_ID"], os.environ.get("CODEX_MODEL", "")))
-    if _clean(os.environ.get("CLAUDE_SESSION_ID")):
-        candidates.append(("claude", os.environ["CLAUDE_SESSION_ID"], os.environ.get("CLAUDE_MODEL", "")))
-    if _clean(os.environ.get("ANTIGRAVITY_SESSION_ID")):
-        candidates.append(("antigravity", os.environ["ANTIGRAVITY_SESSION_ID"], os.environ.get("ANTIGRAVITY_MODEL", "")))
-    if _clean(os.environ.get("OPENCODE_SESSION_ID")):
-        candidates.append(("zcode", os.environ["OPENCODE_SESSION_ID"], os.environ.get("OPENCODE_MODEL", "")))
+    candidates: list[tuple[str, str, str, bool]] = []
+    host_observations = (
+        (
+            "codex",
+            ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+            ("CODEX_ACTIVE_MODEL", "CODEX_MODEL"),
+        ),
+        (
+            "claude",
+            ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"),
+            ("CLAUDE_CODE_MODEL", "CLAUDE_MODEL"),
+        ),
+        (
+            "antigravity",
+            ("ANTIGRAVITY_SESSION_ID",),
+            ("ANTIGRAVITY_ACTIVE_MODEL", "ANTIGRAVITY_MODEL"),
+        ),
+        (
+            "zcode",
+            ("ZCODE_SESSION_ID", "OPENCODE_SESSION_ID"),
+            ("OPENCODE_ACTIVE_MODEL", "OPENCODE_MODEL"),
+        ),
+    )
+    for primary_id, session_names, model_names in host_observations:
+        session, conflict = _observed_session(*session_names)
+        if session:
+            model = next(
+                (
+                    value
+                    for name in model_names
+                    if (value := _clean(os.environ.get(name)))
+                ),
+                "",
+            )
+            candidates.append((primary_id, session, model, conflict))
     if len(candidates) != 1:
         return HostProfile(
             "unknown",
@@ -111,7 +150,7 @@ def resolve_profile(explicit_config: Mapping[str, str] | None = None) -> HostPro
             False,
             identity_conflict=len(candidates) > 1,
         )
-    primary_id, session, model = candidates[0]
+    primary_id, session, model, identity_conflict = candidates[0]
     model = _clean(model)
     family = _PRIMARY_FAMILIES[primary_id]
     return HostProfile(
@@ -121,7 +160,8 @@ def resolve_profile(explicit_config: Mapping[str, str] | None = None) -> HostPro
         _PRIMARY_RUNTIMES[primary_id],
         session,
         False,
-        governance_ready=family != "unknown" and bool(model),
+        governance_ready=family != "unknown" and not identity_conflict,
+        identity_conflict=identity_conflict,
     )
 
 

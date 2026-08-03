@@ -30,6 +30,7 @@
         "bounded_diagnostics",
         "execution_receipt",
         "failure_response",
+        "logical_action_source_modes",
         "logical_actions",
         "routing_source_sha256",
         "runtime_protocol_version",
@@ -40,7 +41,7 @@
         "zero_inference_readiness"
       ],
       "properties": {
-        "schema_version": {"const": 2},
+        "schema_version": {"const": 3},
         "runtime_protocol_version": {"const": 3},
         "routing_source_sha256": {
           "type": "string",
@@ -52,6 +53,36 @@
           "maxItems": 11,
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
+        },
+        "logical_action_source_modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "architecture.conceptual",
+            "architecture.repository",
+            "codegen.repository",
+            "context.documents.extract",
+            "context.documents.reason",
+            "context.repository.extract",
+            "context.repository.reason",
+            "frontend_codegen.repository",
+            "frontend_review.repository",
+            "governance.repository",
+            "review.repository"
+          ],
+          "properties": {
+            "architecture.conceptual": {"const": "conceptual_prompt"},
+            "architecture.repository": {"const": "repository"},
+            "codegen.repository": {"const": "repository"},
+            "context.documents.extract": {"const": "documents"},
+            "context.documents.reason": {"const": "documents"},
+            "context.repository.extract": {"const": "repository"},
+            "context.repository.reason": {"const": "repository"},
+            "frontend_codegen.repository": {"const": "repository"},
+            "frontend_review.repository": {"const": "repository"},
+            "governance.repository": {"const": "repository"},
+            "review.repository": {"const": "repository"}
+          }
         },
         "base_transport_actions": {
           "type": "array",

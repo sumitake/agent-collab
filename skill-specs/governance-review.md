@@ -7,9 +7,10 @@ description: Use when the operator says "governance review," "high-stakes review
 # Independent governance review
 
 Use only `governance.repository` with the canonical `repo_root`, exact artifact
-or task, and observed author lineage. Resolve the plugin root, read the
-coordinator schema, and submit one semantic request. Do not send a provider
-route/action pair.
+or task. The coordinator observes author lineage from the current host; never
+supply it as a request field. Resolve the plugin root, read the coordinator
+schema, and submit one semantic request. Do not send a provider route/action
+pair.
 
 The compiled policy excludes the author lineage and admits only candidates
 with governance authority, repository evidence, and the closed verdict

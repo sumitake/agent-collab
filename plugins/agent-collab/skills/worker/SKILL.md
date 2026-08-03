@@ -15,9 +15,9 @@ Use `codegen.repository` for ordinary code generation or
 repository patch actions, not read-only planning or governance.
 
 Provide the canonical `repo_root`, bounded prompt, target agent only when
-explicitly requested, and observed author lineage when independence matters.
-Never send a model name, provider CLI version, provider transport action, tool
-list, or raw command.
+explicitly requested. The coordinator observes author lineage from the current
+host; never supply it as a request field. Never send a model name, provider CLI
+version, provider transport action, tool list, or raw command.
 
 The provider may inspect, edit, and test only the disposable copy. It returns a
 binary-safe provider-only patch plus bounded summary and test claims. It never

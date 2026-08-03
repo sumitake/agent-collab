@@ -41,6 +41,26 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertNotIn("runtime_setup.py", archive.REQUIRED_ROOTS)
         self.assertNotIn("execute-output-contract-v1.json", archive.REQUIRED_ROOTS)
 
+    def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
+        archive = _load()
+        descriptor, digest = _wire_descriptor()
+        manifest = {
+            "schema_version": 4,
+            "protocol_version": 3,
+            "contract_version": 4,
+            "wire_contract": descriptor,
+            "wire_contract_sha256": digest,
+            "channel": "production",
+            "artifacts": [],
+        }
+        encoded = json.dumps(manifest, separators=(",", ":")).encode()
+        duplicate = b'{"schema_version":4,' + encoded[1:]
+        with self.assertRaises(ValueError):
+            archive._parse_manifest(duplicate)
+        oversized = b" " * (archive.runtime_bundle.MAX_MANIFEST_BYTES + 1) + encoded
+        with self.assertRaises(ValueError):
+            archive._parse_manifest(oversized)
+
 
 if __name__ == "__main__":
     unittest.main()

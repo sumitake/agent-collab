@@ -108,10 +108,19 @@ def _validate_json_tree(root: Any) -> None:
             _raise("runtime manifest contains a non-JSON value")
 
 
-def load_closed_json_object(raw: bytes) -> Dict[str, Any]:
+def load_closed_json_object(
+    raw: bytes, *, max_bytes: int = MAX_MANIFEST_BYTES
+) -> Dict[str, Any]:
     """Decode one bounded JSON object with duplicate/non-finite/float rejection."""
 
-    if type(raw) is not bytes or not raw or len(raw) > MAX_MANIFEST_BYTES:
+    if (
+        type(max_bytes) is not int
+        or type(max_bytes) is bool
+        or not 1 <= max_bytes <= MAX_BUNDLE_BYTES
+        or type(raw) is not bytes
+        or not raw
+        or len(raw) > max_bytes
+    ):
         _raise("runtime manifest bytes are invalid")
     try:
         text = raw.decode("utf-8")

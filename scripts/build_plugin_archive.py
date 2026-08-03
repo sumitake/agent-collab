@@ -206,7 +206,7 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
             if not chunk:
                 break
             chunks.append(chunk)
-            if sum(len(part) for part in chunks) > MAX_ARTIFACT_BYTES:
+            if sum(len(part) for part in chunks) > runtime_bundle.MAX_MANIFEST_BYTES:
                 raise ValueError("runtime manifest is unreasonably large")
         return b"".join(chunks)
     except OSError as exc:
@@ -220,12 +220,10 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
 
 def _parse_manifest(data: bytes) -> dict[str, object]:
     try:
-        manifest = json.loads(data.decode("utf-8"))
-    except (UnicodeError, ValueError, RecursionError) as exc:
+        _artifact, _wire, manifest = runtime_client.parse_manifest_bytes(data)
+    except ValueError as exc:
         raise ValueError("runtime manifest is unreadable") from exc
-    try:
-        runtime_client.validate_manifest_document(manifest)
-    except ValueError:
+    if type(manifest) is not dict:
         raise ValueError("runtime manifest root or version is invalid")
     return manifest
 

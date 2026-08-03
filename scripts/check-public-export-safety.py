@@ -578,7 +578,10 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
     manifest_path = root / "plugins" / "agent-collab" / "runtime-manifest.json"
     signing_policy_path = root / "plugins" / "agent-collab" / "signing_policy.py"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw_manifest = manifest_path.read_bytes()
+        validated_item, _wire, manifest = runtime_client.parse_manifest_bytes(
+            raw_manifest, require_artifact=True
+        )
     except (OSError, ValueError, RecursionError):
         return Violation("unmanifested_runtime", str(relative))
     try:
@@ -597,12 +600,6 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         pinned_values = []
     pinned_team = pinned_values[0] if len(pinned_values) == 1 else ""
 
-    try:
-        validated_item, _wire = runtime_client.validate_manifest_document(
-            manifest, require_artifact=True
-        )
-    except ValueError:
-        return Violation("unmanifested_runtime", str(relative))
     item = manifest["artifacts"][0]
     signing = item.get("signing")
     try:

@@ -27,7 +27,6 @@ Every request contains exactly these common fields:
   "request_id": "review-123",
   "logical_action": "review.repository",
   "target_agent": null,
-  "author_lineage": "openai",
   "timeout_ms": 120000,
   "prompt": "Review the requested change.",
   "repo_root": "/absolute/canonical/repository"
@@ -39,8 +38,8 @@ Every request contains exactly these common fields:
 - `logical_action` is one of the 11 actions below.
 - `target_agent` is `null` unless the user explicitly named an agent. It is a
   logical agent name, not a provider or model selector.
-- `author_lineage` is the observed author family or `null`. Governance work
-  uses it for independence policy.
+- The coordinator observes the current host family and adds `author_lineage`
+  internally. A caller-supplied lineage is rejected.
 - `timeout_ms` is 1–600000. The public client owns this outer deadline.
 - `prompt` is non-empty UTF-8, bounded to 1 MiB.
 - Every repository action adds exactly one canonical absolute `repo_root`.
@@ -68,9 +67,16 @@ review.repository
 Old `route`, `action`, `row`, provider, model, and artifact-proof request fields
 are rejected. There is no alias or translator.
 
+Runtime status uses one separate closed request. It has no prompt or source and
+returns every logical action in one zero-inference snapshot:
+
+```json
+{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
+```
+
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with runtime protocol 3,
+The workspace build emits one schema-4 manifest with wire schema 3, runtime protocol 3,
 native contract 4, and provider runtime `3.0.0`. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
@@ -128,8 +134,8 @@ ineligible target fails typed rather than being silently replaced.
 
 ## Context skill
 
-`context` replaces the removed size-branded `long-context` surface. It supports
-exactly one source mode:
+`context` is the sole source-grounded synthesis and extraction surface. It
+supports exactly one source mode:
 
 - `context.documents.extract` or `context.documents.reason` with bounded inline
   documents; or
@@ -149,7 +155,9 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 11/12/16 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness needs no process probe.
+residue is reported separately. Runtime readiness launches the same signed
+one-shot runtime, performs no model inference, and may use one bounded catalog
+metadata process for each OpenCode lineage.
 
 ## Distribution boundary
 

@@ -75,10 +75,17 @@ A focused objective produces focused output. "Find security issues" produces a g
 
 ### 3. Call the verifier
 
-Submit the sealed red-team role through `python3 "<plugin-root>/coordinator.py"` with
-`effort='high'` in every eligible advisory row and no `tier` request field. Central policy chooses an eligible independent
-reviewer. Use this prompt template — the JSONL output schema is a functional
-contract; downstream tooling consumes it:
+Submit the sealed red-team role through `python3 "<plugin-root>/coordinator.py"` using the
+documented closed coordinator request below. Central policy chooses an eligible
+independent reviewer. Frontmatter `effort` is host guidance and is never a
+coordinator request field.
+
+```json coordinator-request
+{"request_id":"red-team-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>"}
+```
+
+Use this prompt template — the JSONL output schema is a functional contract;
+downstream tooling consumes it:
 
 ```
 You are a red-team agent. Your objective: break the [validation logic / API contract / parser / prompt pipeline / policy] below. Generate exactly N adversarial inputs — exact strings, payloads, or scenarios — designed to bypass, crash, or trigger misbehavior in the target system.
@@ -96,13 +103,10 @@ If you cannot generate N inputs that meet the criterion (e.g., the system genuin
 [Specification + code/rule definition]
 ```
 
-**Retry-on-malformed.** If the response is not valid JSONL — wrapped in a code fence, with conversational preamble, or with malformed JSON on any line — retry exactly once with:
-
-> Previous response was not valid JSONL. Re-emit RAW JSONL with NO code fence (do not wrap in ```json blocks), one JSON object per line, nothing else. Preserve all attack inputs; only the format needs correcting.
-
-If the second attempt is also malformed, surface that explicitly. A malformed red-team output is also a signal: the verifier may have hit a content-policy guardrail (refused to generate certain attack classes), and that refusal itself is information about the verifier's limits.
-
-Code-fence wrapping has been an empirical pattern on the Gemini side; less common from Claude-family verifiers. The retry pattern is load-bearing regardless of which family is acting as verifier.
+Malformed output is a terminal typed `protocol_error` for this request. Surface
+the failure explicitly; do not fabricate JSONL around prose and do not replay
+the whole coordinator request. A malformed response may signal a content-policy
+guardrail and must remain visible as evidence of the verifier's limits.
 
 ### 4. Verify each finding, then close the loop
 
@@ -143,7 +147,9 @@ The JSONL schema and threat-model + success-criterion framing stay constant acro
 - **Asking the verifier to also fix the vulnerabilities.** Generate attacks (this skill) and propose defenses (the user or the active primary acts on them) are separate steps. The verifier's job is to find attacks, not write the fixes — those are likely to be same-family-correlated patches.
 - **Using `flash` tier.** Adversarial creativity benefits from depth; `flash` produces obvious, commonly-listed inputs the author already defended against.
 - **Skipping the verifier-independence check** when the artifact came from a independent-family agent. Same-family red-teams produce inputs the author would have anticipated.
-- **Skipping the retry-on-malformed step.** Code-fence wrapping is common (especially Gemini-family); the retry is non-optional. If the second attempt fails, surface the failure rather than fabricating JSONL.
+- **Replaying a malformed request.** Treat malformed output as the terminal typed
+  failure returned by the managed runtime. Surface it instead of issuing a
+  second request or fabricating JSONL.
 - **Treating a "Robust" sentinel as a security proof.** It is the verifier's failure-to-find, not a soundness argument. The system may still have undefended classes the verifier did not explore.
 - **Running red-team on artifacts with no adversarial framing.** A draft email or a brainstorm output has no adversary; the exercise produces nothing useful.
 - **Re-running on a surface that has already been red-teamed without changes.** Coverage saturation is real; additional passes return increasingly speculative inputs.

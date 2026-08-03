@@ -10,7 +10,15 @@ description: Use when the user says "agent runtime status," "check agent runtime
 Report the installed package's verified direct-runtime state. Run
 `python3 "<plugin-root>/migration_doctor.py" --json` for legacy-package and host
 profile observations, then submit zero-inference readiness requests through
-`python3 "<plugin-root>/coordinator.py"` for the required logical actions.
+`python3 "<plugin-root>/coordinator.py"` once for the complete action matrix:
+
+```json coordinator-request
+{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
+```
+
+The coordinator derives the author lineage from the current host. Do not add a
+prompt, source, provider, action, model, or version field, and do not issue one
+request per action.
 
 Readiness is action- and source-mode-specific. Report logical agent, provider
 surface, lineage, shared pool, and observed executable/model/catalog identity

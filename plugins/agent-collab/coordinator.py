@@ -22,10 +22,31 @@ _COMMON_KEYS = {
     "request_id",
     "logical_action",
     "target_agent",
-    "author_lineage",
     "timeout_ms",
     "prompt",
 }
+_READINESS_KEYS = {"operation", "request_id", "timeout_ms"}
+
+
+def _reject_nonfinite(_value: str) -> None:
+    raise ValueError("non-finite JSON number")
+
+
+def _closed_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("duplicate JSON object key")
+        document[key] = value
+    return document
+
+
+def _decode_request(raw: bytes) -> object:
+    return json.loads(
+        raw.decode("utf-8"),
+        object_pairs_hook=_closed_json_object,
+        parse_constant=_reject_nonfinite,
+    )
 
 
 def _load(name: str, filename: str):
@@ -43,6 +64,10 @@ def _load(name: str, filename: str):
 
 def _load_runtime():
     return _load("agent_collab_semantic_runtime", "runtime_client.py")
+
+
+def _load_host_policy():
+    return _load("agent_collab_semantic_host_policy", "host_policy.py")
 
 
 def _canonical_repo_root(value: object) -> str:
@@ -87,7 +112,7 @@ def _documents(value: object) -> list[dict[str, str]]:
     return result
 
 
-def validate_request(document: object, wire: object) -> dict[str, Any]:
+def validate_request(document: object, wire: object, host: object) -> dict[str, Any]:
     """Convert the closed coordinator request to the descriptor's native request."""
 
     if type(document) is not dict:
@@ -120,7 +145,7 @@ def validate_request(document: object, wire: object) -> dict[str, Any]:
     prompt = document["prompt"]
     timeout_ms = document["timeout_ms"]
     target_agent = document["target_agent"]
-    author_lineage = document["author_lineage"]
+    author_lineage = getattr(host, "primary_family", "unknown")
     if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
         raise ValueError("request_id is invalid")
     if type(prompt) is not str or not prompt or len(prompt.encode("utf-8")) > MAX_PROMPT_BYTES:
@@ -129,8 +154,14 @@ def validate_request(document: object, wire: object) -> dict[str, Any]:
         raise ValueError("timeout_ms is invalid")
     if target_agent is not None and (type(target_agent) is not str or not target_agent):
         raise ValueError("target_agent is invalid")
-    if author_lineage is not None and (type(author_lineage) is not str or not author_lineage):
-        raise ValueError("author_lineage is invalid")
+    if getattr(host, "identity_conflict", False):
+        author_lineage = None
+    elif type(author_lineage) is not str or author_lineage == "unknown":
+        author_lineage = None
+    if action == "governance.repository" and (
+        author_lineage is None or not getattr(host, "governance_ready", False)
+    ):
+        raise RuntimeError("governance host identity is unavailable")
     native = {
         "wire_contract_sha256": wire.sha256,
         "request_id": request_id,
@@ -144,6 +175,42 @@ def validate_request(document: object, wire: object) -> dict[str, Any]:
     # The runtime client performs the descriptor-schema validation immediately
     # before launch.  This construction keeps the coordinator boundary smaller.
     return native
+
+
+def validate_readiness_request(
+    document: object, wire: object, host: object
+) -> dict[str, Any]:
+    """Add trusted host lineage to one closed all-action readiness request."""
+
+    if type(document) is not dict or set(document) != _READINESS_KEYS:
+        raise ValueError("coordinator readiness request is not closed")
+    if document.get("operation") != "readiness":
+        raise ValueError("coordinator readiness operation is invalid")
+    request_id = document.get("request_id")
+    timeout_ms = document.get("timeout_ms")
+    if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
+        raise ValueError("request_id is invalid")
+    if (
+        type(timeout_ms) is not int
+        or type(timeout_ms) is bool
+        or not 1 <= timeout_ms <= 600_000
+    ):
+        raise ValueError("timeout_ms is invalid")
+    author_lineage = getattr(host, "primary_family", "unknown")
+    if (
+        getattr(host, "identity_conflict", False)
+        or type(author_lineage) is not str
+        or author_lineage == "unknown"
+        or not getattr(host, "governance_ready", False)
+    ):
+        raise RuntimeError("readiness host identity is unavailable")
+    return {
+        "operation": "readiness",
+        "wire_contract_sha256": wire.sha256,
+        "request_id": request_id,
+        "author_lineage": author_lineage,
+        "timeout_ms": timeout_ms,
+    }
 
 
 def _response(request_id: object, status: str, error: str = "", **extra: object) -> dict[str, Any]:
@@ -169,11 +236,26 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             manifest_digest=manifest_digest,
         ), 0
     try:
-        envelope = validate_request(document, wire)
+        host = _load_host_policy().resolve_profile()
+        readiness_requested = (
+            type(document) is dict and document.get("operation") == "readiness"
+        )
+        envelope = (
+            validate_readiness_request(document, wire, host)
+            if readiness_requested
+            else validate_request(document, wire, host)
+        )
+    except RuntimeError as exc:
+        request_id = document.get("request_id") if isinstance(document, Mapping) else None
+        return _response(request_id, "unavailable", str(exc)), 0
     except (KeyError, TypeError, UnicodeError, ValueError) as exc:
         request_id = document.get("request_id") if isinstance(document, Mapping) else None
         return _response(request_id, "invalid_request", str(exc)), 2
-    result = runtime.invoke(envelope=envelope)
+    result = (
+        runtime.readiness(envelope=envelope)
+        if readiness_requested
+        else runtime.invoke(envelope=envelope)
+    )
     response = _response(envelope["request_id"], result.status.value, result.error)
     if result.result is not None:
         response["result"] = result.result
@@ -190,7 +272,7 @@ def main() -> int:
         response, code = _response(None, "invalid_request", "coordinator input limit exceeded"), 2
     else:
         try:
-            document = json.loads(raw.decode("utf-8"))
+            document = _decode_request(raw)
             response, code = process(document)
         except (UnicodeError, ValueError, RecursionError):
             response, code = _response(None, "invalid_request", "invalid JSON request"), 2

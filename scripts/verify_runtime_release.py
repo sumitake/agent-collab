@@ -186,14 +186,11 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
     try:
         if stat.S_ISLNK(manifest_path.lstat().st_mode):
             return None, manifest_path, ["runtime manifest is a symlink"]
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _artifact, _wire, data = runtime_client.parse_manifest_bytes(
+            manifest_path.read_bytes(), require_artifact=True
+        )
     except (OSError, ValueError, RecursionError):
         return None, manifest_path, ["runtime manifest is unreadable"]
-    try:
-        runtime_client.validate_manifest_document(data, require_artifact=True)
-    except ValueError:
-        errors.append("runtime manifest root or version is invalid")
-        return data if isinstance(data, dict) else None, manifest_path, errors
     if len(data["artifacts"]) != 1:
         errors.append("activation release requires exactly one Darwin-arm64 artifact")
     return data, manifest_path, errors
@@ -595,7 +592,9 @@ def verify_evidence(root: Path, evidence_path: Path, *, git_sha: str) -> list[st
     try:
         if evidence.get("manifest_sha256") != _sha256(manifest_path):
             errors.append("runtime evidence manifest digest mismatch")
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _artifact, _wire, manifest = runtime_client.parse_manifest_bytes(
+            manifest_path.read_bytes(), require_artifact=True
+        )
         item = manifest["artifacts"][0]
         records = runtime_bundle.validate_file_records(item["files"])
         artifact_digest = runtime_bundle.compute_bundle_identity(records)
