@@ -37,7 +37,7 @@ DESIGN
             second-opinion, debate, code-review, qa-verify, logic-check,
             red-team, merge-resolve
         Omitted by default for skills in the explicit NO list:
-            brainstorm, long-context, simulate-user, delegate, dev-delegate,
+            brainstorm, context, simulate-user, delegate, dev-delegate,
             chain, chain-configurator
         Unclassified names default to INCLUDED with a TODO note (safer
         default — easier to delete a block than to remember to add it).
@@ -76,7 +76,7 @@ VERIFIER_INDEPENDENCE_YES = frozenset({
 })
 VERIFIER_INDEPENDENCE_NO = frozenset({
     "brainstorm",
-    "long-context",
+    "context",
     "simulate-user",
     "delegate",
     "dev-delegate",

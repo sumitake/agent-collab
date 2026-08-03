@@ -1,42 +1,28 @@
 ---
 name: governance-review
-version: 4.9.1
-description: Use when the operator says "governance review," "high-stakes review," "tiebreaker," or "second opinion." Also offer this proactively when reviewer-family independence must be enforced.
+version: 5.0.0
+description: Use when the operator says "governance review," "high-stakes review," "authoritative verdict," or "tiebreaker." Also offer this when reviewer-family independence and an exact repository-grounded verdict must be enforced.
 ---
 
-# Run an independent governance review
+## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file and invoke only
-`python3 "<plugin-root>/coordinator.py"` with a bounded governance request that
-includes captured artifact content and author-model provenance.
-Read the **Coordinator request schema** in `<plugin-root>/README.md` before
-constructing the request; never invent fields or route/action pairs.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
-## Workflow
+# Independent governance review
 
-Resolve both the active primary family and the immutable artifact-author
-family. If either is unknown, fail closed with `unknown_family`; preserve the
-error detail that identifies which snapshot could not be proved. Exclude both
-families from the reviewer panel, tiebreaker, fallback, and retry set.
+Use only `governance.repository` with the canonical `repo_root`, exact artifact
+or task, and observed author lineage. Resolve the plugin root, read the
+coordinator schema, and submit one semantic request. Do not send a provider
+route/action pair.
 
-Seal the request as read-only authority. A governance review must
-never enter a mutation-capable worker route. If no independent managed reviewer
-is eligible, return `unavailable`; a specifically selected same-family route is
-`same_family_blocked`. Do not weaken independence or use a same-family result.
+The compiled policy excludes the author lineage and admits only candidates
+with governance authority, repository evidence, and the closed verdict
+artifact. A specifically selected ineligible or same-family agent fails typed;
+it is never silently replaced. Architecture, review, context, frontend critique,
+and private-patch codegen artifacts cannot satisfy governance.
 
-The only eligible advertised read-only actions are Gemini `governance`, Codex
-advisory, and Grok `governance`. OpenCode plan, every build role, and
-the output-only `composer/codegen` compatibility route are never governance-
-review candidates.
-
-Gemini governance is a distinct broker-only action, never an advisory alias.
-Accept its result only when the public client validates the complete artifact-
-bound governance proof, including canonical real-HOME containment, controlling
-PTY, state lease, cleanup, exact model/effort, response hash, and proof hash.
-Gemini advisory or long-context output is not governance evidence.
-
-Claude participation can occur only through a separately configured host-owned
-async transport after readiness is observed. The public coordinator neither
-sends nor accepts governance over `inbox/async`; never create a synchronous
-Claude route. Execution mechanics stay inside the verified co-packaged native
-artifact, with typed result and provenance preserved.
+Accept a verdict only with the provider-neutral execution receipt bound to the
+selected edge, source, attempt, artifact, and evidence. Provider-specific proof
+objects, model names, session identifiers, raw tool streams, and stderr do not
+grant authority. The reviewer must demonstrate native reads of the exact
+repository and the caller fingerprint must remain unchanged.

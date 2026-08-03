@@ -25,7 +25,7 @@ Use this skill when:
 - **The subtasks have sequential dependencies** (Step 2 needs Step 1's output). The skill is for independent fan-out only.
 - **The task is "do this N times" with no cross-model coverage value.** Use {{ primary_agent }}'s native parallel-subagent tool — it avoids the cross-model coordination overhead, has lower latency, and produces uniform output without annotation.
 - **The list has only 1–2 items.** The orchestration overhead exceeds the benefit; just do them serially.
-- **The user wants a single synthesized answer** rather than per-item output. Cross-family delegation produces per-item attributed results; a single synthesized answer is `long-context` or `second-opinion` territory.
+- **The user wants a single source-grounded synthesis** rather than per-item output. Use `context` for a bounded corpus or `second-opinion` for an authored draft.
 
 ## Procedure
 
@@ -70,7 +70,8 @@ ITEMS: [Item 1, Item 2, Item 3]
 For each row, [domain-specific instruction — e.g., "use publicly verifiable sources only" or "cite the year of the data point in parentheses"].
 ```
 
-**Retry-on-malformed.** If {{ verifier_agent }}'s output doesn't match the requested format, retry once with: "Previous response didn't match the requested format. Re-emit strictly per the template above ([format constraint]), no preamble or commentary." If still malformed, surface that to the user — a malformed-after-retry response is information, not something to paper over.
+If the returned output does not match the requested format, preserve the typed
+failure or malformed artifact and surface it. Do not replay the provider request.
 
 ### 4. Execute {{ primary_agent }}'s portion in parallel
 
@@ -108,4 +109,5 @@ The pattern is constant: list of independent items, structured output per item, 
 - **Pathological splits** (give {{ verifier_agent }} a single item or all the items). The first wastes parallelism; the second defeats dual coverage. Aim for roughly even.
 - **Using `pro` tier on bulk extraction or lookups.** `flash` is the right default — throughput matters more than depth on each item. Reserve `pro` for items genuinely requiring analysis.
 - **Asking {{ verifier_agent }} for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
-- **Skipping the retry-on-malformed step.** Format mismatch defeats the merge; the retry is non-optional. If the second attempt is also malformed, surface the failure.
+- **Silently replaying malformed output.** Format mismatch is a typed failure;
+  do not spend a second inference behind the user's back.

@@ -1,52 +1,34 @@
 ---
 name: route
-version: 4.9.1
-description: Use when the operator says "ask Codex," "target=gemini," "target=grok," "target=composer," or explicitly names a managed backend. Also offer this proactively when routing needs dynamic primary-family exclusion.
+version: 5.0.0
+description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs primary-family exclusion or a truthful typed availability decision.
 ---
 
-# Route a managed collaboration request
+## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file and invoke only
-`python3 "<plugin-root>/coordinator.py"` with one bounded JSON request.
-Read the **Coordinator request schema** in `<plugin-root>/README.md` before
-constructing it; never invent fields or route/action pairs.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
-## Workflow
+# Route a semantic collaboration request
 
-Resolve the current primary context through the plugin-relative public coordinator,
-then seal the request's role, authority, explicit-target flag, and artifact-
-author provenance before selecting a backend.
+Resolve the plugin root and read `<plugin-root>/README.md`. Submit one bounded
+semantic request to `python3 "<plugin-root>/coordinator.py"` using a closed
+`logical_action`; never send a provider route/action pair.
 
-For an explicit target, invoke only that managed target. If it is unavailable,
-excluded as same-family, or incompatible with the sealed authority, return the
-typed failure and report the capability as temporarily unavailable. Do not
-substitute another backend.
+The public actions are:
 
-For automatic general advisory routing, compute only the eligible Gemini/Codex
-set after excluding the active primary and artifact-author families. Grok joins
-only the separately sealed automatic architecture or governance action.
-Refresh the selected model and family immediately before invocation. Preserve
-read-only authority across attempts and attempt each target at most once.
-Automatic worker routing is temporarily unavailable; require an explicit
-managed worker target.
+- `architecture.conceptual` and `architecture.repository`
+- `review.repository` and `governance.repository`
+- `codegen.repository` and `frontend_codegen.repository`
+- `frontend_review.repository`
+- `context.documents.extract`, `context.documents.reason`,
+  `context.repository.extract`, and `context.repository.reason`
 
-Seal only supported native contracts: Gemini advisory, governance, and long-context are
-read-only; Codex advisory is read-only; OpenCode plan is read-only and OpenCode
-build is tool-capable only inside a private temporary workspace with output-only
-authority to the caller; Grok architecture, governance, and huge-context are
-read-only; the `composer/codegen` compatibility route invokes Grok 4.5 with
-output-only authority. Codex build
-resolves as a separate mutation-capable role but is typed unavailable until the
-hardened backend exists, never advisory. Safe mode makes all five model-
-execution targets unavailable. A host async inbox is eligible only after an
-availability observation and exposes readiness only; the public coordinator
-never sends.
+Repository actions require the canonical `repo_root`. Document-context actions
+require bounded `documents` and reject a repository source. Code generation
+returns a private-repository patch and never applies it to the caller.
 
-Managed provider execution uses the canonical user HOME resolved from passwd
-for reliable interactive authentication state. The caller checkout stays
-read-only by default while each request receives a private temporary workspace.
-This does not relax family exclusion, route authority, the signed broker
-boundary, bounded lifecycle, or the prohibition on raw CLI fallbacks.
-
-Execution mechanics belong to the verified co-packaged native artifact. This
-skill contains no provider command and authorizes no direct invocation.
+An explicit `target_agent` is honored or fails typed; it is never silently
+replaced. Automatic selection uses the runtime's compiled policy, authority,
+source, artifact, readiness, and family-independence gates. One selected
+provider attempt is not replayed after a model call. The skill contains no
+provider command, model name, version gate, or transport membership table.

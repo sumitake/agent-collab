@@ -12,6 +12,7 @@ import platform
 import re
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,26 +24,6 @@ SIGNING_POLICY_REL = PLUGIN_REL / "signing_policy.py"
 RUNTIME_BUNDLE_REL = Path("runtime/darwin-arm64/agent-collab-runtime.bundle")
 RUNTIME_REL = RUNTIME_BUNDLE_REL / "agent-collab-runtime"
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
-REQUIRED_CONTRACTS = frozenset(
-    {
-        ("gemini", "advisory"),
-        ("gemini", "governance"),
-        ("gemini", "long_context"),
-        ("codex", "advisory"),
-        ("opencode", "plan"),
-        ("opencode", "build"),
-        ("grok", "architecture"),
-        ("grok", "governance"),
-        ("grok", "huge_context"),
-        ("composer", "codegen"),
-        # Shipped as of v4.4.1. REQUIRED here, not optional: a release gate
-        # validates what WE are about to publish, so requiring the route stops
-        # a future cut from silently dropping a governance capability. The
-        # public client keeps it OPTIONAL because it validates whatever is
-        # already installed, including older field artifacts that predate it.
-        ("codex", "governance"),
-    }
-)
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.IGNORECASE)
 _CODESIGN_TIMESTAMP_RE = re.compile(r"(?m)^Timestamp=(.+)$")
@@ -65,6 +46,22 @@ def _load_runtime_bundle_contract():
 
 
 runtime_bundle = _load_runtime_bundle_contract()
+
+
+def _load_runtime_client_contract():
+    path = REPO_ROOT / PLUGIN_REL / "runtime_client.py"
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_release_runtime_client", path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("runtime client contract cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+runtime_client = _load_runtime_client_contract()
 
 
 def _load_expected_team_id() -> str:
@@ -192,24 +189,9 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError):
         return None, manifest_path, ["runtime manifest is unreadable"]
-    if (
-        not isinstance(data, dict)
-        or set(data)
-        != {
-            "schema_version",
-            "protocol_version",
-            "contract_version",
-            "broker_protocol_version",
-            "channel",
-            "artifacts",
-        }
-        or not _exact_int(data.get("schema_version"), 3)
-        or not _exact_int(data.get("protocol_version"), 2)
-        or not _exact_int(data.get("contract_version"), 3)
-        or not _exact_int(data.get("broker_protocol_version"), 2)
-        or data.get("channel") != "production"
-        or not isinstance(data.get("artifacts"), list)
-    ):
+    try:
+        runtime_client.validate_manifest_document(data, require_artifact=True)
+    except ValueError:
         errors.append("runtime manifest root or version is invalid")
         return data if isinstance(data, dict) else None, manifest_path, errors
     if len(data["artifacts"]) != 1:
@@ -380,34 +362,17 @@ def verify_release(
         "size",
         "sha256",
         "provider_runtime_version",
-        "route_contract_version",
         "signing",
         "files",
-        "contracts",
     }
     if not isinstance(item, dict) or set(item) != expected_fields:
         return False, {}, ["runtime artifact manifest shape is invalid"]
-    if (
-        item.get("provider_runtime_version") != "2.0.0"
-        or item.get("route_contract_version") != 2
-    ):
+    if item.get("provider_runtime_version") != "3.0.0":
         errors.append("runtime artifact contract anchor is invalid")
 
     signing = item.get("signing")
     if not _TEAM_ID_RE.fullmatch(EXPECTED_DEVELOPER_ID_TEAM):
         errors.append("operator Developer ID Team ID is not configured")
-    try:
-        contracts = frozenset(
-            (entry["route"], entry["action"])
-            for entry in item["contracts"]
-            if isinstance(entry, dict) and set(entry) == {"route", "action"}
-        )
-    except (KeyError, TypeError):
-        contracts = frozenset()
-    if contracts != REQUIRED_CONTRACTS or len(item.get("contracts", [])) != len(contracts):
-        errors.append(
-            "runtime artifact does not advertise the exact required route/action contract"
-        )
     try:
         records = runtime_bundle.validate_file_records(item.get("files"))
         artifact_digest = runtime_bundle.compute_bundle_identity(records)

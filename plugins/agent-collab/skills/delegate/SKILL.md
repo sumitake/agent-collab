@@ -1,6 +1,6 @@
 ---
 name: delegate
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Fast
   effort: low
@@ -10,7 +10,7 @@ description: Fan out independent research, summary, extraction, or fact-finding 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host/model, captures artifact provenance, excludes same-family routes, and verifies the co-packaged native manifest. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. Frontmatter `tier` is a routing recommendation, never a coordinator request field. For a review, cross-check, tiebreaker, or fallback over an authored artifact, capture its exact UTF-8 content and observed author model in the optional `artifact` object even when governance is false; never paste it into the prompt as a provenance substitute.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
 # Delegate — fan out independent subtasks for parallel cross-family coverage
 
@@ -32,7 +32,7 @@ Use this skill when:
 - **The subtasks have sequential dependencies** (Step 2 needs Step 1's output). The skill is for independent fan-out only.
 - **The task is "do this N times" with no cross-model coverage value.** Use the active primary's native parallel-subagent tool — it avoids the cross-model coordination overhead, has lower latency, and produces uniform output without annotation.
 - **The list has only 1–2 items.** The orchestration overhead exceeds the benefit; just do them serially.
-- **The user wants a single synthesized answer** rather than per-item output. Cross-family delegation produces per-item attributed results; a single synthesized answer is `long-context` or `second-opinion` territory.
+- **The user wants a single source-grounded synthesis** rather than per-item output. Use `context` for a bounded corpus or `second-opinion` for an authored draft.
 
 ## Procedure
 
@@ -77,7 +77,8 @@ ITEMS: [Item 1, Item 2, Item 3]
 For each row, [domain-specific instruction — e.g., "use publicly verifiable sources only" or "cite the year of the data point in parentheses"].
 ```
 
-**Retry-on-malformed.** If the reviewer's output doesn't match the requested format, retry once with: "Previous response didn't match the requested format. Re-emit strictly per the template above ([format constraint]), no preamble or commentary." If still malformed, surface that to the user — a malformed-after-retry response is information, not something to paper over.
+If the returned output does not match the requested format, preserve the typed
+failure or malformed artifact and surface it. Do not replay the provider request.
 
 ### 4. Execute the active primary's portion in parallel
 
@@ -115,4 +116,5 @@ The pattern is constant: list of independent items, structured output per item, 
 - **Pathological splits** (give the reviewer a single item or all the items). The first wastes parallelism; the second defeats dual coverage. Aim for roughly even.
 - **Using `pro` tier on bulk extraction or lookups.** `flash` is the right default — throughput matters more than depth on each item. Reserve `pro` for items genuinely requiring analysis.
 - **Asking the reviewer for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
-- **Skipping the retry-on-malformed step.** Format mismatch defeats the merge; the retry is non-optional. If the second attempt is also malformed, surface the failure.
+- **Silently replaying malformed output.** Format mismatch is a typed failure;
+  do not spend a second inference behind the user's back.

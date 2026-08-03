@@ -15,6 +15,7 @@ import re
 import shlex
 import stat
 import subprocess
+import sys
 import tarfile
 import zipfile
 from dataclasses import dataclass
@@ -112,6 +113,22 @@ def _load_runtime_bundle_contract():
 
 
 runtime_bundle = _load_runtime_bundle_contract()
+
+
+def _load_runtime_client_contract():
+    path = REPO_ROOT / "plugins" / "agent-collab" / "runtime_client.py"
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_export_runtime_client", path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("runtime client contract cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+runtime_client = _load_runtime_client_contract()
 HARMLESS_AUDIT_LITERALS: dict[Path, frozenset[str | bytes]] = {
     Path("scripts/check-public-export-safety.py"): frozenset(
         EXECUTOR_SOURCES
@@ -162,24 +179,6 @@ PUBLIC_RELEASE_TAG_RE = re.compile(
     r"^(?:v|v-agent-collab-)(?P<major>\d+)\.\d+\.\d+$"
 )
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
-REQUIRED_RUNTIME_CONTRACTS = frozenset(
-    {
-        ("gemini", "advisory"),
-        ("gemini", "governance"),
-        ("gemini", "long_context"),
-        ("codex", "advisory"),
-        ("opencode", "plan"),
-        ("opencode", "build"),
-        ("grok", "architecture"),
-        ("grok", "governance"),
-        ("grok", "huge_context"),
-        ("composer", "codegen"),
-        # Shipped as of v4.4.1; REQUIRED at the release gate so a later cut
-        # cannot silently drop it. Third copy of this allowlist, alongside
-        # verify_runtime_release.py and build_plugin_archive.py.
-        ("codex", "governance"),
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -598,45 +597,14 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         pinned_values = []
     pinned_team = pinned_values[0] if len(pinned_values) == 1 else ""
 
-    if (
-        not isinstance(manifest, dict)
-        or set(manifest)
-        != {
-            "schema_version",
-            "protocol_version",
-            "contract_version",
-            "broker_protocol_version",
-            "channel",
-            "artifacts",
-        }
-        or type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 3
-        or type(manifest.get("protocol_version")) is not int
-        or manifest["protocol_version"] != 2
-        or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 3
-        or type(manifest.get("broker_protocol_version")) is not int
-        or manifest["broker_protocol_version"] != 2
-        or manifest.get("channel") != "production"
-        or not isinstance(manifest.get("artifacts"), list)
-        or len(manifest["artifacts"]) != 1
-        or not isinstance(manifest["artifacts"][0], dict)
-    ):
+    try:
+        validated_item, _wire = runtime_client.validate_manifest_document(
+            manifest, require_artifact=True
+        )
+    except ValueError:
         return Violation("unmanifested_runtime", str(relative))
     item = manifest["artifacts"][0]
     signing = item.get("signing")
-    contracts = item.get("contracts")
-    contract_rows: list[tuple[str, str]] = []
-    if isinstance(contracts, list):
-        for entry in contracts:
-            if not isinstance(entry, dict) or set(entry) != {"route", "action"}:
-                contract_rows = []
-                break
-            route, action = entry.get("route"), entry.get("action")
-            if not isinstance(route, str) or not isinstance(action, str):
-                contract_rows = []
-                break
-            contract_rows.append((route, action))
     try:
         records = runtime_bundle.validate_file_records(item.get("files"))
         bundle_identity = runtime_bundle.compute_bundle_identity(records)
@@ -663,10 +631,8 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             "size",
             "sha256",
             "provider_runtime_version",
-            "route_contract_version",
             "signing",
             "files",
-            "contracts",
         }
         or item.get("platform") != "darwin"
         or item.get("arch") != "arm64"
@@ -675,8 +641,7 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         or item.get("path")
         != "runtime/darwin-arm64/agent-collab-runtime.bundle"
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
-        or item.get("provider_runtime_version") != "2.0.0"
-        or item.get("route_contract_version") != 2
+        or item.get("provider_runtime_version") != "3.0.0"
         or type(item.get("size")) is not int
         or item["size"] != sum(record["size"] for record in records)
         or item.get("sha256") != bundle_identity
@@ -704,8 +669,6 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             record["signing_profile"] != "production_developer_id"
             for record in records
         )
-        or frozenset(contract_rows) != REQUIRED_RUNTIME_CONTRACTS
-        or len(contract_rows) != len(REQUIRED_RUNTIME_CONTRACTS)
     ):
         return Violation("unmanifested_runtime", str(relative))
 
