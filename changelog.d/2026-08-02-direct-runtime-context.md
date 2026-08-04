@@ -9,6 +9,10 @@
   authority membership from one co-packaged wire descriptor. Provider CLI and
   model identities remain observed diagnostics and are never release pins.
 
+- Public failures now expose only a bounded stable `error_code`: signed runtime
+  codes pass through unchanged, while non-contract private text is reduced to
+  its typed runtime status without leaking provider or host detail.
+
 - Accept an owned, non-symlink runtime bundle directory with ordinary child
   link counts while retaining the single-link rule for executable and manifest
   files, so a freshly installed production bundle resolves before invocation.

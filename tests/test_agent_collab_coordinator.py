@@ -138,8 +138,45 @@ class SemanticCoordinatorTests(unittest.TestCase):
             response, code = self.coordinator.process(request)
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "unavailable")
+        self.assertEqual(response["error_code"], "busy")
+        self.assertNotIn("error", response)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["author_lineage"], "openai")
+
+    def test_runtime_free_text_is_reduced_to_a_stable_public_error_code(self) -> None:
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda **_kwargs: self.client.RuntimeResult(
+                self.client.RuntimeStatus.PROVIDER_ERROR,
+                error="provider emitted private failure text",
+            ),
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+        request = {
+            "request_id": "context-private-error",
+            "logical_action": "context.documents.extract",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Extract facts.",
+            "documents": [{"label": "a", "content": "one"}],
+        }
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy
+        ):
+            response, code = self.coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            response,
+            {
+                "request_id": "context-private-error",
+                "status": "provider_error",
+                "error_code": "runtime_provider_error",
+            },
+        )
 
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []
@@ -311,7 +348,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 response = json.loads(completed.stdout)
                 self.assertEqual(completed.returncode, 2)
                 self.assertEqual(response["status"], "invalid_request")
-                self.assertEqual(response["error"], "invalid JSON request")
+                self.assertEqual(response["error_code"], "invalid_json_request")
+                self.assertNotIn("error", response)
 
 
 

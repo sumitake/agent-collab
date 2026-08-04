@@ -18,6 +18,7 @@ MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
 MAX_PROMPT_BYTES = 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_ERROR_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _COMMON_KEYS = {
     "request_id",
     "logical_action",
@@ -214,15 +215,32 @@ def validate_readiness_request(
     }
 
 
-def _response(request_id: object, status: str, error: str = "", **extra: object) -> dict[str, Any]:
+def _response(
+    request_id: object,
+    status: str,
+    error_code: str = "",
+    **extra: object,
+) -> dict[str, Any]:
     response: dict[str, Any] = {
         "request_id": request_id if type(request_id) is str else None,
         "status": status,
     }
-    if error:
-        response["error"] = error
+    if error_code:
+        if _ERROR_CODE_RE.fullmatch(error_code) is None:
+            raise ValueError("coordinator error code is invalid")
+        response["error_code"] = error_code
     response.update(extra)
     return response
+
+
+def _runtime_error_code(result: object) -> str:
+    error = getattr(result, "error", None)
+    if type(error) is str and _ERROR_CODE_RE.fullmatch(error) is not None:
+        return error
+    status = getattr(getattr(result, "status", None), "value", None)
+    if type(status) is str and _ERROR_CODE_RE.fullmatch(status) is not None:
+        return f"runtime_{status}"
+    return "runtime_failure"
 
 
 def process(document: object) -> tuple[dict[str, Any], int]:
@@ -233,7 +251,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         return _response(
             request_id,
             "unavailable",
-            descriptor_error or "direct runtime descriptor is unavailable",
+            "runtime_descriptor_unavailable",
             manifest_digest=manifest_digest,
         ), 0
     try:
@@ -248,16 +266,20 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         )
     except RuntimeError as exc:
         request_id = document.get("request_id") if isinstance(document, Mapping) else None
-        return _response(request_id, "unavailable", str(exc)), 0
+        return _response(request_id, "unavailable", "host_identity_unavailable"), 0
     except (KeyError, TypeError, UnicodeError, ValueError) as exc:
         request_id = document.get("request_id") if isinstance(document, Mapping) else None
-        return _response(request_id, "invalid_request", str(exc)), 2
+        return _response(request_id, "invalid_request", "invalid_request"), 2
     result = (
         runtime.readiness(envelope=envelope)
         if readiness_requested
         else runtime.invoke(envelope=envelope)
     )
-    response = _response(envelope["request_id"], result.status.value, result.error)
+    response = _response(
+        envelope["request_id"],
+        result.status.value,
+        "" if result.status is runtime.RuntimeStatus.OK else _runtime_error_code(result),
+    )
     if result.result is not None:
         response["result"] = result.result
     if result.provenance is not None:
@@ -270,15 +292,15 @@ def process(document: object) -> tuple[dict[str, Any], int]:
 def main() -> int:
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        response, code = _response(None, "invalid_request", "coordinator input limit exceeded"), 2
+        response, code = _response(None, "invalid_request", "input_limit_exceeded"), 2
     else:
         try:
             document = _decode_request(raw)
             response, code = process(document)
         except (UnicodeError, ValueError, RecursionError):
-            response, code = _response(None, "invalid_request", "invalid JSON request"), 2
+            response, code = _response(None, "invalid_request", "invalid_json_request"), 2
         except (OSError, RuntimeError):
-            response, code = _response(None, "unavailable", "coordinator could not load the direct runtime"), 0
+            response, code = _response(None, "unavailable", "coordinator_unavailable"), 0
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 
