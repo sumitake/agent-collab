@@ -126,9 +126,18 @@ class CiSecurityContractTests(unittest.TestCase):
             "python scripts/secret_scan.py",
             "fetch-depth: 0",
             "name: Gitleaks",
-            "gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7",
         ):
             self.assertIn(token, text)
+        # Property, not fixture: the Gitleaks step must exist as a real
+        # `uses:` line pinned to a full commit SHA with a version comment.
+        # Freezing the exact SHA here only mirrored the workflow and broke
+        # every Dependabot bump; WHICH SHA runs is governed by the workflow
+        # diff review (CODEOWNERS) and the repo-wide pin test above.
+        self.assertRegex(
+            text,
+            r"(?m)^\s*(?:-\s*)?uses:\s*"
+            r"gitleaks/gitleaks-action@[0-9a-f]{40}\s+# v\d+(?:\.\d+)*\s*$",
+        )
 
     def test_release_assets_use_download_stable_filenames(self) -> None:
         text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
