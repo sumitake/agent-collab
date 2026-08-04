@@ -188,6 +188,150 @@ Contributors need no access to the private build/sign system. See
   `docs/third-party-skill-provenance.md` records per-file provenance. No
   coordinator, provider, or routing surface is touched.
 
+## What's new - v4.6.0
+
+- **A Claude Code host observes its own active model.** Claude Code does not
+  export the model to the environment, so a Claude host resolved
+  `active_model='unknown'` and was the only host family that could never reach
+  a governance-ready identity; every governance route failed closed with
+  `unknown_family`. The model is now observed from the live session's own
+  transcript, mirroring the existing Codex rollout contract: strict
+  lowercase-UUID session key before any path join, the same ownership,
+  symlink, hardlink and permission predicates, post-open `fstat`
+  re-validation, a bounded tail read, and strict JSON decoding.
+  `CLAUDE_CONFIG_DIR` is honoured, so a relocated installation resolves too.
+  Model validation is by shape rather than a pinned list, so future models
+  resolve with no code change. Identity on a Claude host is observation-only:
+  every field is recorded non-empty, so configuration cannot fill an
+  unobserved session into governance eligibility, and a model that is not
+  anthropic-shaped fails closed rather than reassigning the host-derived
+  family.
+
+## What's new - v4.5.4
+
+- **Gemini governance accepts the access-only ephemeral containment mode.**
+  The public client's proof v1 contract still admits exactly
+  `write_contained_shared_home`. The proof v2 contract now admits exactly two
+  raw case-sensitive containment strings, `write_contained_shared_home` and
+  `nonwriteback_ephemeral_home`, matching the producer's access-only canary
+  mode. A v2 result's containment must equal the independently supplied proof
+  containment exactly; mixed, crossed, hybrid, unknown, or non-string values
+  fail closed, and v1 responses remain shared-home-only. Governance readiness
+  recognizes either exact mode as capability-only and never authorizes
+  execution. This closes the false `runtime Gemini result contract mismatch`
+  protocol error on both lanes (workspace issue #2422).
+
+## What's new - v4.5.3
+
+- **New Codex inbox-monitor starts are idle-token free.** The canonical leased
+  local process keeps its existing 10-second filesystem interval, but the
+  Codex adapter no longer creates or retains a goal for liveness. State checks
+  now occur only on real activation, event, status, stop, or failure turns.
+  Legacy cleanup completes only a monitor goal proven by its structured
+  creation transcript and after the host proves its exec remains independently
+  live and controllable; otherwise it returns
+  `legacy_goal_detach_unavailable` without mutating either lifecycle.
+  Pre-4.5.3 sessions whose legacy goal cannot be safely detached may continue
+  receiving host-scheduled empty model turns until that goal is explicitly
+  stopped; every such turn is constrained to no exec or state poll.
+  Without a proven host-native event wake, Codex reports the honest
+  `degraded_no_event_wake` result instead of `armed`. Claude and Antigravity
+  monitor lifecycles are unchanged.
+
+## What's new - v4.5.2
+
+- **Broker status separates process configuration from momentary activity.**
+  Successful status reports `persistent_process=false` only after the exact
+  live launchd transcript proves that neither top-level
+  `KeepAlive`/`RunAtLoad` properties nor structured event triggers are
+  configured. Any event-trigger block is intentionally persistence-like:
+  ambiguity blocks readiness instead of being mislabeled socket-only.
+  `persistence_state` preserves the full `nonpersistent` / `persistent` /
+  `unproven` result; an unproven live format yields
+  `persistent_process=null` and fails readiness closed. A separate, optional
+  `process_idle` boolean-or-null reports bounded point-in-time quiescence only
+  when that idle probe actually ran; null means unmeasured, never idle. An
+  in-flight request or post-request grace therefore cannot make an otherwise
+  proven callable lane unavailable. Both new status observations are additive
+  and optional for rolling-upgrade consumers. Mutating lifecycle operations
+  never use either observation and still require their full idle proof.
+
+## What's new - v4.5.1
+
+- **Containment is structural, provider-agnostic, and rare by design.** Managed
+  providers authenticate from the canonical user HOME while the caller
+  checkout remains read-only. Each request receives a private temporary
+  workspace in which the provider may use tools, edit, build, and reason
+  agentically; OpenCode build returns output-only material for trusted-primary
+  application. A blocked access attempt is containment success, not an
+  invocation failure. Structural containment failure is reserved for a
+  pre-launch boundary that cannot be established or positive evidence that a
+  write escaped the allowed paths or changed protected source/credentials.
+  Authentication, protocol/output, timeout, provider, teardown, and cleanup
+  failures remain orthogonal. Managed execution does not use output/stderr
+  heuristics or routine direct CLI fallbacks.
+- **The repaired runtime is co-packaged again.** The darwin-arm64 standalone
+  runtime was rebuilt from final workspace `1.0.823` commit
+  `d08b6382710d6d5910d64cf011bcac873a2e1c03`, Developer-ID signed, and Apple
+  notarized as submission `c6d29dec-5351-467d-883e-0b862734567d`. The closed
+  activation manifest pins bundle SHA-256
+  `2cea10cff2030d0238661667cf8d1b83cf9885dc6f4a03b0db4365e891b04f47`;
+  release verification rejects any byte, member, signature, contract, or
+  notarization drift.
+
+## What's new - v4.5.0
+
+- **OpenCode Go is the packaged default.** Managed OpenCode requests now
+  default to `opencode-go/glm-5.2`, Kimi models carry Moonshot provenance, and
+  hosts can enforce the subscription with
+  `AGENT_COLLAB_OPENCODE_PROVIDER=opencode-go`. The guard rejects standard
+  metered OpenCode Zen models, malformed policy, namespace lookalikes, live
+  provider drift, and late envelope drift before native execution.
+
+## What's new - v4.4.2
+
+- **Execute success now requires usable output at both trust boundaries.**
+  The private runtime rejects provider executions that complete with missing,
+  empty, whitespace-only, Unicode-invisible/filler-only,
+  replacement-glyph-only, terminal-control-only, or malformed-terminal text.
+  The public client independently enforces the same content-addressed
+  conformance contract and frozen Unicode-16 blankness table against stale
+  signed runtimes. The canonical release archive carries the exact contract
+  beside the client. Response classification retains the original absolute
+  request deadline and returns typed `timeout` if a large blank/control stream
+  consumes the remaining budget. Readiness remains
+  structurally separate, while typed containment, deadline, teardown, and
+  provider failures retain their existing classifications.
+
+## What's new - v4.4.1
+
+- **Freshly built native runtime.** The darwin-arm64 provider runtime is rebuilt,
+  Developer-ID signed, and notarized from the current workspace source closure,
+  replacing a bundle that predated several runtime-behavior changes. v4.4.0 was
+  cut tag-only and rolled back for exactly that reason; `cut_release.py` now
+  carries a fail-closed runtime-currency gate so a stale bundle cannot ship.
+
+## What's new - v4.4.0
+
+- **Domain-expert skill pack.** Sixteen new pure-prompt, host-neutral
+  expertise skills (languages, infrastructure/SRE, data/AI, LLM evals, and
+  writing quality) join the collaboration/governance set, grouped separately
+  in the skills table so the package's collaboration core stays scannable.
+  Authored under workspace ownership after an untrusted-input audit of the
+  MIT-licensed VoltAgent subagent corpora (pinned source SHAs recorded in the
+  package README's attribution note and the changelog fragment); no
+  coordinator, provider, or routing surface is touched.
+
+## What's new - v4.3.5
+
+- **Continuity-safe Gemini governance proofs.** The public runtime client now
+  accepts the exact legacy proof-v1 contract and the exact recovery-capable
+  proof-v2 contract as disjoint schemas. Any v2 discriminator selects strict
+  v2 validation with no fallback to v1, preserving callable retained lanes
+  while rejecting partial, hybrid, coerced, or contradictory recovery claims.
+  The documented trust boundary makes explicit that these are consistency
+  proofs carried by a verified child runtime, not cryptographic signatures.
+
 The full, versioned release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## System architecture
