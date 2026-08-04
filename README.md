@@ -67,7 +67,14 @@ trust:
   named explicitly per call today, with automatic cost-aware worker routing the
   next step on that path; an explicit target never silently substitutes another
   provider, and model plus reasoning effort are disclosed per invocation, so
-  cost and quality stay auditable.
+  cost and quality stay auditable. Delegate selection follows a fixed order:
+  capability first (the delegate must clear the task's quality bar — an
+  under-capable cheap choice that forces rework costs more than it saves),
+  availability second (an exhausted quota pool is infeasible, not merely
+  expensive), and only then cost rank, preferring routes that conserve the
+  primary's own family pool — models of one vendor family draw one shared
+  quota, so a cheaper same-family model still spends the budget that funds
+  frontier work.
 - **A hard security boundary around providers.** Provider CLIs are reached
   only through a signed, notarized native runtime with per-member digest
   verification, socket-activated zero-idle execution, and typed-unavailable
@@ -686,6 +693,7 @@ handoff.
 
 The unified package includes review, intent, code/security, QA, logic,
 brainstorming, debate, research, long-context, visual-workflow, delegation, orchestration,
+engineering-process (`decision-map`, `prototype`, `architecture-review`),
 readiness, teamwork, migration, native inbox-monitor lifecycle, and explicit managed-routing skills under the
 single `/agent-collab:*` namespace. Provider targets are request parameters,
 not plugin identities.
