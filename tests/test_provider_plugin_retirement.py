@@ -142,11 +142,20 @@ class ProviderPluginRetirementTests(unittest.TestCase):
         secret_scan = (
             ROOT / ".github" / "workflows" / "secret-scan.yml"
         ).read_text(encoding="utf-8")
+        # Property, not fixture: each required action must appear as a real
+        # `uses:` line pinned to a full commit SHA with a version comment.
+        # The exact SHA/major is deliberately NOT frozen here — freezing it
+        # broke every Dependabot bump while adding no enforcement beyond the
+        # repo-wide pin test and CODEOWNERS review of workflow diffs.
         self.assertRegex(
-            codeql, r"github/codeql-action/init@[0-9a-f]{40} # v4"
+            codeql,
+            r"(?m)^\s*(?:-\s*)?uses:\s*"
+            r"github/codeql-action/init@[0-9a-f]{40}\s+# v\d+(?:\.\d+)*\s*$",
         )
         self.assertRegex(
-            codeql, r"github/codeql-action/analyze@[0-9a-f]{40} # v4"
+            codeql,
+            r"(?m)^\s*(?:-\s*)?uses:\s*"
+            r"github/codeql-action/analyze@[0-9a-f]{40}\s+# v\d+(?:\.\d+)*\s*$",
         )
         self.assertRegex(codeql, r"(?m)^  actions: read$")
         self.assertIn("id: analyze", codeql)
@@ -156,7 +165,9 @@ class ProviderPluginRetirementTests(unittest.TestCase):
         )
         self.assertIn("if: github.event.repository.private", codeql)
         self.assertRegex(
-            codeql, r"actions/upload-artifact@[0-9a-f]{40} # v4"
+            codeql,
+            r"(?m)^\s*(?:-\s*)?uses:\s*"
+            r"actions/upload-artifact@[0-9a-f]{40}\s+# v\d+(?:\.\d+)*\s*$",
         )
         self.assertIn("path: ${{ steps.analyze.outputs.sarif-output }}", codeql)
         self.assertIn("scripts/secret_scan.py", secret_scan)
