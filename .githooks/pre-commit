@@ -1,5 +1,20 @@
 #!/bin/bash
-# Pre-commit hook wrapper for release consistency verification (M11)
+# Pre-commit hook wrapper for release consistency verification (M11).
+#
+# Resolve the repository root from the INVOKING worktree (git runs hooks with
+# the working directory at the top of that worktree), never from this file's
+# own location: core.hooksPath is an absolute path into the primary checkout,
+# so a hook-file-relative root validates the primary checkout's tree — which
+# can be stale or dirty with another session's edits — instead of the tree
+# actually being committed. Observed 2026-08-05 as a false "NOTICE ... drifted"
+# FAIL from a linked session worktree; the same shape can also yield false
+# PASSes. Fail closed if the root cannot be resolved: a cwd fallback would run
+# whatever tree the current directory happens to name (per Codex cross-family
+# review) — the exact wrong-tree class this wrapper exists to prevent.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPT_DIR/../scripts/check_release_consistency.py"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$REPO_ROOT" ]; then
+  echo "pre-commit: BLOCKED — cannot resolve the invoking worktree root (git rev-parse --show-toplevel failed)" >&2
+  exit 1
+fi
+python3 "$REPO_ROOT/scripts/check_release_consistency.py"

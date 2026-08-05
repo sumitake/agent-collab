@@ -15,9 +15,21 @@
 # Gate 2 — compliance-trace check (scripts/hook-pre-push.py). Always runs,
 # including under the test-gate opt-out; exec'd so the hook's stdin ref data
 # stays available to it.
+#
+# REPO_ROOT is resolved from the INVOKING worktree (git runs hooks with the
+# working directory at the top of that worktree), never from this file's own
+# location: core.hooksPath is an absolute path into the primary checkout, so a
+# hook-file-relative root would run the primary checkout's (possibly stale or
+# dirty) suites and scripts against the wrong tree when pushing from a linked
+# session worktree. Fail closed if the root cannot be resolved: a cwd
+# fallback would run whatever tree the current directory happens to name (per
+# Codex cross-family review) — the exact wrong-tree class this fixes.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$REPO_ROOT" ]; then
+  echo "pre-push: BLOCKED — cannot resolve the invoking worktree root (git rev-parse --show-toplevel failed)" >&2
+  exit 1
+fi
 
 run_tests=1
 if [ "${AGENT_COLLAB_PREPUSH_TESTS-}" = "0" ]; then
@@ -49,4 +61,4 @@ if [ "$run_tests" = "1" ]; then
   }
 fi
 
-exec python3 "$SCRIPT_DIR/../scripts/hook-pre-push.py"
+exec python3 "$REPO_ROOT/scripts/hook-pre-push.py"
