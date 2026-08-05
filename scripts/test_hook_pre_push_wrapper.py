@@ -45,8 +45,15 @@ class PrePushWrapperTests(unittest.TestCase):
         )
         self._write_stub(
             "git",
-            '#!/bin/bash\nif [ -n "${GIT_FAIL:-}" ]; then exit 1; fi\n'
-            'echo "${GIT_BRANCH:-feature-x}"\n',
+            "#!/bin/bash\n"
+            'case "$*" in\n'
+            '  *"rev-parse --show-toplevel"*)\n'
+            '    if [ -n "${GIT_TOPLEVEL_FAIL:-}" ]; then exit 1; fi\n'
+            '    echo "$PWD";;\n'
+            "  *)\n"
+            '    if [ -n "${GIT_BRANCH_FAIL:-}" ]; then exit 1; fi\n'
+            '    echo "${GIT_BRANCH:-feature-x}";;\n'
+            "esac\n",
         )
 
     def tearDown(self) -> None:
@@ -57,17 +64,22 @@ class PrePushWrapperTests(unittest.TestCase):
         p.write_text(body)
         p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    def _run(self, **env_over: str) -> subprocess.CompletedProcess:
+    def _run(
+        self, hook: Path | None = None, **env_over: str
+    ) -> subprocess.CompletedProcess:
         env = dict(os.environ)
         env.pop("AGENT_COLLAB_PREPUSH_TESTS", None)
         env["PATH"] = f"{self.bin}:{env['PATH']}"
         env["STUB_LOG"] = str(self.log)
         env.update(env_over)
+        # git runs hooks with the working directory at the worktree top; the
+        # wrapper's root resolution (rev-parse, pwd fallback) depends on it.
         return subprocess.run(
-            ["bash", str(self.hook)],
+            ["bash", str(hook or self.hook)],
             capture_output=True,
             text=True,
             env=env,
+            cwd=self.root,
             check=False,
         )
 
@@ -120,9 +132,34 @@ class PrePushWrapperTests(unittest.TestCase):
         self.assertIn("hook-pre-push.py", calls[0])
 
     def test_branch_detection_failure_runs_tests(self) -> None:
-        res = self._run(GIT_FAIL="1")
+        res = self._run(GIT_BRANCH_FAIL="1")
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(len(self._calls()), 3)
+
+    def test_rev_parse_failure_blocks_the_push(self) -> None:
+        # Fail closed: without a proven worktree root the wrapper must not run
+        # anything (a cwd fallback would execute whatever tree cwd names).
+        res = self._run(GIT_TOPLEVEL_FAIL="1")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("cannot resolve the invoking worktree root", res.stderr)
+        self.assertEqual(len(self._calls()), 0)
+
+    def test_repo_root_comes_from_invoking_worktree_not_hook_location(self) -> None:
+        # core.hooksPath can point into a DIFFERENT checkout (the primary);
+        # a copy of the hook living outside the invoking worktree must still
+        # resolve every path against the worktree root (the hook's cwd), not
+        # against its own file location.
+        elsewhere = self.root / "elsewhere" / ".githooks"
+        elsewhere.mkdir(parents=True)
+        foreign_hook = elsewhere / "pre-push"
+        foreign_hook.write_text(HOOK_SRC.read_text())
+        foreign_hook.chmod(foreign_hook.stat().st_mode | stat.S_IXUSR)
+        res = self._run(hook=foreign_hook)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        calls = self._calls()
+        self.assertEqual(len(calls), 3)
+        self.assertIn(str(self.root / "scripts" / "hook-pre-push.py"), calls[2])
+        self.assertNotIn("elsewhere", calls[2])
 
     def test_suite_subshells_are_sanitized_of_hook_git_env(self) -> None:
         res = self._run(GIT_DIR="/some/repo/.git/worktrees/x")
