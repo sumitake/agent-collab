@@ -116,6 +116,69 @@ class DirectRuntimeClientTests(unittest.TestCase):
                 result = self.client.invoke(envelope=self._envelope(1000))
         self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
 
+    def test_direct_invocation_preserves_caller_path_for_all_provider_clis(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            current_bin = root / "current-provider-bin"
+            stale_bin = root / "stale-system-bin"
+            current_bin.mkdir()
+            stale_bin.mkdir()
+            provider_names = ("codex", "agy", "grok", "opencode")
+            for directory in (current_bin, stale_bin):
+                for name in provider_names:
+                    executable = directory / name
+                    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                    executable.chmod(0o700)
+
+            observed_path = root / "observed-path"
+            runtime = root / "agent-collab-runtime"
+            runtime.write_text(
+                "#!/bin/sh\n"
+                f"printf '%s' \"$PATH\" > {str(observed_path)!r}\n"
+                "exit 7\n",
+                encoding="utf-8",
+            )
+            runtime.chmod(0o700)
+            resolution = self.client.RuntimeResolution(
+                self.client.RuntimeStatus.OK,
+                path=runtime,
+                bundle_path=root,
+                manifest_digest="a" * 64,
+                artifact_digest="b" * 64,
+                identity=self.client._identity(runtime, executable=True),
+                wire=self.wire,
+            )
+            caller_path = os.pathsep.join((str(current_bin), str(stale_bin)))
+            with mock.patch.dict(
+                os.environ, {"PATH": caller_path}, clear=True
+            ), mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ):
+                result = self.client.invoke(envelope=self._envelope(1000))
+
+            launched_path = observed_path.read_text(encoding="utf-8")
+            resolved = {
+                name: self.client.shutil.which(name, path=launched_path)
+                for name in provider_names
+            }
+            self.assertEqual(result.status, self.client.RuntimeStatus.PROVIDER_ERROR)
+            self.assertEqual(
+                resolved,
+                {name: str(current_bin / name) for name in provider_names},
+            )
+            self.assertEqual(launched_path, caller_path)
+
+    def test_scrubbed_environment_uses_system_path_only_when_path_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as raw, mock.patch.dict(
+            os.environ, {}, clear=True
+        ):
+            environment = self.client._scrubbed_env(Path(raw))
+
+        self.assertEqual(
+            environment["PATH"],
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+
     def test_direct_invocation_uses_the_single_protocol_entrypoint(self) -> None:
         failure_schema = {
             "type": "object",

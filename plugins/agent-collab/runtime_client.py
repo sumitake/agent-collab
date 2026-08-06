@@ -1051,7 +1051,7 @@ class _PrivateTmpCleanupError(RuntimeError):
 
 def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
     env = {
-        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "PATH": os.environ.get("PATH") or "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(tmpdir),
         "LANG": os.environ.get("LANG", "en_US.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "en_US.UTF-8"),
