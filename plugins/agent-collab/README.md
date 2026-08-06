@@ -4,10 +4,12 @@
 installable half of the governed multi-agent engineering model described in
 the [repository README](../../README.md) — cross-family review independence,
 verifiable compliance evidence, and operator final-say, delivered as one
-package for every supported host. This document is the package's technical
-reference; the repository README carries the purpose and governance narrative.
+package for every supported host. This document is the package's low-level
+technical reference. General users should start with the public
+[architecture handbook](../../docs/architecture/README.md) and
+[lifecycle guide](../../docs/architecture/lifecycle-and-operations.md).
 
-Current: **4.9.0**
+Current: **4.9.1**
 
 It resolves `primary_id`, `primary_family`, `active_model`, `host_runtime`, and
 `session_identifier` from the current host or explicit configuration. On a
@@ -78,7 +80,7 @@ one macOS `LC_BUILD_VERSION` with minimum macOS 14.0 instead of trusting those
 manifest labels. The broker transport and provider protocol are both version 2.
 The package
 carries both `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`; both
-identify this same 4.9.0 package.
+identify this same 4.9.1 package.
 
 Codex, Gemini, OpenCode, Grok, and Composer are broker-only contracts. Their sealed requests cross a
 mode-`0600`, digest-bound per-user launchd Unix socket; launchd starts the exact
@@ -193,13 +195,10 @@ exactly - dual set membership without equality fails closed, as do mixed,
 hybrid, unknown, or non-string values. Governance readiness recognizes either
 exact mode as capability-only; readiness never authorizes execution.
 
-This 4.5.4 source tree retains the rebuilt darwin-arm64 activation artifact
-from final workspace `1.0.823` commit
-`d08b6382710d6d5910d64cf011bcac873a2e1c03`. Its manifest pins the complete
-standalone bundle at SHA-256
-`2cea10cff2030d0238661667cf8d1b83cf9885dc6f4a03b0db4365e891b04f47`;
-the bundle is Developer-ID signed and Apple-notarized under submission
-`c6d29dec-5351-467d-883e-0b862734567d`. Native **Gemini
+This 4.9.1 source tree contains a repository-only darwin-arm64 activation
+artifact. The committed manifest pins its exact standalone bundle membership,
+identity, and verification contract. Repository presence is not host readiness:
+native **Gemini
 advisory/governance/long-context**, **Codex advisory/governance**,
 **OpenCode plan/build**, and **Grok 4.5 read-only architecture consultation,
 governance review, huge-context ingestion, and output-only code/patch
@@ -627,11 +626,12 @@ spawn, while treating the operator account and selected plugin cache as
 trusted.
 
 The manifest cannot choose its own signer. `signing_policy.py` pins the
-operator-owned Developer ID Team ID in reviewed policy source, and runtime plus
+approved Developer ID team in reviewed public policy source, and runtime plus
 release verification require the manifest and `codesign` output to match that
-anchor. The anchor is intentionally empty in this source revision because no
-valid Developer ID identity is installed on the build host; native activation
-and release fail closed until the operator-owned Team ID is configured.
+anchor. The anchor is configured in this source revision. Its presence does not
+prove host installation or readiness; activation and release still fail closed
+unless the complete bundle, manifest, signature, timestamp, notarization, and
+release evidence agree.
 
 The full old namespace mapping and clean-history public-export requirement are
 documented in

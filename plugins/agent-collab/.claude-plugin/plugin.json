@@ -1,7 +1,7 @@
 {
   "name": "agent-collab",
-  "version": "4.9.0",
-  "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. The signed runtime artifact is intentionally absent until the private build/sign integration completes.",
+  "version": "4.9.1",
+  "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. Native route availability is established at runtime and never inferred from package metadata alone.",
   "author": {
     "name": "John Osumi"
   },

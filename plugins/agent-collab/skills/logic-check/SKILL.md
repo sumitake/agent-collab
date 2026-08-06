@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 4.9.0
+version: 4.9.1
 defaults:
   tier: Advanced
   effort: xhigh
