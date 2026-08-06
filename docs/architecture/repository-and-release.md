@@ -1,0 +1,163 @@
+# Repository and release architecture
+
+< [Architecture handbook index](README.md)
+
+This repository publishes one package, `plugins/agent-collab`. It is the public
+source of truth for skills, policy, client behavior, migration, governance, and
+release-safety checks. The native producer is a separate private trust domain;
+contributors do not need access to it.
+
+## Repository map
+
+| Path | Status | Responsibility | Edit rule |
+| --- | --- | --- | --- |
+| `skill-specs/` | current | Editable source for collaboration skills. | Edit here; do not hand-edit generated copies. |
+| `plugins/agent-collab/skills/` | generated/current | Host-readable installed skill contracts. | Regenerate with `scripts/build_skills.py`. |
+| `plugins/agent-collab/` public Python modules | current | Coordinator, identity/authority policy, migration, runtime verification/management, and signing policy. | Keep the public module inventory closed. |
+| `plugins/agent-collab/.claude-plugin/` and `.codex-plugin/` | current | Host manifests for the same name and version. | Update together. |
+| `.claude-plugin/` and `.agents/plugins/` | generated/current | Claude-compatible and Codex marketplace views. | Regenerate with `scripts/build_marketplace.py`. |
+| `plugins/agent-collab/runtime-manifest.json` | current contract | Closed runtime artifact and route metadata. | Generated/reviewed release input; never use it to infer host activation. |
+| `plugins/agent-collab/runtime/` | repository-only when present | Final manifest-listed native bundle. | Only final reviewed signed artifacts may enter. No native source. |
+| `docs/architecture/` | current | Public architecture handbook. | Update with boundary or lifecycle changes. |
+| `docs/design/` | mixed | Design-of-record and historical review evidence. | Consult the design index and source/tests before treating it as current. |
+| `docs/public-governance.md` | current/normative | Contribution and merge contract. | Keep prose and automation aligned. |
+| `docs/migration-from-legacy-packages.md` | current | Retirement, cleanup, safe mode, and package migration. | Do not revive retired install surfaces. |
+| `changelog.d/` | staged | Per-change release-note fragments. | Commit one unique fragment; do not compile `CHANGELOG.md` on feature branches. |
+| `CHANGELOG.md` | generated | Release-time compilation of fragments. | Updated only by the release flow. |
+| `scripts/` | current | Build, validation, compliance, archive, evidence, and release tools. | Preserve fail-closed behavior and tests. |
+| `tests/` | current | Public behavior, security, distribution, and regression contracts. | Update with every changed contract. |
+| `.github/workflows/` | current | CI, security, governance, dependency, and release automation. | Full commit-SHA pins and least-privilege workflow tokens. |
+
+## Source and generated flow
+
+```mermaid
+flowchart LR
+    Specs["skill-specs/"] --> SkillBuild["build_skills.py"]
+    SkillBuild --> Skills["plugins/agent-collab/skills/"]
+
+    Manifest["package manifests"] --> MarketBuild["build_marketplace.py"]
+    Fragment["marketplace fragment"] --> MarketBuild
+    Base["marketplace base"] --> MarketBuild
+    MarketBuild --> ClaudeMarket[".claude-plugin/marketplace.json"]
+    MarketBuild --> CodexMarket[".agents/plugins/marketplace.json"]
+
+    Change["user-visible change"] --> ChangelogFragment["changelog.d/ fragment"]
+    ChangelogFragment --> ReleaseCut["governed release cut"]
+    ReleaseCut --> Changelog["generated CHANGELOG.md"]
+```
+
+Generated files are checked for freshness in CI. A version change is one
+logical update across both host manifests, marketplace metadata, generated
+skill versions, package/root README version markers, and the changelog
+fragment.
+
+## Public/private source boundary
+
+The public repository owns:
+
+- request and result policy;
+- model-family and authority decisions;
+- skills and generated host-facing documentation;
+- runtime client, manifest schema, migration, and management contracts;
+- artifact verification and signing-policy anchors;
+- tests, CI, contribution governance, and release checks; and
+- final distributable legal evidence.
+
+The private producer owns:
+
+- native provider implementation source;
+- build credentials and signing keys;
+- private build/sign infrastructure; and
+- any secret-bearing provider integration material.
+
+The only permitted crossing is a final signed standalone bundle, its closed
+manifest metadata, and required license evidence. Public pull-request CI uses
+GitHub-hosted runners without private build/sign credentials.
+
+## Release modes
+
+### Policy-only
+
+A policy-only release has an empty runtime manifest and no native runtime tree
+in the archive. Skills, migration, and public policy can install, while all
+native model routes remain typed unavailable. The release flow proves the
+absence rather than pretending activation evidence exists.
+
+### Activation
+
+An activation release contains exactly one supported standalone bundle and a
+schema-3/contract-3 manifest in this repository generation. Release checks
+bind the bundle, manifest, route matrix, platform, architecture, minimum
+operating system, file inventory, digests, signing profile, hardened runtime,
+secure timestamp, notarization, legal notices, and source commit.
+
+Activation evidence establishes the package artifact. Host installation and
+readiness remain later evidence planes.
+
+## Change lifecycle
+
+```mermaid
+flowchart LR
+    Need["Scoped change"] --> Source["Owning source and tests"]
+    Source --> Generated["Regenerated package views"]
+    Generated --> Fragment["Unique changelog fragment"]
+    Fragment --> Local["Local validation"]
+    Local --> Review["Independent exact-head review"]
+    Review --> PR["Governed pull request"]
+    PR --> Main["Merged source baseline"]
+    Main --> Tag["Signed annotated tag"]
+    Tag --> Release["Verified release assets and evidence"]
+    Release --> Install["Host install/update"]
+    Install --> Ready["Provider-free readiness"]
+```
+
+Each arrow needs its own evidence. A merged pull request does not create a tag;
+a tag does not create a release; a release does not update a host; installation
+does not prove readiness.
+
+## Validation layers
+
+Run the repository-required commands from `AGENTS.md`. The principal layers
+are:
+
+1. **Generation:** skill and marketplace outputs match their sources.
+2. **Unit/regression:** repository and script test roots pass on the supported
+   Python matrix.
+3. **Distribution:** exactly one public package, correct manifests, no retired
+   package trees, and deterministic archives/evidence.
+4. **Release consistency:** versions, README markers, marketplaces, manifests,
+   changelog inputs, and tag rules agree.
+5. **Public-export safety:** active tree and locally reachable history contain
+   no provider executor source, raw invocation recipes, credentials, private
+   paths, retired trees, or unreviewed artifacts.
+6. **Security:** dependency-free secret scan, Gitleaks, CodeQL
+   `security-extended`, GitHub secret scanning/push protection, and pinned
+   third-party Actions.
+7. **Governance:** compliance-trace schema, tier rules, CODEOWNERS, required
+   checks, signed commits, and resolved review threads.
+
+## History-scan scope
+
+The public-export history check scans refs available in the local clone. A
+clone that retains obsolete refs can fail even when a disposable full clone of
+the canonical remote is clean. A clean comparison proves only the recorded
+remote snapshot; it does not clear a different clone or prior exposure.
+
+If a publication candidate, canonical fetched ref, credential pattern, or
+provenance question remains unsafe, stop publication and follow
+[`SECURITY.md`](../../SECURITY.md). Scanner output can itself contain sensitive
+paths and object identifiers and must not be pasted into a public issue.
+
+## Contributor path
+
+1. Read `AGENTS.md` and [`docs/public-governance.md`](../public-governance.md).
+2. Work from a current topic branch or isolated worktree.
+3. Edit authoritative sources, regenerate outputs, and add one unique fragment.
+4. Run focused checks and the required full suites.
+5. Record the PR compliance trace and independent review required by the tier.
+6. Resolve review threads and merge normally after all required checks pass.
+7. Treat release/tag work as a separate governed lifecycle.
+
+The package reference documents the low-level coordinator schema. The
+architecture handbook should link to that reference rather than duplicate its
+field-by-field protocol.

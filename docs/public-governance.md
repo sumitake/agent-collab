@@ -72,9 +72,9 @@ GitHub-hosted runners and receives no private build/sign credentials.
 
 Policy-only releases contain an empty runtime manifest. An activation release
 may import only a final signed and notarized standalone bundle, its closed
-schema-2/contract-3 manifest, per-member verification metadata, and required
-third-party license evidence. Public contributors never build or inspect the
-private implementation.
+schema-3/contract-3 manifest in the current repository generation, per-member
+verification metadata, and required third-party license evidence. Public
+contributors never build or inspect the private implementation.
 
 Run the gates in `README.md`, including:
 
