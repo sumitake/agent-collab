@@ -253,6 +253,10 @@ Release preparation adds deterministic archive/evidence, secret, history, tag,
 and—for activation—Darwin arm64 signature/notarization verification. The
 complete lifecycle is documented in
 [Repository and release architecture](docs/architecture/repository-and-release.md).
+After all other release work finishes, that lifecycle ends with a
+[documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout)
+that aligns the architecture handbook, this README, and changelog evidence
+without exposing private executor recipes.
 
 ## License
 

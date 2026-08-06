@@ -109,6 +109,8 @@ flowchart LR
     Tag --> Release["Verified release assets and evidence"]
     Release --> Install["Host install/update"]
     Install --> Ready["Provider-free readiness"]
+    Ready --> Closeout["Final documentation closeout"]
+    Closeout --> Complete["Release complete"]
 ```
 
 Each arrow needs its own evidence. A merged pull request does not create a tag;
@@ -148,6 +150,55 @@ provenance question remains unsafe, stop publication and follow
 [`SECURITY.md`](../../SECURITY.md). Scanner output can itself contain sensitive
 paths and object identifiers and must not be pasted into a public issue.
 
+## Final documentation closeout
+
+Documentation alignment is the final stage of a release. Begin it only after
+the signed tag and GitHub Release exist, published assets have been verified,
+and any required installation, activation, readiness, and live qualification
+have completed. The release is not complete until this closeout is merged and
+checked against the exact release evidence.
+
+Review and update these public surfaces together:
+
+1. **`docs/architecture/`:** update every page affected by the release. Explain
+   the system as a person needs to understand it: begin with a mental model,
+   provide a bounded example or lifecycle narrative where it clarifies the
+   flow, explain why each important boundary exists, label uncertainty, and
+   link claims to authoritative public evidence.
+2. **Root `README.md`:** keep the package overview, current-release narrative,
+   examples, capabilities, counts, lifecycle links, and security boundaries
+   aligned with the released version. Do not turn the README into a second
+   protocol reference.
+3. **`CHANGELOG.md`:** verify that the release flow compiled the correct entry
+   for the exact tag and that it agrees with the release notes and assets. A
+   later clarification uses a new `changelog.d/` fragment and the normal
+   governed release path; never rewrite a signed tag or hand-edit generated
+   history to imply the released artifact changed.
+
+Use explicit evidence language. For example, “vX.Y.Z is published and its
+assets were verified; readiness on this host has not been observed” is useful.
+“The latest version is active” collapses several evidence planes and is not.
+
+Public documentation is deliberately layered. Human-facing architecture owns
+concepts, examples, lifecycle, boundary rationale, and honest uncertainty. The
+[package technical reference](../../plugins/agent-collab/README.md) owns
+machine-operational fields and closed interface detail. Public pages must omit
+raw provider invocation recipes, private paths, credentials, private
+control-plane discovery, and enough executor detail to become a turnkey
+specification for a foreign agent. The private producer/workspace may keep the
+copyable internal operating recipe under its own governance; this public
+repository does not enumerate or depend on it.
+
+Finish by running the current repository checks from `AGENTS.md`, including
+generation, unit/regression, release consistency, changelog dry-run, active-tree
+and history public-export safety, security scanning, and `git diff --check`.
+Re-read the affected pages as a human narrative as well as machine-checked
+artifacts. Link the public documentation PR to the exact public release. It may
+state that a separately governed private companion exists, but must not expose
+its repository identifiers or operational detail. Record an explicit `updated`
+or `verified current` determination for each of the three surfaces; silence is
+not completion.
+
 ## Contributor path
 
 1. Read `AGENTS.md` and [`docs/public-governance.md`](../public-governance.md).
@@ -157,6 +208,7 @@ paths and object identifiers and must not be pasted into a public issue.
 5. Record the PR compliance trace and independent review required by the tier.
 6. Resolve review threads and merge normally after all required checks pass.
 7. Treat release/tag work as a separate governed lifecycle.
+8. After all other release tasks, complete the documentation closeout above.
 
 The package reference documents the low-level coordinator schema. The
 architecture handbook should link to that reference rather than duplicate its

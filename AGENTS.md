@@ -32,6 +32,14 @@ git diff --check
 Commit only a unique `changelog.d/` fragment for user-visible changes. The
 generated `CHANGELOG.md` is compiled by the release flow.
 
+After every other release task has completed, perform the
+[final documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
+It aligns the public architecture handbook, root README, and generated
+changelog evidence with the exact release before the release is declared
+complete. Keep that public material human-first; low-level machine contracts
+belong in the package reference, and private executor/control-plane recipes do
+not belong in this repository.
+
 ## Repository governance
 
 [`docs/public-governance.md`](docs/public-governance.md) is the local,
