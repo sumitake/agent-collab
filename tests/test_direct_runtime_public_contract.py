@@ -281,6 +281,11 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             descriptor["valid_action_source_pairs"],
             [list(row) for row in ACTION_SOURCE_PAIRS],
         )
+        for result in descriptor["success_response"]["properties"]["result"]["oneOf"][2:]:
+            evidence = result["properties"]["evidence"]["properties"]
+            with self.subTest(artifact=result["properties"]["artifact_type"]):
+                self.assertNotIn("minItems", evidence["inspected_paths"])
+                self.assertNotIn("minItems", evidence["repository_evidence"])
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:
         client = _load("direct_runtime_client_no_broker", PLUGIN / "runtime_client.py")
