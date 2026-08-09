@@ -7,27 +7,36 @@ archive and release consistency before a signed tag can be pushed.
 
   python scripts/cut_release.py                     cut a release for plugin.json's version
   python scripts/cut_release.py --dry-run           print the actions, change nothing
-  python scripts/cut_release.py --rollback vX.Y.Z   undo a release (delete tag + GH release)
-
 LOCAL OPERATOR TOOL -- run from a clean 'main' checkout with the operator's own
 git credentials. It pushes a TAG only (never a branch); the tag push triggers
 .github/workflows/release.yml, which builds + publishes the archive and re-runs
 the same consistency check as a release gate. Activation additionally requires
 live Developer ID/notarization verification; policy-only mode proves that no
-runtime is present and does not pretend to satisfy activation evidence.
+runtime is present and does not pretend to satisfy activation evidence. A
+pushed version tag is immutable: an existing tag is verified, never moved,
+deleted, reused, or assumed to mean that publication succeeded.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+from typing import Any, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_release_consistency as crc  # noqa: E402
 
 ROOT = crc.repo_root()
+REPOSITORY = "sumitake/agent-collab"
+RELEASE_WORKFLOW_PATH = ".github/workflows/release.yml"
+PUBLICATION_TIMEOUT_SECONDS = 30 * 60
+PUBLICATION_POLL_SECONDS = 10
+MAX_RELEASE_ASSET_BYTES = 256 * 1024 * 1024
 
 
 def _git(*args: str, capture: bool = True, check: bool = True):
@@ -46,6 +55,309 @@ def _tag_exists(tag: str) -> bool:
     return bool(local or remote)
 
 
+def _gh_api_json(endpoint: str, *, required: bool) -> object | None:
+    try:
+        result = subprocess.run(
+            ["gh", "api", endpoint],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        if required:
+            _fail("GitHub CLI is unavailable")
+        return None
+    if result.returncode != 0:
+        if required:
+            _fail(f"GitHub API request failed for {endpoint}")
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        if required:
+            _fail(f"GitHub API returned malformed JSON for {endpoint}")
+        return None
+
+
+def _tag_publication_facts(tag: str) -> tuple[str | None, bool, bool]:
+    ref = _gh_api_json(
+        f"repos/{REPOSITORY}/git/ref/tags/{tag}", required=False
+    )
+    ref_object = ref.get("object") if type(ref) is dict else None
+    if type(ref_object) is not dict:
+        return None, False, False
+    object_type = ref_object.get("type")
+    object_sha = ref_object.get("sha")
+    if type(object_sha) is not str:
+        return None, False, False
+    if object_type == "commit":
+        return object_sha, False, False
+    if object_type != "tag":
+        return None, False, False
+    tag_object = _gh_api_json(
+        f"repos/{REPOSITORY}/git/tags/{object_sha}", required=False
+    )
+    target = tag_object.get("object") if type(tag_object) is dict else None
+    verification = (
+        tag_object.get("verification") if type(tag_object) is dict else None
+    )
+    commit = target.get("sha") if type(target) is dict else None
+    verified = (
+        verification.get("verified") if type(verification) is dict else None
+    )
+    if type(target) is not dict or target.get("type") != "commit":
+        commit = None
+    return commit if type(commit) is str else None, True, verified is True
+
+
+def _download_release_assets(
+    release: object,
+    expected_names: frozenset[str],
+) -> dict[str, bytes]:
+    assets = release.get("assets") if type(release) is dict else None
+    if type(assets) is not list:
+        return {}
+    by_name: dict[str, Mapping[str, Any]] = {}
+    for asset in assets:
+        if type(asset) is not dict or type(asset.get("name")) is not str:
+            continue
+        name = asset["name"]
+        if name in by_name:
+            return {}
+        by_name[name] = asset
+    if not expected_names.issubset(by_name):
+        return {}
+    downloaded: dict[str, bytes] = {}
+    for name in sorted(expected_names):
+        asset = by_name[name]
+        size = asset.get("size")
+        url = asset.get("url")
+        if (
+            type(size) is not int
+            or type(size) is bool
+            or not 1 <= size <= MAX_RELEASE_ASSET_BYTES
+            or type(url) is not str
+            or not url.startswith(f"https://api.github.com/repos/{REPOSITORY}/")
+        ):
+            return {}
+        try:
+            result = subprocess.run(
+                ["gh", "api", url, "-H", "Accept: application/octet-stream"],
+                cwd=str(ROOT),
+                capture_output=True,
+                check=False,
+            )
+        except OSError:
+            return {}
+        if result.returncode != 0 or len(result.stdout) != size:
+            return {}
+        downloaded[name] = result.stdout
+    return downloaded
+
+
+def _publication_state(
+    tag: str,
+    expected_asset_sha256: Mapping[str, str],
+) -> dict[str, object]:
+    tag_commit, tag_is_annotated, tag_signature_verified = (
+        _tag_publication_facts(tag)
+    )
+    runs = _gh_api_json(
+        f"repos/{REPOSITORY}/actions/workflows/release.yml/runs"
+        f"?event=push&branch={tag}&per_page=100",
+        required=False,
+    )
+    workflow_runs = runs.get("workflow_runs") if type(runs) is dict else []
+    if type(workflow_runs) is not list:
+        workflow_runs = []
+    release = _gh_api_json(
+        f"repos/{REPOSITORY}/releases/tags/{tag}", required=False
+    )
+    expected_names = frozenset(expected_asset_sha256)
+    return {
+        "tag_commit": tag_commit,
+        "tag_is_annotated": tag_is_annotated,
+        "tag_signature_verified": tag_signature_verified,
+        "workflow_runs": workflow_runs,
+        "release": release,
+        "downloaded_assets": _download_release_assets(
+            release, expected_names
+        ),
+    }
+
+
+def _validate_publication_state(
+    *,
+    tag: str,
+    commit: str,
+    expected_asset_sha256: Mapping[str, str],
+    tag_commit: object,
+    tag_is_annotated: object,
+    tag_signature_verified: object,
+    workflow_runs: object,
+    release: object,
+    downloaded_assets: object,
+) -> None:
+    version = crc.parse_tag(tag)
+    if version is None or len(commit) != 40 or any(
+        char not in "0123456789abcdef" for char in commit
+    ):
+        raise ValueError("invalid expected release identity")
+    expected_names = {
+        f"agent-collab.v{version}.plugin",
+        f"agent-collab.v{version}.plugin.sha256",
+        f"agent-collab-v{version}.spdx.json",
+    }
+    if (
+        type(expected_asset_sha256) is not dict
+        or set(expected_asset_sha256) != expected_names
+        or any(
+            type(digest) is not str
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+            for digest in expected_asset_sha256.values()
+        )
+    ):
+        raise ValueError("invalid expected release asset identity")
+    if (
+        tag_commit != commit
+        or tag_is_annotated is not True
+        or tag_signature_verified is not True
+    ):
+        raise ValueError("release tag is not a verified immutable exact-commit tag")
+    if type(workflow_runs) is not list:
+        raise ValueError("release workflow inventory is malformed")
+    matching_runs = [
+        run for run in workflow_runs
+        if type(run) is dict
+        and run.get("path") == RELEASE_WORKFLOW_PATH
+        and run.get("event") == "push"
+        and run.get("head_branch") == tag
+        and run.get("head_sha") == commit
+    ]
+    if len(matching_runs) != 1:
+        raise ValueError("exact release workflow run is missing or ambiguous")
+    run = matching_runs[0]
+    if run.get("status") != "completed" or run.get("conclusion") != "success":
+        raise ValueError("exact release workflow run did not succeed")
+    if (
+        type(release) is not dict
+        or release.get("tag_name") != tag
+        or release.get("draft") is not False
+        or release.get("prerelease") is not False
+    ):
+        raise ValueError("exact public release object is missing")
+    assets = release.get("assets")
+    if type(assets) is not list:
+        raise ValueError("public release assets are malformed")
+    asset_sizes: dict[str, int] = {}
+    for asset in assets:
+        if type(asset) is not dict:
+            raise ValueError("public release asset is malformed")
+        name = asset.get("name")
+        size = asset.get("size")
+        if (
+            type(name) is not str
+            or name in asset_sizes
+            or type(size) is not int
+            or type(size) is bool
+            or not 1 <= size <= MAX_RELEASE_ASSET_BYTES
+        ):
+            raise ValueError("public release asset identity is malformed")
+        asset_sizes[name] = size
+    if not expected_names.issubset(asset_sizes):
+        raise ValueError("public release is missing a required asset")
+    if type(downloaded_assets) is not dict or set(downloaded_assets) != expected_names:
+        raise ValueError("required release assets were not downloaded exactly")
+    for name in sorted(expected_names):
+        data = downloaded_assets.get(name)
+        if (
+            type(data) is not bytes
+            or len(data) != asset_sizes[name]
+            or hashlib.sha256(data).hexdigest()
+            != expected_asset_sha256[name]
+        ):
+            raise ValueError("published release asset digest differs")
+    archive_name = f"agent-collab.v{version}.plugin"
+    checksum_name = archive_name + ".sha256"
+    archive_digest = hashlib.sha256(downloaded_assets[archive_name]).hexdigest()
+    if downloaded_assets[checksum_name] != (
+        f"{archive_digest}  {archive_name}\n".encode("ascii")
+    ):
+        raise ValueError("published checksum does not bind the archive")
+    try:
+        sbom = json.loads(
+            downloaded_assets[f"agent-collab-v{version}.spdx.json"]
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("published SPDX asset is malformed") from None
+    if type(sbom) is not dict or sbom.get("spdxVersion") != "SPDX-2.3":
+        raise ValueError("published SPDX asset has no current authority")
+
+
+def _verify_published_release_or_fail(
+    tag: str,
+    commit: str,
+    expected_asset_sha256: Mapping[str, str],
+) -> None:
+    try:
+        _validate_publication_state(
+            tag=tag,
+            commit=commit,
+            expected_asset_sha256=expected_asset_sha256,
+            **_publication_state(tag, expected_asset_sha256),
+        )
+    except ValueError as exc:
+        _fail(f"{tag} is not a verified exact publication: {exc}")
+
+
+def _wait_and_verify_published_release_or_fail(
+    tag: str,
+    commit: str,
+    expected_asset_sha256: Mapping[str, str],
+) -> None:
+    deadline = time.monotonic() + PUBLICATION_TIMEOUT_SECONDS
+    last_error = "publication has not appeared"
+    while True:
+        state = _publication_state(tag, expected_asset_sha256)
+        runs = state.get("workflow_runs")
+        if type(runs) is list:
+            exact = [
+                run for run in runs
+                if type(run) is dict
+                and run.get("path") == RELEASE_WORKFLOW_PATH
+                and run.get("event") == "push"
+                and run.get("head_branch") == tag
+                and run.get("head_sha") == commit
+            ]
+            if len(exact) == 1 and exact[0].get("status") == "completed" and (
+                exact[0].get("conclusion") != "success"
+            ):
+                _fail(
+                    f"exact release workflow for {tag} completed with "
+                    f"{exact[0].get('conclusion')}"
+                )
+        try:
+            _validate_publication_state(
+                tag=tag,
+                commit=commit,
+                expected_asset_sha256=expected_asset_sha256,
+                **state,
+            )
+        except ValueError as exc:
+            last_error = str(exc)
+        else:
+            print(
+                f"cut-release: verified {tag} workflow, release, and exact assets"
+            )
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _fail(f"timed out verifying {tag}: {last_error}")
+        time.sleep(min(PUBLICATION_POLL_SECONDS, remaining))
+
+
 # The staleness watermark is the last commit touching the runtime BUNDLE dir
 # only. Deliberately NOT runtime-manifest.json: a manifest/contract-only commit
 # would advance the watermark past unaddressed `runtime:` merges and let a
@@ -53,7 +365,7 @@ def _tag_exists(tag: str) -> bool:
 _RUNTIME_STAGE_PATHS = ("plugins/agent-collab/runtime/",)
 
 
-def _runtime_currency_or_fail(allow_stale: bool) -> None:
+def _runtime_currency_or_fail() -> None:
     """Fail an activation release whose staged runtime predates runtime changes.
 
     A tag-only cut packages the committed tree, so nothing else stops a release
@@ -75,20 +387,12 @@ def _runtime_currency_or_fail(allow_stale: bool) -> None:
     if not stale:
         return
     lines = "\n".join(f"  - {s}" for s in stale)
-    if allow_stale:
-        print(
-            "cut-release: WARNING -- staged runtime predates runtime-scoped "
-            f"merges (--allow-stale-runtime given):\n{lines}",
-            file=sys.stderr,
-        )
-        return
     _fail(
         "staged runtime is STALE -- these runtime-scoped merges landed after "
         f"the runtime bundle was last staged:\n{lines}\n"
         "Run the workspace full runtime build + stage "
         "(workspace docs/portable-v2-openssl-toolchain-runbook.md) before "
-        "cutting, or pass --allow-stale-runtime only when the operator has "
-        "confirmed those merges do not affect the compiled runtime."
+        "cutting."
     )
 
 
@@ -174,15 +478,36 @@ def _release_mode_or_fail() -> str:
     return mode
 
 
-def _archive_contract_verified_or_fail(mode: str) -> None:
-    """Build and reopen one disposable archive before a release tag is cut."""
+def _archive_contract_verified_or_fail(
+    mode: str,
+    *,
+    version: str,
+    commit: str,
+) -> dict[str, str]:
+    """Build exact local release assets and return their immutable digests."""
     if mode not in {"policy-only", "activation"}:
         _fail("release archive mode is invalid")
     builder = ROOT / "scripts" / "build_plugin_archive.py"
+    evidence_builder = ROOT / "scripts" / "build_release_evidence.py"
+    archive_name = f"agent-collab.v{version}.plugin"
+    checksum_name = archive_name + ".sha256"
+    sbom_name = f"agent-collab-v{version}.spdx.json"
+    created = _git("show", "-s", "--format=%cI", commit).stdout.strip()
+    if not created:
+        _fail("release commit timestamp is unavailable")
     with tempfile.TemporaryDirectory(prefix="agent-collab-release-check-") as temp:
-        archive = Path(temp) / "agent-collab.plugin"
+        archive = Path(temp) / archive_name
+        checksum = Path(temp) / checksum_name
+        sbom = Path(temp) / sbom_name
         res = subprocess.run(
-            [sys.executable, str(builder), "--output", str(archive)],
+            [
+                sys.executable,
+                str(builder),
+                "--output",
+                str(archive),
+                "--expected-commit",
+                commit,
+            ],
             cwd=str(ROOT),
             capture_output=True,
             text=True,
@@ -192,25 +517,48 @@ def _archive_contract_verified_or_fail(mode: str) -> None:
         sys.stderr.write(res.stderr)
         if res.returncode != 0:
             _fail("canonical plugin archive verification failed")
+        evidence = subprocess.run(
+            [
+                sys.executable,
+                str(evidence_builder),
+                "--archive",
+                str(archive),
+                "--version",
+                version,
+                "--created",
+                created,
+                "--checksum",
+                str(checksum),
+                "--sbom",
+                str(sbom),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        sys.stdout.write(evidence.stdout)
+        sys.stderr.write(evidence.stderr)
+        if evidence.returncode != 0:
+            _fail("deterministic release evidence verification failed")
+        try:
+            expected = {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in (archive, checksum, sbom)
+            }
+        except OSError:
+            _fail("verified release assets could not be read back")
     observed = _release_mode_or_fail()
     if observed != mode:
         _fail("release mode changed during archive verification")
+    return expected
 
 
-def cut(dry_run: bool, allow_stale_runtime: bool = False) -> int:
+def cut(dry_run: bool) -> int:
     # Release gate (read-only): run regardless of --dry-run so a dry run gives a
     # true preview and fails fast if the changelog is stale vs the fragments.
     _changelog_compiled_or_fail()
     mode = _release_mode_or_fail()
-    _archive_contract_verified_or_fail(mode)
-    if mode == "activation":
-        _signed_runtime_verified_or_fail()
-        _runtime_currency_or_fail(allow_stale_runtime)
-    if dry_run:
-        print(
-            "cut-release: [dry-run] CHANGELOG.md and canonical "
-            f"{mode} archive are verified."
-        )
 
     ok, lines = crc.run_consistency(ROOT)
     print("\n".join(lines))
@@ -228,9 +576,22 @@ def cut(dry_run: bool, allow_stale_runtime: bool = False) -> int:
     if _git("status", "--porcelain").stdout.strip():
         _fail("working tree is not clean -- commit or stash first")
     _head_is_published_main_or_fail()
+    head = _git("rev-parse", "HEAD").stdout.strip()
+    expected_asset_sha256 = _archive_contract_verified_or_fail(
+        mode, version=version, commit=head
+    )
+    if mode == "activation":
+        _signed_runtime_verified_or_fail()
+        _runtime_currency_or_fail()
+    if dry_run:
+        print(
+            "cut-release: [dry-run] CHANGELOG.md and canonical "
+            f"{mode} archive/evidence are verified."
+        )
 
     if _tag_exists(tag):
-        print(f"cut-release: tag {tag} already exists -- nothing to do (already released)")
+        _verify_published_release_or_fail(tag, head, expected_asset_sha256)
+        print(f"cut-release: existing immutable tag {tag} is fully published")
         return 0
 
     if dry_run:
@@ -246,34 +607,14 @@ def cut(dry_run: bool, allow_stale_runtime: bool = False) -> int:
     # unsigned release tag should never ship.
     _git("tag", "-s", tag, "-m", f"agent-collab {tag}", capture=False)
     _git("verify-tag", tag, capture=False)
+    tagged_commit = _git("rev-parse", f"{tag}^{{commit}}").stdout.strip()
+    if tagged_commit != head:
+        _fail("new signed release tag does not resolve to the exact release HEAD")
     _git("push", "origin", tag, capture=False)
-    print(f"cut-release: pushed {tag} -- release.yml will build and publish the archive")
-    return 0
-
-
-def rollback(tag: str, dry_run: bool) -> int:
-    if crc.parse_tag(tag) is None:
-        _fail(f"--rollback expects a release tag (vX.Y.Z), got '{tag}'")
-    steps = [
-        ("delete the remote tag", ["push", "origin", f":refs/tags/{tag}"]),
-        ("delete the local tag", ["tag", "-d", tag]),
-    ]
-    for label, args in steps:
-        if dry_run:
-            print(f"cut-release: [dry-run] would {label}: git {' '.join(args)}")
-        else:
-            _git(*args, capture=False, check=False)
-            print(f"cut-release: {label} ({tag})")
-    if dry_run:
-        print(f"cut-release: [dry-run] would delete the GitHub release: gh release delete {tag}")
-        return 0
-    try:
-        subprocess.run(["gh", "release", "delete", tag, "--yes"],
-                       cwd=str(ROOT), check=False)
-        print(f"cut-release: requested GitHub release deletion ({tag})")
-    except OSError:
-        print("cut-release: 'gh' not found -- delete the GitHub release manually",
-              file=sys.stderr)
+    print(f"cut-release: pushed immutable {tag}; verifying exact publication")
+    _wait_and_verify_published_release_or_fail(
+        tag, head, expected_asset_sha256
+    )
     return 0
 
 
@@ -281,15 +622,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="One-command agent-collab release")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the actions, change nothing")
-    ap.add_argument("--rollback", metavar="TAG",
-                    help="undo a release: delete its tag (local + remote) and GH release")
-    ap.add_argument("--allow-stale-runtime", action="store_true",
-                    help="operator override: cut even though runtime-scoped merges "
-                         "landed after the staged runtime (prints a loud warning)")
     args = ap.parse_args(argv)
-    if args.rollback:
-        return rollback(args.rollback, args.dry_run)
-    return cut(args.dry_run, allow_stale_runtime=args.allow_stale_runtime)
+    return cut(args.dry_run)
 
 
 if __name__ == "__main__":
