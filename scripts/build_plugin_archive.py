@@ -13,6 +13,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tarfile
 import zlib
 from pathlib import Path, PurePosixPath
@@ -98,10 +99,8 @@ REQUIRED_ROOTS = (
     "README.md",
     "skills",
     "coordinator.py",
-    "execute-output-contract-v1.json",
     "runtime_client.py",
     "runtime_bundle.py",
-    "runtime_setup.py",
     "host_policy.py",
     "migration_doctor.py",
     "signing_policy.py",
@@ -113,23 +112,6 @@ EXACT_MANIFEST_MEMBERS = (
     Path(".claude-plugin/plugin.json"),
     Path(".codex-plugin"),
     Path(".codex-plugin/plugin.json"),
-)
-REQUIRED_CONTRACTS = frozenset(
-    {
-        ("gemini", "advisory"),
-        ("gemini", "governance"),
-        ("gemini", "long_context"),
-        ("codex", "advisory"),
-        ("opencode", "plan"),
-        ("opencode", "build"),
-        ("grok", "architecture"),
-        ("grok", "governance"),
-        ("grok", "huge_context"),
-        ("composer", "codegen"),
-        # Shipped as of v4.4.1; REQUIRED at the release gate so a later cut
-        # cannot silently drop it. See verify_runtime_release.REQUIRED_CONTRACTS.
-        ("codex", "governance"),
-    }
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
@@ -150,6 +132,22 @@ def _load_runtime_bundle_contract():
 
 
 runtime_bundle = _load_runtime_bundle_contract()
+
+
+def _load_runtime_client_contract():
+    path = REPO_ROOT / "plugins" / PLUGIN_NAME / "runtime_client.py"
+    spec = importlib.util.spec_from_file_location(
+        "agent_collab_archive_runtime_client", path
+    )
+    if spec is None or spec.loader is None:
+        raise ValueError("runtime client contract cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+runtime_client = _load_runtime_client_contract()
 
 
 def _sha256(path: Path) -> str:
@@ -208,7 +206,7 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
             if not chunk:
                 break
             chunks.append(chunk)
-            if sum(len(part) for part in chunks) > MAX_ARTIFACT_BYTES:
+            if sum(len(part) for part in chunks) > runtime_bundle.MAX_MANIFEST_BYTES:
                 raise ValueError("runtime manifest is unreasonably large")
         return b"".join(chunks)
     except OSError as exc:
@@ -222,30 +220,10 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
 
 def _parse_manifest(data: bytes) -> dict[str, object]:
     try:
-        manifest = json.loads(data.decode("utf-8"))
-    except (UnicodeError, ValueError, RecursionError) as exc:
+        _artifact, _wire, manifest = runtime_client.parse_manifest_bytes(data)
+    except ValueError as exc:
         raise ValueError("runtime manifest is unreadable") from exc
-    if (
-        not isinstance(manifest, dict)
-        or set(manifest) != {
-            "schema_version",
-            "protocol_version",
-            "contract_version",
-            "broker_protocol_version",
-            "channel",
-            "artifacts",
-        }
-        or type(manifest.get("schema_version")) is not int
-        or manifest["schema_version"] != 3
-        or type(manifest.get("protocol_version")) is not int
-        or manifest["protocol_version"] != 2
-        or type(manifest.get("contract_version")) is not int
-        or manifest["contract_version"] != 3
-        or type(manifest.get("broker_protocol_version")) is not int
-        or manifest["broker_protocol_version"] != 2
-        or manifest.get("channel") != "production"
-        or not isinstance(manifest.get("artifacts"), list)
-    ):
+    if type(manifest) is not dict:
         raise ValueError("runtime manifest root or version is invalid")
     return manifest
 
@@ -274,23 +252,12 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
         "size",
         "sha256",
         "provider_runtime_version",
-        "route_contract_version",
         "signing",
         "files",
-        "contracts",
     }
     if not isinstance(item, dict) or set(item) != fields:
         raise ValueError("activation runtime manifest shape is invalid")
     signing = item.get("signing")
-    contracts_value = item.get("contracts")
-    try:
-        contracts = frozenset(
-            (entry["route"], entry["action"])
-            for entry in contracts_value
-            if isinstance(entry, dict) and set(entry) == {"route", "action"}
-        )
-    except (KeyError, TypeError):
-        contracts = frozenset()
     try:
         records = runtime_bundle.validate_file_records(item.get("files"))
         bundle_digest = runtime_bundle.compute_bundle_identity(records)
@@ -313,8 +280,7 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
         or item.get("minimum_macos") != "14.0"
         or item.get("path") != RUNTIME_BUNDLE_REL.as_posix()
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
-        or item.get("provider_runtime_version") != "2.0.0"
-        or item.get("route_contract_version") != 2
+        or item.get("provider_runtime_version") != "3.0.0"
         or type(item.get("size")) is not int
         or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
         or item["size"] != sum(record["size"] for record in records)
@@ -343,9 +309,6 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
             record["signing_profile"] != "production_developer_id"
             for record in records
         )
-        or not isinstance(contracts_value, list)
-        or contracts != REQUIRED_CONTRACTS
-        or len(contracts_value) != len(contracts)
     ):
         raise ValueError("activation runtime manifest fields are invalid")
     return records

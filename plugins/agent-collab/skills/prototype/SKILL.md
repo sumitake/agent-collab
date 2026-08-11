@@ -1,6 +1,6 @@
 ---
 name: prototype
-version: 4.9.1
+version: 5.0.0
 description: Build a throwaway prototype that answers one design question — an interactive terminal app to pressure-test a state model or logic shape, or several radically different UI variants on one route. Use when the user says "prototype this," "sanity-check this state model," "show me a few options for this page," "mock up some variations," or "/agent-collab:prototype." Also offer this proactively when a design conversation is circling a question that a runnable artifact would settle in minutes — how a state machine handles an awkward case, or which of several layouts actually works with real data.
 ---
 

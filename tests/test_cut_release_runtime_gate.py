@@ -4,7 +4,7 @@ Motivation (2026-07-25): v4.4.0 was cut tag-only and shipped the 4.2.0-era
 runtime bundle although five `runtime:`-scoped merges had landed since; the
 operator rolled the release back. The gate fails the cut whenever a
 runtime-scoped subject exists after the commit that last touched the staged
-runtime paths, unless the operator passes --allow-stale-runtime.
+runtime paths. There is no release-time stale-runtime bypass.
 """
 from __future__ import annotations
 
@@ -54,9 +54,9 @@ class RuntimeCurrencyGateTests(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = _load()
 
-    def _run(self, staged_sha, subjects, allow_stale=False):
+    def _run(self, staged_sha, subjects):
         with mock.patch.object(self.mod, "_git", _GitStub(staged_sha, subjects)):
-            self.mod._runtime_currency_or_fail(allow_stale)
+            self.mod._runtime_currency_or_fail()
 
     def test_current_runtime_passes(self):
         self._run("a" * 40, ["docs: readme", "skills: add pack (#55)"])
@@ -86,17 +86,23 @@ class RuntimeCurrencyGateTests(unittest.TestCase):
         # A subject merely *mentioning* runtime is not a runtime-scoped merge.
         self._run("a" * 40, ["docs: clarify runtime: notes layout"])
 
-    def test_operator_override_warns_but_passes(self):
-        err = io.StringIO()
-        with redirect_stderr(err):
-            self._run("a" * 40, ["runtime: bound routing (#50)"], allow_stale=True)
-        self.assertIn("WARNING", err.getvalue())
-
-    def test_cut_wires_flag_through_main(self):
-        # main() must accept the flag and hand it to cut().
+    def test_stale_runtime_override_is_not_a_command_line_surface(self):
         with mock.patch.object(self.mod, "cut", return_value=0) as cut_mock:
-            self.mod.main(["--allow-stale-runtime", "--dry-run"])
-        cut_mock.assert_called_once_with(True, allow_stale_runtime=True)
+            with self.assertRaises(SystemExit):
+                self.mod.main(["--allow-stale-runtime", "--dry-run"])
+        cut_mock.assert_not_called()
+
+    def test_tag_deletion_rollback_is_not_a_command_line_surface(self):
+        with mock.patch.object(self.mod, "cut", return_value=0) as cut_mock:
+            with self.assertRaises(SystemExit):
+                self.mod.main(["--rollback", "v5.0.0", "--dry-run"])
+        cut_mock.assert_not_called()
+
+    def test_release_tool_contains_no_tag_deletion_rollback(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("def rollback(", source)
+        self.assertNotIn(":refs/tags/", source)
+        self.assertNotIn('"release", "delete"', source)
 
 
 if __name__ == "__main__":

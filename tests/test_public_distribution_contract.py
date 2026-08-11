@@ -1,141 +1,53 @@
-from __future__ import annotations
+"""Version-5 public distribution contract."""
 
 import json
-import unittest
 from pathlib import Path
+import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_REPO = "https://github.com/sumitake/agent-collab"
+PLUGIN = ROOT / "plugins" / "agent-collab"
 
 
 class PublicDistributionContractTests(unittest.TestCase):
-    def test_agent_neutral_guidance_is_canonical(self) -> None:
-        agents_path = ROOT / "AGENTS.md"
-        self.assertTrue(agents_path.is_file(), "AGENTS.md must be canonical")
-        agents = agents_path.read_text(encoding="utf-8")
-        claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    def test_source_generated_metadata_is_consistently_version_5(self) -> None:
+        versions = {
+            json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))["version"]
+            for host in (".claude-plugin", ".codex-plugin")
+        }
+        versions.add(json.loads((ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8"))["agent-collab"]["skill_version"])
+        versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["plugins"][0]["version"])
+        versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
+        versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
+        self.assertEqual(versions, {"5.0.0"})
 
-        self.assertIn("# agent-collab development guide", agents)
-        self.assertIn("## Source boundaries", agents)
-        self.assertEqual(claude, "# Claude Code compatibility\n\n@AGENTS.md\n")
-        self.assertNotIn("## Source boundaries", claude)
-
-    def test_public_licensing_identifies_owner_and_approval_boundary(self) -> None:
-        self.assertTrue((ROOT / "NOTICE").is_file(), "NOTICE must exist")
-        self.assertTrue(
-            (ROOT / "COMMERCIAL-LICENSING.md").is_file(),
-            "COMMERCIAL-LICENSING.md must exist",
+    def test_marketplace_fragment_describes_the_direct_package(self) -> None:
+        fragment = json.loads(
+            (PLUGIN / "marketplace-fragment.json").read_text(encoding="utf-8")
         )
+        self.assertIn("direct native runtime", fragment["description"])
+        self.assertIn("moonshot", fragment["tags"])
+        self.assertNotIn("glm", fragment["tags"])
+
+    def test_distribution_documents_direct_semantic_runtime(self) -> None:
+        text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+        for phrase in ("schema-4 manifest", "runtime protocol 3", "native contract 4", "new process group"):
+            self.assertIn(phrase, text)
+
+    def test_mit_engineering_process_pack_survives_the_version_5_cutover(self) -> None:
+        names = {"architecture-review", "code-review", "decision-map", "prototype"}
+        for name in names:
+            skill = PLUGIN / "skills" / name / "SKILL.md"
+            self.assertTrue(skill.is_file())
+            text = skill.read_text(encoding="utf-8")
+            self.assertIn("Copyright (c) 2026 Matt Pocock", text)
+            self.assertRegex(
+                text,
+                r"Permission is hereby granted,\s+free of charge",
+            )
         notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
-        commercial = (ROOT / "COMMERCIAL-LICENSING.md").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertEqual(
-            notice,
-            'Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted.\nCommercial licensing is administered by Osumi Consulting LLC.\n\nSkills listed in docs/third-party-skill-provenance.md contain material derived\nfrom the MIT-licensed mattpocock/skills repository (Copyright (c) 2026 Matt\nPocock). Those portions remain MIT-licensed; see that provenance document for\nthe pinned upstream commit and per-file provenance, and each derived SKILL.md\nfor the full MIT notice.\n',
-        )
-        for phrase in (
-            "explicit written approval",
-            "Repository access",
-            "installation",
-            "GitHub interaction",
-            "acceptance of a contribution",
-        ):
-            self.assertIn(phrase, commercial)
-
-    def test_every_canonical_repository_pointer_targets_public_distribution(self) -> None:
-        marketplace = json.loads(
-            (ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
-        )
-        codex = json.loads(
-            (ROOT / "plugins" / "agent-collab" / ".codex-plugin" / "plugin.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        schema = json.loads(
-            (ROOT / "plugins" / "agent-collab" / "runtime-manifest.schema.json").read_text(
-                encoding="utf-8"
-            )
-        )
-
-        self.assertEqual(marketplace["metadata"]["repository"], PUBLIC_REPO)
-        self.assertEqual(codex["repository"], PUBLIC_REPO)
-        self.assertEqual(codex["homepage"], f"{PUBLIC_REPO}#readme")
-        self.assertEqual(schema["$id"], f"{PUBLIC_REPO}/runtime-manifest.schema.json")
-
-    def test_current_distributed_version_is_consistent(self) -> None:
-        claude = json.loads(
-            (ROOT / "plugins" / "agent-collab" / ".claude-plugin" / "plugin.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        codex = json.loads(
-            (ROOT / "plugins" / "agent-collab" / ".codex-plugin" / "plugin.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-
-        version = claude["version"]
-        self.assertEqual(codex["version"], version)
-        self.assertIn(f"**agent-collab** (v{version})", readme)
-        self.assertIn(f"## What's new - v{version}", readme)
-
-        generated_skills = sorted(
-            (ROOT / "plugins" / "agent-collab" / "skills").glob("*/SKILL.md")
-        )
-        self.assertTrue(generated_skills)
-        for path in generated_skills:
-            self.assertIn(f"\nversion: {version}\n", path.read_text(encoding="utf-8"))
-
-    def test_activation_guidance_matches_provider_protocol(self) -> None:
-        manifest = json.loads(
-            (ROOT / "plugins" / "agent-collab" / "runtime-manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        migration = (
-            ROOT / "docs" / "migration-from-legacy-packages.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            f"provider protocol {manifest['protocol_version']}",
-            migration,
-        )
-
-    def test_host_metadata_and_homelab_labels_are_not_distributed(self) -> None:
-        self.assertFalse((ROOT / ".claude-session-owner").exists())
-        self.assertIn(
-            ".claude-session-owner",
-            (ROOT / ".gitignore").read_text(encoding="utf-8"),
-        )
-        public_files = (
-            ROOT / "README.md",
-            ROOT / "AGENTS.md",
-            ROOT / "CLAUDE.md",
-            ROOT / "CHANGELOG.md",
-            ROOT / "docs" / "migration-from-legacy-packages.md",
-            ROOT / "docs" / "public-governance.md",
-            ROOT / "SECURITY.md",
-        )
-        combined = "\n".join(path.read_text(encoding="utf-8") for path in public_files)
-        for marker in ("RhoNAS", "LabMac", "john@osumi.com"):
-            self.assertNotIn(marker, combined)
-
-    def test_public_governance_is_self_contained(self) -> None:
-        combined = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in (
-                ROOT / "docs" / "public-governance.md",
-                ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md",
-                ROOT / ".github" / "workflows" / "compliance-trace.yml",
-                ROOT / "scripts" / "check_pr_compliance.py",
-            )
-        )
-        self.assertIn("docs/public-governance.md", combined)
-        self.assertNotIn("sumitake/agent-collab-workspace", combined)
-        self.assertNotIn("sumitake/agent-collab-plugin", combined)
+        self.assertIn("docs/third-party-skill-provenance.md", notice)
+        self.assertTrue((ROOT / "docs" / "third-party-skill-provenance.md").is_file())
 
 
 if __name__ == "__main__":

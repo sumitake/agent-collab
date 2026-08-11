@@ -2,51 +2,23 @@
 name: dev-delegate
 version: {{ skill_version }}
 {{ dev_delegate_defaults_block }}
-description: Delegate a bounded independent development slice to an eligible cross-family worker. Use when the user says "delegate this implementation," "hand this coding slice off," "use Composer for codegen," or "/{{ package_name }}:dev-delegate." Also offer this proactively when parallel implementation or output-only code generation reduces matched-rigor latency.
+description: Delegate a bounded independent development slice to an eligible cross-family worker. Use when the user says "delegate this implementation," "hand this coding slice off," "use Grok for codegen," or "/{{ package_name }}:dev-delegate." Also offer this when private-patch generation can reduce matched-rigor latency without giving a provider access to the caller checkout.
 ---
 
-# Dev-delegate - bounded development handoff
+# Dev-delegate
 
-Classify authority before routing. Read-only planning, output-only code
-generation, and mutation-capable work are distinct and never promote, demote,
-or silently fall back into one another.
+Use `codegen.repository` or `frontend_codegen.repository`. Provide the canonical
+`repo_root`, exact objective, owned paths, expected patch, test expectations,
+budget, and stop conditions. The runtime reproduces the caller-visible state in
+a disposable plain directory, runs one provider session there, and returns only
+the provider delta as a binary-safe patch.
 
-Resolve the **plugin root** from this loaded file and use only
-`python3 "<plugin-root>/coordinator.py"` with one bounded JSON request. Dynamic
-policy re-observes the primary and selected model, excludes same-family routes,
-and preserves artifact provenance. Never discover a provider executable.
+Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
+request through the coordinator. An explicit target is honored or fails typed;
+never substitute a different agent or reconstruct a provider command. Model and
+CLI identities are observed diagnostics, not request pins.
 
-## Supported model routes
-
-- OpenCode `plan`: read-only plan in one contained cwd.
-- OpenCode `build`: tool-capable execution in one private temporary workspace,
-  returning output-only material; the caller checkout stays read-only and the
-  route has no `.git`, commit, push, PR, merge, or deploy authority.
-- Grok 4.5 through the `composer/codegen` compatibility route: output-only
-  patch/code JSON; no workspace tools. Seal simple work as low effort, standard
-  fixes/features as medium, and complex multi-file or architecture work as high.
-- Gemini `long_context` and Grok `huge_context`: read-only corpus work.
-- Codex and Gemini `advisory`: review/plan only. Grok is not a generic
-  advisory or worker route; its read-only actions are architecture,
-  governance, and huge-context only.
-- Codex `build`: resolvable but typed unavailable until a hardened mutation
-  backend exists.
-
-Claude is asynchronous inbox-only. An inbox route is eligible only after a
-current host-transport availability observation; the public coordinator exposes
-readiness only and never sends. Safe mode disables every native model-execution
-route.
-
-## Workflow
-
-1. Define one independent slice, exact expected output, owned paths, budget,
-   stop condition, and acceptance tests.
-2. Select one permitted route/action. An explicit unavailable target stops;
-   never substitute another provider.
-3. Submit the sealed request. Treat the returned artifact as untrusted and keep
-   its author model/family/session/route/action provenance immutable.
-4. The trusted primary applies output-only material, reviews every diff, runs
-   tests, resolves conflicts, and owns all commits/PRs/merges/deploys.
-5. If the task needs broader filesystem, shell, test, or git authority than the
-   selected row permits, keep it local or use a host-native isolated worker;
-   never widen the native contract with raw arguments or tool lists.
+Treat the patch and reported tests as untrusted. The primary verifies that the
+caller fingerprint stayed unchanged, reviews/applies the patch, and runs
+independent tests. Providers never commit, push, open or merge PRs, deploy, or
+write outside the disposable repository.

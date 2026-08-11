@@ -1,44 +1,34 @@
 ---
 name: orchestrate
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Standard
   effort: medium
 
-description: Coordinate a multi-step WORK task through a bounded task graph with explicit dependencies, authority, acceptance checks, and operator gates. Use when the user says "orchestrate this," "run this as a task graph," or "/agent-collab:orchestrate." Also offer this proactively when three or more independent or dependent work units need a durable integration plan.
+description: Coordinate a multi-step task through a bounded task graph with explicit dependencies, authority, acceptance checks, and operator gates. Use when the user says "orchestrate this," "run this as a task graph," or "/agent-collab:orchestrate." Also offer this when three or more work units need durable sequencing or parallelism.
 ---
+
+## Unified runtime invocation
+
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
 # Orchestrate a bounded task graph
 
-The active primary owns the graph and integration. This skill is instruction-
-native and standalone: build a task graph in the current project using the
-host's permitted delegation tools. It does not require a separate engine.
+The primary owns the graph and integration. Define each node's instruction,
+authority, dependencies, expected artifact, acceptance check, budget, failure
+policy, and stop condition. A provider node selects one closed logical action;
+never embed a provider command or transport action.
 
-For any model-execution node, resolve the **plugin root** from this loaded file
-and call only `python3 "<plugin-root>/coordinator.py"` with an exact sealed
-route/action. Never embed provider commands in a graph.
+Keep candidate lists artifact- and authority-homogeneous: read-only analysis,
+review findings, governance verdicts, context text, and private patches are not
+interchangeable. Run independent read-only or output-only nodes concurrently
+only when bounded. Treat every returned artifact as untrusted and verify it
+before unblocking dependents.
 
-## Workflow
-
-1. Define each node with an id, instruction, authority (`read_only`,
-   `output_only`, `workspace_write`, or locally governed mutation), dependencies, expected output,
-   acceptance check, failure policy, and stop condition.
-2. Exclude the active primary and artifact-author families from reviewer,
-   tiebreaker, fallback, and retry candidates. Unknown-family governance nodes
-   fail closed.
-3. Run dependency-free read-only/output-only nodes concurrently only when the
-   host supports bounded delegation. Keep merges, deploys, secrets, and
-   irreversible actions with the trusted primary/operator.
-4. Treat every delegated result as untrusted. Verify it against the node's
-   acceptance check before unblocking dependents.
-5. Preserve typed failures and authority. An unavailable explicit target stops;
-   it never promotes, demotes, or substitutes another route.
-6. Produce a final ledger: ordered nodes, route/action and artifact provenance,
-   results, failed/blocked nodes, validations, and unresolved operator gates.
-
-Safe mode permits local/async coordination only. Codex build remains a distinct
-typed-unavailable role; the Grok 4.5 `composer/codegen` compatibility route can
-return output-only code material for the trusted primary to apply and verify.
+One accepted runtime request launches one provider process/session. A selected
+attempt is not replayed after a model call. Preserve typed failures and stop on
+new scope, ambiguous authority, exhausted budget, or an operator gate. The
+primary retains merge, deploy, secret, and destructive decisions.
 
 ## Slicing implementation nodes (conditional guidance)
 

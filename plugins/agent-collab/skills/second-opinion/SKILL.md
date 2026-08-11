@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Advanced
   effort: high
@@ -10,7 +10,7 @@ description: Send a draft, analysis, plan, or decision to the reviewer for an in
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host/model, captures artifact provenance, excludes same-family routes, and verifies the co-packaged native manifest. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. Frontmatter `tier` is a routing recommendation, never a coordinator request field. For a review, cross-check, tiebreaker, or fallback over an authored artifact, capture its exact UTF-8 content and observed author model in the optional `artifact` object even when governance is false; never paste it into the prompt as a provenance substitute.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
 # Second opinion — independent cross-family read
 
@@ -82,6 +82,13 @@ An absent native route is typed unavailable and omitted; never restore a
 retired package or provider command. Hold one eligible independent reviewer as
 the tiebreaker rather than including it in the first wave.
 
+Use the documented closed coordinator request for each panelist. Frontmatter
+`effort` is host guidance and is never a coordinator request field.
+
+```json coordinator-request
+{"request_id":"second-opinion-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>"}
+```
+
 The `pro` tier resolves on this side to the strongest eligible independent reviewer allowed by central policy, which is the tier configured for slow, skeptical analysis — exactly what a cross-check wants. The faster `flash` tier is the wrong choice here; it optimizes for throughput, not for finding objections. Ensure each panelist receives the **whole** artifact — a divergence that is actually an artifact of one model truncating the context is a false signal, not a real disagreement.
 
 Use this prompt template — the four numbered sections are a functional contract, not stylistic suggestion. Downstream tooling (parity tests, audit logs, chain runners) keys on them:
@@ -98,11 +105,10 @@ Review the following [artifact type, e.g. "architecture proposal", "trial protoc
 [paste the full artifact verbatim]
 ```
 
-**Retry-on-malformed.** If the response does not contain all four numbered sections (`1. STRONGEST COUNTER-ARGUMENT`, `2. RISKS / FAILURE MODES`, `3. UNSUPPORTED ASSUMPTIONS`, `4. CONFIDENCE`), retry exactly once with:
-
-> Previous response did not include all four required sections. Re-emit strictly per the template above, no preamble.
-
-If the second attempt is also malformed, surface that explicitly when you report back — do not silently paper over the format failure with a fabricated structure. A malformed cross-check is itself a signal worth reporting. (Apply this per panelist; one panelist's malformed reply does not invalidate the others.)
+Malformed output is a terminal typed `protocol_error` for that panelist's
+request. Surface it explicitly; do not fabricate the four sections and do not
+replay the whole coordinator request. One panelist's terminal format failure
+does not invalidate correctly returned artifacts from other panelists.
 
 ### 3b. Tiebreaker — only on a conflicting verdict
 
@@ -200,5 +206,7 @@ When picking the right example to share with the user mid-invocation, match the 
   it does not ratify a panel or adjudicate additive compatible notes.
 - **Skipping the verifier-independence check** when the artifact came from work authored within the independent family. That "review" is correlated with its author; the audit log will record a cross-check that did not, in substance, occur.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
-- **Skipping the retry on malformed output.** If the verifier returns a wall of prose without the four numbered sections, the parity tests and audit logs cannot consume it. Retry once; if it fails again, report the failure rather than fabricating structure around the prose.
+- **Replaying a malformed request.** If the verifier returns output without the
+  four numbered sections, surface the managed runtime's terminal typed failure.
+  Do not issue a second request or fabricate structure around the prose.
 - **Running this against a draft the user has already revised three times based on prior cross-checks.** At that point, the decision-quality issue is no longer "needs more critique" — it is "needs a decision." Say so.

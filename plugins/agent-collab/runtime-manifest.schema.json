@@ -1,22 +1,146 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/sumitake/agent-collab/runtime-manifest.schema.json",
-  "title": "agent-collab signed standalone native runtime manifest",
+  "title": "agent-collab signed direct native runtime manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "protocol_version",
     "contract_version",
-    "broker_protocol_version",
+    "wire_contract",
+    "wire_contract_sha256",
     "channel",
     "artifacts"
   ],
   "properties": {
-    "schema_version": {"const": 3},
-    "protocol_version": {"const": 2},
-    "contract_version": {"const": 3},
-    "broker_protocol_version": {"const": 2},
+    "schema_version": {"const": 4},
+    "protocol_version": {"const": 3},
+    "contract_version": {"const": 4},
+    "wire_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "wire_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifacts",
+        "base_transport_actions",
+        "bounded_diagnostics",
+        "execution_receipt",
+        "failure_response",
+        "logical_action_source_modes",
+        "logical_actions",
+        "routing_source_sha256",
+        "runtime_protocol_version",
+        "schema_version",
+        "semantic_request",
+        "success_response",
+        "valid_action_source_pairs",
+        "zero_inference_readiness"
+      ],
+      "properties": {
+        "schema_version": {"type": "integer", "minimum": 1},
+        "runtime_protocol_version": {"const": 3},
+        "routing_source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "logical_actions": {
+          "type": "array",
+          "minItems": 11,
+          "maxItems": 11,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "logical_action_source_modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "architecture.conceptual",
+            "architecture.repository",
+            "codegen.repository",
+            "context.documents.extract",
+            "context.documents.reason",
+            "context.repository.extract",
+            "context.repository.reason",
+            "frontend_codegen.repository",
+            "frontend_review.repository",
+            "governance.repository",
+            "review.repository"
+          ],
+          "properties": {
+            "architecture.conceptual": {"const": "conceptual_prompt"},
+            "architecture.repository": {"const": "repository"},
+            "codegen.repository": {"const": "repository"},
+            "context.documents.extract": {"const": "documents"},
+            "context.documents.reason": {"const": "documents"},
+            "context.repository.extract": {"const": "repository"},
+            "context.repository.reason": {"const": "repository"},
+            "frontend_codegen.repository": {"const": "repository"},
+            "frontend_review.repository": {"const": "repository"},
+            "governance.repository": {"const": "repository"},
+            "review.repository": {"const": "repository"}
+          }
+        },
+        "base_transport_actions": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {"type": "string", "minLength": 1},
+              {"type": "string", "minLength": 1}
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "valid_action_source_pairs": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {"type": "string", "minLength": 1},
+              {"type": "string", "minLength": 1},
+              {"enum": ["conceptual_prompt", "documents", "repository"]}
+            ],
+            "items": false,
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "semantic_request": {"type": "object", "minProperties": 1},
+        "success_response": {"type": "object", "minProperties": 1},
+        "failure_response": {"type": "object", "minProperties": 1},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "review_findings",
+            "governance_verdict",
+            "context_text",
+            "private_patch"
+          ],
+          "properties": {
+            "review_findings": {"type": "object", "minProperties": 1},
+            "governance_verdict": {"type": "object", "minProperties": 1},
+            "context_text": {"type": "object", "minProperties": 1},
+            "private_patch": {"type": "object", "minProperties": 1}
+          }
+        },
+        "execution_receipt": {"type": "object", "minProperties": 1},
+        "zero_inference_readiness": {"type": "object", "minProperties": 1},
+        "bounded_diagnostics": {"type": "object", "minProperties": 1}
+      }
+    },
     "channel": {"const": "production"},
     "artifacts": {
       "type": "array",
@@ -35,10 +159,8 @@
           "size",
           "sha256",
           "provider_runtime_version",
-          "route_contract_version",
           "signing",
-          "files",
-          "contracts"
+          "files"
         ],
         "properties": {
           "platform": {"const": "darwin"},
@@ -49,8 +171,7 @@
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){1,2}$"},
-          "route_contract_version": {"type": "integer", "minimum": 1},
+          "provider_runtime_version": {"const": "3.0.0"},
           "files": {
             "type": "array",
             "minItems": 1,
@@ -71,12 +192,7 @@
                 "signing_profile"
               ],
               "properties": {
-                "path": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 255,
-                  "pattern": "^[^/\\\\]+$"
-                },
+                "path": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^/\\\\]+$"},
                 "role": {"enum": ["entrypoint", "runtime_library"]},
                 "install_mode": {"const": 320},
                 "size": {"type": "integer", "minimum": 0, "maximum": 67108864},
@@ -85,46 +201,7 @@
                 "architecture": {"const": "arm64"},
                 "minimum_macos": {"const": "14.0"},
                 "signing_profile": {"const": "production_developer_id"}
-              },
-              "allOf": [
-                {
-                  "if": {"properties": {"role": {"const": "entrypoint"}}},
-                  "then": {
-                    "properties": {
-                      "path": {"const": "agent-collab-runtime"},
-                      "macho_type": {"const": "executable"}
-                    }
-                  }
-                },
-                {
-                  "if": {"properties": {"role": {"const": "runtime_library"}}},
-                  "then": {
-                    "properties": {
-                      "macho_type": {"enum": ["dylib", "bundle"]}
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "contracts": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "oneOf": [
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "advisory"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "governance"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "gemini"}, "action": {"const": "long_context"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "advisory"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "codex"}, "action": {"const": "governance"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "plan"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "opencode"}, "action": {"const": "build"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "architecture"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "governance"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "grok"}, "action": {"const": "huge_context"}}},
-                {"type": "object", "additionalProperties": false, "required": ["route", "action"], "properties": {"route": {"const": "composer"}, "action": {"const": "codegen"}}}
-              ]
+              }
             }
           },
           "signing": {
@@ -140,10 +217,7 @@
             ],
             "properties": {
               "mode": {"const": "developer_id"},
-              "identity": {
-                "type": "string",
-                "pattern": "^Developer ID Application: [^\\r\\n]{1,160} \\([A-Z0-9]{10}\\)$"
-              },
+              "identity": {"type": "string", "minLength": 1},
               "team_id": {"type": "string", "pattern": "^[A-Z0-9]{10}$"},
               "require_notarization": {"const": true},
               "hardened_runtime": {"const": true},

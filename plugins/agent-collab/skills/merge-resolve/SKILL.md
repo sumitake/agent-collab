@@ -1,6 +1,6 @@
 ---
 name: merge-resolve
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Advanced
   effort: high

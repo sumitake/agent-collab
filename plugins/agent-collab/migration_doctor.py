@@ -327,7 +327,10 @@ class DoctorReport:
     inventory_errors: tuple[str, ...]
     host_profile: Mapping[str, object]
     native_runtime: str
-    broker_runtime: str
+    wire_contract_sha256: str
+    logical_actions: int
+    transport_actions: int
+    action_source_pairs: int
     provider_routing: str
     actions: tuple[str, ...]
 
@@ -497,38 +500,30 @@ def inventory_legacy_packages(home: Path) -> LegacyInventory:
     )
 
 
-def _runtime_state() -> str:
+def _runtime_state() -> tuple[str, str, int, int, int]:
     client = _load_runtime_client()
     resolution = client.resolve_runtime()
     if resolution.status == client.RuntimeStatus.OK:
-        # Judge readiness against the required baseline, not the client's full
-        # acceptance set: an optional route the signed artifact does not
-        # advertise is unavailable on its own (invoke() refuses it per-route),
-        # and must not report the whole runtime as blocked.
-        missing = set(client.REQUIRED_CONTRACTS).difference(resolution.contracts)
-        if missing:
-            rendered = ",".join(f"{route}/{action}" for route, action in sorted(missing))
-            return "invalid: missing contracts " + rendered
-        return "available"
+        wire = resolution.wire
+        if wire is None:
+            return "invalid: wire descriptor absent", "", 0, 0, 0
+        return (
+            "available",
+            wire.sha256,
+            len(wire.logical_actions),
+            len(wire.transport_actions),
+            len(wire.action_source_pairs),
+        )
     if resolution.status == client.RuntimeStatus.UNAVAILABLE:
-        # Surface the specific reason (e.g. issue #36: Apple notary unreachable ->
-        # a retryable, actionable message), not just a bare "typed unavailable".
-        if resolution.error:
-            return f"typed unavailable: {resolution.error}"
-        return "typed unavailable"
-    return f"invalid: {resolution.status.value}"
-
-
-def _broker_runtime_state() -> str:
-    client = _load_runtime_client()
-    status = client.broker_status()
-    if status.status == client.RuntimeStatus.OK:
-        return "ready"
-    if status.status == client.RuntimeStatus.UNAVAILABLE:
-        return "unavailable"
-    if status.status == client.RuntimeStatus.INTEGRITY_ERROR:
-        return "integrity_error"
-    return "unproven"
+        wire = resolution.wire
+        return (
+            "typed unavailable" + (f": {resolution.error}" if resolution.error else ""),
+            wire.sha256 if wire else "",
+            len(wire.logical_actions) if wire else 0,
+            len(wire.transport_actions) if wire else 0,
+            len(wire.action_source_pairs) if wire else 0,
+        )
+    return f"invalid: {resolution.status.value}", "", 0, 0, 0
 
 
 def build_report(
@@ -537,11 +532,8 @@ def build_report(
     inventory = inventory_legacy_packages(home)
     policy = _load_policy()
     profile = policy.resolve_profile(explicit_config)
-    runtime = _runtime_state()
-    broker_runtime = _broker_runtime_state()
-    blocked = bool(
-        inventory.active_packages or inventory.installed_packages or inventory.errors
-    )
+    runtime, wire_sha256, logical_count, transport_count, pair_count = _runtime_state()
+    blocked = bool(inventory.active_packages or inventory.errors)
     host = profile.host_runtime
     if host == "claude-code":
         actions = [
@@ -588,9 +580,7 @@ def build_report(
                 f"MANUAL: remove {package}@agent-collab from the active "
                 f"{observed_host} plugin selection"
             )
-    routing_ready = (
-        not blocked and runtime == "available" and broker_runtime == "ready"
-    )
+    routing_ready = not blocked and runtime == "available"
     return DoctorReport(
         active_legacy_packages=inventory.active_packages,
         installed_legacy_packages=inventory.installed_packages,
@@ -599,7 +589,10 @@ def build_report(
         inventory_errors=inventory.errors,
         host_profile=asdict(profile),
         native_runtime=runtime,
-        broker_runtime=broker_runtime,
+        wire_contract_sha256=wire_sha256,
+        logical_actions=logical_count,
+        transport_actions=transport_count,
+        action_source_pairs=pair_count,
         provider_routing="READY" if routing_ready else "BLOCKED",
         actions=tuple(actions),
     )
@@ -621,7 +614,8 @@ def render_report(report: DoctorReport) -> str:
         *(f"INVENTORY ERROR: {error}" for error in report.inventory_errors),
         f"HOST PROFILE: {report.host_profile['primary_id']} / {report.host_profile['primary_family']}",
         f"NATIVE RUNTIME: {report.native_runtime}",
-        f"BROKER RUNTIME: {report.broker_runtime}",
+        f"WIRE CONTRACT: {report.wire_contract_sha256 or 'unavailable'}",
+        f"ACTIONS: logical={report.logical_actions} transport={report.transport_actions} source-qualified={report.action_source_pairs}",
         *report.actions,
     ]
     return "\n".join(lines)

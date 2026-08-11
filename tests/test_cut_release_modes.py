@@ -40,6 +40,8 @@ class CutReleaseModeTests(unittest.TestCase):
                 return self._git_result("main\n")
             if args == ("status", "--porcelain"):
                 return self._git_result("")
+            if args == ("rev-parse", "HEAD"):
+                return self._git_result("1" * 40 + "\n")
             raise AssertionError(f"unexpected git command: {args}")
 
         with (
@@ -60,13 +62,17 @@ class CutReleaseModeTests(unittest.TestCase):
     def test_policy_only_release_verifies_archive_without_activation_evidence(self) -> None:
         result, archive, activation = self._dry_run("policy-only")
         self.assertEqual(result, 0)
-        archive.assert_called_once_with("policy-only")
+        archive.assert_called_once_with(
+            "policy-only", version="3.0.0", commit="1" * 40
+        )
         activation.assert_not_called()
 
     def test_activation_release_requires_archive_and_live_runtime_evidence(self) -> None:
         result, archive, activation = self._dry_run("activation")
         self.assertEqual(result, 0)
-        archive.assert_called_once_with("activation")
+        archive.assert_called_once_with(
+            "activation", version="3.0.0", commit="1" * 40
+        )
         activation.assert_called_once_with()
 
     def test_unknown_release_mode_fails_before_tagging(self) -> None:

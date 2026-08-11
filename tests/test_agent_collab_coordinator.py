@@ -1,18 +1,18 @@
-"""Standalone, bounded public coordinator contract tests."""
+"""Public semantic coordinator contract."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
-import shutil
+from pathlib import Path
 import subprocess
 import sys
-import tempfile
-import time
+import types
 import unittest
-from pathlib import Path
 from unittest import mock
+
+from tests.test_direct_runtime_public_contract import _wire_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,1471 +28,329 @@ def _load(name: str, path: Path):
     return module
 
 
-class CoordinatorTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.identity_env = mock.patch.dict(os.environ, {}, clear=True)
-        self.identity_env.start()
-        self.addCleanup(self.identity_env.stop)
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / "agent-collab"
-        shutil.copytree(
-            PLUGIN, self.root, ignore=shutil.ignore_patterns("runtime")
+class SemanticCoordinatorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = _load("coordinator_test_client", PLUGIN / "runtime_client.py")
+        cls.coordinator = _load("semantic_coordinator", PLUGIN / "coordinator.py")
+        cls.host_policy = _load("semantic_host_policy", PLUGIN / "host_policy.py")
+        descriptor, digest = _wire_descriptor()
+        cls.wire = cls.client.validate_wire_descriptor(
+            descriptor, expected_sha256=digest
         )
-        # The committed repo is now an ACTIVATION release (runtime committed). These
-        # coordinator tests are runtime-agnostic and exercise the no-native-runtime
-        # routing behavior, so the fixture is normalized to a policy-only manifest
-        # (empty artifacts, no runtime copied).
-        (self.root / "runtime-manifest.json").write_text(
-            json.dumps(
-                {
-                    "schema_version": 3,
-                    "protocol_version": 2,
-                    "contract_version": 3,
-                    "broker_protocol_version": 2,
-                    "channel": "production",
-                    "artifacts": [],
-                }
-            ),
-            encoding="utf-8",
+        cls.profile = cls.host_policy.HostProfile(
+            "codex", "openai", "gpt-test", "codex", "session-1", False,
+            governance_ready=True,
         )
 
-    def tearDown(self) -> None:
-        self.temp.cleanup()
-
-    def _run(
-        self, document: object, env: dict[str, str] | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        process_env = {"PATH": "/usr/bin:/bin", "HOME": self.temp.name}
-        process_env.update(env or {})
-        return subprocess.run(
-            [sys.executable, str(self.root / "coordinator.py")],
-            input=json.dumps(document) + "\n",
-            capture_output=True,
-            text=True,
-            cwd=self.temp.name,
-            env=process_env,
-            timeout=10,
-            check=False,
-        )
-
-    def test_plugin_only_checkout_is_callable_and_empty_manifest_is_unavailable(self) -> None:
-        result = self._run(
-            {
-                "protocol_version": 2,
-                "request_id": "standalone-1",
-                "operation": "readiness",
-                "route": "codex",
-                "action": "advisory",
-                "timeout_ms": 30_000,
-                "governance": False,
-                "primary": {
-                    "primary_id": "claude",
-                    "active_model": "anthropic/claude-opus",
-                    "host_runtime": "claude-code",
-                    "session_identifier": "c-1",
-                },
-                "row": {
-                    "model": "openai/codex",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            }
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["status"], "unavailable")
-        self.assertNotIn("workspace", result.stderr.lower())
-
-    def test_public_schema_rejects_provider_escape_fields(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "standalone-2",
-            "operation": "readiness",
-            "route": "codex",
-            "action": "advisory",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "custom",
-                "active_model": "custom/unknown",
-                "host_runtime": "custom",
-                "session_identifier": "s-1",
-            },
-            "row": {
-                "model": "openai/codex",
-                "effort": "high",
-                "mode": "prompt-only",
-            },
+    def test_repository_request_adds_canonical_repo_source_and_wire_hash(self) -> None:
+        request = {
+            "request_id": "review-1",
+            "logical_action": "review.repository",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Review the current repository.",
+            "repo_root": str(ROOT),
         }
-        for key, value in {
-            "argv": ["codex", "exec"],
-            "tools": ["shell"],
-            "model_override": "anthropic/claude-opus",
-            "cwd": "/",
-            "paths": ["/private"],
-        }.items():
-            with self.subTest(key=key):
-                document = dict(base)
-                document[key] = value
-                result = self._run(document)
-                self.assertEqual(result.returncode, 2)
-                response = json.loads(result.stdout)
-                self.assertEqual(response["status"], "config_error")
+        host = self.host_policy.HostProfile(
+            "codex", "openai", "gpt-test", "codex", "session-1", False,
+            governance_ready=True,
+        )
+        native = self.coordinator.validate_request(request, self.wire, host)
+        self.assertEqual(native["wire_contract_sha256"], self.wire.sha256)
+        self.assertEqual(
+            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+        )
+        self.assertNotIn("route", native)
+        self.assertNotIn("action", native)
 
-    def test_adoption_canary_is_internal_token_gated_and_bypasses_policy_routes(self) -> None:
-        coordinator = _load(
-            "agent_collab_adoption_canary_coordinator", PLUGIN / "coordinator.py"
+    def test_context_repository_request_uses_descriptor_source_mode(self) -> None:
+        request = {
+            "request_id": "context-repository-1",
+            "logical_action": "context.repository.extract",
+            "target_agent": "grok",
+            "timeout_ms": 5000,
+            "prompt": "Extract repository facts.",
+            "repo_root": str(ROOT),
+        }
+        native = self.coordinator.validate_request(request, self.wire, self.profile)
+        self.assertEqual(
+            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+        )
+
+    def test_old_public_route_action_request_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "closed"):
+            self.coordinator.validate_request(
+                {
+                    "request_id": "old-1",
+                    "route": "grok",
+                    "action": "architecture",
+                    "timeout_ms": 5000,
+                    "prompt": "old wire",
+                },
+                self.wire,
+                self.profile,
+            )
+
+    def test_repository_action_requires_repo_root(self) -> None:
+        with self.assertRaisesRegex(ValueError, "repo_root"):
+            self.coordinator.validate_request(
+                {
+                    "request_id": "review-2",
+                    "logical_action": "review.repository",
+                    "target_agent": None,
+                    "timeout_ms": 5000,
+                    "prompt": "Review.",
+                },
+                self.wire,
+                self.host_policy.HostProfile(
+                    "codex", "openai", "gpt-test", "codex", "session-1", False,
+                    governance_ready=True,
+                ),
+            )
+
+    def test_one_accepted_request_invokes_runtime_once_without_replay(self) -> None:
+        calls: list[object] = []
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda *, envelope: calls.append(envelope)
+            or self.client.RuntimeResult(self.client.RuntimeStatus.UNAVAILABLE, error="busy"),
         )
         request = {
-            "protocol_version": 2,
-            "request_id": "adoption-canary-1",
-            "operation": "adoption_canary",
-            "provider": "grok",
-            "registry_generation": 12,
-            "source_generation": 9,
-            "binary_sha256": "1" * 64,
-            "worker_sha256": "2" * 64,
-            "adapter_contract_generation": 4,
-            "routes": ["composer/codegen", "grok/architecture", "grok/governance", "grok/huge_context"],
-            "attempt_generation": 3,
-            "authority_token": "dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHQ",
-            "timeout_ms": 30_000,
+            "request_id": "context-1",
+            "logical_action": "context.documents.extract",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Extract facts.",
+            "documents": [{"label": "a", "content": "one"}],
         }
-        validated, request_id, error = coordinator._validate(request)
-        self.assertEqual(validated, request)
-        self.assertEqual(request_id, "adoption-canary-1")
-        self.assertEqual(error, "")
-        runtime_client = _load(
-            "agent_collab_adoption_canary_runtime", PLUGIN / "runtime_client.py"
+        host = self.host_policy.HostProfile(
+            "codex", "openai", "gpt-test", "codex", "session-1", False,
+            governance_ready=True,
         )
-        self.assertEqual(
-            coordinator.ADOPTION_PROVIDER_ROUTES,
-            runtime_client.ADOPTION_PROVIDER_ROUTES,
-        )
-
-        runtime = mock.Mock()
-        runtime.RuntimeStatus.OK = "ok"
-        runtime.invoke_adoption_canary.return_value = mock.Mock(
-            status=mock.Mock(value="ok"), result={"passed_routes": request["routes"]}, provenance=None, error=""
-        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: host)
         with mock.patch.object(
-            coordinator,
-            "_load",
-            side_effect=lambda _name, filename: runtime
-            if filename == "runtime_client.py"
-            else mock.Mock(),
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy, create=True
         ):
-            response, code = coordinator.process(request)
+            response, code = self.coordinator.process(request)
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "unavailable")
+        self.assertEqual(response["error_code"], "busy")
+        self.assertNotIn("error", response)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["author_lineage"], "openai")
+
+    def test_runtime_free_text_is_reduced_to_a_stable_public_error_code(self) -> None:
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda **_kwargs: self.client.RuntimeResult(
+                self.client.RuntimeStatus.PROVIDER_ERROR,
+                error="provider emitted private failure text",
+            ),
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+        request = {
+            "request_id": "context-private-error",
+            "logical_action": "context.documents.extract",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Extract facts.",
+            "documents": [{"label": "a", "content": "one"}],
+        }
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy
+        ):
+            response, code = self.coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            response,
+            {
+                "request_id": "context-private-error",
+                "status": "provider_error",
+                "error_code": "runtime_provider_error",
+            },
+        )
+
+    def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
+        calls: list[object] = []
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            readiness=lambda *, envelope: calls.append(envelope)
+            or self.client.RuntimeResult(
+                self.client.RuntimeStatus.OK, result={"actions": []}
+            ),
+            invoke=lambda **_kwargs: self.fail("readiness used the inference call"),
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+        request = {
+            "operation": "readiness",
+            "request_id": "runtime-status-1",
+            "timeout_ms": 5000,
+        }
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy
+        ):
+            response, code = self.coordinator.process(request)
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "ok")
-        runtime.invoke_adoption_canary.assert_called_once_with(request=request)
-
-        for key, value in {
-            "route": "grok",
-            "provider_path": "/tmp/grok",
-            "auth_root": "/tmp/auth",
-            "model": "attacker/model",
-        }.items():
-            hostile = dict(request, **{key: value})
-            rejected, _label, _error = coordinator._validate(hostile)
-            self.assertIsNone(rejected)
-
-        unknown_route = dict(request, routes=["grok/not-a-governed-route"])
-        rejected, _label, _error = coordinator._validate(unknown_route)
-        self.assertIsNone(rejected)
-
-        invalid_request_id = dict(request, request_id="contains whitespace")
-        rejected, _label, _error = coordinator._validate(invalid_request_id)
-        self.assertIsNone(rejected)
-
-    def test_governance_rejects_empty_artifact_content_or_model(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "empty-governance-artifact",
-            "operation": "execute",
-            "route": "grok",
-            "action": "governance",
-            "timeout_ms": 30_000,
-            "governance": True,
-            "primary": {
-                "primary_id": "codex",
-                "active_model": "openai/gpt-5",
-                "host_runtime": "codex",
-                "session_identifier": "c-2",
-            },
-            "row": {"mode": "prompt-only"},
-            "prompt": "review",
-            "artifact": {
-                "content": "",
-                "author_model": "google/gemini-test",
-            },
-        }
-        for content in ("", " \n\t"):
-            with self.subTest(content=content):
-                empty_content = json.loads(json.dumps(base))
-                empty_content["artifact"]["content"] = content
-                rejected = self._run(empty_content)
-                self.assertEqual(rejected.returncode, 2)
-                self.assertEqual(json.loads(rejected.stdout)["status"], "config_error")
-
-        blank_model = json.loads(json.dumps(base))
-        blank_model["artifact"] = {"content": "material", "author_model": "  "}
-        blank = self._run(blank_model)
-        self.assertEqual(blank.returncode, 2)
-        self.assertEqual(json.loads(blank.stdout)["status"], "config_error")
-
-    def test_non_governance_rejects_model_without_artifact_content(self) -> None:
-        request = {
-            "protocol_version": 2,
-            "request_id": "empty-optional-artifact",
-            "operation": "execute",
-            "route": "composer",
-            "action": "codegen",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-optional",
-            },
-            "row": {"task_class": "standard_codegen", "effort": "medium"},
-            "prompt": "generate",
-            "artifact": {
-                "content": " \n\t",
-                "author_model": "google/gemini-test",
-            },
-        }
-        rejected = self._run(request)
-        self.assertEqual(rejected.returncode, 2)
-        response = json.loads(rejected.stdout)
-        self.assertEqual(response["status"], "config_error")
-        self.assertIn("artifact", response["error"])
-
-    def test_action_authority_errors_are_role_neutral_and_shared(self) -> None:
-        coordinator = _load(
-            "agent_collab_authority_coordinator", PLUGIN / "coordinator.py"
-        )
-        primary = {
-            "primary_id": "codex",
-            "active_model": "openai/gpt-5",
-            "host_runtime": "codex",
-            "session_identifier": "authority-1",
-        }
-        auto = {
-            "protocol_version": 2,
-            "request_id": "auto-authority",
-            "operation": "execute",
-            "route": "auto",
-            "action": "governance",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": primary,
-            "row": {"gemini": {}, "codex": {}, "grok": {}},
-            "prompt": "review",
-        }
-        grok = {
-            **auto,
-            "request_id": "grok-authority",
-            "route": "grok",
-            "action": "architecture",
-            "governance": True,
-            "row": {"mode": "prompt-only"},
-            "artifact": {
-                "content": "material",
-                "author_model": "google/gemini-test",
-            },
-        }
-
-        errors = []
-        for request in (auto, grok):
-            validated, _request_id, error = coordinator._validate(request)
-            self.assertIsNone(validated)
-            errors.append(error)
-        self.assertEqual(errors, ["route action/authority mismatch"] * 2)
-
-    def test_codex_governance_is_an_accepted_review_contract(self) -> None:
-        # The managed-synchronous Codex governance route (operator-directed 2026-07-22)
-        # is a first-class governance review contract: prompt + artifact, governance=True.
-        coordinator = _load(
-            "agent_collab_codex_gov_coordinator", PLUGIN / "coordinator.py"
-        )
-        request = {
-            "protocol_version": 2,
-            "request_id": "codex-governance-accept",
-            "operation": "execute",
-            "route": "codex",
-            "action": "governance",
-            "timeout_ms": 30_000,
-            "governance": True,
-            "primary": {},
-            "row": {
-                "model": "openai/gpt-5.6-sol",
-                "effort": "high",
-                "mode": "prompt-only",
-            },
-            "prompt": "Review this artifact for correctness and risk.",
-            "artifact": {
-                "content": "material to review",
-                "author_model": "google/gemini-test",
-            },
-        }
-        validated, _request_id, error = coordinator._validate(request)
-        self.assertIsNotNone(validated, error)
-        self.assertEqual(error, "")
-        self.assertIn(("codex", "governance"), coordinator.DIRECT_CONTRACTS)
-        self.assertIn(("codex", "governance"), coordinator.REVIEW_CONTRACTS)
-
-    def test_async_inbox_has_observed_readiness_only_coordinator_contract(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "inbox-readiness-1",
-            "operation": "readiness",
-            "route": "inbox",
-            "action": "async",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "custom",
-                "primary_family": "openai",
-                "active_model": "openai/gpt-5",
-                "host_runtime": "custom",
-                "session_identifier": "custom-inbox",
-            },
-            "row": {
-                "target_id": "claude",
-                "target_family": "anthropic",
-                "target_session_identifier": "claude-target-1",
-            },
-        }
-        unavailable = self._run(base)
-        self.assertEqual(unavailable.returncode, 0, unavailable.stderr)
-        self.assertEqual(json.loads(unavailable.stdout)["status"], "unavailable")
-
-        observed = json.loads(json.dumps(base))
-        observed["primary"]["async_inbox"] = "available"
-        available = self._run(observed)
-        self.assertEqual(available.returncode, 0, available.stderr)
-        response = json.loads(available.stdout)
-        self.assertEqual(response["status"], "ok")
+        self.assertEqual(len(calls), 1)
         self.assertEqual(
-            response["result"],
+            calls[0],
             {
-                "available": True,
-                "transport": "host_async_inbox",
-                "target": {
-                    "target_id": "claude",
-                    "target_family": "anthropic",
-                    "target_session_identifier": "claude-target-1",
-                },
-            },
-        )
-
-        execute = dict(observed, operation="execute", prompt="send asynchronously")
-        rejected = self._run(execute)
-        self.assertEqual(rejected.returncode, 2, rejected.stderr)
-        self.assertEqual(json.loads(rejected.stdout)["status"], "config_error")
-
-    def test_async_inbox_requires_consistent_target_family_and_session(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "inbox-target-provenance",
-            "operation": "readiness",
-            "route": "inbox",
-            "action": "async",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "custom",
-                "primary_family": "openai",
-                "active_model": "openai/gpt-5",
-                "host_runtime": "custom",
-                "session_identifier": "custom-target-check",
-                "async_inbox": "available",
-            },
-            "row": {
-                "target_id": "antigravity",
-                "target_family": "google",
-                "target_session_identifier": "agy-target-1",
-            },
-        }
-        accepted = self._run(base)
-        self.assertEqual(accepted.returncode, 0, accepted.stderr)
-        self.assertEqual(json.loads(accepted.stdout)["status"], "ok")
-
-        mixed_case = json.loads(json.dumps(base))
-        mixed_case["row"]["target_id"] = "Antigravity"
-        mixed_case["row"]["target_family"] = "Google"
-        normalized = self._run(mixed_case)
-        self.assertEqual(normalized.returncode, 0, normalized.stderr)
-        self.assertEqual(
-            json.loads(normalized.stdout)["result"]["target"],
-            {
-                "target_id": "antigravity",
-                "target_family": "google",
-                "target_session_identifier": "agy-target-1",
-            },
-        )
-
-        cases = (
-            {},
-            {**base["row"], "target_family": "anthropic"},
-            {**base["row"], "target_session_identifier": ""},
-            {**base["row"], "target_id": "custom-agent"},
-        )
-        for row in cases:
-            with self.subTest(row=row):
-                rejected = self._run({**base, "row": row})
-            self.assertEqual(rejected.returncode, 2, rejected.stderr)
-            self.assertEqual(json.loads(rejected.stdout)["status"], "config_error")
-
-    def test_async_inbox_excludes_same_family_in_both_target_directions(self) -> None:
-        cases = (
-            (
-                {
-                    "primary_id": "claude",
-                    "primary_family": "anthropic",
-                    "active_model": "anthropic/claude-opus",
-                    "host_runtime": "claude-code",
-                    "session_identifier": "claude-primary",
-                    "async_inbox": "available",
-                },
-                {
-                    "target_id": "claude",
-                    "target_family": "anthropic",
-                    "target_session_identifier": "claude-target",
-                },
-            ),
-            (
-                {
-                    "primary_id": "antigravity",
-                    "primary_family": "google",
-                    "active_model": "google/gemini-pro",
-                    "host_runtime": "antigravity",
-                    "session_identifier": "agy-primary",
-                    "async_inbox": "available",
-                },
-                {
-                    "target_id": "antigravity",
-                    "target_family": "google",
-                    "target_session_identifier": "agy-target",
-                },
-            ),
-        )
-        for primary, row in cases:
-            with self.subTest(primary=primary["primary_id"]):
-                result = self._run(
-                    {
-                        "protocol_version": 2,
-                        "request_id": f"same-family-{primary['primary_id']}",
-                        "operation": "readiness",
-                        "route": "inbox",
-                        "action": "async",
-                        "timeout_ms": 30_000,
-                        "governance": False,
-                        "primary": primary,
-                        "row": row,
-                    }
-                )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(
-                json.loads(result.stdout)["status"], "same_family_blocked"
-            )
-
-    def test_async_inbox_never_invokes_a_headless_runtime(self) -> None:
-        coordinator = _load(
-            "agent_collab_async_only_coordinator", PLUGIN / "coordinator.py"
-        )
-        policy = _load("agent_collab_async_only_policy", PLUGIN / "host_policy.py")
-        runtime = _load("agent_collab_async_only_runtime", PLUGIN / "runtime_client.py")
-        request = {
-            "protocol_version": 2,
-            "request_id": "claude-inbox-no-headless",
-            "operation": "readiness",
-            "route": "inbox",
-            "action": "async",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "antigravity",
-                "primary_family": "google",
-                "active_model": "google/gemini-pro",
-                "host_runtime": "antigravity",
-                "session_identifier": "agy-primary-async",
-                "async_inbox": "available",
-            },
-            "row": {
-                "target_id": "claude",
-                "target_family": "anthropic",
-                "target_session_identifier": "claude-async-target",
-            },
-        }
-        with (
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(runtime, "invoke") as invoke,
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(request)
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "ok")
-        self.assertEqual(response["result"]["target"]["target_id"], "claude")
-        invoke.assert_not_called()
-
-    def test_async_inbox_surfaces_incomplete_primary_independence_warning(self) -> None:
-        result = self._run(
-            {
-                "protocol_version": 2,
-                "request_id": "inbox-incomplete-primary",
                 "operation": "readiness",
-                "route": "inbox",
-                "action": "async",
-                "timeout_ms": 30_000,
-                "governance": False,
-                "primary": {
-                    "primary_id": "custom",
-                    "primary_family": "openai",
-                    "active_model": "openai/gpt-5",
-                    "host_runtime": "custom",
-                    "async_inbox": "available",
-                },
-                "row": {
-                    "target_id": "claude",
-                    "target_family": "anthropic",
-                    "target_session_identifier": "claude-warning-target",
-                },
-            }
+                "wire_contract_sha256": self.wire.sha256,
+                "request_id": "runtime-status-1",
+                "author_lineage": "openai",
+                "timeout_ms": 5000,
+            },
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["status"], "ok")
-        self.assertIn("independence warning", response["warning"])
 
-    def test_exact_integer_versions_and_timeout_are_required(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "standalone-3",
+    def test_readiness_rejects_unknown_host_and_caller_injected_fields(self) -> None:
+        request = {
             "operation": "readiness",
-            "route": "composer",
-            "action": "codegen",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "custom",
-                "active_model": "custom/unknown",
-                "host_runtime": "custom",
-                "session_identifier": "s-1",
-            },
-            "row": {"task_class": "standard_codegen", "effort": "medium"},
+            "request_id": "runtime-status-2",
+            "timeout_ms": 5000,
         }
-        for field, value in (
-            ("protocol_version", True),
-            ("protocol_version", 1),
-            ("protocol_version", 1.0),
-            ("timeout_ms", True),
-            ("timeout_ms", 30_000.0),
-            ("timeout_ms", 0),
-            ("timeout_ms", 600_001),
-        ):
-            with self.subTest(field=field, value=value):
-                document = dict(base)
-                document[field] = value
-                result = self._run(document)
-                self.assertEqual(result.returncode, 2)
-                self.assertEqual(json.loads(result.stdout)["status"], "config_error")
-
-    def test_automatic_advisory_has_closed_candidates_and_no_raw_fallback(self) -> None:
-        request = {
-            "protocol_version": 2,
-            "request_id": "auto-1",
-            "operation": "readiness",
-            "route": "auto",
-            "action": "advisory",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-1",
-            },
-            "row": {
-                "gemini": {"model": "google/gemini-test", "effort": "high"},
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            },
-        }
-        result = self._run(request)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["status"], "unavailable")
-        self.assertEqual(response["attempts"], [])
-
-        request["row"] = {
-            "gemini": {"model": "google/gemini-test", "effort": "high"},
-            "codex": {"model": "openai/codex-test", "effort": "high", "mode": "prompt-only"},
-            "grok": {"mode": "prompt-only"},
-        }
-        result = self._run(request)
-        self.assertEqual(result.returncode, 2)
-        self.assertEqual(json.loads(result.stdout)["status"], "config_error")
-
-    def test_automatic_advisory_is_sealed_as_non_explicit(self) -> None:
-        coordinator = _load("agent_collab_test_coordinator", PLUGIN / "coordinator.py")
-        policy = _load("agent_collab_test_policy", PLUGIN / "host_policy.py")
-        runtime = _load("agent_collab_test_runtime", PLUGIN / "runtime_client.py")
-        captured: list[bool] = []
-
-        def invoke(*, envelope):
-            captured.append(envelope.explicit_target)
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"review": "ok"},
-                provenance={"route": envelope.route},
+        unknown = self.host_policy.HostProfile(
+            "unknown", "unknown", "", "unknown", "unknown", False
+        )
+        with self.assertRaisesRegex(RuntimeError, "identity"):
+            self.coordinator.validate_readiness_request(
+                request, self.wire, unknown
+            )
+        with self.assertRaisesRegex(ValueError, "closed"):
+            self.coordinator.validate_readiness_request(
+                {**request, "prompt": "probe"}, self.wire, self.profile
             )
 
+    def test_caller_cannot_assert_author_lineage(self) -> None:
         request = {
-            "protocol_version": 2,
-            "request_id": "auto-seal-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "advisory",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-1",
-            },
-            "row": {
-                "gemini": {"model": "google/gemini-test", "effort": "high"},
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            },
-            "prompt": "review",
+            "request_id": "review-forged",
+            "logical_action": "review.repository",
+            "target_agent": None,
+            "author_lineage": "google",
+            "timeout_ms": 5000,
+            "prompt": "Review.",
+            "repo_root": str(ROOT),
         }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(frozenset({("codex", "advisory")}), "digest-1"),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(request)
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "ok")
-        self.assertEqual(captured, [False])
-
-    def test_automatic_routes_share_one_deadline_across_fallbacks(self) -> None:
-        coordinator = _load(
-            "agent_collab_shared_deadline_coordinator",
-            PLUGIN / "coordinator.py",
+        host = self.host_policy.HostProfile(
+            "codex", "openai", "gpt-test", "codex", "session-1", False,
+            governance_ready=True,
         )
-        policy = _load(
-            "agent_collab_shared_deadline_policy",
-            PLUGIN / "host_policy.py",
-        )
-        runtime = _load(
-            "agent_collab_shared_deadline_runtime",
-            PLUGIN / "runtime_client.py",
-        )
-        captured: list[tuple[str, int]] = []
+        with self.assertRaisesRegex(ValueError, "closed"):
+            self.coordinator.validate_request(request, self.wire, host)
 
-        def invoke(*, envelope):
-            captured.append((envelope.route, envelope.timeout_ms))
-            if len(captured) == 1:
-                time.sleep(0.03)
-                return runtime.RuntimeResult(
-                    runtime.RuntimeStatus.UNAVAILABLE,
-                    error="first route unavailable",
-                )
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"review": "ok"},
-                provenance={"route": envelope.route},
-            )
-
+    def test_unknown_governance_identity_fails_before_runtime_inference(self) -> None:
+        calls: list[object] = []
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda *, envelope: calls.append(envelope),
+        )
+        host = self.host_policy.HostProfile(
+            "unknown", "unknown", "", "unknown", "unknown", False,
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: host)
         request = {
-            "protocol_version": 2,
-            "request_id": "auto-shared-deadline-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "advisory",
-            "timeout_ms": 200,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-deadline",
-            },
-            "row": {
-                "gemini": {
-                    "model": "google/gemini-test",
-                    "effort": "high",
-                },
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            },
-            "prompt": "review",
+            "request_id": "governance-unknown",
+            "logical_action": "governance.repository",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Govern.",
+            "repo_root": str(ROOT),
         }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(
-                    frozenset(
-                        {
-                            ("gemini", "advisory"),
-                            ("codex", "advisory"),
-                        }
-                    ),
-                    "digest-1",
-                ),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy, create=True
         ):
-            response, code = coordinator.process(request)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "ok")
-        self.assertEqual([route for route, _ in captured], ["gemini", "codex"])
-        self.assertGreaterEqual(captured[0][1], 1)
-        self.assertLessEqual(captured[0][1], request["timeout_ms"])
-        self.assertGreaterEqual(captured[1][1], 1)
-        self.assertLess(captured[1][1], captured[0][1])
-
-    def test_automatic_only_preacceptance_unavailable_can_fall_back(self) -> None:
-        terminal_statuses = tuple(
-            status
-            for status in (
-                "manifest_invalid",
-                "platform_unsupported",
-                "path_invalid",
-                "integrity_error",
-                "signature_error",
-                "host_blocked",
-                "config_error",
-                "spawn_error",
-                "timeout",
-                "output_limit",
-                "protocol_error",
-                "auth_error",
-                "quota_error",
-                "containment_error",
-                "cancelled",
-                "input_limit",
-                "teardown_error",
-                "provider_error",
-                "canary_blocked",
-            )
-        )
-        for status in terminal_statuses:
-            with self.subTest(status=status):
-                coordinator = _load(
-                    f"agent_collab_terminal_{status}_coordinator",
-                    PLUGIN / "coordinator.py",
-                )
-                policy = _load(
-                    f"agent_collab_terminal_{status}_policy",
-                    PLUGIN / "host_policy.py",
-                )
-                runtime = _load(
-                    f"agent_collab_terminal_{status}_runtime",
-                    PLUGIN / "runtime_client.py",
-                )
-                invocations: list[str] = []
-
-                def invoke(*, envelope):
-                    invocations.append(envelope.route)
-                    if len(invocations) > 1:
-                        return runtime.RuntimeResult(
-                            runtime.RuntimeStatus.OK,
-                            result={"review": "unsafe fallback"},
-                            provenance={"route": envelope.route},
-                        )
-                    return runtime.RuntimeResult(
-                        getattr(runtime.RuntimeStatus, status.upper()),
-                        error=f"first route {status}",
-                    )
-
-                request = {
-                    "protocol_version": 2,
-                    "request_id": f"auto-terminal-{status}-1",
-                    "operation": "execute",
-                    "route": "auto",
-                    "action": "advisory",
-                    "timeout_ms": 200,
-                    "governance": False,
-                    "primary": {
-                        "primary_id": "claude",
-                        "active_model": "anthropic/claude-opus",
-                        "host_runtime": "claude-code",
-                        "session_identifier": "c-terminal",
-                    },
-                    "row": {
-                        "gemini": {
-                            "model": "google/gemini-test",
-                            "effort": "high",
-                        },
-                        "codex": {
-                            "model": "openai/codex-test",
-                            "effort": "high",
-                            "mode": "prompt-only",
-                        },
-                    },
-                    "prompt": "review",
-                }
-                with (
-                    mock.patch.object(
-                        policy,
-                        "_runtime_contracts",
-                        return_value=(
-                            frozenset(
-                                {
-                                    ("gemini", "advisory"),
-                                    ("codex", "advisory"),
-                                }
-                            ),
-                            "digest-1",
-                        ),
-                    ),
-                    mock.patch.object(runtime, "invoke", side_effect=invoke),
-                    mock.patch.object(
-                        coordinator, "_inventory_legacy", return_value=()
-                    ),
-                    mock.patch.object(
-                        coordinator,
-                        "_load",
-                        side_effect=lambda _name, filename: (
-                            policy
-                            if filename == "host_policy.py"
-                            else runtime
-                        ),
-                    ),
-                ):
-                    response, code = coordinator.process(request)
-
-                self.assertEqual(
-                    code,
-                    2 if status in {"config_error", "protocol_error"} else 0,
-                )
-                self.assertEqual(response["status"], status)
-                self.assertEqual(
-                    response["attempts"],
-                    [{"route": "gemini", "status": status}],
-                )
-                self.assertEqual(invocations, ["gemini"])
-
-    def test_automatic_late_success_is_typed_timeout(self) -> None:
-        coordinator = _load(
-            "agent_collab_late_success_coordinator",
-            PLUGIN / "coordinator.py",
-        )
-        policy = _load(
-            "agent_collab_late_success_policy",
-            PLUGIN / "host_policy.py",
-        )
-        runtime = _load(
-            "agent_collab_late_success_runtime",
-            PLUGIN / "runtime_client.py",
-        )
-        invocations: list[str] = []
-
-        def invoke(*, envelope):
-            invocations.append(envelope.route)
-            time.sleep(0.02)
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"review": "too late"},
-                provenance={"route": envelope.route},
-            )
-
-        request = {
-            "protocol_version": 2,
-            "request_id": "auto-late-success-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "advisory",
-            "timeout_ms": 10,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-late",
-            },
-            "row": {
-                "gemini": {
-                    "model": "google/gemini-test",
-                    "effort": "high",
-                },
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            },
-            "prompt": "review",
-        }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(
-                    frozenset(
-                        {
-                            ("gemini", "advisory"),
-                            ("codex", "advisory"),
-                        }
-                    ),
-                    "digest-1",
-                ),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(request)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "timeout")
-        self.assertEqual(
-            response["attempts"],
-            [{"route": "gemini", "status": "ok"}],
-        )
-        self.assertEqual(invocations, ["gemini"])
-
-    def test_automatic_preflight_consumes_the_same_request_deadline(self) -> None:
-        coordinator = _load(
-            "agent_collab_slow_preflight_coordinator",
-            PLUGIN / "coordinator.py",
-        )
-        policy = _load(
-            "agent_collab_slow_preflight_policy",
-            PLUGIN / "host_policy.py",
-        )
-        runtime = _load(
-            "agent_collab_slow_preflight_runtime",
-            PLUGIN / "runtime_client.py",
-        )
-        request = {
-            "protocol_version": 2,
-            "request_id": "auto-slow-preflight-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "advisory",
-            "timeout_ms": 10,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-slow-preflight",
-            },
-            "row": {
-                "gemini": {
-                    "model": "google/gemini-test",
-                    "effort": "high",
-                },
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-            },
-            "prompt": "review",
-        }
-        unavailable = policy.PreflightOutcome(
-            policy.PreflightStatus.UNAVAILABLE,
-            policy.resolve_profile(request["primary"]),
-            (),
-            "slow preflight unavailable",
-        )
-
-        def slow_preflight(**_kwargs):
-            time.sleep(0.02)
-            return unavailable
-
-        with (
-            mock.patch.object(
-                policy, "startup_preflight", side_effect=slow_preflight
-            ),
-            mock.patch.object(runtime, "invoke") as invoke,
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(request)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "timeout")
-        self.assertEqual(response["attempts"], [])
-        invoke.assert_not_called()
-
-    def test_empty_primary_reobserves_zcode_model_on_each_request(self) -> None:
-        coordinator = _load("agent_collab_switch_coordinator", PLUGIN / "coordinator.py")
-        policy = _load("agent_collab_switch_policy", PLUGIN / "host_policy.py")
-        runtime = _load("agent_collab_switch_runtime", PLUGIN / "runtime_client.py")
-        observed: list[str] = []
-
-        def invoke(*, envelope):
-            observed.append(envelope.primary_family)
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"review": "ok"},
-                provenance={"route": envelope.route},
-            )
-
-        request = {
-            "protocol_version": 2,
-            "request_id": "switch-1",
-            "operation": "execute",
-            "route": "codex",
-            "action": "advisory",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {},
-            "row": {
-                "model": "openai/codex-test",
-                "effort": "high",
-                "mode": "prompt-only",
-            },
-            "prompt": "review",
-        }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(frozenset({("codex", "advisory")}), "digest-1"),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            for model, expected in (
-                ("opencode/glm-5.2", "zhipu"),
-                ("google/gemini-2.5-pro", "google"),
-            ):
-                with mock.patch.dict(
-                    os.environ,
-                    {
-                        "ZCODE_SESSION_ID": "zcode-1",
-                        "OPENCODE_ACTIVE_MODEL": model,
-                    },
-                    clear=True,
-                ):
-                    response, code = coordinator.process(request)
-                self.assertEqual(code, 0)
-                self.assertEqual(response["status"], "ok")
-                self.assertEqual(observed[-1], expected)
-        self.assertEqual(observed, ["zhipu", "google"])
-
-    def test_automatic_governance_normalizes_unknown_family_status(self) -> None:
-        request = {
-            "protocol_version": 2,
-            "request_id": "auto-governance-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "governance",
-            "timeout_ms": 30_000,
-            "governance": True,
-            "primary": {},
-            "row": {
-                "gemini": {"model": "google/gemini-test", "effort": "high"},
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-                "grok": {"mode": "prompt-only"},
-            },
-            "prompt": "review",
-            "artifact": {
-                "content": "artifact",
-                "author_model": "google/gemini-test",
-            },
-        }
-        result = self._run(request)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "unknown_family")
-
-    def test_grok_is_reachable_only_for_sealed_architecture_or_governance(self) -> None:
-        coordinator = _load("agent_collab_grok_role_coordinator", PLUGIN / "coordinator.py")
-        policy = _load("agent_collab_grok_role_policy", PLUGIN / "host_policy.py")
-        runtime = _load("agent_collab_grok_role_runtime", PLUGIN / "runtime_client.py")
-        observed: list[tuple[str, str]] = []
-
-        def invoke(*, envelope):
-            observed.append((envelope.route, envelope.action))
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"architecture": "ok"},
-                provenance={"route": envelope.route, "action": envelope.action},
-            )
-
-        request = {
-            "protocol_version": 2,
-            "request_id": "architecture-1",
-            "operation": "execute",
-            "route": "auto",
-            "action": "architecture",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "architect-1",
-            },
-            "row": {
-                "gemini": {"model": "google/gemini-test", "effort": "high"},
-                "codex": {
-                    "model": "openai/codex-test",
-                    "effort": "high",
-                    "mode": "prompt-only",
-                },
-                "grok": {"mode": "prompt-only"},
-            },
-            "prompt": "Design the system.",
-        }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(frozenset({("grok", "architecture")}), "digest-1"),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(request)
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "ok")
-        self.assertEqual(observed, [("grok", "architecture")])
-
-        generic = dict(request, request_id="generic-1", action="advisory")
-        generic["row"] = {key: value for key, value in request["row"].items() if key != "grok"}
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(frozenset({("grok", "architecture")}), "digest-1"),
-            ),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
-        ):
-            response, code = coordinator.process(generic)
+            response, code = self.coordinator.process(request)
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "unavailable")
-        self.assertEqual(observed, [("grok", "architecture")])
+        self.assertEqual(calls, [])
 
-        explicit_generic = dict(request, request_id="bad-grok-1", route="grok", action="advisory")
-        explicit_generic["row"] = {"mode": "prompt-only"}
-        response, code = coordinator.process(explicit_generic)
-        self.assertEqual(code, 2)
-        self.assertEqual(response["status"], "config_error")
-
-    def test_declared_unavailable_worker_roles_are_not_config_errors(self) -> None:
-        base = {
-            "protocol_version": 2,
-            "request_id": "worker-unavailable-1",
-            "operation": "execute",
-            "route": "codex",
-            "action": "build",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-1",
-            },
-            "row": {},
-            "prompt": "implement",
-        }
-        result = self._run(base)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "unavailable")
-
-        automatic = dict(base)
-        automatic.update(
-            request_id="automatic-worker-unavailable-1",
-            route="auto",
-            action="worker",
-        )
-        result = self._run(automatic)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "unavailable")
-
-    def test_non_governance_worker_accepts_exact_artifact_snapshot_for_exclusion(self) -> None:
-        coordinator = _load("agent_collab_artifact_coordinator", PLUGIN / "coordinator.py")
-        policy = _load("agent_collab_artifact_policy", PLUGIN / "host_policy.py")
-        runtime = _load("agent_collab_artifact_runtime", PLUGIN / "runtime_client.py")
-        request = {
-            "protocol_version": 2,
-            "request_id": "worker-artifact-1",
-            "operation": "execute",
-            "route": "opencode",
-            "action": "build",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "claude",
-                "active_model": "anthropic/claude-opus",
-                "host_runtime": "claude-code",
-                "session_identifier": "c-worker",
-            },
-            "row": {"cwd": "/tmp/work", "model": "opencode/glm-5.2"},
-            "prompt": "generate",
-            "artifact": {
-                "content": "existing implementation",
-                "author_model": "zhipu/glm-5.2",
-            },
-        }
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(frozenset({("opencode", "build")}), "digest-1"),
-            ),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
+    def test_codex_thread_proves_family_without_a_model_pin(self) -> None:
+        with mock.patch.dict(
+            os.environ, {"CODEX_THREAD_ID": "thread-1"}, clear=True
         ):
-            response, code = coordinator.process(request)
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "same_family_blocked")
+            profile = self.host_policy.resolve_profile()
+        self.assertEqual(profile.primary_id, "codex")
+        self.assertEqual(profile.primary_family, "openai")
+        self.assertEqual(profile.active_model, "")
+        self.assertTrue(profile.governance_ready)
 
-        advisory = dict(request, route="codex", action="advisory")
-        advisory["row"] = {
-            "model": "openai/codex",
-            "effort": "high",
-            "mode": "prompt-only",
-        }
-        captured = []
-
-        def invoke(*, envelope):
-            captured.append(envelope)
-            return runtime.RuntimeResult(
-                runtime.RuntimeStatus.OK,
-                result={"review": "ok"},
-                provenance={"route": envelope.route},
-            )
-
-        with (
-            mock.patch.object(
-                policy,
-                "_runtime_contracts",
-                return_value=(
-                    frozenset({("opencode", "build"), ("codex", "advisory")}),
-                    "digest-1",
-                ),
-            ),
-            mock.patch.object(runtime, "invoke", side_effect=invoke),
-            mock.patch.object(coordinator, "_inventory_legacy", return_value=()),
-            mock.patch.object(
-                coordinator,
-                "_load",
-                side_effect=lambda _name, filename: (
-                    policy if filename == "host_policy.py" else runtime
-                ),
-            ),
+    def test_claude_uses_the_canonical_code_session_identifier(self) -> None:
+        with mock.patch.dict(
+            os.environ, {"CLAUDE_CODE_SESSION_ID": "session-1"}, clear=True
         ):
-            response, code = coordinator.process(advisory)
-        self.assertEqual(code, 0)
-        self.assertEqual(response["status"], "ok")
-        self.assertEqual(captured[0].artifact_author_family, "zhipu")
-        self.assertTrue(captured[0].artifact_present)
+            profile = self.host_policy.resolve_profile()
+        self.assertEqual(profile.primary_id, "claude")
+        self.assertEqual(profile.primary_family, "anthropic")
+        self.assertEqual(profile.session_identifier, "session-1")
+        self.assertTrue(profile.governance_ready)
 
-    def test_non_governance_opencode_plan_accepts_exact_artifact_snapshot(self) -> None:
-        coordinator = _load(
-            "agent_collab_opencode_plan_artifact_coordinator",
-            PLUGIN / "coordinator.py",
-        )
-        request = {
-            "protocol_version": 2,
-            "request_id": "opencode-plan-artifact-1",
-            "operation": "execute",
-            "route": "opencode",
-            "action": "plan",
-            "timeout_ms": 30_000,
-            "governance": False,
-            "primary": {
-                "primary_id": "codex",
-                "primary_family": "openai",
-                "active_model": "openai/gpt-5.6-sol",
-                "host_runtime": "codex",
-                "session_identifier": "c-plan",
-            },
-            "row": {"cwd": "/tmp/work", "model": "opencode/glm-5.2"},
-            "prompt": "review the implementation plan",
-            "artifact": {
-                "content": "exact authored implementation plan",
-                "author_model": "openai/gpt-5.6-sol",
-            },
-        }
-
-        validated, _request_id, error = coordinator._validate(request)
-
-        self.assertIsNotNone(validated, error)
-        self.assertEqual(validated["artifact"], request["artifact"])
-
-    def test_unhashable_row_values_return_config_error(self) -> None:
-        cases = (
-            (
-                "codex",
-                {
-                    "model": "openai/codex-test",
-                    "effort": [],
-                    "mode": "prompt-only",
-                },
-            ),
-            ("grok", {"mode": {"not": "hashable"}}),
-        )
-        for route, row in cases:
-            with self.subTest(route=route):
-                result = self._run(
-                    {
-                        "protocol_version": 2,
-                        "request_id": f"bad-row-{route}",
-                        "operation": "execute",
-                        "route": route,
-                        "action": "advisory",
-                        "timeout_ms": 30_000,
-                        "governance": False,
-                        "primary": {
-                            "primary_id": "claude",
-                            "active_model": "anthropic/claude-opus",
-                            "host_runtime": "claude-code",
-                            "session_identifier": "c-1",
-                        },
-                        "row": row,
-                        "prompt": "review",
-                    }
-                )
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertEqual(json.loads(result.stdout)["status"], "config_error")
-
-    def test_incomplete_legacy_inventory_is_a_hard_conflict(self) -> None:
-        coordinator = _load(
-            "agent_collab_inventory_closed_coordinator", PLUGIN / "coordinator.py"
-        )
-        inventory = type(
-            "Inventory",
-            (),
+    def test_conflicting_canonical_and_compat_session_ids_fail_closed(self) -> None:
+        with mock.patch.dict(
+            os.environ,
             {
-                "active_packages": (),
-                "installed_packages": (),
-                "errors": ("registry unreadable",),
+                "CLAUDE_CODE_SESSION_ID": "canonical-session",
+                "CLAUDE_SESSION_ID": "different-session",
             },
-        )()
-        doctor = type(
-            "Doctor",
-            (),
-            {"inventory_legacy_packages": staticmethod(lambda _home: inventory)},
-        )()
-        with mock.patch.object(coordinator, "_load", return_value=doctor):
-            self.assertEqual(
-                coordinator._inventory_legacy(), ("inventory-unavailable",)
-            )
+            clear=True,
+        ):
+            profile = self.host_policy.resolve_profile()
+        self.assertTrue(profile.identity_conflict)
+        self.assertFalse(profile.governance_ready)
 
-    def test_home_lookup_failures_close_legacy_inventory(self) -> None:
-        coordinator = _load(
-            "agent_collab_home_closed_coordinator", PLUGIN / "coordinator.py"
+    def test_first_coordinator_boundary_rejects_duplicate_and_nonfinite_json(self) -> None:
+        valid_fields = (
+            '"logical_action":"architecture.conceptual",'
+            '"target_agent":null,"timeout_ms":5000,'
+            '"prompt":"Review."'
         )
-        doctor = mock.Mock()
-        for failure in (KeyError("missing passwd entry"), RuntimeError("no home")):
-            with self.subTest(failure=type(failure).__name__), mock.patch.object(
-                coordinator, "_load", return_value=doctor
-            ), mock.patch.object(coordinator.Path, "home", side_effect=failure):
-                self.assertEqual(
-                    coordinator._inventory_legacy(), ("inventory-unavailable",)
+        malformed = {
+            "duplicate": (
+                b'{"request_id":"first","request_id":"second",'
+                + valid_fields.encode("utf-8")
+                + b"}"
+            ),
+            "nan": (
+                b'{"request_id":"nan","logical_action":"architecture.conceptual",'
+                b'"target_agent":null,"timeout_ms":NaN,"prompt":"Review."}'
+            ),
+            "positive_infinity": (
+                b'{"request_id":"inf","logical_action":"architecture.conceptual",'
+                b'"target_agent":null,"timeout_ms":Infinity,"prompt":"Review."}'
+            ),
+            "negative_infinity": (
+                b'{"request_id":"ninf","logical_action":"architecture.conceptual",'
+                b'"target_agent":null,"timeout_ms":-Infinity,"prompt":"Review."}'
+            ),
+        }
+        for name, raw in malformed.items():
+            with self.subTest(name=name):
+                completed = subprocess.run(
+                    [sys.executable, str(PLUGIN / "coordinator.py")],
+                    input=raw,
+                    capture_output=True,
+                    check=False,
                 )
-                doctor.inventory_legacy_packages.assert_not_called()
+                response = json.loads(completed.stdout)
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(response["status"], "invalid_request")
+                self.assertEqual(response["error_code"], "invalid_json_request")
+                self.assertNotIn("error", response)
 
-    def test_main_contains_keyerror_and_runtimeerror_from_processing(self) -> None:
-        coordinator = _load(
-            "agent_collab_main_closed_coordinator", PLUGIN / "coordinator.py"
-        )
-        for failure in (KeyError("missing passwd entry"), RuntimeError("no home")):
-            with self.subTest(failure=type(failure).__name__):
-                fake_stdin = mock.Mock()
-                fake_stdin.buffer.read.return_value = b"{}"
-                with mock.patch.object(
-                    coordinator.sys, "stdin", fake_stdin
-                ), mock.patch.object(
-                    coordinator, "process", side_effect=failure
-                ), mock.patch.object(coordinator, "_emit") as emit:
-                    self.assertEqual(coordinator.main(), 2)
-                response = emit.call_args.args[0]
-                self.assertEqual(response["status"], "host_blocked")
 
 
 if __name__ == "__main__":

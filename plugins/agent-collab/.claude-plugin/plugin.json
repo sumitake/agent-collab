@@ -1,7 +1,7 @@
 {
   "name": "agent-collab",
-  "version": "4.9.1",
-  "description": "Unified dynamic-host collaboration package with centralized skills, migration preflight, and a verified plugin-relative native runtime boundary. Native route availability is established at runtime and never inferred from package metadata alone.",
+  "version": "5.0.0",
+  "description": "Unified collaboration package with semantic agent actions, source-grounded context, and a verified plugin-relative direct native runtime.",
   "author": {
     "name": "John Osumi"
   },
@@ -13,9 +13,8 @@
     "governance",
     "routing",
     "codex",
-    "opencode",
-    "glm",
     "zhipu",
+    "moonshot",
     "grok",
     "gemini",
     "claude"

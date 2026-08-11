@@ -108,10 +108,19 @@ def _validate_json_tree(root: Any) -> None:
             _raise("runtime manifest contains a non-JSON value")
 
 
-def load_closed_json_object(raw: bytes) -> Dict[str, Any]:
+def load_closed_json_object(
+    raw: bytes, *, max_bytes: int = MAX_MANIFEST_BYTES
+) -> Dict[str, Any]:
     """Decode one bounded JSON object with duplicate/non-finite/float rejection."""
 
-    if type(raw) is not bytes or not raw or len(raw) > MAX_MANIFEST_BYTES:
+    if (
+        type(max_bytes) is not int
+        or type(max_bytes) is bool
+        or not 1 <= max_bytes <= MAX_BUNDLE_BYTES
+        or type(raw) is not bytes
+        or not raw
+        or len(raw) > max_bytes
+    ):
         _raise("runtime manifest bytes are invalid")
     try:
         text = raw.decode("utf-8")
@@ -348,10 +357,9 @@ def source_mode_ok(mode: int) -> bool:
     delegated to the marketplace/git install channel, not to this mode check.
 
     This predicate is the SINGLE source of the source-mode rule, shared by the
-    bundle root, the (source) member check, and the release/export/archive-source
-    gates that run against the checked-out git tree — so the floor cannot drift
-    across files. It is DISTINCT from the strict broker-store check, which keeps
-    exact `0o500` (that store is privately extracted and owner-only).
+    bundle root, the member check, and the release/export/archive-source gates
+    that run against the checked-out git tree — so the floor cannot drift
+    across files.
 
     NOTE: every current member is a `0o500` Mach-O executable, so requiring
     owner-execute is correct for all of them. A future NON-executable data member
@@ -365,45 +373,19 @@ def source_mode_ok(mode: int) -> bool:
     )
 
 
-def _broker_root_mode_ok(mode: int) -> bool:
-    """Broker-store bundle root predicate: owner read+execute, NO group/other
-    WRITE, and no special bits. The private store is owner-managed, so a
-    group/other-writable root would let a peer rename/replace members around the
-    path-based checks and defeat the store boundary (Codex PR #30). A host that
-    normalizes the extracted bundle directory to 0o755 (no group/other write) is
-    still accepted; only writable roots (0o775/0o777/…) are rejected. Distinct
-    from the git-source `source_mode_ok`, which tolerates group/other write."""
-    perms = stat.S_IMODE(mode)
-    return (
-        (perms & 0o500) == 0o500  # owner read + execute present
-        and (perms & 0o022) == 0  # no group/other WRITE
-        and (perms & 0o7000) == 0  # no setuid / setgid / sticky
-    )
-
-
 def verify_bundle_tree(
     root: Path,
     records: Any,
     *,
     inspector: Callable[[Path], Dict[str, str]],
-    tolerant: bool = False,
 ) -> str:
     """Verify one closed standalone bundle without following filesystem links.
 
-    `tolerant` selects the MODE check only. False (default) requires each member's
-    mode to equal the manifest `install_mode` exactly — used for the privately
-    extracted broker store, where the exact `0o500` is achievable and worth keeping
-    as a publication-drift invariant. True accepts the trusted-source mode floor
-    (`source_mode_ok`) — used for the git-installed plugin tree (a trust-the-checkout
-    SOURCE), whose modes reflect the operator's umask (`0o755`/`0o700`/`0o775`) and
-    cannot be `0o500`. Every other check — regular-file type, no symlink,
-    `uid == geteuid`, `nlink == 1`, size,
-    stat identity, per-member SHA-256, and the Mach-O/signature inspection — is
-    identical in both modes; tolerance touches nothing but the permission bits."""
+    The plugin checkout is the one public trust domain, so source modes follow
+    the operator's umask. Integrity is carried by exact membership, per-member
+    digests, Mach-O inspection, and Developer ID signature verification."""
 
-    # `tolerant` selects a security predicate, so it must be a real bool — a
-    # truthy value like the string "false" must not silently relax the check.
-    if not isinstance(root, Path) or not callable(inspector) or type(tolerant) is not bool:
+    if not isinstance(root, Path) or not callable(inspector):
         _raise("runtime bundle verifier arguments are invalid")
     validated = validate_file_records(records)
     expected_names = tuple(record["path"] for record in validated)
@@ -429,17 +411,7 @@ def verify_bundle_tree(
             or stat.S_ISLNK(lexical_root.st_mode)
             or _stat_identity(root_before) != _stat_identity(lexical_root)
             or root_before.st_uid != os.geteuid()
-            # The root mode is selected by `tolerant` exactly like the members: the
-            # git SOURCE root accepts the any-umask source floor, but the private
-            # broker store root must be NON-group/other-WRITABLE — a writable
-            # broker root would let a peer rename/replace members around the
-            # path-based checks and defeat the store boundary (Codex PR #30). Host
-            # normalization to 0o755 (no group/other write) stays accepted.
-            or (
-                not source_mode_ok(root_before.st_mode)
-                if tolerant
-                else not _broker_root_mode_ok(root_before.st_mode)
-            )
+            or not source_mode_ok(root_before.st_mode)
         ):
             _raise("runtime bundle root is unsafe")
         try:
@@ -473,11 +445,7 @@ def verify_bundle_tree(
                     or stat.S_ISLNK(lexical_before.st_mode)
                     or before.st_uid != os.geteuid()
                     or before.st_nlink != 1
-                    or (
-                        not source_mode_ok(before.st_mode)
-                        if tolerant
-                        else stat.S_IMODE(before.st_mode) != record["install_mode"]
-                    )
+                    or not source_mode_ok(before.st_mode)
                     or before.st_size != record["size"]
                     or _stat_identity(before) != _stat_identity(lexical_before)
                 ):

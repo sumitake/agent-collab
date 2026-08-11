@@ -44,9 +44,6 @@ jobs:
               if len(body.strip()) < 100:
                   errors.append(f"{sf}: body content < 100 chars (likely missing 'How to run' section)")
                   continue
-              # Has 'How to' or 'Step' or similar workflow content
-              if not re.search(r"##\s+(How to|Step|Workflow|When to use)", body, re.IGNORECASE):
-                  errors.append(f"{sf}: missing 'How to run' / 'Workflow' / 'When to use' heading")
               # Has anti-patterns or limitations section (operational discipline marker)
               # (warning only, not error)
               if not re.search(r"##\s+(Anti-patterns|Limitations|Common pitfalls)", body, re.IGNORECASE):

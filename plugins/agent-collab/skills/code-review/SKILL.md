@@ -1,6 +1,6 @@
 ---
 name: code-review
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Advanced
   effort: high
@@ -10,7 +10,7 @@ description: Send a code diff, pull request, file, or directory to the reviewer 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host/model, captures artifact provenance, excludes same-family routes, and verifies the co-packaged native manifest. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. Frontmatter `tier` is a routing recommendation, never a coordinator request field. For a review, cross-check, tiebreaker, or fallback over an authored artifact, capture its exact UTF-8 content and observed author model in the optional `artifact` object even when governance is false; never paste it into the prompt as a provenance substitute.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
 # Code review — independent cross-family deep-read on a code artifact
 
@@ -110,10 +110,17 @@ review instructions.
 
 ### 3. Call the verifier
 
-Submit the sealed code-review role through `python3 "<plugin-root>/coordinator.py"` with
-`effort='high'` in every eligible advisory row and no `tier` request field. Central policy chooses an eligible independent
-reviewer. Use this prompt template — the JSONL output schema is a functional
-contract that downstream tooling consumes:
+Submit the sealed code-review role through `python3 "<plugin-root>/coordinator.py"` using the
+documented closed coordinator request below. Central policy chooses an eligible
+independent reviewer. Frontmatter `effort` is host guidance and is never a
+coordinator request field.
+
+```json coordinator-request
+{"request_id":"code-review-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>"}
+```
+
+Use this prompt template — the JSONL output schema is a functional contract
+that downstream tooling consumes:
 
 ```
 Review the attached code as a senior security and performance engineer for the resolved-family-authored change below. Focus areas in priority order:
@@ -152,13 +159,10 @@ severities ignores `Smell`/`Spec` lines and its merge-blocking behavior is
 unchanged. Treat this skill's version as the contract version for the
 extension; do not add a separate schema-version field.
 
-**Retry-on-malformed.** If the response is not valid JSONL — wrapped in a markdown code fence (```json ... ```), or with conversational preamble, or with malformed JSON on any line — retry exactly once with:
-
-> Previous response was not valid JSONL. Re-emit RAW JSONL with NO code fence (do not wrap in ```json blocks), one JSON object per line, nothing else. Preserve all findings; only the format needs correcting.
-
-If the second attempt is also malformed, surface that explicitly to the user — do not silently fabricate JSONL around the prose. A malformed code-review response is itself a signal: either the verifier hit a content-policy guardrail, the prompt confused it, or the artifact triggered a refusal. Report the failure, do not hide it.
-
-Code-fence wrapping has been an empirical pattern on the Gemini side; less common but still possible from Claude-family verifiers. The retry pattern is load-bearing regardless of which family is acting as verifier.
+Malformed output is a terminal typed `protocol_error` for this request. Surface
+the failure explicitly; do not fabricate JSONL around prose and do not replay
+the whole coordinator request. A malformed response may signal a guardrail,
+prompt-confusion, or refusal and must remain visible to the operator.
 
 ### 4. Verify findings, then synthesize
 
@@ -188,7 +192,7 @@ Code review applies broadly. A representative sample of where independent cross-
 | Security tooling | Custom WAF rule for a newly-discovered attack pattern | False-positive cliff at the rule boundary, ReDoS in the matching regex, bypass via case / encoding variant |
 | ML infrastructure | Online feature-store write path for a fraud-detection model | TOCTOU on feature-version stamp, silent type-coercion, training-serving skew via aggregation difference |
 
-The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but the JSONL schema and retry-on-malformed contract stay constant.
+The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but the JSONL schema and terminal malformed-output contract stay constant.
 
 ## Anti-patterns
 
@@ -199,7 +203,9 @@ The review lens shifts with the domain (clinical software emphasizes dosing safe
 - **Relaying the raw JSONL to the user.** The JSONL is machine-parseable input to the synthesis step, not the user-facing deliverable. Group, prioritize, quote, recommend.
 - **Reviewing the wrong artifact.** A PR URL is not the diff; materialize `git diff <base>..<head>` before sending, using pathspec exclusions to filter out routine files (like lockfiles or generated assets; see step 1). A file is not the change; isolate the changed hunks when the change is small.
 - **Skipping the verifier-independence check** when the code under review was authored by a independent-family agent. That review is correlated with its author; the audit log will record a review that did not, in substance, occur.
-- **Skipping the retry-on-malformed step.** Code-fence wrapping is common (especially Gemini-family); the retry is non-optional. If the second attempt is also malformed, surface the failure rather than fabricating structure around prose.
+- **Replaying a malformed request.** Treat malformed output as the terminal typed
+  failure returned by the managed runtime. Surface it instead of issuing a
+  second request or fabricating structure around prose.
 - **Reviewing for style.** Linters do that. This skill is for defect-class surfacing.
 - **Asking the verifier to "fix" the code rather than review it.** This skill is review-only; remediation is a separate step (the user decides which findings to act on; another tool — or the active primary directly — implements the fix).
 

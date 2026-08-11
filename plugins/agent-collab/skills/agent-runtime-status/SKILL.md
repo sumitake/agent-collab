@@ -1,71 +1,44 @@
 ---
 name: agent-runtime-status
-version: 4.9.1
+version: 5.0.0
 defaults:
   tier: Fast
   effort: low
 
-description: Show availability and typed readiness for the unified collaboration routes. Use when the user says "agent runtime status," "check agent runtimes," "list agent versions," "is a reviewer available," or "/agent-collab:agent-runtime-status." Also offer this proactively after a managed route returns unavailable or before a multi-agent workflow whose runtime state has not been checked this session.
+description: Use when the user says "agent runtime status," "check agent runtimes," "list agent versions," "is a reviewer available," or "/agent-collab:agent-runtime-status." Also offer this after a direct runtime request returns unavailable or before a multi-agent workflow whose action-scoped readiness has not been checked this session.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host/model, captures artifact provenance, excludes same-family routes, and verifies the co-packaged native manifest. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. Frontmatter `tier` is a routing recommendation, never a coordinator request field. For a review, cross-check, tiebreaker, or fallback over an authored artifact, capture its exact UTF-8 content and observed author model in the optional `artifact` object even when governance is false; never paste it into the prompt as a provenance substitute.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON readiness request on stdin. Before constructing it, read the **Coordinator readiness request schema** in `<plugin-root>/README.md`; never invent fields. The public coordinator re-observes the active host, validates the zero-inference readiness request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. This single call asks the runtime for the complete all-action readiness matrix and never invokes a model.
 
 # Agent runtime status
 
-Report the installed plugin's own verified state. Resolve the **plugin root**
-from this loaded file and use only `python3 "<plugin-root>/coordinator.py"` for
-native readiness plus `python3 "<plugin-root>/migration_doctor.py" --json` for
-legacy-package and host-profile status. These files are co-packaged with the
-skill; no external repository is required.
+Report the installed package's verified direct-runtime state. Run
+`python3 "<plugin-root>/migration_doctor.py" --json` for legacy-package and host
+profile observations, then submit zero-inference readiness requests through
+`python3 "<plugin-root>/coordinator.py"` once for the complete action matrix:
 
-## Workflow
-
-1. Run the migration doctor. Report its `broker_runtime` field separately from
-   native artifact availability. Routing is blocked until retired selections
-   are removed and the canonical selected broker lane passes its closed
-   liveness proof.
-2. Resolve the current primary/model/session from host evidence or explicit
-   configuration. Do not infer the primary from installed CLIs.
-3. Submit a bounded `readiness` request for each exact matrix row:
-   Gemini `advisory|governance|long_context`; Codex `advisory`; OpenCode `plan|build`;
-   Grok `architecture|governance|huge_context`; Grok 4.5 compatibility
-   `composer/codegen` with `standard_codegen/medium` as the readiness profile.
-4. Preserve typed results such as `unavailable`, `auth_error`, `quota_error`,
-   `containment_error`, `timeout`, and `output_limit`. Do not flatten them into
-   a generic failure or try another provider command.
-5. Probe `inbox/async` only as non-governance readiness with the exact target
-   row `{"target_id":"claude|antigravity","target_family":"anthropic|google","target_session_identifier":"..."}`.
-   The id/family pair and nonblank target session must be trustworthy. Report
-   it available only when the current host explicitly observes its async
-   transport available and the target is not same-family; otherwise preserve
-   the typed blocked or unavailable result. Public coordinator never sends.
-   In safe mode every native model route is unavailable. Claude is always
-   async inbox-only and is never invoked headlessly.
-
-## Output
-
-```text
-agent-collab runtime:
-- host: <primary id> / <family> / <model> / <session>
-- package conflicts: <none | names>
-- async inbox: <observed ready | typed unavailable; readiness only>
-- native artifact: <verified | typed unavailable | invalid status>
-- broker runtime: <ready | unavailable | integrity_error | unproven>
-- gemini/advisory: <status>
-- gemini/governance: <status + artifact-bound proof readiness>
-- gemini/long_context: <status>
-- codex/advisory: <status>
-- opencode/plan: <status + observed author family>
-- opencode/build: <status + observed author family>
-- grok/architecture: <status>
-- grok/governance: <status>
-- grok/huge_context: <status>
-- composer/codegen (Grok 4.5 compatibility): <status>
-- codex/build: temporarily unavailable (separate mutation role)
+```json coordinator-request
+{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
 ```
 
-Never list a fixed fleet from prose. The current model and author family are
-observations, not plugin identities; OpenCode may change providers during a
-session and must be re-observed on every request.
+The coordinator derives the author lineage from the current host. Do not add a
+prompt, source, provider, action, model, or version field, and do not issue one
+request per action.
+
+Readiness is action- and source-mode-specific. Report logical agent, provider
+surface, lineage, shared pool, and observed executable/model/catalog identity
+only when the runtime returns them diagnostically. Never compare those observed
+values to a fixed version or model string.
+
+Preserve the runtime's typed status (`ok`, `unavailable`, `auth_error`,
+`quota_error`, `protocol_error`, `capability_error`, `timeout`, `cancelled`,
+`output_limit`, or `provider_error`). Do not infer provider health from a
+coordinator delivery failure and do not invoke a provider as a readiness probe.
+
+Report all 11 logical actions, their eligible agent set, and readiness source.
+The 12 provider transport actions and source-qualified pairs are diagnostics
+derived from the co-packaged wire descriptor, not a second public routing
+surface. Claude remains host-owned asynchronous coordination and is never
+invented as a headless provider route.

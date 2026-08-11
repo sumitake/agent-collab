@@ -60,11 +60,17 @@ ROUTED_SPECS = frozenset(
         "dev-delegate",
         "intent-check",
         "logic-check",
-        "long-context",
+        "context",
         "qa-verify",
         "red-team",
         "second-opinion",
         "simulate-user",
+        "route",
+        "governance-review",
+        "migration-doctor",
+        "orchestrate",
+        "teamwork",
+        "worker",
     }
 )
 
@@ -186,24 +192,43 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
     match = FRONTMATTER_RE.match(rendered)
     if not match:
         raise ValueError(f"{spec_name}: routed skill is missing frontmatter")
-    block = (
+    prefix = (
         "\n## Unified runtime invocation\n\n"
         "Resolve the **plugin root** from this loaded file: `SKILL.md` is at "
         "`<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only "
         "`python3 \"<plugin-root>/coordinator.py\"` and send one bounded JSON "
-        "request on stdin. Before constructing it, read the **Coordinator "
-        "request schema** in `<plugin-root>/README.md`; never invent fields or "
-        "route/action pairs. The public "
-        "coordinator re-observes the active host/model, captures artifact "
-        "provenance, excludes same-family routes, and verifies the co-packaged "
-        "native manifest. It runs standalone from the installed plugin. Never "
-        "discover a provider executable or reconstruct a raw command. "
-        "Frontmatter `tier` is a routing recommendation, never a coordinator "
-        "request field. For a review, cross-check, tiebreaker, or fallback over "
-        "an authored artifact, capture its exact UTF-8 content and observed "
-        "author model in the optional `artifact` object even when governance is "
-        "false; never paste it into the prompt as a provenance substitute.\n"
     )
+    suffix = (
+        "It runs standalone from the installed plugin. Never discover a "
+        "provider executable or reconstruct a raw command. "
+    )
+    if spec_name == "agent-runtime-status":
+        block = prefix + (
+            "readiness request on stdin. Before constructing it, read the "
+            "**Coordinator readiness request schema** in "
+            "`<plugin-root>/README.md`; never invent fields. The public "
+            "coordinator re-observes the active host, validates the "
+            "zero-inference readiness request, and verifies the co-packaged "
+            "native manifest and wire descriptor. "
+        ) + suffix + (
+            "This single call asks the runtime for "
+            "the complete all-action readiness matrix and never invokes a "
+            "model.\n"
+        )
+    else:
+        block = prefix + (
+            "request on stdin. Before constructing it, read the **Coordinator "
+            "request schema** in `<plugin-root>/README.md`; never invent fields or "
+            "route/action pairs. The public "
+            "coordinator re-observes the active host, validates the semantic "
+            "request, and verifies the co-packaged native manifest and wire "
+            "descriptor. "
+        ) + suffix + (
+            "The public request names one logical action and optional target agent; "
+            "provider transport actions are internal descriptor data. For every "
+            "repository action, pass the canonical `repo_root`. For document "
+            "context, pass bounded `documents` and no repository source.\n"
+        )
     return rendered[: match.end()] + block + rendered[match.end() :]
 
 

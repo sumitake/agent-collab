@@ -1,5 +1,5 @@
 {
-  "description": "Unified dynamic-host collaboration package. Centralized skills and async coordination work without legacy packages; every model-execution route requires the verified signed plugin artifact.",
+  "description": "Unified collaboration package with semantic actions, source-grounded context, and a verified plugin-relative direct native runtime.",
   "category": "ai-collaboration",
   "license": "LicenseRef-PolyForm-Strict-1.0.0",
   "tags": [
@@ -9,8 +9,9 @@
     "governance",
     "routing",
     "codex",
-    "opencode",
-    "glm",
-    "zhipu"
+    "zhipu",
+    "moonshot",
+    "grok",
+    "gemini"
   ]
 }
