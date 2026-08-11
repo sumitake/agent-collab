@@ -17,24 +17,32 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Authoring snapshot
+## v5.0.0 release closeout snapshot
 
-This handbook was authored against the following public evidence on
-2026-08-05:
+The following public evidence was reconciled on 2026-08-11. It is a dated
+snapshot, not a permanent “latest version” badge.
 
 | Observation | Status | Interpretation |
 | --- | --- | --- |
-| `origin/main` began at commit `465c70e` with package version 4.9.0. This documentation change advances the source package to 4.9.1. | current | The handbook describes the public repository contract that will exist when this change merges. |
-| The repository contains one unified package, generated host marketplaces, a populated activation manifest, and the manifest-listed Darwin arm64 bundle. | repository-only | The source tree contains activation material; this alone does not prove an installation or active host. |
-| The latest GitHub release record observed during authoring was v4.5.1. | historical release observation | It describes the public release list at that point in time, not the newer repository tree. |
-| A signed annotated v4.6.0 tag existed without a corresponding GitHub release record. | historical tag observation | Tag existence and release publication are separate lifecycle events. |
-| Changelog fragments after the generated `CHANGELOG.md` baseline remain in `changelog.d/`. | staged | Fragments are release inputs. They are not compiled on feature branches. |
-| Current host installation and route readiness | unclaimed | This repository documentation intentionally makes no operator-host claim. Inspect the target host. |
+| The signed annotated [`v5.0.0` tag](https://github.com/sumitake/agent-collab/releases/tag/v5.0.0) identifies public commit `c85382f11ef68bdca8deedf53c6865838bba1fbf`. | published | The immutable release source contains package version 5.0.0, one unified package, the schema-4 activation manifest, and its manifest-listed Darwin arm64 bundle. |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/31479240561) completed successfully and the release is published, non-draft, and non-prerelease. | published | The tag and GitHub Release planes agree; tag existence alone was not used as publication proof. |
+| The release contains exactly `agent-collab.v5.0.0.plugin`, `agent-collab.v5.0.0.plugin.sha256`, and `agent-collab-v5.0.0.spdx.json`. The checksum file verifies archive SHA-256 `25b74e4ba72d3dcdd77b476f546bc415627f02c8d3290f7ea0b3e7050d3ec4d4`. | verified release evidence | The archive, checksum, and SPDX planes were downloaded and checked together. This does not by itself prove installation on a host. |
+| The generated `CHANGELOG.md` contains the compiled `agent-collab 5.0.0` entry describing the direct-runtime activation and its schema-4/runtime-protocol-3/native-contract-4 boundary. | verified current | Generated release history agrees with the tagged package and release assets; the closeout does not hand-edit it. |
+| On one supported macOS arm64 verification host, both Codex and Claude package inventories reported `agent-collab@agent-collab` 5.0.0 enabled. Signed package members matched the release source, and provider-free migration doctor plus zero-inference readiness checks succeeded. | installed and provider-free ready on the observed host | This proves that installation and the direct-runtime readiness boundary worked on that host at that time. It does not guarantee future provider authentication, quota, or semantic outcomes, and a pre-existing UI session still needs a new task/session to load newly installed skills. |
 | Provider-specific and host-specific predecessor packages | retired | Migration and regression tests block their return as active packages or rollback targets. |
 
-The observed release list is time-sensitive. Re-check it before making a new
-release claim. Do not turn this dated row into a permanent “latest version”
-badge.
+The public repository may advance after the immutable release tag for this
+documentation closeout or later work. Re-check the tag, release, assets, host
+inventory, and readiness plane before making a new release or activation
+claim.
+
+### Closeout determinations
+
+| Public surface | Determination | Closeout result |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | The status snapshot, v5 direct-runtime lifecycle, and schema-4 activation boundary now agree with the published release. |
+| Root `README.md` | **updated current** | The overview, current version, install command, release link, and closeout pointer agree with v5.0.0. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v5.0.0 activation entry at the tagged commit; this post-release closeout leaves generated history unchanged. |
 
 ## Source-priority rule
 

@@ -86,10 +86,11 @@ absence rather than pretending activation evidence exists.
 ### Activation
 
 An activation release contains exactly one supported standalone bundle and a
-schema-3/contract-3 manifest in this repository generation. Release checks
-bind the bundle, manifest, route matrix, platform, architecture, minimum
-operating system, file inventory, digests, signing profile, hardened runtime,
-secure timestamp, notarization, legal notices, and source commit.
+schema-4 manifest with runtime protocol 3 and native contract 4 in this
+repository generation. Release checks bind the bundle, manifest, wire
+descriptor, platform, architecture, minimum operating system, file inventory,
+digests, signing profile, hardened runtime, secure timestamp, notarization,
+legal notices, and source commit.
 
 Activation evidence establishes the package artifact. Host installation and
 readiness remain later evidence planes.
