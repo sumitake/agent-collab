@@ -128,6 +128,9 @@ def _readiness_response(
                         "catalog_digest": None,
                         "metadata_process_count": 0,
                         "diagnostic_code": "not_ready",
+                        "compatibility_profile": None,
+                        "capability_digest": None,
+                        "metadata_zero_model_calls_proven": True,
                     }
                 ],
             }
@@ -289,7 +292,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             {"type": "integer", "minimum": 1},
         )
 
-    def test_committed_manifest_is_the_schema_four_descriptor_placeholder(self) -> None:
+    def test_committed_manifest_is_the_schema_four_activation(self) -> None:
         manifest = json.loads(
             (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
         )
@@ -309,10 +312,21 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertEqual(manifest["protocol_version"], 3)
         self.assertEqual(manifest["contract_version"], 4)
         self.assertEqual(manifest["channel"], "production")
-        self.assertEqual(manifest["artifacts"], [])
+        self.assertEqual(len(manifest["artifacts"]), 1)
+        artifact = manifest["artifacts"][0]
+        self.assertEqual(artifact["kind"], "standalone_bundle")
+        self.assertEqual(artifact["platform"], "darwin")
+        self.assertEqual(artifact["arch"], "arm64")
+        self.assertEqual(
+            artifact["path"],
+            "runtime/darwin-arm64/agent-collab-runtime.bundle",
+        )
+        self.assertEqual(len(artifact["files"]), 38)
 
         descriptor = manifest["wire_contract"]
-        self.assertEqual(descriptor["schema_version"], 3)
+        self.assertIs(type(descriptor["schema_version"]), int)
+        self.assertGreater(descriptor["schema_version"], 0)
+        self.assertEqual(descriptor["runtime_protocol_version"], 3)
         encoded = json.dumps(
             descriptor,
             sort_keys=True,
@@ -336,8 +350,8 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         for result in descriptor["success_response"]["properties"]["result"]["oneOf"][2:]:
             evidence = result["properties"]["evidence"]["properties"]
             with self.subTest(artifact=result["properties"]["artifact_type"]):
-                self.assertNotIn("minItems", evidence["inspected_paths"])
-                self.assertNotIn("minItems", evidence["repository_evidence"])
+                self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
+                self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:
         client = _load("direct_runtime_client_no_broker", PLUGIN / "runtime_client.py")
