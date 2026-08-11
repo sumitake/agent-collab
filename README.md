@@ -4,13 +4,18 @@
 compatible hosts. Version 5 replaces the provider-broker control plane with a
 closed semantic coordinator and a co-packaged direct native runtime.
 
-This public repository distributes **agent-collab** (v5.0.0).
+This public repository distributes **agent-collab** (v5.0.0). The
+**[v5.0.0 release](https://github.com/sumitake/agent-collab/releases/tag/v5.0.0)**,
+signed tag, workflow, archive, checksum, and SPDX evidence were verified
+together before the release was closed out.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
-the system boundaries and lifecycle. This README and that handbook are
+the system boundaries and lifecycle. This README and that handbook were
 reconciled against the exact published artifact during the mandatory final
 release documentation closeout; the package reference below remains the
-machine-operational contract.
+machine-operational contract. The dated
+[status and evidence snapshot](docs/architecture/status-and-evidence.md)
+keeps repository, tag, release, installation, and readiness claims separate.
 
 ## What's new - v5.0.0
 
@@ -50,7 +55,7 @@ launchd job, lifecycle setup command, or raw provider wire is public.
 
 ```text
 codex plugin marketplace add sumitake/agent-collab
-codex plugin install agent-collab@agent-collab
+codex plugin add agent-collab@agent-collab
 ```
 
 ## Semantic actions
@@ -157,8 +162,11 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-It aligns the architecture handbook, this README, and generated changelog
-evidence with the exact release without exposing private executor recipes.
+The v5.0.0 closeout is recorded in the
+[status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
+future closeout must likewise align the architecture handbook, this README,
+and generated changelog evidence with the exact release without exposing
+private executor recipes.
 
 ## License
 

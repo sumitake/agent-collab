@@ -74,18 +74,18 @@ Installation, selection, and readiness are separate checks.
    second opinion on a short draft, and verify the returned family is eligible
    and independent.
 
-For an activation package, the closed management client can report status
-without invoking a provider:
+For an activation package, the installed package can report status without
+model inference. Run the provider-free doctor and the single readiness
+snapshot:
 
 ```text
-python3 "<installed-plugin-root>/runtime_setup.py" status
-python3 "<installed-plugin-root>/runtime_setup.py" broker-status
+python3 "<installed-plugin-root>/migration_doctor.py" --json
+printf '%s\n' '{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}' | python3 "<installed-plugin-root>/coordinator.py"
 ```
 
 Use the exact installed plugin root supplied by the host or migration doctor.
 Do not search for provider executables, substitute a binary, or add path/model
-overrides. Policy-only packages return typed unavailable for native lifecycle
-operations.
+overrides. Policy-only packages return typed unavailable for native actions.
 
 ## Use
 
@@ -143,17 +143,18 @@ codex plugin add agent-collab@agent-collab --json
 
 Then start a new task and re-run migration doctor and runtime status.
 
-### Native lifecycle during package update
+### Co-packaged runtime during update
 
-Package refresh, import, readiness, and route invocation do not silently
-install or mutate native lifecycle state. An activation update uses the closed
-candidate/proof/commit lifecycle implemented by the package. A candidate is
-not a normal routing target, and a previous verified lane is retained until the
-new lane is committed and separately drained.
+Version 5 has no separately installed broker, daemon, socket, selector, lane,
+or setup lifecycle. The signed runtime bundle and its manifest are members of
+the plugin package. Updating the package therefore updates one closed unit;
+readiness verifies that unit before any semantic request.
 
-General users should follow the selected release's management output rather
-than reconstructing lifecycle commands or paths. A failed update must leave the
-previous verified state selected or return a typed lifecycle error.
+If an update is incomplete or incompatible, keep the typed unavailable or
+protocol result, inspect the package inventory and migration doctor, and start
+a fresh session only after the host reports the intended package version. Do
+not reconstruct a lifecycle path, copy a runtime out of another package, or
+fall back to a retired provider-specific plugin.
 
 ## Troubleshoot
 
@@ -168,56 +169,30 @@ previous verified state selected or return a typed lifecycle error.
 | `auth_error` or `quota_error` | The managed provider prerequisite failed after routing. | Use the provider's supported login/account interface or wait for quota. Keep the same authority. |
 | Output-only worker made no caller-worktree changes | Expected behavior. | Review the returned artifact and apply it through the trusted primary if appropriate. |
 | Governance call refuses partial identity | Expected fail-closed behavior. | Establish all required current-session identity fields or use a non-governance workflow with its warning. |
-| Safe mode keeps native routes unavailable | Execution is intentionally disabled. | Finish migration and verification, unset safe mode, restart, and re-check readiness. |
 | Version in a running session is stale | The host loaded an earlier package snapshot. | Finish the marketplace/package update and start a genuinely new session/task. |
 
 Preserve typed errors. Do not infer failure from response prose, retry a
 terminal cleanup/teardown error, or substitute a different provider behind an
 explicit target.
 
-## Safe mode and rollback
+## Fail closed and release correction
 
-The normal operational rollback is policy-only safe mode:
+The direct runtime fails typed when the selected package, manifest, bundle,
+provider prerequisite, source boundary, or cleanup proof is not usable. It
+does not silently choose a wider authority, restore a retired package, or
+replay the whole request through another provider.
 
-1. Set `AGENT_COLLAB_SAFE_MODE=1` in the active host environment.
-2. Restart the host.
-3. Confirm native model routes return typed unavailable.
-4. Run migration and package checks while execution is disabled.
-5. Unset safe mode and restart only after the selected state is verified.
-
-Safe mode does not reinstall an older or retired package. It preserves the
-public policy boundary while stopping model execution.
-
-If an activation installation has one complete prior verified broker record,
-the closed management client also exposes:
-
-```text
-python3 "<installed-plugin-root>/runtime_setup.py" rollback-broker
-```
-
-That action selects only the verified prior record. It is typed unavailable
-when no valid rollback target exists. It is not a general package-version pin,
-and it accepts no caller-selected path, socket, provider, model, or binary.
-
-Published release rollback is a release-governance decision. Do not delete and
-reuse a published version, detach a shared marketplace clone, or reinstall a
-retired package. Prefer a signed revocation where required and a higher patch
-release.
+A published release correction is a release-governance decision. Do not move
+or reuse a published tag, detach a shared marketplace clone, copy a runtime
+between packages, or reinstall a retired package. Publish a signed revocation
+when required and a higher patch release for corrected bytes. Until then,
+leave the affected semantic action unused or remove the package through the
+host manager.
 
 ## Remove
 
-Remove active lifecycle state before removing an activation package, because
-the package contains the only supported management client:
-
-```text
-python3 "<installed-plugin-root>/runtime_setup.py" uninstall-broker
-```
-
-The command is idempotent when no broker is installed. It removes the exact
-active job, socket, configuration, and mutable state while intentionally
-retaining immutable version records used for audit/rollback evidence.
-
-Then remove the package.
+Version 5 has no separately installed broker or native lifecycle state to
+remove. Remove the package through the host manager.
 
 Claude Code:
 
@@ -238,14 +213,7 @@ paths or credential state.
 
 ## Legacy migration
 
-Retired standalone packages map into the unified package:
-
-- `codex-tools →` managed Codex backend in `agent-collab`;
-- `glm-worker →` managed OpenCode backend in `agent-collab`; and
-- host-specific collaboration packages → dynamic host profiles in
-  `agent-collab`.
-
-The exhaustive namespace mapping and cleanup rules live in
+The namespace changes and cleanup rules live in
 [`docs/migration-from-legacy-packages.md`](../migration-from-legacy-packages.md).
 Treat names in that document as historical/migration evidence, not active
 installation instructions.
