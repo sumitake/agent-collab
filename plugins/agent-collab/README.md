@@ -1,11 +1,11 @@
-# agent-collab 5
+# agent-collab 6
 
 `agent-collab` is one collaboration package with a closed semantic request
 boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **5.0.0**
+Current: **6.0.0**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -26,6 +26,8 @@ Every request contains exactly these common fields:
 {
   "request_id": "review-123",
   "logical_action": "review.repository",
+  "quality_profile": "frontier",
+  "effort_class": "maximum",
   "target_agent": null,
   "timeout_ms": 120000,
   "prompt": "Review the requested change.",
@@ -36,11 +38,14 @@ Every request contains exactly these common fields:
 - `request_id` is 1–128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `:`,
   and `-`.
 - `logical_action` is one of the 11 actions below.
+- `quality_profile` is `economical`, `standard`, or `frontier`.
+- `effort_class` is `minimal`, `standard`, or `maximum`.
+  These fields express desired quality and depth; they never name a model.
 - `target_agent` is `null` unless the user explicitly named an agent. It is a
   logical agent name, not a provider or model selector.
 - The coordinator observes the current host family and adds `author_lineage`
   internally. A caller-supplied lineage is rejected.
-- `timeout_ms` is 1–600000. The public client owns this outer deadline.
+- `timeout_ms` is 1–86400000. The public client owns this outer deadline.
 - `prompt` is non-empty UTF-8, bounded to 1 MiB.
 - Every repository action adds exactly one canonical absolute `repo_root`.
 - Document-context actions replace `repo_root` with `documents`, an array of
@@ -64,8 +69,9 @@ governance.repository
 review.repository
 ```
 
-Old `route`, `action`, `row`, provider, model, and artifact-proof request fields
-are rejected. There is no alias or translator.
+Old `route`, `action`, `row`, provider, model, native-effort,
+development-shadow, and artifact-proof request fields are rejected. There is
+no alias or translator.
 
 Runtime status uses one separate closed request. It has no prompt or source and
 returns every logical action in one zero-inference snapshot:
@@ -77,15 +83,15 @@ returns every logical action in one zero-inference snapshot:
 ## Direct runtime boundary
 
 The workspace build emits one schema-4 manifest with a positive-integer wire schema
-revision, runtime protocol 3, native contract 4, and provider runtime `3.0.0`. The
-wire revision records compatible descriptor evolution; runtime protocol 3 remains the
+revision, runtime protocol 4, native contract 4, and provider runtime `4.0.0`. The
+wire revision records compatible descriptor evolution; runtime protocol 4 remains the
 executable compatibility boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
 - the 11 logical actions;
-- the 12 source-collapsed provider transport actions;
-- the 16 currently valid action/source pairs;
+- the 13 source-collapsed provider transport actions;
+- the 17 currently valid action/source pairs;
 - semantic request and typed response schemas;
 - the four artifacts (`review_findings`, `governance_verdict`, `context_text`,
   and `private_patch`);
@@ -109,7 +115,8 @@ For each accepted request the public client:
    stdout, and stderr.
 6. Applies the shared deadline and explicitly sends TERM, then KILL if needed,
    and reaps the group.
-7. Validates the exact success or failure response against the descriptor.
+7. Validates the exact success, ungrounded advisory, or failure response
+   against the descriptor.
 
 The verified bundle identity is cached only in the current Python process and
 is invalidated when the manifest or entrypoint identity changes. There is no
@@ -119,7 +126,7 @@ lane, setup command, fallback transport, or automatic whole-request replay.
 ## Results and authority
 
 Coordinator results preserve the runtime status. The closed runtime statuses
-are `ok`, `invalid_request`, `unavailable`, `auth_error`, `quota_error`,
+are `ok`, `advisory`, `invalid_request`, `unavailable`, `auth_error`, `quota_error`,
 `capability_error`, `protocol_error`, `provider_error`, `output_limit`,
 `timeout`, and `cancelled`.
 
@@ -128,6 +135,13 @@ one provider-neutral execution receipt, and bounded diagnostics. Observed
 agent/provider/model/executable/catalog/bundle identity is diagnostic only; it
 does not create authority and is not a second receipt. There are no
 provider-specific governance proofs and no self-hashed caller assertion.
+
+An `advisory` result is safe substantive text from a clean attempt that lacked
+sufficient native source evidence. It is explicitly ungrounded, carries no
+artifact or receipt, and cannot authorize governance, merge, or source claims.
+Route-local capability drift and unavailability retain fixed runtime-owned
+assistance without retrying or substituting a provider after possible model
+access.
 
 One accepted request selects and launches one provider process and fresh
 session. Provider-internal tool rounds may exceed one. After a model call, the
@@ -156,7 +170,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
-11/12/16 counts. Active retired packages block direct routing; cache-only
+11/13/17 counts. Active retired packages block direct routing; cache-only
 residue is reported separately. Runtime readiness launches the same signed
 one-shot runtime, performs no model inference, and may use one bounded catalog
 metadata process for each OpenCode lineage.

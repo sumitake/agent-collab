@@ -46,6 +46,8 @@ class DirectRuntimeClientTests(unittest.TestCase):
             "wire_contract_sha256": self.wire.sha256,
             "request_id": "direct-1",
             "logical_action": "architecture.conceptual",
+            "quality_profile": "standard",
+            "effort_class": "standard",
             "target_agent": None,
             "author_lineage": None,
             "timeout_ms": timeout_ms,
@@ -92,6 +94,186 @@ class DirectRuntimeClientTests(unittest.TestCase):
             elapsed = time.monotonic() - started
         self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
         self.assertLess(elapsed, 2.0)
+
+    def test_outer_deadline_reserves_inner_cleanup_time_for_nonidle_provider(self) -> None:
+        class Stream:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            pid = 4242
+            stdin = Stream()
+            stdout = Stream()
+            stderr = Stream()
+
+        process = Process()
+        observed: dict[str, object] = {}
+
+        def collect(_process, request: bytes, deadline: float):
+            observed["request"] = json.loads(request)
+            observed["remaining"] = deadline - time.monotonic()
+            return b"", b"", "timeout"
+
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=Path("/tmp/agent-collab-runtime"),
+            bundle_path=Path("/tmp"),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client.FileIdentity(1, 1, 0o100700, 1, os.getuid(), 1, 1, 1),
+            wire=self.wire,
+        )
+        with mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_identity", return_value=resolution.identity
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ), mock.patch.object(
+            self.client, "_collect_bounded", side_effect=collect
+        ), mock.patch.object(
+            self.client, "_terminate_and_reap", return_value=True
+        ):
+            result = self.client.invoke(envelope=self._envelope(5_000))
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        inner_timeout = observed["request"]["timeout_ms"]
+        reserve_ms = int(
+            self.client.PROCESS_CLEANUP_RESERVE_SECONDS * 1000
+        )
+        self.assertGreater(inner_timeout, 5_000 - reserve_ms - 100)
+        self.assertLessEqual(inner_timeout, 5_000 - reserve_ms)
+        self.assertLess(inner_timeout / 1000, observed["remaining"])
+
+    def test_elapsed_setup_time_is_removed_from_the_inner_runtime_budget(self) -> None:
+        class Stream:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            pid = 4242
+            stdin = Stream()
+            stdout = Stream()
+            stderr = Stream()
+
+        observed: dict[str, object] = {}
+
+        def collect(_process, request: bytes, deadline: float):
+            observed["request"] = json.loads(request)
+            observed["collection_deadline"] = deadline
+            return b"", b"", "timeout"
+
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=Path("/tmp/agent-collab-runtime"),
+            bundle_path=Path("/tmp"),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client.FileIdentity(1, 1, 0o100700, 1, os.getuid(), 1, 1, 1),
+            wire=self.wire,
+        )
+        with mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_identity", return_value=resolution.identity
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=Process()
+        ), mock.patch.object(
+            self.client, "_collect_bounded", side_effect=collect
+        ), mock.patch.object(
+            self.client, "_terminate_and_reap", return_value=True
+        ) as reap, mock.patch.object(
+            self.client.time, "monotonic", side_effect=(100.0, 101.0)
+        ):
+            result = self.client.invoke(envelope=self._envelope(5_000))
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(observed["request"]["timeout_ms"], 2_000)
+        self.assertEqual(observed["collection_deadline"], 104.0)
+        reap.assert_called_once_with(mock.ANY, deadline=105.0)
+
+    def test_advisory_is_a_usable_receipt_free_runtime_result(self) -> None:
+        self.assertTrue(hasattr(self.client.RuntimeStatus, "ADVISORY"))
+        self.assertTrue(hasattr(self.wire, "advisory_response"))
+        if not (
+            hasattr(self.client.RuntimeStatus, "ADVISORY")
+            and hasattr(self.wire, "advisory_response")
+        ):
+            return
+        response = {
+            "wire_contract_sha256": self.wire.sha256,
+            "request_id": "direct-1",
+            "status": "advisory",
+            "advisory": {
+                "authority": "advisory",
+                "grounding": "ungrounded",
+                "reason": "insufficient_source_evidence",
+                "text": "Useful but non-authoritative analysis.",
+            },
+            "diagnostics": {
+                "logical_agent": "codex",
+                "provider_surface": "native_cli",
+                "model_lineage": "openai",
+                "observed_model": None,
+                "implementation_fingerprint": "a" * 64,
+                "executable_content_sha256": "b" * 64,
+                "adapter_wire_sha256": "c" * 64,
+                "catalog_digest": None,
+                "metadata_process_count": 0,
+                "provider_processes": 1,
+                "provider_model_calls": 1,
+                "provider_turns": 1,
+                "failure_trace": {
+                    "failure_phase": "artifact",
+                    "adapter_code": "insufficient_evidence",
+                    "terminal_state": None,
+                    "tool_outcomes": {
+                        "success": 0, "failed": 0,
+                        "incomplete": 0, "unknown": 0,
+                    },
+                    "outside_source_observed": False,
+                    "native_envelope_sha256": "d" * 64,
+                    "cleanup_confirmed": True,
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            executable = Path(raw) / "agent-collab-runtime"
+            executable.write_text(
+                "#!/usr/bin/python3\nimport json,sys\n"
+                "json.load(sys.stdin)\n"
+                "sys.stdout.write(" + repr(json.dumps(response)) + ")\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o700)
+            resolution = self.client.RuntimeResolution(
+                self.client.RuntimeStatus.OK,
+                path=executable,
+                bundle_path=Path(raw),
+                manifest_digest="a" * 64,
+                artifact_digest="b" * 64,
+                identity=self.client._identity(executable, executable=True),
+                wire=self.wire,
+            )
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ):
+                result = self.client.invoke(envelope=self._envelope(2_000))
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.ADVISORY)
+        self.assertEqual(result.result, response["advisory"])
+        self.assertEqual(
+            result.provenance,
+            {
+                "wire_contract_sha256": self.wire.sha256,
+                "diagnostics": response["diagnostics"],
+            },
+        )
+        self.assertNotIn("execution_receipt", result.provenance)
 
     def test_direct_invocation_does_not_need_broker_socket_plist_or_root(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -212,7 +394,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
             executable.write_text(
                 "#!/usr/bin/python3\n"
                 "import sys\n"
-                "if sys.argv[1:] != ['invoke', '--protocol', '3']:\n"
+                "if sys.argv[1:] != ['invoke', '--protocol', '4']:\n"
                 "    raise SystemExit(9)\n"
                 "sys.stdin.buffer.read()\n"
                 "sys.stdout.write(" + repr(payload) + ")\n",
@@ -485,7 +667,9 @@ class DirectRuntimeClientTests(unittest.TestCase):
         with mock.patch.object(
             self.client.os, "killpg", side_effect=PermissionError("unproven")
         ):
-            reaped = self.client._terminate_and_reap(UnprovenProcess())
+            reaped = self.client._terminate_and_reap(
+                UnprovenProcess(), deadline=time.monotonic() + 1
+            )
         self.assertFalse(reaped)
 
     def test_readiness_uses_the_same_process_and_validates_all_actions(self) -> None:
@@ -496,7 +680,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
             executable.write_text(
                 "#!/usr/bin/python3\n"
                 "import json, sys\n"
-                "if sys.argv[1:] != ['invoke', '--protocol', '3']:\n"
+                "if sys.argv[1:] != ['invoke', '--protocol', '4']:\n"
                 "    raise SystemExit(9)\n"
                 "request = json.load(sys.stdin)\n"
                 "if request.get('operation') != 'readiness':\n"

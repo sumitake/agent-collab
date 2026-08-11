@@ -117,6 +117,12 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _EXCLUDED_PARTS = frozenset({".venv", "__pycache__"})
 _EXCLUDED_NAMES = frozenset({".DS_Store"})
+_DEVELOPMENT_ONLY_ROOTS = frozenset(
+    {
+        "_dev_route_evidence.py",
+        "development-provenance.json",
+    }
+)
 
 
 def _load_runtime_bundle_contract():
@@ -280,7 +286,7 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
         or item.get("minimum_macos") != "14.0"
         or item.get("path") != RUNTIME_BUNDLE_REL.as_posix()
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
-        or item.get("provider_runtime_version") != "3.0.0"
+        or item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION
         or type(item.get("size")) is not int
         or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
         or item["size"] != sum(record["size"] for record in records)
@@ -475,6 +481,13 @@ def _require_exact_manifest_trees(plugin_path: Path) -> None:
             raise ValueError("manifest tree is not canonical")
 
 
+def _require_no_development_members(plugin_path: Path) -> None:
+    for name in _DEVELOPMENT_ONLY_ROOTS:
+        member = plugin_path / name
+        if member.exists() or member.is_symlink():
+            raise ValueError("development-only plugin member is not publishable")
+
+
 def _require_exact_third_party_notice_tree(plugin_path: Path) -> None:
     try:
         notice_info = _safe_source(plugin_path / THIRD_PARTY_NOTICE_REL)
@@ -549,6 +562,7 @@ def _member_plan(
         raise ValueError("activation member plan requires frozen manifest records")
     if mode == "policy-only" and records:
         raise ValueError("policy-only member plan forbids runtime records")
+    _require_no_development_members(plugin_path)
     _require_exact_manifest_trees(plugin_path)
     differences = skill_tree_differences(plugin_path / "skills", SPECS_DIR)
     if differences:

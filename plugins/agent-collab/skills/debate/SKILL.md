@@ -1,9 +1,9 @@
 ---
 name: debate
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Stage a structured multi-round adversarial debate between the active primary and the reviewer on a binary or near-binary proposition. Each side is assigned (or self-selects) an opposing position and defends it through openings, rebuttals, and an optional closing round; the agent then steps out of advocacy and synthesizes a verdict for the user. Use when the user says "debate this with the reviewer," "argue both sides," "steelman both positions," "play devil's advocate with the reviewer," "the active primary vs the reviewer on X," "have the reviewer argue the other side," or "make the case against." Also offer this proactively when the user is leaning hard one way on a high-stakes binary choice and a structured opposing case would stress-test the conviction better than a polite second opinion would.
 ---
@@ -80,7 +80,7 @@ State the assignment clearly to the user before starting: "the active primary wi
 **the active primary's opening:** Write the strongest case for the active primary's assigned side. Not a hedge, not "on balance" — the *strongest* case. Three to five specific points with evidence or reasoning. Treat it like a debate brief, not an analysis.
 
 **the reviewer's opening:** Submit the sealed debate role through
-`python3 "<plugin-root>/coordinator.py"` with `effort='high'` in every eligible advisory row and no `tier` request field. Central policy selects an
+`python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy selects an
 eligible independent advocate. Use this prompt template (the structured fields
 are a functional contract — downstream synthesis steps key on them):
 
@@ -111,7 +111,7 @@ Both sides now attack each other's openings directly.
 
 **the reviewer's rebuttal:** Send the active primary's opening through
 the same sealed managed route (`python3 "<plugin-root>/coordinator.py"`;
-`effort='high'` in every eligible advisory row and no `tier` request field):
+`quality_profile='frontier'` and `effort_class='maximum'`):
 
 ```
 Continuing the debate. The opposing side ([PRO|CON]) just argued:
@@ -229,7 +229,7 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 - **Manufacturing two sides on a question where one is clearly right.** This produces false equivalence. Use `second-opinion` for one-sided questions; reserve debate for genuine binaries.
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
 - **Letting the reviewer hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," push back: "you are arguing [side], defend it without hedging. The synthesis step is where balance returns."
-- **Using `flash` tier for the debate calls.** Argumentation depth matters; `flash` produces shallow openings and superficial rebuttals. `pro` is the right default for every debate-tool invocation.
+- **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
 - **Skipping the verifier-independence check** when the user's pre-existing position came from a independent-family agent. Same-family debate is correlated; structurally one-sided. Apply the independence rule before assigning sides.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.
 - **Debating an empirically-decidable question.** "Did our churn rate go up" is a data question. Run the numbers; do not argue the answer.

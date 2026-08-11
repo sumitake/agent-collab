@@ -45,7 +45,11 @@ Instruct the verifier to stay entirely in character and **not break the fourth w
 
 ### 3. Call the verifier
 
-Invoke `{{ mcp_tool_ask }}` {{ simulate_user_call_params }} ({{ tier_flash_resolves_to }} — {{ simulate_user_call_note }} — short in-character responses don't need depth; bump to `pro` only for personas requiring nuanced reasoning, e.g., a litigator parsing a contract clause, a detail-obsessed engineer reading a spec).
+Invoke `{{ mcp_tool_ask }}` {{ simulate_user_call_params }}
+({{ tier_flash_resolves_to }} — {{ simulate_user_call_note }} — short
+in-character responses do not need depth). Use frontier/maximum only for
+personas requiring nuanced reasoning, such as a litigator parsing a contract
+clause or a detail-focused engineer reading a specification.
 
 Prompt template:
 
@@ -96,7 +100,7 @@ The pattern is constant: name a specific, opinionated, time-budgeted persona; ca
 - **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Push back; retry; surface if it fails twice.
 - **Simulating a generic "user"** instead of a specific opinionated persona. Generic personas produce generic reactions. Always name the persona's title, context, mood, time budget.
 - **Skipping the synthesis step.** The raw in-character reaction is data; the user wants the actionable change. The skill is not done until the synthesis is delivered.
-- **Using `pro` tier reflexively.** Short in-character reactions favor `flash`; `pro` is for nuanced-reasoning personas (litigator, detail-engineer, compliance officer parsing a regulation).
+- **Using frontier/maximum reflexively.** Short in-character reactions favor economical/minimal; frontier/maximum is for nuanced-reasoning personas (litigator, detail engineer, or compliance officer parsing a regulation).
 - **Simulating personas the verifier may have content-policy issues inhabiting** (hostile, prejudiced, criminal personas). If the persona's reaction is the actual question, frame the persona's *role* (e.g., "skeptical adversarial reviewer") rather than the persona's *identity*; or use `second-opinion` framed adversarially instead.
 - **Treating the simulation as ground truth for the actual audience.** It is a *prediction* of audience reaction, not a focus-group result. For high-stakes audiences, run a real focus group or A/B test in addition.
 - **Running the same persona simulation 3 times without changing the artifact.** No new information; the verifier saturates.

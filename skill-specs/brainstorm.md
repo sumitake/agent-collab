@@ -38,7 +38,10 @@ If the user's question is too vague to call the tool productively, ask one targe
 
 ### 2. Invoke `{{ mcp_tool_brainstorm }}` {{ brainstorm_call_params }}
 
-Divergent generation favors **throughput over depth** — `flash` (resolves to {{ tier_flash_resolves_to }}) is the right default. Bump to `pro` (resolves to {{ tier_pro_resolves_to }}) only for highly nuanced creative work where reasoning depth on each candidate idea is more valuable than candidate breadth.
+Divergent generation favors **throughput over depth** —
+{{ tier_flash_resolves_to }} is the default. Use {{ tier_pro_resolves_to }} only
+for highly nuanced creative work where reasoning depth on each candidate idea
+is more valuable than candidate breadth.
 
 The public coordinator accepts no brainstorm-specific fields. Put the
 following as labeled sections inside the single `prompt` string and dispatch
@@ -129,7 +132,7 @@ Pick examples from the user's domain when explaining the brainstorm scope. Match
 - **Asking {{ verifier_agent }} to decide.** Brainstorming is divergent. Asking "which is best?" pushes the model into a synthesis it has no business making for the user — and trains the user to outsource judgment.
 - **Accepting the first list without pressing for divergence.** The first list often clusters around the most obvious solution category. Push back at least once for genuinely different angles before settling.
 - **Mixing convergence into the brainstorm prompt.** "Give me 10 options ranked by likelihood of success" is a different request — and a worse one for this stage. Generate first, evaluate later. If the user genuinely wants ranking, do a second-pass convergent invocation, not a mixed-mode first pass.
-- **Using `pro` tier reflexively because the topic feels weighty.** Divergent generation favors `flash` — more candidates, faster, at the same quality. Reserve `pro` for cases where each candidate genuinely needs reasoning depth (e.g., generating hypothetical contract clauses where each one needs internal coherence, not just one-line bullet points).
+- **Using frontier/maximum reflexively because the topic feels weighty.** Divergent generation favors economical/minimal for more candidates and lower latency. Reserve frontier/maximum for cases where each candidate genuinely needs reasoning depth (e.g., generating hypothetical contract clauses where each one needs internal coherence, not just one-line bullet points).
 - **Pre-filtering the weird ones before showing the user.** The strange-looking candidate is often where the gem hides. Show everything; let the user prune.
 - **Dumping the raw list and calling it done.** Synthesis (cluster, name the clusters, flag outliers, hand the user a forward question) is the user-facing deliverable. The list itself is intermediate.
 - **Running this on a question the user has already brainstormed three times.** At that point the bottleneck is decision-making, not idea-shortage. Say so and pivot to convergence support.

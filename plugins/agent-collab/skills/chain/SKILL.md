@@ -1,9 +1,9 @@
 ---
 name: chain
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Standard
-  effort: medium
+  quality_profile: standard
+  effort_class: standard
 
 description: Execute a YAML-defined chain of skill invocations as a single reproducible, audited workflow — with template-driven input piping, schema validation, retry-on-malformed, conditional steps, gates (filesystem / semantic / tool), per-step worktree isolation, and JSONL audit logging. Use when the user says "run the X chain," "execute the X chain on Y," "chain these skills," "run this skill sequence," "run chain," "execute validate-<topic>," or names a chain defined in the workspace `chains/` or `drafts/sample-chains/` directories. Also offer this proactively when the active primary is about to manually run several skills in sequence on the same artifact, where the same sequence is likely to repeat — turning the ad-hoc flow into a chain YAML up-front buys reproducibility, audit trail, and consistent gate enforcement across runs.
 ---

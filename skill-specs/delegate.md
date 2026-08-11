@@ -107,7 +107,7 @@ The pattern is constant: list of independent items, structured output per item, 
 - **Failing to give {{ verifier_agent }} strict formatting instructions.** Mismatched format requires manual normalization in the merge step, which adds latency and loses signal.
 - **Using this when a single {{ primary_agent }} parallel-subagent call would do the same job** with no cross-family coverage value. The orchestration overhead is unjustified.
 - **Pathological splits** (give {{ verifier_agent }} a single item or all the items). The first wastes parallelism; the second defeats dual coverage. Aim for roughly even.
-- **Using `pro` tier on bulk extraction or lookups.** `flash` is the right default — throughput matters more than depth on each item. Reserve `pro` for items genuinely requiring analysis.
+- **Using frontier/maximum on bulk extraction or lookups.** Economical/minimal is the right default — throughput matters more than depth on each item. Reserve frontier/maximum for items genuinely requiring analysis.
 - **Asking {{ verifier_agent }} for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
 - **Silently replaying malformed output.** Format mismatch is a typed failure;
   do not spend a second inference behind the user's back.

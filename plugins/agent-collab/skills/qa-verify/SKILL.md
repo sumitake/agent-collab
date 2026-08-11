@@ -1,9 +1,9 @@
 ---
 name: qa-verify
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Fast
-  effort: low
+  quality_profile: economical
+  effort_class: minimal
 
 description: Ask the reviewer to independently QA the output of a completed execution against the original request — did the work actually meet the spec, or are there ignored constraints, off-by-one errors, hallucinated fields, or silent partial successes. Use when the user says "did this actually do what I asked," "verify my work with the reviewer," "QA check this," "sanity-check the output," "did the execution meet the spec," "did we actually complete the task," or "validate the result." Also offer this proactively when the active primary has just finished a complex multi-step execution (data transformation, large refactor, batched file edits, multi-API workflow, deploy script) and is about to report success — an independent QA pass before claim-of-completion catches the silent-success-with-missing-constraint failure mode that visual inspection often misses.
 ---
@@ -63,7 +63,7 @@ If any of the three is missing, gather it before invoking. A QA pass on incomple
 ### 2. Instruct the verifier as a strict QA inspector
 
 Submit the sealed QA role through `python3 "<plugin-root>/coordinator.py"` with
-`effort='low'` in every eligible advisory row and no `tier` request field (the skill default; raise effort only for subtle correctness constraints). Central policy selects
+`quality_profile='economical'` and `effort_class='minimal'` (the skill default; raise the closed quality and effort profiles only for subtle correctness constraints). Central policy selects
 an independent eligible reviewer; Claude/Anthropic remains async inbox-only.
 
 Use this prompt template — the VERDICT format is a functional contract; downstream tooling (chain runners, audit logs, CI gates) keys on the `VERDICT: PASS` / `VERDICT: FAIL` line:
@@ -149,6 +149,6 @@ The VERDICT-style binary verdict applies to all of these uniformly; what shifts 
 - **Skipping the verifier-independence check** when the work was executed by a independent-family agent. Same-family QA is correlated blind spots, not independent verification.
 - **Skipping the retry-on-malformed step.** If the response doesn't lead with `VERDICT: PASS` or `VERDICT: FAIL`, the parser breaks. Retry once; if still malformed, surface — do not infer a verdict from prose.
 - **Treating a hallucinated FAIL as a real fail.** Verify each FAILED CONSTRAINT against the actual output before alarming the user. Hallucinations happen in QA too.
-- **Using `pro` tier reflexively.** Binary verification is the right job for `flash`; reserve `pro` only when the constraint requires subtle correctness reasoning (numerical stability, regulatory-compliance interpretation, domain-specific edge-case judgment).
+- **Using frontier/maximum reflexively.** Binary verification is usually the right job for economical/minimal; reserve frontier/maximum for constraints requiring subtle correctness reasoning (numerical stability, regulatory interpretation, or domain-specific edge cases).
 - **Running QA on incomplete evidence** and reporting the PASS to the user. A QA pass on partial evidence signals "all clear" when the verifier never saw the relevant gap. Better to gather full evidence first and accept the latency.
 - **Inferring "this is correct" from a clean PASS.** Re-read the prior point. Words matter; the user will calibrate their downstream trust on yours.

@@ -1,9 +1,9 @@
 ---
 name: delegate
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Fast
-  effort: low
+  quality_profile: economical
+  effort_class: minimal
 
 description: Fan out independent research, summary, extraction, or fact-finding subtasks to a cross-family delegate — the reviewer by default — for parallel execution alongside the active primary where dual-model coverage adds value. Use when the user says "delegate to the reviewer," "split this with the reviewer," "fan this out," "have the reviewer take half of these," "research these in parallel with the reviewer," "divide and conquer with the reviewer," or when the active primary would otherwise process many independent items serially and cross-family coverage would help.
 ---
@@ -55,8 +55,8 @@ Pick a structured output format that both halves will share:
 ### 3. Dispatch the reviewer's portion
 
 Submit the sealed delegate role through `python3 "<plugin-root>/coordinator.py"`. Use
-low-effort advisory rows for bulk extraction and
-high-effort advisory rows for judgment-heavy items. Central policy
+economical-quality, minimal-effort advisory rows for bulk extraction and
+frontier-quality, maximum-effort advisory rows for judgment-heavy items. Central policy
 resolves the eligible worker after family exclusion; Claude/Anthropic remains
 async inbox-only.
 
@@ -114,7 +114,7 @@ The pattern is constant: list of independent items, structured output per item, 
 - **Failing to give the reviewer strict formatting instructions.** Mismatched format requires manual normalization in the merge step, which adds latency and loses signal.
 - **Using this when a single the active primary parallel-subagent call would do the same job** with no cross-family coverage value. The orchestration overhead is unjustified.
 - **Pathological splits** (give the reviewer a single item or all the items). The first wastes parallelism; the second defeats dual coverage. Aim for roughly even.
-- **Using `pro` tier on bulk extraction or lookups.** `flash` is the right default — throughput matters more than depth on each item. Reserve `pro` for items genuinely requiring analysis.
+- **Using frontier/maximum on bulk extraction or lookups.** Economical/minimal is the right default — throughput matters more than depth on each item. Reserve frontier/maximum for items genuinely requiring analysis.
 - **Asking the reviewer for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
 - **Silently replaying malformed output.** Format mismatch is a typed failure;
   do not spend a second inference behind the user's back.

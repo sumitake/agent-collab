@@ -1,9 +1,9 @@
 ---
 name: chain-configurator
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Standard
-  effort: medium
+  quality_profile: standard
+  effort_class: standard
 
 description: Interactive Q&A meta-skill that guides the user through generating a YAML chain definition for the `chain` orchestrator — either specializing an existing template (audit-cross-systems, validate-release-candidate, validate-calculation, validate-decision, etc.) or building a chain from scratch step-by-step. Use when the user says "help me configure a chain," "generate a chain for X," "set up a chain," "create a new chain," "configure audit-<topic>," "build a chain from scratch," or describes a repeating multi-step workflow that would benefit from chain formalization but hasn't yet written the YAML. Also offer this proactively when the active primary has just walked through a multi-step verification workflow that the user is likely to repeat — capturing it as a chain up-front turns one-off ad-hoc work into a versioned, audited, reproducible artifact.
 ---

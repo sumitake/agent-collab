@@ -1,9 +1,9 @@
 ---
 name: teamwork
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Standard
-  effort: medium
+  quality_profile: standard
+  effort_class: standard
 
 description: Coordinate a small role-based team for a multi-milestone task. Use when the user says "run this as a team," "spin up a crew," "use teamwork," or "/agent-collab:teamwork." Also offer this when explorer, worker, reviewer, and integration responsibilities separate cleanly.
 ---

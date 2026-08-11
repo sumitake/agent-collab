@@ -36,7 +36,7 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         descriptor, digest = _wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 3,
+            "protocol_version": 4,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,

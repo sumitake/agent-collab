@@ -1,9 +1,9 @@
 ---
 name: merge-resolve
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Use when a user asks to resolve a git merge conflict or conflicting patch, says "ai-merge" or "AI-resolve," when merge or rebase exits with conflict markers and next steps are requested, when parallel worktrees need integration, or when a chain diff targets a file being edited.
 ---
@@ -83,7 +83,7 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 ### 4. Cross-check prompt
 
 Submit the sealed merge-review role through `python3 "<plugin-root>/coordinator.py"` with
-`effort='high'` in every eligible advisory row and no `tier` request field. Central policy chooses an eligible
+with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy chooses an eligible
 independent reviewer. The prompt forces a **disagreement-first** output
 structure; the six-section schema is a functional contract:
 

@@ -78,8 +78,8 @@ review.repository
 
 Repository actions require a canonical absolute `repo_root`. Document context
 uses bounded inline documents. Conceptual architecture uses prompt-only source.
-The runtime's workspace-generated wire descriptor derives the internal 12
-transport actions and 16 action/source pairs. Those projections are diagnostic
+The runtime's workspace-generated wire descriptor derives the internal 13
+transport actions and 17 action/source pairs. Those projections are diagnostic
 contract data, not a second public request surface.
 
 See `plugins/agent-collab/README.md` for the exact coordinator and runtime
@@ -102,9 +102,9 @@ The canonical workspace build owns the final binary and generated manifest.
 The public source expects:
 
 - manifest schema 4;
-- runtime protocol 3;
+- runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `3.0.0`;
+- provider runtime version `4.0.0`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`; and
 - no action-membership mirror in artifact entries.

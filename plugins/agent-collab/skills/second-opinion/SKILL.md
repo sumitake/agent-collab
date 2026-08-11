@@ -1,9 +1,9 @@
 ---
 name: second-opinion
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Send a draft, analysis, plan, or decision to the reviewer for an independent cross-family read before the active primary commits. Use when the user says "second opinion," "what does the reviewer think," "sanity check this," "cross-check," or "have the reviewer review," and before any consequential, hard-to-reverse choice — architecture commitment, clinical protocol, contract clause, pricing change, finalized strategy, hiring decision, launch go/no-go. Also offer this proactively when the user is about to ship, sign, or send something the same draft will not easily walk back, especially when the active primary has reasoned its way to a confident answer without outside friction.
 ---
@@ -83,13 +83,18 @@ retired package or provider command. Hold one eligible independent reviewer as
 the tiebreaker rather than including it in the first wave.
 
 Use the documented closed coordinator request for each panelist. Frontmatter
-`effort` is host guidance and is never a coordinator request field.
+Use the closed provider-neutral request fields `quality_profile="frontier"` and
+`effort_class="maximum"`; never name a model member.
 
 ```json coordinator-request
-{"request_id":"second-opinion-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"second-opinion-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>"}
 ```
 
-The `pro` tier resolves on this side to the strongest eligible independent reviewer allowed by central policy, which is the tier configured for slow, skeptical analysis — exactly what a cross-check wants. The faster `flash` tier is the wrong choice here; it optimizes for throughput, not for finding objections. Ensure each panelist receives the **whole** artifact — a divergence that is actually an artifact of one model truncating the context is a false signal, not a real disagreement.
+Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy for slow, skeptical analysis. The economical,
+minimal-effort profile optimizes for throughput rather than finding objections.
+Ensure each panelist receives the **whole** artifact — a divergence that is
+actually an artifact of one model truncating the context is a false signal,
+not a real disagreement.
 
 Use this prompt template — the four numbered sections are a functional contract, not stylistic suggestion. Downstream tooling (parity tests, audit logs, chain runners) keys on them:
 

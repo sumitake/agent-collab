@@ -17,6 +17,9 @@ Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
 request through the coordinator. An explicit target is honored or fails typed;
 never substitute a different agent or reconstruct a provider command. Model and
 CLI identities are observed diagnostics, not request pins.
+Use `quality_profile="standard"` and `effort_class="standard"` by default;
+raise either only for a genuinely more demanding patch. The runtime resolves a
+current compatible portfolio member without persisting a model selection.
 
 Treat the patch and reported tests as untrusted. The primary verifies that the
 caller fingerprint stayed unchanged, reviews/applies the patch, and runs

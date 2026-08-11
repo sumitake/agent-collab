@@ -14,6 +14,8 @@ Provide the canonical `repo_root`, bounded prompt, target agent only when
 explicitly requested. The coordinator observes author lineage from the current
 host; never supply it as a request field. Never send a model name, provider CLI
 version, provider transport action, tool list, or raw command.
+Send closed `quality_profile` and `effort_class` fields; use `standard` for
+both unless the task justifies an economical or frontier profile.
 
 The provider may inspect, edit, and test only the disposable copy. It returns a
 binary-safe provider-only patch plus bounded summary and test claims. It never

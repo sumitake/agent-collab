@@ -1,9 +1,9 @@
 ---
 name: visual-review
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Review a screenshot, mockup, slide, chart, diagram, photograph, or marketing asset for hierarchy, readability, density, consistency, accessibility, and brand fit. Use when the user says "review this design," "look at this screenshot," "design feedback," "accessibility review," "is this on-brand," or "compare these variants," or when a visual artifact is about to ship. The unified plugin currently has no managed cross-family image transport, so this skill provides an honest primary-only visual pass or reports independent visual review unavailable; it never fabricates a verifier call.
 ---

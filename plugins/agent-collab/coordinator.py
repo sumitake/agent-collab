@@ -22,6 +22,8 @@ _ERROR_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _COMMON_KEYS = {
     "request_id",
     "logical_action",
+    "quality_profile",
+    "effort_class",
     "target_agent",
     "timeout_ms",
     "prompt",
@@ -146,6 +148,8 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
     request_id = document["request_id"]
     prompt = document["prompt"]
     timeout_ms = document["timeout_ms"]
+    quality_profile = document["quality_profile"]
+    effort_class = document["effort_class"]
     target_agent = document["target_agent"]
     author_lineage = getattr(host, "primary_family", "unknown")
     if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
@@ -154,6 +158,10 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
         raise ValueError("prompt is invalid")
     if type(timeout_ms) is not int or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
         raise ValueError("timeout_ms is invalid")
+    if quality_profile not in {"economical", "standard", "frontier"}:
+        raise ValueError("quality_profile is invalid")
+    if effort_class not in {"minimal", "standard", "maximum"}:
+        raise ValueError("effort_class is invalid")
     if target_agent is not None and (type(target_agent) is not str or not target_agent):
         raise ValueError("target_agent is invalid")
     if getattr(host, "identity_conflict", False):
@@ -168,6 +176,8 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
         "wire_contract_sha256": wire.sha256,
         "request_id": request_id,
         "logical_action": action,
+        "quality_profile": quality_profile,
+        "effort_class": effort_class,
         "target_agent": target_agent,
         "author_lineage": author_lineage,
         "timeout_ms": timeout_ms,
@@ -275,10 +285,14 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         if readiness_requested
         else runtime.invoke(envelope=envelope)
     )
+    usable = result.status in {
+        runtime.RuntimeStatus.OK,
+        runtime.RuntimeStatus.ADVISORY,
+    }
     response = _response(
         envelope["request_id"],
         result.status.value,
-        "" if result.status is runtime.RuntimeStatus.OK else _runtime_error_code(result),
+        "" if usable else _runtime_error_code(result),
     )
     if result.result is not None:
         response["result"] = result.result

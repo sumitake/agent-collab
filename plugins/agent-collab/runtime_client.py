@@ -31,15 +31,16 @@ from typing import Any, Iterator, Mapping, Sequence
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "3.0.0"
+PROVIDER_RUNTIME_VERSION = "4.0.0"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
-MAX_TIMEOUT_MS = 600_000
+MAX_TIMEOUT_MS = 86_400_000
 TERM_GRACE_SECONDS = 0.5
+PROCESS_CLEANUP_RESERVE_SECONDS = TERM_GRACE_SECONDS * 4
 EXPECTED_MINIMUM_MACOS = "14.0"
 RUNTIME_BUNDLE_PATH = "runtime/darwin-arm64/agent-collab-runtime.bundle"
 RUNTIME_ENTRYPOINT = "agent-collab-runtime"
@@ -53,6 +54,7 @@ _CODESIGN_TIMESTAMP_RE = re.compile(r"(?m)^Timestamp=(.+)$")
 _WIRE_KEYS = frozenset(
     {
         "artifacts",
+        "advisory_response",
         "base_transport_actions",
         "bounded_diagnostics",
         "execution_receipt",
@@ -156,6 +158,7 @@ runtime_bundle = _load_runtime_bundle()
 
 class RuntimeStatus(str, Enum):
     OK = "ok"
+    ADVISORY = "advisory"
     INVALID_REQUEST = "invalid_request"
     UNAVAILABLE = "unavailable"
     AUTH_ERROR = "auth_error"
@@ -177,6 +180,7 @@ class RuntimeStatus(str, Enum):
 _RUNTIME_RESPONSE_STATUSES = frozenset(
     {
         RuntimeStatus.OK,
+        RuntimeStatus.ADVISORY,
         RuntimeStatus.INVALID_REQUEST,
         RuntimeStatus.UNAVAILABLE,
         RuntimeStatus.AUTH_ERROR,
@@ -200,6 +204,7 @@ class WireDescriptorSnapshot:
     action_source_pairs: frozenset[tuple[str, str, str]]
     semantic_request: Mapping[str, Any]
     success_response: Mapping[str, Any]
+    advisory_response: Mapping[str, Any]
     failure_response: Mapping[str, Any]
     artifact_schemas: Mapping[str, Any]
     execution_receipt: Mapping[str, Any]
@@ -318,7 +323,7 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor logical action sources are invalid")
     transports = _unique_rows(descriptor["base_transport_actions"], 2)
     pairs = _unique_rows(descriptor["valid_action_source_pairs"], 3)
-    if len(transports) != 12 or len(pairs) != 16:
+    if len(transports) != 13 or len(pairs) != 17:
         raise ValueError("wire descriptor projections have wrong cardinality")
     if any(row[:2] not in transports or row[2] not in _SOURCE_MODES for row in pairs):
         raise ValueError("wire descriptor source projection is inconsistent")
@@ -329,6 +334,7 @@ def validate_wire_descriptor(
     schema_fields = (
         "semantic_request",
         "success_response",
+        "advisory_response",
         "failure_response",
         "execution_receipt",
         "bounded_diagnostics",
@@ -358,6 +364,7 @@ def validate_wire_descriptor(
         action_source_pairs=frozenset(pairs),
         semantic_request=descriptor["semantic_request"],
         success_response=descriptor["success_response"],
+        advisory_response=descriptor["advisory_response"],
         failure_response=descriptor["failure_response"],
         artifact_schemas=artifacts,
         execution_receipt=descriptor["execution_receipt"],
@@ -1062,40 +1069,57 @@ def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
     return env
 
 
-def _terminate_and_reap(process: subprocess.Popen[bytes]) -> bool:
+def _terminate_and_reap(
+    process: subprocess.Popen[bytes], *, deadline: float
+) -> bool:
     group = process.pid
     try:
         try:
             os.killpg(group, signal.SIGTERM)
         except ProcessLookupError:
             pass
-        if process.poll() is None:
+        term_deadline = min(
+            deadline, time.monotonic() + TERM_GRACE_SECONDS
+        )
+        while time.monotonic() < term_deadline:
+            leader_reaped = process.poll() is not None
             try:
-                process.wait(timeout=TERM_GRACE_SECONDS)
+                os.killpg(group, 0)
+            except ProcessLookupError:
+                return leader_reaped or process.poll() is not None
+            time.sleep(
+                min(0.01, max(0.0, term_deadline - time.monotonic()))
+            )
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        remaining = max(0.0, deadline - time.monotonic())
+        if process.poll() is None and remaining > 0:
+            try:
+                process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
-                pass
-        deadline = time.monotonic() + TERM_GRACE_SECONDS
+                return False
         while time.monotonic() < deadline:
             try:
                 os.killpg(group, 0)
             except ProcessLookupError:
-                break
-            time.sleep(0.01)
-        else:
-            try:
-                os.killpg(group, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        process.wait(timeout=TERM_GRACE_SECONDS)
+                return process.poll() is not None
+            time.sleep(
+                min(0.01, max(0.0, deadline - time.monotonic()))
+            )
         try:
             os.killpg(group, 0)
         except ProcessLookupError:
-            return True
+            return process.poll() is not None
         return False
     except (OSError, subprocess.SubprocessError):
         try:
             process.kill()
-            process.wait(timeout=TERM_GRACE_SECONDS)
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                return False
+            process.wait(timeout=remaining)
         except (OSError, subprocess.SubprocessError):
             return False
         try:
@@ -1202,6 +1226,32 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             if operation == "invoke"
             else _readiness_envelope_document(envelope, resolution.wire)
         )
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error=str(exc), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+    timeout_ms = document.get("timeout_ms")
+    if not _exact_int(timeout_ms) or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
+        return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime timeout is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    reserve_ms = min(
+        int(PROCESS_CLEANUP_RESERVE_SECONDS * 1000),
+        max(1, timeout_ms // 2),
+    )
+    outer_cleanup_ms = max(1, reserve_ms // 2)
+    runtime_deadline = deadline - reserve_ms / 1000.0
+    collection_deadline = deadline - outer_cleanup_ms / 1000.0
+    remaining_runtime_ms = int(
+        max(0.0, runtime_deadline - time.monotonic()) * 1000
+    )
+    if remaining_runtime_ms < 1:
+        return RuntimeResult(
+            RuntimeStatus.TIMEOUT,
+            error="deadline expired before runtime launch",
+            manifest_digest=resolution.manifest_digest,
+            artifact_digest=resolution.artifact_digest,
+        )
+    document = dict(document)
+    document["timeout_ms"] = remaining_runtime_ms
+    try:
         request = _canonical_json(document) + b"\n"
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error=str(exc), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
@@ -1209,10 +1259,6 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime request exceeds input bound", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     if _identity(resolution.path, executable=True) != resolution.identity:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime identity changed before launch", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-    timeout_ms = document.get("timeout_ms")
-    if not _exact_int(timeout_ms) or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
-        return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime timeout is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-    deadline = time.monotonic() + timeout_ms / 1000.0
     try:
         with _isolated_tmpdir() as tmpdir:
             try:
@@ -1227,18 +1273,34 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 )
             except OSError:
                 return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="direct runtime could not be launched", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            stdout, _stderr, terminal = _collect_bounded(process, request, deadline)
+            stdout, _stderr, terminal = _collect_bounded(
+                process, request, collection_deadline
+            )
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream is not None and not stream.closed:
                     stream.close()
             if terminal:
-                reaped = _terminate_and_reap(process)
+                reaped = _terminate_and_reap(process, deadline=deadline)
                 status = RuntimeStatus.TIMEOUT if terminal == "timeout" else RuntimeStatus.OUTPUT_LIMIT
                 if not reaped:
                     status = RuntimeStatus.TEARDOWN_ERROR
                 return RuntimeResult(status, error=terminal.replace("_", " "), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            returncode = process.wait(timeout=TERM_GRACE_SECONDS)
-            reaped = _terminate_and_reap(process)
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                returncode = process.wait(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                reaped = _terminate_and_reap(process, deadline=deadline)
+                return RuntimeResult(
+                    RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR,
+                    error=(
+                        "runtime exit exceeded its deadline"
+                        if reaped
+                        else "process group teardown unproven"
+                    ),
+                    manifest_digest=resolution.manifest_digest,
+                    artifact_digest=resolution.artifact_digest,
+                )
+            reaped = _terminate_and_reap(process, deadline=deadline)
             if not reaped:
                 return RuntimeResult(RuntimeStatus.TEARDOWN_ERROR, error="process group teardown unproven", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     except _PrivateTmpCleanupError as exc:
@@ -1270,7 +1332,11 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             schema = (
                 resolution.wire.success_response
                 if status is RuntimeStatus.OK
-                else resolution.wire.failure_response
+                else (
+                    resolution.wire.advisory_response
+                    if status is RuntimeStatus.ADVISORY
+                    else resolution.wire.failure_response
+                )
             )
             _validate_schema(response, schema)
             if response.get("wire_contract_sha256") != resolution.wire.sha256:
@@ -1292,6 +1358,17 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             provenance={
                 "wire_contract_sha256": resolution.wire.sha256,
                 "execution_receipt": response["execution_receipt"],
+                "diagnostics": response["diagnostics"],
+            },
+            manifest_digest=resolution.manifest_digest,
+            artifact_digest=resolution.artifact_digest,
+        )
+    if status is RuntimeStatus.ADVISORY:
+        return RuntimeResult(
+            status,
+            result=response["advisory"],
+            provenance={
+                "wire_contract_sha256": resolution.wire.sha256,
                 "diagnostics": response["diagnostics"],
             },
             manifest_digest=resolution.manifest_digest,

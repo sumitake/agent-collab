@@ -9,11 +9,15 @@ description: Request read-only architecture consultation for codebase analysis, 
 Use `architecture.repository` for repository-aware analysis and
 `architecture.conceptual` only for genuinely conceptual consultation. A
 repository request must include the canonical `repo_root` and succeeds only
-with native inspected-path evidence; there is no repository-blind fallback.
+with native inspected-path evidence. Safe substantive text without that
+evidence may be returned only as an explicitly ungrounded advisory; it is
+useful analysis but not repository authority.
 
 Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
 request through the public coordinator. Set `target_agent` only when the user
 explicitly names one. Do not construct provider commands or transport actions.
+Use `quality_profile="frontier"` and `effort_class="maximum"` for substantial
+architecture work; these choose desired quality and depth, never a model ID.
 
 Ask for the recommended architecture, invariants and threat boundaries,
 dependency-ordered implementation units, verification plan, and unresolved

@@ -25,8 +25,8 @@ The provider-free report distinguishes active, installed, and cached legacy
 observations. Active retired packages block direct routing. Cache-only residue
 does not become an executable route.
 
-The current package unit is manifest schema 4, runtime protocol 3, native
-contract 4, provider runtime `3.0.0`, and descriptor schema 2. The generated
+The current package unit is manifest schema 4, runtime protocol 4, native
+contract 4, provider runtime `4.0.0`, and descriptor schema 6. The generated
 manifest carries one top-level `wire_contract` and
 `wire_contract_sha256`. A mixed unit fails typed.
 

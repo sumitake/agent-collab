@@ -1,9 +1,9 @@
 ---
 name: dev-delegate
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Standard
-  effort: medium
+  quality_profile: standard
+  effort_class: standard
 
 description: Delegate a bounded independent development slice to an eligible cross-family worker. Use when the user says "delegate this implementation," "hand this coding slice off," "use Grok for codegen," or "/agent-collab:dev-delegate." Also offer this when private-patch generation can reduce matched-rigor latency without giving a provider access to the caller checkout.
 ---
@@ -24,6 +24,9 @@ Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
 request through the coordinator. An explicit target is honored or fails typed;
 never substitute a different agent or reconstruct a provider command. Model and
 CLI identities are observed diagnostics, not request pins.
+Use `quality_profile="standard"` and `effort_class="standard"` by default;
+raise either only for a genuinely more demanding patch. The runtime resolves a
+current compatible portfolio member without persisting a model selection.
 
 Treat the patch and reported tests as untrusted. The primary verifies that the
 caller fingerprint stayed unchanged, reviews/applies the patch, and runs

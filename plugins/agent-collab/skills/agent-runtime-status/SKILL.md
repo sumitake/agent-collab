@@ -1,9 +1,9 @@
 ---
 name: agent-runtime-status
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Fast
-  effort: low
+  quality_profile: economical
+  effort_class: minimal
 
 description: Use when the user says "agent runtime status," "check agent runtimes," "list agent versions," "is a reviewer available," or "/agent-collab:agent-runtime-status." Also offer this after a direct runtime request returns unavailable or before a multi-agent workflow whose action-scoped readiness has not been checked this session.
 ---

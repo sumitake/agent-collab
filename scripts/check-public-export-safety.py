@@ -41,6 +41,13 @@ EXECUTOR_SOURCES = {
     "grok_review.py",
 }
 PROVIDER_BACKEND_PATH_PARTS = {"backend", "mcp-server"}
+DEVELOPMENT_ONLY_PATH_NAMES = {
+    "_dev_route_evidence.py",
+    "development-provenance.json",
+    "development-route-evidence",
+    "development-route-evidence.key",
+    "manage_route_promotions.py",
+}
 PRIVATE_PATTERNS = (
     "/Users/",
     "Documents/Claude/Projects",
@@ -194,6 +201,8 @@ def _path_violation(path: Path, relative: Path) -> Violation | None:
         return Violation("legacy_path", str(relative))
     if any(part in PROVIDER_BACKEND_PATH_PARTS for part in relative.parts):
         return Violation("provider_backend_source", str(relative))
+    if any(part in DEVELOPMENT_ONLY_PATH_NAMES for part in relative.parts):
+        return Violation("development_only_path", str(relative))
     if path.name in EXECUTOR_SOURCES or path.suffix == ".pyc" or "__pycache__" in relative.parts:
         return Violation("executor_source", str(relative))
     return None
@@ -477,6 +486,8 @@ def _archive_violations(
             violations.append(Violation("legacy_path", virtual))
         if any(part in PROVIDER_BACKEND_PATH_PARTS for part in member_path.parts):
             violations.append(Violation("provider_backend_source", virtual))
+        if any(part in DEVELOPMENT_ONLY_PATH_NAMES for part in member_path.parts):
+            violations.append(Violation("development_only_path", virtual))
         if member_path.name in EXECUTOR_SOURCES or member_path.suffix == ".pyc":
             violations.append(Violation("executor_source", virtual))
         violations.extend(
@@ -638,7 +649,7 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         or item.get("path")
         != "runtime/darwin-arm64/agent-collab-runtime.bundle"
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
-        or item.get("provider_runtime_version") != "3.0.0"
+        or item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION
         or type(item.get("size")) is not int
         or item["size"] != sum(record["size"] for record in records)
         or item.get("sha256") != bundle_identity
@@ -815,6 +826,8 @@ def scan_history(root: Path) -> list[Violation]:
                 violations.append(Violation("legacy_history", name))
             if any(part in PROVIDER_BACKEND_PATH_PARTS for part in path.parts):
                 violations.append(Violation("provider_backend_history", name))
+            if any(part in DEVELOPMENT_ONLY_PATH_NAMES for part in path.parts):
+                violations.append(Violation("development_only_history", name))
             if path.name in EXECUTOR_SOURCES or path.suffix == ".pyc":
                 violations.append(Violation("executor_history", name))
 

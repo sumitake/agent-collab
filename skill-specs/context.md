@@ -33,6 +33,9 @@ Resolve the plugin root from this loaded file, read the coordinator schema in
 `<plugin-root>/README.md`, and submit one semantic request to
 `python3 "<plugin-root>/coordinator.py"`. Use an explicit `target_agent` only
 when the user named one; never construct a provider transport action.
+Use `quality_profile="economical"` with `effort_class="minimal"` for mechanical
+extraction, and raise these closed provider-neutral fields only when the task
+actually requires more synthesis depth. Never name a model or provider member.
 
 One accepted request launches one provider process and fresh session. Provider-
 internal tool rounds or model calls may exceed one. There is no automatic whole-request replay after any model call and no malformed-output retry.
@@ -44,6 +47,10 @@ return its hash and byte count without echoing source contents. Repository mode
 must return native repository evidence and normalized inspected paths. For
 high-stakes extraction, the primary spot-checks load-bearing claims against the
 source.
+
+If a clean attempt returns useful text without sufficient native source
+evidence, preserve it only as an explicitly ungrounded advisory. It carries no
+receipt, finding, governance, merge, or source-grounded authority.
 
 This capability is advisory and read-only. It never edits files, applies a
 patch, creates governance evidence, or authorizes a provider command outside

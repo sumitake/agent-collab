@@ -38,6 +38,7 @@ PATTERNS = [
 # Never scanned: this scanner itself defines the patterns above as literals.
 SKIP_PATHS = {"scripts/secret_scan.py"}
 ALLOWLISTED_FINDINGS: frozenset[tuple[str, str, str]] = frozenset()
+DEVELOPMENT_EVIDENCE_HMAC_NAME = "development-route-evidence.key"
 
 
 def _source_files(root: Path) -> list[str]:
@@ -84,6 +85,8 @@ def scan_tree(root: Path) -> tuple[list[str], int, list[str]]:
             continue
         text = data.decode("latin-1")
         scanned += 1
+        if DEVELOPMENT_EVIDENCE_HMAC_NAME in Path(rel).parts:
+            findings.append(f"{rel}: development evidence HMAC material")
         for lineno, line in enumerate(text.splitlines(), 1):
             for label, pat in PATTERNS:
                 if pat.search(line):

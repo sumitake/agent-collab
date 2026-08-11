@@ -74,7 +74,7 @@ independent reviewer. Frontmatter `effort` is host guidance and is never a
 coordinator request field.
 
 ```json coordinator-request
-{"request_id":"red-team-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"red-team-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>"}
 ```
 
 Use this prompt template — the JSONL output schema is a functional contract;
@@ -138,7 +138,7 @@ The JSONL schema and threat-model + success-criterion framing stay constant acro
 - **Treating the attack list as exhaustive.** It is a productive sample, not a proof of security. The absence of a vector in the list does not mean it is undefended.
 - **Skipping the actually-test-each-input step.** Hallucinations are common; relaying unverified attack claims wastes the user's time and may mislead them about real exposure. Test in a local reproduction before reporting.
 - **Asking the verifier to also fix the vulnerabilities.** Generate attacks (this skill) and propose defenses (the user or {{ primary_agent }} acts on them) are separate steps. The verifier's job is to find attacks, not write the fixes — those are likely to be same-family-correlated patches.
-- **Using `flash` tier.** Adversarial creativity benefits from depth; `flash` produces obvious, commonly-listed inputs the author already defended against.
+- **Using economical/minimal.** Adversarial creativity benefits from depth; use frontier/maximum so the review goes beyond obvious, commonly listed inputs.
 - **Skipping the verifier-independence check** when the artifact came from a {{ verifier_family }}-family agent. Same-family red-teams produce inputs the author would have anticipated.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
