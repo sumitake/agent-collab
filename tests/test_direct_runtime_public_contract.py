@@ -85,6 +85,18 @@ def _wire_descriptor() -> tuple[dict[str, object], str]:
     return manifest["wire_contract"], manifest["wire_contract_sha256"]
 
 
+def _descriptor_sha256(descriptor: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _readiness_response(
     wire_sha256: str, *, author_lineage: str = "openai"
 ) -> dict[str, object]:
@@ -203,20 +215,60 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             frozenset(ACTION_SOURCE_PAIRS),
         )
 
-    def test_public_client_rejects_the_previous_wire_schema(self) -> None:
-        client = _load("wire_three_only_runtime_client", PLUGIN / "runtime_client.py")
+    def test_public_client_accepts_a_positive_wire_schema_revision(self) -> None:
+        client = _load("positive_wire_revision_runtime_client", PLUGIN / "runtime_client.py")
         descriptor, _digest = _wire_descriptor()
-        descriptor["schema_version"] = 2
-        encoded = json.dumps(
-            descriptor,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        with self.assertRaisesRegex(ValueError, "unsupported"):
-            client.validate_wire_descriptor(
-                descriptor, expected_sha256=hashlib.sha256(encoded).hexdigest()
-            )
+        descriptor["schema_version"] = 5
+
+        snapshot = client.validate_wire_descriptor(
+            descriptor, expected_sha256=_descriptor_sha256(descriptor)
+        )
+
+        self.assertEqual(snapshot.logical_actions, frozenset(LOGICAL_ACTIONS))
+
+    def test_public_client_rejects_invalid_wire_schema_revisions(self) -> None:
+        client = _load("invalid_wire_revision_runtime_client", PLUGIN / "runtime_client.py")
+        for revision in (0, -1, True, False, 1.5, "5", None):
+            with self.subTest(revision=revision):
+                descriptor, _digest = _wire_descriptor()
+                descriptor["schema_version"] = revision
+                with self.assertRaisesRegex(ValueError, "schema version"):
+                    client.validate_wire_descriptor(
+                        descriptor, expected_sha256=_descriptor_sha256(descriptor)
+                    )
+
+    def test_public_client_retains_descriptor_integrity_boundaries(self) -> None:
+        client = _load("wire_integrity_runtime_client", PLUGIN / "runtime_client.py")
+
+        descriptor, _digest = _wire_descriptor()
+        with self.assertRaisesRegex(ValueError, "digest"):
+            client.validate_wire_descriptor(descriptor, expected_sha256="0" * 64)
+
+        mutations = (
+            ("not closed", lambda value: value.__setitem__("unknown", True)),
+            (
+                "JSON schema",
+                lambda value: value.__setitem__(
+                    "success_response", {"type": "object", "unknown": True}
+                ),
+            ),
+            (
+                "wrong cardinality",
+                lambda value: value["base_transport_actions"].pop(),
+            ),
+            (
+                "runtime protocol",
+                lambda value: value.__setitem__("runtime_protocol_version", 4),
+            ),
+        )
+        for message, mutate in mutations:
+            with self.subTest(message=message):
+                descriptor, _digest = _wire_descriptor()
+                mutate(descriptor)
+                with self.assertRaisesRegex(ValueError, message):
+                    client.validate_wire_descriptor(
+                        descriptor, expected_sha256=_descriptor_sha256(descriptor)
+                    )
 
     def test_manifest_schema_carries_only_the_top_level_wire_descriptor(self) -> None:
         schema = json.loads(
@@ -234,7 +286,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertNotIn("route_contract_version", artifact["properties"])
         self.assertEqual(
             properties["wire_contract"]["properties"]["schema_version"],
-            {"const": 3},
+            {"type": "integer", "minimum": 1},
         )
 
     def test_committed_manifest_is_the_schema_four_descriptor_placeholder(self) -> None:

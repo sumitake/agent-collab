@@ -33,7 +33,6 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 3
 CONTRACT_VERSION = 4
-WIRE_SCHEMA_VERSION = 3
 PROVIDER_RUNTIME_VERSION = "3.0.0"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
@@ -291,8 +290,8 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor is not canonical JSON") from exc
     if hashlib.sha256(encoded).hexdigest() != expected_sha256:
         raise ValueError("wire descriptor digest does not match")
-    if not _exact_int(descriptor["schema_version"], WIRE_SCHEMA_VERSION):
-        raise ValueError("wire descriptor schema version is unsupported")
+    if not _exact_int(descriptor["schema_version"]) or descriptor["schema_version"] < 1:
+        raise ValueError("wire descriptor schema version is invalid")
     if not _exact_int(descriptor["runtime_protocol_version"], PROTOCOL_VERSION):
         raise ValueError("wire descriptor runtime protocol is unsupported")
     routing_sha = descriptor["routing_source_sha256"]

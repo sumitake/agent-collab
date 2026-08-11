@@ -41,7 +41,7 @@
         "zero_inference_readiness"
       ],
       "properties": {
-        "schema_version": {"const": 3},
+        "schema_version": {"type": "integer", "minimum": 1},
         "runtime_protocol_version": {"const": 3},
         "routing_source_sha256": {
           "type": "string",
