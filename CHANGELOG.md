@@ -14,6 +14,369 @@ The public changelog intentionally records policy, compatibility, and migration 
 
 ### Fixed
 
+- The `.githooks/pre-commit` and `.githooks/pre-push` wrappers now resolve the
+  repository root from the INVOKING worktree (`git rev-parse --show-toplevel`,
+  failing closed when it cannot be resolved) instead of from the hook
+  file's own location. `core.hooksPath` is an absolute path into the primary
+  checkout, so the old hook-file-relative resolution validated and tested the
+  primary checkout's tree — stale or dirty with another session's edits —
+  whenever a commit or push ran from a linked session worktree (observed
+  2026-08-05 as a false `NOTICE ... drifted` pre-commit FAIL; the same shape
+  could produce false PASSes). Wrapper tests cover the hook-lives-elsewhere
+  scenario for both hooks, a fail-closed block when the root cannot be
+  resolved (per Codex cross-family review — no cwd fallback), and a real-git
+  linked-worktree integration test reproducing the production topology.
+  Repository tooling only — no distributed content, no version bump. Note:
+  the fix takes effect once the primary checkout (whose working tree hosts
+  the active hooksPath copies) is updated to a commit containing it.
+
+### Fixed
+
+- Treat the wire descriptor schema version as a positive structural revision while retaining the runtime protocol, canonical digest, closed-schema, and routing/cardinality compatibility gates.
+
+### agent-collab 5.0.0 — 2026-08-11
+
+#### Changed
+
+- Activated the v5 direct runtime with one manifest-bound, signed, notarized
+  Darwin arm64 standalone bundle.
+- Replaced the policy-only runtime placeholder without publishing provider
+  executor source or invocation recipes.
+
+#### Verification
+
+- Bound the activation package to runtime protocol 3, native contract 4, and
+  the closed schema-4 public manifest before publication.
+
+### Changed
+
+- Make release tags immutable and fail closed: the release helper no longer offers stale-runtime or tag-deletion escape hatches, and an existing tag is never treated as proof that a release succeeded.
+- Bind release success to the signed annotated tag's exact commit, the completed successful `release.yml` push run, the non-draft GitHub release, and byte-for-byte archive, checksum, and SPDX assets generated from that commit.
+
+Align the v5 runtime contract so verified repository paths remain truthful optional enrichment instead of a prerequisite for otherwise attributable, signed provider results.
+
+### Changed
+
+- agent-collab 4.9.1 adds a sanitized, indexed public architecture handbook
+  covering system context, capabilities, governance and authority, lifecycle
+  operations, repository/release architecture, and lifecycle-state evidence.
+- Refocus the root README on general users and link maintainers to the existing
+  low-level package reference instead of duplicating its protocol detail.
+
+### Fixed
+
+- Correct stale public statements about the package version, committed
+  activation artifact, reviewed signing anchor, and current runtime-manifest
+  schema while removing private-producer provenance from active documentation.
+- Add a design-evidence registry so cited design-of-record sections,
+  superseded drafts, and historical adversarial reviews are not conflated.
+
+### Fixed
+
+- Preserve the caller's current `PATH` at the signed direct-runtime launch
+  boundary so current unpinned Codex, Gemini, Grok, and OpenCode CLIs remain
+  discoverable; use the fixed system path only when the caller supplies none.
+
+### Changed
+
+- Made human-first architecture, root README, and changelog alignment the final
+  stage of every release, while keeping executor-level recipes and private
+  control-plane discovery outside the public documentation boundary.
+
+### Changed
+
+- README: consolidated the What's-new stack to the unreleased v4.7.0–v4.9.0 tail per operator instruction; released-version notes (v4.3.5–v4.6.0) are removed from the README, and the history pointer now accurately states that release notes live as `changelog.d/` fragments compiled into `CHANGELOG.md` at each release cut.
+
+### Changed
+
+- README: named the engineering-process skills (`decision-map`, `prototype`, `architecture-review`) in the Skill surface enumeration, and stated the delegate-selection order (capability, then availability, then pool-conserving cost rank) in the cost-tiered delegation bullet. What's-new consolidation is deferred to the next release cut, when the changelog fragments are compiled into `CHANGELOG.md` — until then the README stack is the only reader-facing versioned history.
+
+### Changed
+
+- CI security-contract tests now assert action-pin *properties* instead of
+  exact pin fixtures: the Gitleaks, CodeQL init/analyze, and upload-artifact
+  assertions require a real `uses:` line pinned to a full 40-hex commit SHA
+  with a version comment, but no longer freeze WHICH SHA or major version.
+  The frozen fixtures broke every Dependabot actions-group PR by construction
+  (#9, #29, #67) while adding no enforcement beyond the repo-wide
+  full-SHA pin test and CODEOWNERS review of workflow diffs — Dependabot
+  cannot update test fixtures that mirror the workflow it bumps. The
+  replacement regexes are anchored to `uses:` lines (a comment or string
+  mentioning an action no longer satisfies them — a strictness *increase*
+  over the old substring assertions, per Codex cross-family review) and
+  accept dotted version comments (`# v3.0.0`) as Dependabot writes them.
+  Test infrastructure only — no version bump.
+
+### Changed
+
+- `tests/__init__.py` scrubs inherited per-repo git environment pointers
+  (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_PREFIX`,
+  `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+  `GIT_COMMON_DIR`) at package import, so any runner — not only the sanitized
+  pre-push hook — is safe from the incident where a hook-inherited absolute
+  `GIT_DIR` made temp-directory git calls inside the suite mutate the real
+  repository config. `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` are deliberately
+  untouched (temp-repo commits rely on machine identity); the `scripts/` root
+  is deliberately untouched (namespace package, and empirically unexposed —
+  327/327 under a poisoned `GIT_DIR` with zero config writes). Regression
+  tests pin both the in-process absence and a freshly-poisoned child-import
+  scrub. Test infrastructure only — no version bump.
+
+### Changed
+
+- The tracked `.githooks/pre-push` wrapper now runs BOTH unittest roots
+  (`tests/` and `scripts/`, mirroring CI's exact discovery invocations) as a
+  fail-fast gate before the existing compliance-trace check. Fail-closed
+  opt-out for the test gate only via exactly `AGENT_COLLAB_PREPUSH_TESTS=0`
+  (loud skip warning; compliance check always runs, now `exec`'d so the
+  hook's stdin ref data reaches it); an affirmatively detected `main` branch
+  skips the test gate while detached HEAD or detection failure runs it.
+  Wrapper-level tests added (`scripts/test_hook_pre_push_wrapper.py`, 8
+  cases, including sanitization of git's exported hook environment —
+  GIT_DIR et al. — from the suite subshells, which otherwise poisons
+  tests that spawn git in temp directories). Repository tooling only — no distributed content, no version bump.
+  Motivation: ledger `partial.suite.run.hides.ci.failure` (recurred on #83).
+
+### Added
+
+- Stamp agent-collab 4.7.0: **engineering-process skill pack (MIT-derived)**.
+  Three self-executed skills join the package — `decision-map` (multi-session
+  planning as a shared map of decision tickets on the issue tracker, with an
+  explicit user-approval gate before any tracker write and a claim discipline
+  for concurrent sessions), `prototype` (throwaway logic/UI prototypes that
+  answer one design question, built on an isolated worktree/branch with a
+  production-safe gate on UI variant mechanisms), and `architecture-review`
+  (a self-executed sweep for module-deepening opportunities presented as a
+  fully self-contained visual report, composing with — not replacing — the
+  routed `architect` consultation). Derived from the MIT-licensed
+  [mattpocock/skills](https://github.com/mattpocock/skills) repository at
+  pinned commit `2ab958093e83e0ec752e6c1c5932da465bf23e0c` and adapted for
+  this package (tracker resolution with feature detection and a local-markdown
+  fallback, host-neutral sub-skill references, inlined companion references,
+  no CDN assets, mutation gates). The derived portions remain MIT-licensed:
+  each generated `SKILL.md` carries the full MIT permission notice, release
+  SPDX evidence declares those three members `MIT`
+  (`scripts/build_release_evidence.py`), and
+  `docs/third-party-skill-provenance.md` records the per-file upstream blob
+  SHAs and adaptations. `NOTICE` and both README license boundaries name the
+  exception. No coordinator, provider, routing, or runtime surface is touched.
+
+### Changed
+
+- Stamp agent-collab 4.9.0: **conditional decomposition guidance in
+  `orchestrate` and `teamwork`** (second deferred follow-up from the 4.7.0
+  pack). Product-feature implementation graphs/milestones prefer
+  tracer-bullet vertical slices sized to one bounded worker invocation with
+  explicit acceptance criteria; wide refactors are the exception —
+  checkpointed fully-verified batches for atomically codemoddable changes,
+  expand–contract only where old and new forms must genuinely coexist during
+  a staged migration. Explicitly inapplicable to research, operations,
+  configuration, and decision-only work. Adapted portions attributed to
+  mattpocock/skills `to-tickets` @`2ab95809` (blob `96deac51`); both specs
+  carry the full MIT notice and both SPDX members read
+  `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`.
+
+### Changed
+
+- Stamp agent-collab 4.8.0: **`code-review` gains spec-fidelity and
+  smell-baseline lenses** (deferred follow-up from the 4.7.0 pack). The JSONL
+  output contract is extended backward-compatibly — new `Spec` and `Smell`
+  severities plus an optional `spec_ref` field; consumers filtering the four
+  defect severities are unaffected, and the skill version is the contract
+  version. The primary materializes the originating spec before the call
+  under explicit precedence (user-passed → issue refs in the reviewed commit
+  range only → repo spec files) with ambiguity ("`spec unavailable:
+  ambiguous`", ask the user, never pick arbitrarily), no-synthesis and
+  no-branch-name-inference rules, a line-numbered snapshot for citations, and
+  an explicit untrusted-data instruction to the reviewer. The Fowler smell
+  baseline is subordinate and evidence-bound: repo-documented standards
+  override it, findings ride `Smell` severity and never escalate to
+  Critical/High without an independently demonstrated consequence, and
+  tooling-enforced rules are skipped based on materialized config. Spec and
+  smell findings stay out of defect merge-blocking aggregation through
+  synthesis. Adapted-portion attribution: mattpocock/skills `code-review`
+  @`2ab95809` (blob `2a0b5240`); the spec carries the full MIT notice, the
+  member's SPDX expression is `LicenseRef-PolyForm-Strict-1.0.0 AND MIT`,
+  and `NOTICE` now references the provenance document generically.
+
+### agent-collab 5.0.0
+
+- Breaking: replace provider route/action requests with 11 semantic actions,
+  replace `long-context` with the source-grounded `context` skill, and invoke
+  the co-packaged native runtime directly without broker, dispatcher, lane,
+  launchd, or provider-specific proof compatibility paths.
+
+- Runtime policy now derives agent, transport, source-mode, artifact, and
+  authority membership from one co-packaged wire descriptor. Provider CLI and
+  model identities remain observed diagnostics and are never release pins.
+
+- Public failures now expose only a bounded stable `error_code`: signed runtime
+  codes pass through unchanged, while non-contract private text is reduced to
+  its typed runtime status without leaking provider or host detail.
+
+- Accept an owned, non-symlink runtime bundle directory with ordinary child
+  link counts while retaining the single-link rule for executable and manifest
+  files, so a freshly installed production bundle resolves before invocation.
+
+- Derive every repository/document/conceptual source mode from the signed wire
+  descriptor, including repository context actions whose semantic names do not
+  end in `.repository`.
+
+- Preserve the public contribution boundary under the PolyForm Strict License
+  1.0.0, with `AGENTS.md` as the local operating contract and commercial-use
+  approval administered by Osumi Consulting LLC.
+
+### Changed
+
+- Stamp agent-collab 4.6.0. The user-visible change in this version is the Claude-host active-model observation from #77: a Claude Code host resolves its active model from the live session transcript, so it can reach a governance-ready identity like the other host families instead of always resolving `unknown`. That change altered distributed content and should have carried the bump at the time; it did not, because the bump was mistakenly believed to require editing the generated `CHANGELOG.md`, which is reserved to release PRs.
+
+- Spell out in the pull-request template all seven surfaces a version bump has to move: both plugin manifests, `.claude-plugin/marketplace.base.json` (plus the `build_marketplace.py` regeneration), the root README summary row and its whatsnew heading, the package README's `Current:` and package lines, the nested `skill_version` in `scripts/skill-build-config.json` (plus the `build_skills.py` regeneration that restamps all 47 generated `SKILL.md` files), and a `changelog.d/` fragment naming the version. The generated `CHANGELOG.md` is not among them, because at PR time the requirement is met by that fragment. Missing several of these is what produced the false conclusion that a content PR could not bump at all.
+
+### Changed
+
+- Document why the two deliberately-insecure test fixtures set their modes through `Path.chmod` rather than `os.chmod`. CodeQL's `py/overly-permissive-file` models the `os.chmod` sink and flags them as high severity, but the permissive mode is the input under test — each assertion is that the resolver refuses the artifact — and no production path sets a permissive mode. The narrower mechanisms were tried and do not work: inline codeql suppression comments are not honoured by GitHub code scanning in this setup, and stock CodeQL config cannot scope a filter to a path, since `query-filters` match query metadata repository-wide and `paths-ignore` drops every query for the path. Recording this at the call site keeps a deliberate choice from reading as arbitrary style and from being tidied back into a red build.
+
+### Changed
+
+- Record that both inline CodeQL suppression placements were tested and neither is honoured in this setup: a trailing same-line comment and the documented standalone comment line immediately before the call. The earlier note cited only the first, which left the conclusion resting on a single placement and invited a repeat attempt. Both the commits and their CodeQL check-run ids are named at the call site, so the next reader lands on the evidence rather than on a commit, and can stop rather than re-derive.
+
+### Fixed
+
+- `scripts/check_python_version_gated_apis.py`: a `from typing import Self` guarded ONLY by `except ModuleNotFoundError:` was wrongly treated as protected, silently suppressing a real finding. The two import failure modes raise different exceptions: a missing MODULE (`import tomllib` on 3.10) raises `ModuleNotFoundError`, but a missing NAME from an existing module (`from typing import Self` — `typing` imports fine, it just has no `Self`) raises a PLAIN `ImportError`. Since `ModuleNotFoundError` is a strict *subclass* of `ImportError`, the narrower handler never fires for the missing-name case, so accepting it as a guard let genuinely 3.10-incompatible code through CI. Fixed by splitting the single shared guard-exception set into `_MISSING_MODULE_GUARD_EXCEPTION_NAMES` and `_MISSING_NAME_GUARD_EXCEPTION_NAMES` and threading the correct one through `_guarded_import_lines` per detector. The complementary case is pinned too: `import tomllib` guarded by `except ModuleNotFoundError:` remains correctly suppressed, so this is a per-failure-mode split rather than a blanket tightening. 3 new tests (62 total).
+- **Fail-open in floor discovery:** a commented-out stale matrix declaration (`# python: ["3.12"]`) sitting above the active matrix won the unrestricted regex `search`, so the checker adopted a wrong, HIGHER floor — which disables every 3.11 detector (`applicable_apis()` returns nothing) and lets genuinely incompatible code pass CI entirely. YAML comments are now stripped before matching; a file whose only declaration is commented out fails loud (`MinVersionDiscoveryError`) rather than silently adopting the comment's version. 3 more tests (65 total).
+
+### Known limitation (recorded, not patched)
+
+- An import inside a NESTED `try` whose inner handler *converts* the failure (`except ImportError: raise RuntimeError(...)`), wrapped by an outer `try` catching only the original type, is still treated as guarded — the outer handler cannot catch the converted exception, so the import genuinely still fails. Correctly modeling this needs real exception-flow analysis, materially beyond this module's per-handler heuristics. Documented in `_guarded_import_lines` as a known false negative: this detector took six consecutive rounds of semantic corrections in review, and the right next step for this class of gap is a deliberate redesign of the guard model, not a seventh incremental heuristic.
+
+### Fixed
+
+- Observe the active model on a Claude Code host from the live session's own transcript. Claude Code does not export the model to the environment, so `active_model` resolved to `unknown`, no Claude session was ever `governance_ready`, and every governance route failed closed with `unknown_family` — the only host family with that gap. Callers worked around it by hand-authoring `primary`, which invited an invented `session_identifier` that conflicted with the strongly observed one and turned every route into a configuration error.
+
+### Changed
+
+- Document that `primary` should be sent as `{}` and that a `session_identifier` must never be fabricated by a caller, in both the coordinator request schema and the `intent-check` skill. Complete explicit configuration remains supported for a host that genuinely cannot be observed; what is prohibited is inventing a signal the caller does not have.
+
+### Security
+
+- The transcript observation is bounded and fails closed: strict lowercase-UUID session keys before any path join, owner/symlink/hardlink/permission checks reused unchanged from the Codex rollout path, post-open `fstat` re-validation against the pre-open identity, a bounded tail read, and strict JSON decoding. A model that is not anthropic-shaped is rejected rather than allowed to reassign `primary_family`, so a forged record cannot defeat reviewer family-exclusion. Model validation is by shape, not by a pinned model list, so future models resolve without a code change.
+
+- Identity on a Claude host is now observation-only: every identity field is recorded non-empty, so none of them can be supplied through `AGENT_COLLAB_*` or an explicit `primary`. A supplied value that disagrees with observation registers as a conflict rather than an override. Previously an unobserved field was left empty, and the overlay fills an empty field — so configuration alone could make a wholly unobserved session governance-ready, including by pairing a filled model with a filled session identifier. A nonempty session identifier that fails the UUID contract also now fails closed rather than reading as merely absent.
+
+- Same-uid integrity is explicitly out of scope. The transcript is a weaker signal than the `CLAUDE_CODE_SESSION_ID` it is keyed by: that value is inherited at process start and a sibling same-uid process cannot rewrite it, whereas the transcript can be modified mid-flight. The identity re-checks detect append races and replacement, not a same-size in-place rewrite or an append-then-truncate.
+
+### Added
+
+- Add `scripts/check_python_version_gated_apis.py`, a dependency-free static check that flags Python stdlib/language APIs newer than this repo's declared minimum supported Python version (read from the `python:` matrix in `.github/workflows/ci.yml`, currently 3.10). Wired into CI's `contracts` job as "Check for Python-version-gated APIs above the declared floor". Guards against the class of failure documented in the sibling `agent-collab-workspace` repo's shared learning ledger as `LRN-20260722-074753-claude-6000`: a worker-tier model generated a `unittest`-style test using `self.enterContext(...)` (added in Python 3.11), the primary agent ran it locally on a newer interpreter where it passed silently, and CI then failed on this repo's Python 3.10 leg. Checks for `unittest.TestCase.enterContext`, `except*` (PEP 654), `import tomllib` (unguarded), and `typing.Self` (PEP 673) — all 3.11+; the table also carries `str.removeprefix`/`removesuffix` (3.9+) as floor-relative examples that are correctly *not* flagged against today's 3.10 floor. An import already wrapped in the standard `try/except ImportError`-style optional-import guard (as `plugins/agent-collab/migration_doctor.py` already does for `tomllib`) is recognized as the fix, not the bug, and is not flagged. The `enterContext` detector is narrowed to the receiver `self` specifically (`self.enterContext(...)`), so `contextlib.ExitStack.enterContext` usage (a standard, fully 3.10-compatible pattern present since Python 3.3) is not false-flagged by method name alone. Floor discovery from `ci.yml` fails loud (`MinVersionDiscoveryError`, `main()` exit code 2) when the workflow file exists but its version-matrix shape can't be parsed, rather than silently degrading to the hardcoded fallback constant — the fallback is now reserved for the sole genuinely benign case, a missing workflow file entirely. Tests: `scripts/test_check_python_version_gated_apis.py` (59 tests).
+
+### Fixed (independent GitHub Codex review, all integrated)
+
+- **Guard suppression stopped at nested function scopes.** A version-gated import textually inside a guarded `try:` body but INSIDE a nested `def`/`async def` was incorrectly treated as protected — it doesn't actually execute at `try`-time, only when the function is later called, by which point the enclosing try/except has already finished. Fixed: the guarded-lines collector no longer descends into nested function bodies.
+- **Re-raising handlers no longer count as guards.** `except ImportError: raise` (or `raise SomeOtherError(...) from e`, or log-then-reraise) provides no actual fallback — the import still fails, just differently — but was previously treated as a valid guard purely because the exception TYPE matched. Fixed: a handler whose last top-level statement is any `raise` is no longer suppressing.
+- **Non-UTF-8-declared source files are now correctly read, not silently skipped.** A tracked `.py` file with a valid PEP 263 encoding cookie (e.g. `# -*- coding: latin-1 -*-`) raised `UnicodeDecodeError` under the old hardcoded `read_text(encoding="utf-8")` and was silently treated as clean — letting an unguarded gated API inside it slip past the check entirely. Fixed: reads now use `tokenize.open`, which honors the file's own declared encoding; a genuine, unrecoverable decode failure now fails the check closed (exit 1, file-not-scanned reported explicitly) instead of passing silently.
+- **Bare `except:` bypassed the re-raise check entirely.** `_handler_is_import_guard`'s `if handler.type is None: return True` early-return for a bare `except:` clause ran BEFORE the re-raise check was applied, so `except: raise` was wrongly treated as a guard. Fixed by restructuring into `_handler_catches_import_error` (pure type-matching, including bare `except:`) applied uniformly before the shared re-raise check.
+- **Handler precedence wasn't modeled.** A broad, re-raising handler PRECEDING a narrower, genuinely-suppressing one — e.g. `except Exception: raise` followed by `except ImportError: tomllib = None` — makes the later handler unreachable dead code under Python's own first-match-wins exception semantics, but the old `any(handler is a guard for handler in handlers)` check saw the later handler and wrongly suppressed the finding. Fixed: `_first_import_matching_handler` walks handlers in declaration order and returns the first one that would actually receive the exception; only THAT handler's suppress-or-not status is used.
+
+### Fixed (managed grok/governance review, integrated)
+
+- **Dead code after an earlier `raise` still counted as a guard.** The re-raise check inspected only the LAST top-level statement in a handler body, so `except ImportError:
+    raise
+    tomllib = None` was treated as suppressing — but the `tomllib = None` line is genuinely unreachable (the `raise` above it always exits first). Fixed: `_handler_reraises_unconditionally` now checks for ANY top-level `raise` statement in the handler body, not only a trailing one — still top-level-only (a `raise` nested inside an `if`/`else` branch remains a documented, accepted limitation short of full control-flow analysis), but fail-closed within that scope.
+- **`except*` (PEP 654 exception groups) verified as intentionally out of scope, documented, and pinned with a test.** An import guarded only via `try: ... except* ImportError:` is not recognized as protected — independently confirmed as fail-closed (an extra, redundant finding), never a silent miss: `except*` is itself a separate 3.11+ gated API with its own detector, so such a file is flagged for the `except*` usage regardless of whether the guarded import is also (redundantly) flagged.
+
+### Fixed (independent GitHub Codex review, round 3)
+
+- **`typing.Self` via a module alias was missed entirely.** `import typing as t` followed by `t.Self` produced no finding under the name-only `typing.Self` check — a silent miss of exactly the API the detector exists to catch (on Python 3.10 without postponed annotation evaluation, defining such an annotation raises `AttributeError` at definition time). Fixed: `import typing [as X]` bindings are now resolved from the AST and any of those local names is recognized as the receiver.
+- **`removeprefix`/`removesuffix` receiver-type limitation documented.** These detectors match by method name alone and cannot establish the receiver's type, so a user-defined `.removeprefix()` on a non-`str` class would be a false positive — but only if the declared floor is ever lowered below 3.9, which would activate these currently-inert table entries. Documented in `_detect_method_call` with an explicit "tighten this first if the floor is lowered" note rather than building receiver type inference for a case that cannot fire at today's 3.10 floor.
+
+Tests: `scripts/test_check_python_version_gated_apis.py` (59 tests).
+
+### agent-collab 4.5.3 — 2026-07-28
+
+#### Changed
+
+- The Codex inbox-monitor adapter no longer creates or retains a goal for
+  liveness. Its canonical leased local process continues at the existing
+  10-second interval, but liveness checks occur only on real activation, event,
+  status, stop, or failure turns, so the new goal-free lifecycle causes zero
+  idle model turns.
+- Codex reports `degraded_no_event_wake` when the local process is live without
+  a proven host-native model wake. Legacy cleanup ends only a goal whose
+  structured creation transcript proves the old monitor lifecycle and after
+  the host proves the exact retained exec is currently live and survives
+  independently; otherwise it returns `legacy_goal_detach_unavailable` and
+  leaves both lifecycles untouched.
+- When legacy detach proof is unavailable, the host may continue pre-4.5.3 goal
+  continuations until that goal is explicitly stopped. Every such empty turn is
+  constrained to no exec/state poll or lifecycle mutation, and explicit stop
+  reports `stop_incomplete_legacy_goal` rather than claiming success when the
+  old goal cannot be safely bound and ended.
+- Claude and Antigravity monitor lifecycles are unchanged.
+
+### agent-collab 4.5.4 — 2026-07-28
+
+#### Fixed
+
+- The public Gemini governance consumer no longer rejects the producer's
+  access-only canary mode with a false `runtime Gemini result contract
+  mismatch` protocol error on both lanes (workspace issue #2422). The proof v2
+  contract now admits exactly two raw case-sensitive containment strings,
+  `write_contained_shared_home` and `nonwriteback_ephemeral_home`
+  (`GEMINI_GOVERNANCE_V2_CONTAINMENTS`), while proof v1 remains exactly
+  `write_contained_shared_home` (`GEMINI_GOVERNANCE_V1_CONTAINMENTS`) for
+  retained-lane rollback continuity.
+- A v2 result's containment must equal the independently supplied proof
+  containment exactly; dual set membership without equality, mixed or hybrid
+  v1/v2 schemas, unknown, empty, case-variant, whitespace-variant, or
+  non-string containment values all fail closed with no trim, folding,
+  normalization, coercion, or default.
+- Governance readiness recognizes either exact containment mode as
+  capability-only; readiness never authorizes execution. Regression tests cover
+  both result/proof crossing directions, every mandatory readiness tuple member
+  under the ephemeral mode, unrelated tuple tampering under ephemeral v2, v1
+  rollback strictness, and the exact public constants.
+
+### Changed
+
+- Document that public-export history mode covers refs reachable in the *local* clone, so a clone retaining pre-rewrite refs fails the gate even when the canonical remote is clean. `AGENTS.md`, `docs/public-governance.md`, `docs/migration-from-legacy-packages.md`, and the pull-request template now require comparing against a disposable full clone of the canonical remote, recording the snapshot checked, and treating that comparison as evidence only about the recorded snapshot — never as clearance of the failing clone, the publication candidate, unfetched refs, or prior exposure. Uncertain provenance, a failing publication candidate, a failing canonical fetched ref, or credential material still requires stopping publication under `SECURITY.md`.
+
+### Added
+
+- Emit an advisory triage note when public-export history mode fails, the active tree is clean, and the clone holds commits no remote-tracking ref reaches. The note is purely additive: it never suppresses a violation, never changes the exit code, keeps `RESULT:` as the final line, makes no network call, reports no ref names or counts, and is silent whenever the active tree is contaminated so present-state findings are never accompanied by a reassuring signal.
+
+### agent-collab 4.5.2 — 2026-07-28
+
+### Fixed
+
+- Bind `broker-status`'s `persistent_process` field to an exact live launchd
+  properties proof instead of deriving it from a one-second point-in-time idle
+  observation or trusting only the mutable on-disk plist.
+- Add `persistence_state=nonpersistent|persistent|unproven`; report the matching
+  `persistent_process=false|true|null`, fail readiness closed on unproven
+  diagnostic output, and never conflate unknown configuration with observed
+  persistence.
+- Report that observation separately as `process_idle=true|false|null`; null
+  means the idle probe did not run, while a measured active process does not
+  make authoritative status reject a callable dispatcher during bounded
+  post-request grace.
+- Keep both new status observations optional for rolling-upgrade consumers and
+  keep `process_idle` independent from the selected-lane liveness verdict when
+  present.
+- Pin sanitized golden transcripts captured from real nonpersistent,
+  KeepAlive, and conditional-KeepAlive launchd jobs; closed brace structure,
+  top-level property tokens, and structured event-trigger evidence fail closed
+  on malformed or ambiguous format drift. Any event-trigger block is
+  intentionally persistence-like rather than eligible for socket-only status.
+- Leave every mutating lifecycle command on the existing full idle-proof
+  boundary; a failed full-idle proof restores the pre-mutation selector.
+
+### Cross-check
+
+- Companion to workspace PR #2438. The revised cross-repo design is pending an
+  exact-head distinct-family review before either PR may merge.
+
+### Fixed
+
 - `build-changelog.py` now sorts `changelog.d/` fragments in **reverse**
   lexical order (newest filename first) instead of ascending order. The
   compiled `[Unreleased]` block previously placed the oldest fragment at the
