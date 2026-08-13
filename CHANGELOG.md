@@ -30,6 +30,15 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.0.1 — 2026-08-13
+
+#### Fixed
+
+- Bind the public provider-free runtime-status request to the v6 closed
+  `standard` quality and effort readiness profile so the coordinator and the
+  co-packaged runtime agree without inference, fallback, or caller-supplied
+  authority.
+
 ### Fixed
 
 - Treat the wire descriptor schema version as a positive structural revision while retaining the runtime protocol, canonical digest, closed-schema, and routing/cardinality compatibility gates.
