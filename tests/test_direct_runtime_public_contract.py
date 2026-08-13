@@ -128,11 +128,14 @@ def _readiness_response(
                         "adapter_wire_sha256": None,
                         "observed_model": None,
                         "catalog_digest": None,
+                        "model_resolution_method": None,
+                        "effective_effort": None,
                         "metadata_process_count": 0,
                         "diagnostic_code": "not_ready",
                         "compatibility_profile": None,
                         "capability_digest": None,
                         "metadata_zero_model_calls_proven": True,
+                        "cleanup_confirmed": True,
                     }
                 ],
             }
@@ -142,6 +145,8 @@ def _readiness_response(
         "request_id": "runtime-status-1",
         "author_lineage": author_lineage,
         "status": "ok",
+        "quality_profile": "standard",
+        "effort_class": "standard",
         "result": {"actions": actions},
     }
 

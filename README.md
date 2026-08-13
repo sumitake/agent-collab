@@ -1,13 +1,14 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 5 replaces the provider-broker control plane with a
-closed semantic coordinator and a co-packaged direct native runtime.
+compatible hosts. Version 6 keeps the closed semantic coordinator and
+co-packaged direct native runtime while adding provider-neutral quality and
+effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v5.0.0). The
-**[v5.0.0 release](https://github.com/sumitake/agent-collab/releases/tag/v5.0.0)**,
-signed tag, workflow, archive, checksum, and SPDX evidence were verified
-together before the release was closed out.
+This public repository distributes **agent-collab** (v6.0.0). The
+**[v6.0.0 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.0)**
+is the governed publication target for the signed runtime, archive, checksum,
+SPDX evidence, and installation proof described below.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. This README and that handbook were
@@ -17,13 +18,21 @@ machine-operational contract. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v5.0.0
+## What's new - v6.0.0
 
-- Public callers now use 11 semantic actions instead of provider route/action
-  pairs.
-- `context` replaces the size-branded context surface.
-- The verified co-packaged runtime launches directly as one bounded process
-  group, with no installed daemon or lifecycle setup.
+- Requests now carry closed provider-neutral `quality_profile` and
+  `effort_class` fields while provider-local adapters resolve current
+  executable capabilities without model or version pins.
+- Clean substantive results without sufficient native source evidence return
+  first-class ungrounded advisories instead of fabricated authority or generic
+  protocol failures.
+- Codex private-patch code generation expands the internal projection to 13
+  transport actions and 17 action/source pairs while the public semantic
+  surface remains provider-neutral.
+- Provider teardown, cleanup, and route-local degradation are bounded without
+  replay, fallback after possible inference, or a background broker.
+- Promotion uses a fixed three-call mechanical canary; exhaustive live semantic
+  matrices are no longer activation or publication authority.
 - The 4.7 engineering-process pack remains available as three self-executed
   skills: `decision-map`, `prototype`, and `architecture-review`.
 - The current `code-review` skill retains its spec-fidelity axis and

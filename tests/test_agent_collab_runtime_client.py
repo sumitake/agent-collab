@@ -61,6 +61,8 @@ class DirectRuntimeClientTests(unittest.TestCase):
             "wire_contract_sha256": self.wire.sha256,
             "request_id": "runtime-status-1",
             "author_lineage": "openai",
+            "quality_profile": "standard",
+            "effort_class": "standard",
             "timeout_ms": timeout_ms,
         }
 
@@ -223,6 +225,8 @@ class DirectRuntimeClientTests(unittest.TestCase):
                 "executable_content_sha256": "b" * 64,
                 "adapter_wire_sha256": "c" * 64,
                 "catalog_digest": None,
+                "model_resolution_method": "provider_default",
+                "effective_effort": "standard",
                 "metadata_process_count": 0,
                 "provider_processes": 1,
                 "provider_model_calls": 1,
