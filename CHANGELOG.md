@@ -38,6 +38,9 @@ The public changelog intentionally records policy, compatibility, and migration 
   `standard` quality and effort readiness profile so the coordinator and the
   co-packaged runtime agree without inference, fallback, or caller-supplied
   authority.
+- Keep the activation release gate bound to imported runtime bytes, manifest,
+  signature, and notarization instead of treating a descriptive `runtime:`
+  commit subject as authority to rebuild unchanged native bytes.
 
 ### Fixed
 
