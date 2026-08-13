@@ -50,7 +50,7 @@ class CutReleaseModeTests(unittest.TestCase):
             mock.patch.object(module, "_archive_contract_verified_or_fail") as archive,
             mock.patch.object(module, "_signed_runtime_verified_or_fail") as activation,
             mock.patch.object(module, "_head_is_published_main_or_fail"),
-            mock.patch.object(module, "_runtime_currency_or_fail"),
+            mock.patch.object(module, "_staged_runtime_present_or_fail"),
             mock.patch.object(module, "_tag_exists", return_value=False),
             mock.patch.object(module, "_git", side_effect=fake_git),
             mock.patch.object(module.crc, "run_consistency", return_value=(True, ["ok"])),

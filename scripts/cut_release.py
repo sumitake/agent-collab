@@ -358,22 +358,20 @@ def _wait_and_verify_published_release_or_fail(
         time.sleep(min(PUBLICATION_POLL_SECONDS, remaining))
 
 
-# The staleness watermark is the last commit touching the runtime BUNDLE dir
-# only. Deliberately NOT runtime-manifest.json: a manifest/contract-only commit
-# would advance the watermark past unaddressed `runtime:` merges and let a
-# stale binary pass (cross-check round 1, high-residual finding).
+# The public repository contains the imported runtime bundle, not its private
+# build source.  Exact bundle/manifest bytes and their signing/notarization are
+# authoritative here; a PR title or commit subject is not.
 _RUNTIME_STAGE_PATHS = ("plugins/agent-collab/runtime/",)
 
 
-def _runtime_currency_or_fail() -> None:
-    """Fail an activation release whose staged runtime predates runtime changes.
+def _staged_runtime_present_or_fail() -> None:
+    """Require an imported runtime bundle before an activation release.
 
-    A tag-only cut packages the committed tree, so nothing else stops a release
-    from shipping a runtime bundle staged N releases ago while `runtime:`-scoped
-    merges landed since (2026-07-25: v4.4.0 shipped the 4.2.0 bundle despite
-    five later runtime merges and had to be rolled back). The staged bundle is
-    current only when no runtime-scoped subject exists after the commit that
-    last touched the staged runtime paths.
+    Runtime source currency is established by the governed workspace build and
+    atomic public import.  This repository then verifies the exact imported
+    bundle through the closed manifest, archive, signature, and notarization
+    gates.  Commit-subject prefixes are descriptive prose and cannot override
+    those byte authorities or force a rebuild of unchanged native bytes.
     """
     staged = _git("log", "-1", "--format=%H", "--", *_RUNTIME_STAGE_PATHS).stdout.strip()
     if not staged:
@@ -382,18 +380,6 @@ def _runtime_currency_or_fail() -> None:
             "activation release requires the workspace-side full runtime build "
             "and stage first (workspace docs/portable-v2-openssl-toolchain-runbook.md)"
         )
-    subjects = _git("log", "--format=%s", f"{staged}..HEAD").stdout.splitlines()
-    stale = [s for s in subjects if s.strip().lower().startswith("runtime:")]
-    if not stale:
-        return
-    lines = "\n".join(f"  - {s}" for s in stale)
-    _fail(
-        "staged runtime is STALE -- these runtime-scoped merges landed after "
-        f"the runtime bundle was last staged:\n{lines}\n"
-        "Run the workspace full runtime build + stage "
-        "(workspace docs/portable-v2-openssl-toolchain-runbook.md) before "
-        "cutting."
-    )
 
 
 def _head_is_published_main_or_fail() -> None:
@@ -582,7 +568,7 @@ def cut(dry_run: bool) -> int:
     )
     if mode == "activation":
         _signed_runtime_verified_or_fail()
-        _runtime_currency_or_fail()
+        _staged_runtime_present_or_fail()
     if dry_run:
         print(
             "cut-release: [dry-run] CHANGELOG.md and canonical "
