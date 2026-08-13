@@ -221,6 +221,8 @@ def validate_readiness_request(
         "wire_contract_sha256": wire.sha256,
         "request_id": request_id,
         "author_lineage": author_lineage,
+        "quality_profile": "standard",
+        "effort_class": "standard",
         "timeout_ms": timeout_ms,
     }
 

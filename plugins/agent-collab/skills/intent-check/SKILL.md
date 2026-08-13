@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 6.0.0
+version: 6.0.1
 defaults:
   quality_profile: economical
   effort_class: minimal

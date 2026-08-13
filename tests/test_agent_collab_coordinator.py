@@ -273,9 +273,24 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 "wire_contract_sha256": self.wire.sha256,
                 "request_id": "runtime-status-1",
                 "author_lineage": "openai",
+                "quality_profile": "standard",
+                "effort_class": "standard",
                 "timeout_ms": 5000,
             },
         )
+
+    def test_readiness_projection_satisfies_current_runtime_schema(self) -> None:
+        native = self.coordinator.validate_readiness_request(
+            {
+                "operation": "readiness",
+                "request_id": "runtime-status-current-schema",
+                "timeout_ms": 5000,
+            },
+            self.wire,
+            self.profile,
+        )
+
+        self.client._validate_schema(native, self.wire.readiness_request)
 
     def test_readiness_rejects_unknown_host_and_caller_injected_fields(self) -> None:
         request = {
