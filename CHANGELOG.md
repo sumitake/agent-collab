@@ -50,6 +50,30 @@ The public changelog intentionally records policy, compatibility, and migration 
 
 ### Changed
 
+- Close out the published v5.0.0 release by reconciling the human-first
+  architecture status, lifecycle guidance, root README, and verified generated
+  changelog evidence with the exact signed tag, release assets, and observed
+  provider-free installation state. Remove retired broker/setup/rollback
+  instructions; no package, runtime, manifest, or release byte changes.
+
+### agent-collab 6.0.0
+
+### Added
+
+- Publish provider-neutral quality and effort profiles, current-portfolio routing,
+  Codex private-patch codegen, and first-class ungrounded advisory responses in
+  the atomic v6 direct-runtime contract.
+- Activate the v6 contract with one manifest-bound, signed and notarized
+  Darwin arm64 standalone runtime produced from the governed workspace source.
+
+### Fixed
+
+- Reserve cleanup time inside the caller's single semantic deadline, keep
+  recoverable provider drift route-local, and exclude development-only shadow
+  evidence, HMAC, and promotion machinery from public exports and archives.
+
+### Changed
+
 - Make release tags immutable and fail closed: the release helper no longer offers stale-runtime or tag-deletion escape hatches, and an existing tag is never treated as proof that a release succeeded.
 - Bind release success to the signed annotated tag's exact commit, the completed successful `release.yml` push run, the non-draft GitHub release, and byte-for-byte archive, checksum, and SPDX assets generated from that commit.
 
