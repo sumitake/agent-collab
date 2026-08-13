@@ -17,7 +17,35 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v5.0.0 release closeout snapshot
+## v6.0.1 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-13. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated [`v6.0.1` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.0.1) identifies public commit `a49871ac8ea19062f177d8598c9dcc3a751ab306`. | published | The immutable source contains package version 6.0.1 and the exact schema-4, runtime-protocol-4, native-contract-4 activation manifest and Darwin arm64 bundle qualified for v6. |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/31712058768) completed successfully and the release is published, non-draft, and non-prerelease. | published | The signed tag and GitHub Release planes agree; neither repository state nor tag existence alone was used as publication proof. |
+| The release contains exactly `agent-collab.v6.0.1.plugin`, `agent-collab.v6.0.1.plugin.sha256`, and `agent-collab-v6.0.1.spdx.json`. Their SHA-256 values are `4cd0670e27dc951d060d381621c4116f614ae0f897aa62b9c4408f7e2b0b2960`, `c107624b04186ed8c077aa976957f6b200311e996396c440ceb000f1d8614de9`, and `729c0f3a782a3746043e94abe5bab71624dcef11911f58b186b57d57ac3d92ac`. | verified release evidence | The archive, checksum, and SPDX assets were verified against the exact release object. This does not by itself prove installation on a host. |
+| The generated `CHANGELOG.md` contains the compiled v6.0.0 major-contract entry and the v6.0.1 provider-free readiness/release-authority correction. | verified current | Generated release history agrees with the tag and package bytes; this closeout does not rewrite generated history or a signed release. |
+| Fresh Codex and Claude host processes reported `agent-collab@agent-collab` 6.0.1 enabled, and Antigravity reported the current shared package import. Across all three package roots, the manifest, runtime bundle, entrypoint, wire, coordinator, and runtime-client bytes matched the public release source. Provider-free readiness returned valid typed snapshots with zero model calls and confirmed cleanup. | installed and provider-free ready on the observed host | This proves exact installation and readiness mechanics on that host at that time. It does not guarantee future provider authentication, quota, semantic quality, or another host's state. |
+| The release promotion canary used exactly three one-shot native calls and produced one grounded mechanical success plus two clean ungrounded advisories, with source invariance and cleanup confirmed and no mechanical veto. | mechanically qualified | Model prose, tool choice, and advisory grounding did not become release authority; deterministic fixtures retain exhaustive route coverage. |
+| Provider-specific and host-specific predecessor packages | retired | Migration and regression tests block their return as active packages or rollback targets. |
+
+The public repository may advance after this immutable release tag for the
+documentation closeout or later work. Re-check the tag, release, assets, host
+inventory, and readiness plane before making a new release or activation claim.
+
+### v6.0.1 closeout determinations
+
+| Public surface | Determination | Closeout result |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | The v6 status snapshot, direct-runtime lifecycle, three-call mechanical canary, and schema/protocol-4 activation boundary agree with the published release. |
+| Root `README.md` | **updated current** | The overview, current version, release link, capabilities, lifecycle links, and security boundary agree with v6.0.1. |
+| `plugins/agent-collab/README.md` | **verified current** | The package reference already describes the exact v6 coordinator request, advisory union, manifest, protocol, and one-process lifecycle. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v6.0.0 and v6.0.1 entries; this post-release closeout leaves generated history unchanged. |
+
+## Historical v5.0.0 release closeout snapshot
 
 The following public evidence was reconciled on 2026-08-11. It is a dated
 snapshot, not a permanent “latest version” badge.
@@ -36,7 +64,7 @@ documentation closeout or later work. Re-check the tag, release, assets, host
 inventory, and readiness plane before making a new release or activation
 claim.
 
-### Closeout determinations
+### v5.0.0 closeout determinations
 
 | Public surface | Determination | Closeout result |
 | --- | --- | --- |

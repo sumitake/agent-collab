@@ -145,7 +145,7 @@ Then start a new task and re-run migration doctor and runtime status.
 
 ### Co-packaged runtime during update
 
-Version 5 has no separately installed broker, daemon, socket, selector, lane,
+Version 6 has no separately installed broker, daemon, socket, selector, lane,
 or setup lifecycle. The signed runtime bundle and its manifest are members of
 the plugin package. Updating the package therefore updates one closed unit;
 readiness verifies that unit before any semantic request.
@@ -191,7 +191,7 @@ host manager.
 
 ## Remove
 
-Version 5 has no separately installed broker or native lifecycle state to
+Version 6 has no separately installed broker or native lifecycle state to
 remove. Remove the package through the host manager.
 
 Claude Code:
