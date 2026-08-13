@@ -86,7 +86,7 @@ absence rather than pretending activation evidence exists.
 ### Activation
 
 An activation release contains exactly one supported standalone bundle and a
-schema-4 manifest with runtime protocol 3 and native contract 4 in this
+schema-4 manifest with runtime protocol 4 and native contract 4 in this
 repository generation. Release checks bind the bundle, manifest, wire
 descriptor, platform, architecture, minimum operating system, file inventory,
 digests, signing profile, hardened runtime, secure timestamp, notarization,

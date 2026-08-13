@@ -1,9 +1,9 @@
 ---
 name: ui-to-code
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Turn a UI mockup, screenshot, or wireframe into code in the active primary's project context. Use when the user says "turn this into code," "build this UI," "implement this mockup," "code this screenshot," or "extract a UI spec." Also offer this proactively when implementation is about to start from a visual artifact. The unified plugin currently has no managed cross-family image transport, so the active primary performs the visual extraction and implementation while explicitly reporting that independent visual extraction is unavailable; never claim a second visual read occurred.
 ---

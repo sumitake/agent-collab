@@ -1,9 +1,9 @@
 ---
 name: simulate-user
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Fast
-  effort: low
+  quality_profile: economical
+  effort_class: minimal
 
 description: Cast the reviewer into a strict roleplay as a user persona or stakeholder reacting to an artifact (draft email, pitch deck, UI flow, policy memo, marketing copy, instructional text). The output is an in-character reaction — not a review — that shows how the artifact lands. Use when the user says "simulate a skeptical engineer," "simulate an impatient executive," "how would a non-technical user react to this," "play a confused customer reading this," "roleplay a skeptical engineer responding to this proposal," "what would a compliance officer say about this," "have the reviewer pretend to be a specific persona," or any cast-into-roleplay framing. Also offer this proactively when the active primary is about to ship a draft (email, deck, copy, instructions) to an audience where framing matters and the audience is non-technical, time-pressed, skeptical, hostile, or otherwise different from the author's defaults.
 ---
@@ -52,7 +52,11 @@ Instruct the verifier to stay entirely in character and **not break the fourth w
 
 ### 3. Call the verifier
 
-Invoke `python3 "<plugin-root>/coordinator.py"` with `effort='low'` in every eligible advisory row and no `tier` request field (the fastest eligible independent reviewer allowed by central policy — the skill default; raise effort for nuanced personas — short in-character responses don't need depth; bump to `pro` only for personas requiring nuanced reasoning, e.g., a litigator parsing a contract clause, a detail-obsessed engineer reading a spec).
+Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
+(economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy — the skill default; raise both closed profiles for nuanced personas — short
+in-character responses do not need depth). Use frontier/maximum only for
+personas requiring nuanced reasoning, such as a litigator parsing a contract
+clause or a detail-focused engineer reading a specification.
 
 Prompt template:
 
@@ -103,7 +107,7 @@ The pattern is constant: name a specific, opinionated, time-budgeted persona; ca
 - **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Push back; retry; surface if it fails twice.
 - **Simulating a generic "user"** instead of a specific opinionated persona. Generic personas produce generic reactions. Always name the persona's title, context, mood, time budget.
 - **Skipping the synthesis step.** The raw in-character reaction is data; the user wants the actionable change. The skill is not done until the synthesis is delivered.
-- **Using `pro` tier reflexively.** Short in-character reactions favor `flash`; `pro` is for nuanced-reasoning personas (litigator, detail-engineer, compliance officer parsing a regulation).
+- **Using frontier/maximum reflexively.** Short in-character reactions favor economical/minimal; frontier/maximum is for nuanced-reasoning personas (litigator, detail engineer, or compliance officer parsing a regulation).
 - **Simulating personas the verifier may have content-policy issues inhabiting** (hostile, prejudiced, criminal personas). If the persona's reaction is the actual question, frame the persona's *role* (e.g., "skeptical adversarial reviewer") rather than the persona's *identity*; or use `second-opinion` framed adversarially instead.
 - **Treating the simulation as ground truth for the actual audience.** It is a *prediction* of audience reaction, not a focus-group result. For high-stakes audiences, run a real focus group or A/B test in addition.
 - **Running the same persona simulation 3 times without changing the artifact.** No new information; the verifier saturates.

@@ -10,6 +10,12 @@ Resolve the plugin root and read `<plugin-root>/README.md`. Submit one bounded
 semantic request to `python3 "<plugin-root>/coordinator.py"` using a closed
 `logical_action`; never send a provider route/action pair.
 
+Every semantic request names one `quality_profile` (`economical`, `standard`,
+or `frontier`) and one `effort_class` (`minimal`, `standard`, or `maximum`).
+These express desired quality and depth without selecting a model. The runtime
+resolves a current compatible provider portfolio member and reports the
+observed member and effective effort only as diagnostics.
+
 The public actions are:
 
 - `architecture.conceptual` and `architecture.repository`
@@ -27,4 +33,6 @@ An explicit `target_agent` is honored or fails typed; it is never silently
 replaced. Automatic selection uses the runtime's compiled policy, authority,
 source, artifact, readiness, and family-independence gates. One selected
 provider attempt is not replayed after a model call. The skill contains no
-provider command, model name, version gate, or transport membership table.
+provider command, model name, version gate, or transport membership table. A
+route-local capability drift or unavailability result stays typed and includes
+fixed runtime-owned assistance; it never triggers a hidden provider fallback.

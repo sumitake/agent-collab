@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 from tests.test_direct_runtime_public_contract import _wire_descriptor
@@ -25,12 +26,28 @@ def _load():
 
 
 class PluginArchiveTests(unittest.TestCase):
+    def test_development_plugin_members_are_rejected_before_packaging(self) -> None:
+        archive = _load()
+        with tempfile.TemporaryDirectory() as raw:
+            plugin = Path(raw)
+            for name in (
+                "_dev_route_evidence.py",
+                "development-provenance.json",
+            ):
+                member = plugin / name
+                member.write_text("private", encoding="utf-8")
+                with self.subTest(name=name), self.assertRaisesRegex(
+                    ValueError, "development-only"
+                ):
+                    archive._require_no_development_members(plugin)
+                member.unlink()
+
     def test_policy_manifest_uses_the_single_top_level_descriptor(self) -> None:
         archive = _load()
         descriptor, digest = _wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 3,
+            "protocol_version": 4,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,
@@ -46,7 +63,7 @@ class PluginArchiveTests(unittest.TestCase):
         descriptor, digest = _wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 3,
+            "protocol_version": 4,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,

@@ -1,9 +1,9 @@
 ---
 name: brainstorm
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Fast
-  effort: low
+  quality_profile: economical
+  effort_class: minimal
 
 description: Use the reviewer as a divergent-thinking partner to widen the option space on an open-ended problem — generate alternatives, surface unfamiliar angles, or pressure-test an idea against a different model's priors. Use when the user says "brainstorm with the reviewer," "let's ideate," "what are some options," "think this through with the reviewer," "thinking partner," "give me alternatives," or asks any "what could we do about X" type question with no single right answer. Also offer this proactively when the user is early in an open-ended task with no clear answer, when the active primary has already proposed one approach and a fresh divergent angle would help, when a list of options would serve better than a single recommendation, or when the user is visibly stuck in a single line of thinking and a different model's priors could break the rut.
 ---
@@ -43,9 +43,12 @@ Vague prompts produce vague output. "Help me name the product" is bad; "I am nam
 
 If the user's question is too vague to call the tool productively, ask one targeted clarifying question first. Do not invent the constraints yourself.
 
-### 2. Invoke `python3 "<plugin-root>/coordinator.py"` with `effort='low'` in every eligible advisory row and no `tier` request field
+### 2. Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
 
-Divergent generation favors **throughput over depth** — `flash` (resolves to the fastest eligible independent reviewer allowed by central policy) is the right default. Bump to `pro` (resolves to the strongest eligible independent reviewer allowed by central policy) only for highly nuanced creative work where reasoning depth on each candidate idea is more valuable than candidate breadth.
+Divergent generation favors **throughput over depth** —
+economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy is the default. Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy only
+for highly nuanced creative work where reasoning depth on each candidate idea
+is more valuable than candidate breadth.
 
 The public coordinator accepts no brainstorm-specific fields. Put the
 following as labeled sections inside the single `prompt` string and dispatch
@@ -136,7 +139,7 @@ Pick examples from the user's domain when explaining the brainstorm scope. Match
 - **Asking the reviewer to decide.** Brainstorming is divergent. Asking "which is best?" pushes the model into a synthesis it has no business making for the user — and trains the user to outsource judgment.
 - **Accepting the first list without pressing for divergence.** The first list often clusters around the most obvious solution category. Push back at least once for genuinely different angles before settling.
 - **Mixing convergence into the brainstorm prompt.** "Give me 10 options ranked by likelihood of success" is a different request — and a worse one for this stage. Generate first, evaluate later. If the user genuinely wants ranking, do a second-pass convergent invocation, not a mixed-mode first pass.
-- **Using `pro` tier reflexively because the topic feels weighty.** Divergent generation favors `flash` — more candidates, faster, at the same quality. Reserve `pro` for cases where each candidate genuinely needs reasoning depth (e.g., generating hypothetical contract clauses where each one needs internal coherence, not just one-line bullet points).
+- **Using frontier/maximum reflexively because the topic feels weighty.** Divergent generation favors economical/minimal for more candidates and lower latency. Reserve frontier/maximum for cases where each candidate genuinely needs reasoning depth (e.g., generating hypothetical contract clauses where each one needs internal coherence, not just one-line bullet points).
 - **Pre-filtering the weird ones before showing the user.** The strange-looking candidate is often where the gem hides. Show everything; let the user prune.
 - **Dumping the raw list and calling it done.** Synthesis (cluster, name the clusters, flag outliers, hand the user a forward question) is the user-facing deliverable. The list itself is intermediate.
 - **Running this on a question the user has already brainstormed three times.** At that point the bottleneck is decision-making, not idea-shortage. Say so and pivot to convergence support.

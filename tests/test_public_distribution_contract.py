@@ -10,7 +10,7 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 
 
 class PublicDistributionContractTests(unittest.TestCase):
-    def test_source_generated_metadata_is_consistently_version_5(self) -> None:
+    def test_source_generated_metadata_is_consistently_version_6(self) -> None:
         versions = {
             json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))["version"]
             for host in (".claude-plugin", ".codex-plugin")
@@ -19,7 +19,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["plugins"][0]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
-        self.assertEqual(versions, {"5.0.0"})
+        self.assertEqual(versions, {"6.0.0"})
 
     def test_marketplace_fragment_describes_the_direct_package(self) -> None:
         fragment = json.loads(
@@ -31,7 +31,7 @@ class PublicDistributionContractTests(unittest.TestCase):
 
     def test_distribution_documents_direct_semantic_runtime(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
-        for phrase in ("schema-4 manifest", "runtime protocol 3", "native contract 4", "new process group"):
+        for phrase in ("schema-4 manifest", "runtime protocol 4", "native contract 4", "new process group"):
             self.assertIn(phrase, text)
 
     def test_mit_engineering_process_pack_survives_the_version_5_cutover(self) -> None:

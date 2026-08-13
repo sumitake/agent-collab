@@ -1,9 +1,9 @@
 ---
 name: logic-check
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: xhigh
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Audit a verifiable, step-wise computation (arithmetic, financial calculation, algorithm trace, constraint solve, scheduling problem) by having the reviewer independently re-derive the answer from the original problem statement and comparing — not by asking the reviewer to "check the work," which anchors on the existing derivation. Use when the user says "audit this calculation," "double-check my math with the reviewer," "verify these computations," "check this trace," "is this cap table right," "re-derive this with the reviewer," "audit my arithmetic," "logic-check this," or "is this number right." Also offer this proactively when the active primary has just performed a long multi-step calculation, an algorithmic trace (DP table, graph traversal, constraint propagation), a financial computation (cap table, tax math, unit conversion, currency-adjusted aggregate), or any computation where a wrong intermediate state silently corrupts the final answer.
 ---
@@ -67,7 +67,7 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 But: **do send the constraints and assumptions** the active primary used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance the active primary was solving.
 
 Submit the sealed logic-check role through `python3 "<plugin-root>/coordinator.py"` with
-`effort='xhigh'` in every eligible advisory row and no `tier` request field. Central policy resolves an independent eligible
+`quality_profile='frontier'` and `effort_class='maximum'`. Central policy resolves an independent eligible
 reviewer; Claude/Anthropic remains async inbox-only. Use this prompt template —
 the `ANSWER:` line is a functional contract that the comparison step keys on:
 
@@ -163,7 +163,7 @@ The `ANSWER:` line discipline and the constraints-explicit pattern apply uniform
 - **Trying to reconcile when the verifier's derivation is itself incoherent.** Evaluate the verifier's work quality first. If it is garbled or internally inconsistent, do not merge it — flag it and re-check the active primary's math against constraints manually.
 - **Using this skill for non-verifiable judgment work.** Open-ended reasoning, strategy, recommendations belong in `second-opinion`. The re-derivation mechanism requires a definite right answer.
 - **Treating final-answer agreement as proof.** Two models can both be wrong in the same way, especially on textbook-style problems with well-known wrong answers (or on problems where the constraint statement is ambiguous in the same way to both models). Agreement is one signal, not a guarantee.
-- **Using `flash` tier.** Multi-step computational care benefits from reasoning depth; `flash` produces faster derivations that are more prone to compounding-error patterns. Reserve for tier 1 only.
+- **Using economical/minimal for multi-step calculations.** Computational care benefits from reasoning depth; use frontier/maximum unless the check is genuinely trivial.
 - **Skipping the verifier-independence check** when the original computation came from a independent-family agent. Same-family re-derivation may share systematic computational biases.
 - **Silently switching the answer** if the audit disagrees and the verifier is right. Show the user what changed and why; the source-of-error attribution is the deliverable, not just the corrected number.
 - **Re-deriving a 30+ step trace blindly when transition critique would work.** Incomparable parallel derivations waste both turns; fall back to step-by-step transition verification for large traces.

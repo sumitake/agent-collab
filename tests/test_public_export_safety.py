@@ -2,17 +2,47 @@
 
 import importlib.util
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PublicExportSafetyTests(unittest.TestCase):
+    def test_development_only_paths_are_rejected_from_tree_and_archives(self) -> None:
+        module = self._module()
+        prohibited = {
+            "_dev_route_evidence.py",
+            "development-provenance.json",
+            "development-route-evidence",
+            "development-route-evidence.key",
+            "manage_route_promotions.py",
+        }
+        for name in prohibited:
+            relative = Path("nested") / name
+            issue = module._path_violation(Path("/tmp") / relative, relative)
+            self.assertIsNotNone(issue, name)
+            self.assertEqual(issue.kind, "development_only_path")
+
+            payload = io.BytesIO()
+            with zipfile.ZipFile(payload, mode="w") as archive:
+                archive.writestr(f"nested/{name}", b"bounded")
+            violations = module._archive_violations(payload.getvalue(), "fixture.zip")
+            self.assertTrue(
+                any(
+                    item.kind == "development_only_path"
+                    and item.evidence.endswith(f"nested/{name}")
+                    for item in violations
+                ),
+                (name, violations),
+            )
+
     def test_export_gate_uses_the_shared_manifest_validator(self) -> None:
         path = ROOT / "scripts" / "check-public-export-safety.py"
         spec = importlib.util.spec_from_file_location("direct_export", path)
@@ -69,7 +99,7 @@ class PublicExportSafetyTests(unittest.TestCase):
         ]
         manifest = {
             "schema_version": 4,
-            "protocol_version": 3,
+            "protocol_version": 4,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,
@@ -84,7 +114,7 @@ class PublicExportSafetyTests(unittest.TestCase):
                     "entrypoint": "agent-collab-runtime",
                     "size": len(b"bytes"),
                     "sha256": module.runtime_bundle.compute_bundle_identity(records),
-                    "provider_runtime_version": "3.0.0",
+                    "provider_runtime_version": "4.0.0",
                     "signing": {
                         "mode": "developer_id",
                         "identity": "Developer ID Application: Test (ABCDEFGHIJ)",

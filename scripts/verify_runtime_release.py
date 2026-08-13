@@ -364,7 +364,7 @@ def verify_release(
     }
     if not isinstance(item, dict) or set(item) != expected_fields:
         return False, {}, ["runtime artifact manifest shape is invalid"]
-    if item.get("provider_runtime_version") != "3.0.0":
+    if item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION:
         errors.append("runtime artifact contract anchor is invalid")
 
     signing = item.get("signing")

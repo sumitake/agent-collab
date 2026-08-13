@@ -222,7 +222,7 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 - **Manufacturing two sides on a question where one is clearly right.** This produces false equivalence. Use `second-opinion` for one-sided questions; reserve debate for genuine binaries.
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
 - **Letting {{ verifier_agent }} hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," push back: "you are arguing [side], defend it without hedging. The synthesis step is where balance returns."
-- **Using `flash` tier for the debate calls.** Argumentation depth matters; `flash` produces shallow openings and superficial rebuttals. `pro` is the right default for every debate-tool invocation.
+- **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
 - **Skipping the verifier-independence check** when the user's pre-existing position came from a {{ verifier_family }}-family agent. Same-family debate is correlated; structurally one-sided. Apply the independence rule before assigning sides.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.
 - **Debating an empirically-decidable question.** "Did our churn rate go up" is a data question. Run the numbers; do not argue the answer.

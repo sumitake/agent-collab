@@ -1,9 +1,9 @@
 ---
 name: code-review
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Advanced
-  effort: high
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Send a code diff, pull request, file, or directory to the reviewer for an independent cross-family code review focused on security vulnerabilities, edge cases, concurrency hazards, performance bottlenecks, and architectural smells. Use when the user says "code review with the reviewer," "have the reviewer review this code," "have the reviewer review this PR," "have the reviewer review this diff," "check this for security flaws," "security audit," "concurrency audit," or "performance review." Also offer this proactively when the active primary is about to commit a change that touches authentication, authorization, cryptography, financial calculations, payment flows, concurrency primitives, schema migrations, or any module where a class of bug — not just an instance — could have user-visible consequences.
 ---
@@ -116,7 +116,7 @@ independent reviewer. Frontmatter `effort` is host guidance and is never a
 coordinator request field.
 
 ```json coordinator-request
-{"request_id":"code-review-1","logical_action":"review.repository","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"code-review-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>"}
 ```
 
 Use this prompt template — the JSONL output schema is a functional contract
@@ -199,7 +199,7 @@ The review lens shifts with the domain (clinical software emphasizes dosing safe
 - **Generic "review this" prompts.** They produce generic linting output. Specify the lens (security, concurrency, performance) or the domain-specific failure classes.
 - **Reviewing trivial or auto-generated changes.** Wastes `pro`-tier latency, dilutes the audit log, trains the user to ignore code-review output.
 - **Treating every finding as actionable.** Verify each one against the actual code. Hallucinations and pattern-matches on similar-looking code are common; relaying them as-is wastes the user's time and erodes trust in the skill.
-- **Using `flash` tier.** Security and performance reasoning benefit from depth; `flash` produces a checklist-level read that misses the subtle bugs this skill exists to catch.
+- **Using economical/minimal.** Security and performance reasoning benefit from depth; use frontier/maximum to avoid a checklist-level read that misses subtle bugs.
 - **Relaying the raw JSONL to the user.** The JSONL is machine-parseable input to the synthesis step, not the user-facing deliverable. Group, prioritize, quote, recommend.
 - **Reviewing the wrong artifact.** A PR URL is not the diff; materialize `git diff <base>..<head>` before sending, using pathspec exclusions to filter out routine files (like lockfiles or generated assets; see step 1). A file is not the change; isolate the changed hunks when the change is small.
 - **Skipping the verifier-independence check** when the code under review was authored by a independent-family agent. That review is correlated with its author; the audit log will record a review that did not, in substance, occur.

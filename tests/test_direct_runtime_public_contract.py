@@ -45,6 +45,7 @@ LOGICAL_ACTION_SOURCE_MODES = {
 
 TRANSPORT_ACTIONS = (
     ("codex", "advisory"),
+    ("codex", "codegen"),
     ("codex", "governance"),
     ("gemini", "advisory"),
     ("gemini", "context"),
@@ -60,6 +61,7 @@ TRANSPORT_ACTIONS = (
 
 ACTION_SOURCE_PAIRS = (
     ("codex", "advisory", "repository"),
+    ("codex", "codegen", "repository"),
     ("codex", "governance", "repository"),
     ("gemini", "advisory", "repository"),
     ("gemini", "context", "documents"),
@@ -126,11 +128,14 @@ def _readiness_response(
                         "adapter_wire_sha256": None,
                         "observed_model": None,
                         "catalog_digest": None,
+                        "model_resolution_method": None,
+                        "effective_effort": None,
                         "metadata_process_count": 0,
                         "diagnostic_code": "not_ready",
                         "compatibility_profile": None,
                         "capability_digest": None,
                         "metadata_zero_model_calls_proven": True,
+                        "cleanup_confirmed": True,
                     }
                 ],
             }
@@ -140,6 +145,8 @@ def _readiness_response(
         "request_id": "runtime-status-1",
         "author_lineage": author_lineage,
         "status": "ok",
+        "quality_profile": "standard",
+        "effort_class": "standard",
         "result": {"actions": actions},
     }
 
@@ -155,6 +162,43 @@ def _load(name: str, path: Path):
 
 
 class DirectRuntimeSkillContractTests(unittest.TestCase):
+    def test_routed_skills_publish_closed_quality_and_effort_profiles(self) -> None:
+        for name in (
+            "route", "context", "architect", "governance-review",
+            "dev-delegate", "worker",
+        ):
+            with self.subTest(name=name):
+                source = (SPECS / f"{name}.md").read_text(encoding="utf-8")
+                generated = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn("quality_profile", source)
+                self.assertIn("effort_class", source)
+                self.assertIn("quality_profile", generated)
+                self.assertIn("effort_class", generated)
+
+        joined = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(SPECS.glob("*.md"))
+        )
+        self.assertNotIn("effort is host metadata, never a request field", joined)
+        self.assertNotIn("no `tier` request field", joined)
+
+    def test_wire_publishes_a_separate_receipt_free_advisory_response(self) -> None:
+        descriptor, _digest = _wire_descriptor()
+        advisory = descriptor["advisory_response"]
+
+        self.assertFalse(advisory["additionalProperties"])
+        self.assertEqual(
+            set(advisory["required"]),
+            {
+                "wire_contract_sha256", "request_id", "status", "advisory",
+                "diagnostics",
+            },
+        )
+        self.assertEqual(advisory["properties"]["status"], {"const": "advisory"})
+        self.assertNotIn("execution_receipt", advisory["properties"])
+        self.assertNotIn("result", advisory["properties"])
+        self.assertNotIn("error_code", advisory["properties"])
+
     def test_context_is_the_only_generated_source_grounding_skill(self) -> None:
         self.assertTrue((SPECS / "context.md").is_file())
         self.assertFalse((SPECS / "long-context.md").exists())
@@ -195,9 +239,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "5.0.0")
-        self.assertEqual(codex["version"], "5.0.0")
-        self.assertEqual(config["agent-collab"]["skill_version"], "5.0.0")
+        self.assertEqual(plugin["version"], "6.0.0")
+        self.assertEqual(codex["version"], "6.0.0")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.0.0")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -261,7 +305,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             ),
             (
                 "runtime protocol",
-                lambda value: value.__setitem__("runtime_protocol_version", 4),
+                lambda value: value.__setitem__("runtime_protocol_version", 3),
             ),
         )
         for message, mutate in mutations:
@@ -279,7 +323,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         )
         properties = schema["properties"]
         self.assertEqual(properties["schema_version"], {"const": 4})
-        self.assertEqual(properties["protocol_version"], {"const": 3})
+        self.assertEqual(properties["protocol_version"], {"const": 4})
         self.assertEqual(properties["contract_version"], {"const": 4})
         self.assertIn("wire_contract", schema["required"])
         self.assertIn("wire_contract_sha256", schema["required"])
@@ -290,6 +334,16 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertEqual(
             properties["wire_contract"]["properties"]["schema_version"],
             {"type": "integer", "minimum": 1},
+        )
+        self.assertIn(
+            "advisory_response",
+            properties["wire_contract"]["required"],
+        )
+        self.assertEqual(
+            properties["artifacts"]["items"]["properties"][
+                "provider_runtime_version"
+            ],
+            {"const": "4.0.0"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -309,7 +363,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             },
         )
         self.assertEqual(manifest["schema_version"], 4)
-        self.assertEqual(manifest["protocol_version"], 3)
+        self.assertEqual(manifest["protocol_version"], 4)
         self.assertEqual(manifest["contract_version"], 4)
         self.assertEqual(manifest["channel"], "production")
         self.assertEqual(len(manifest["artifacts"]), 1)
@@ -326,7 +380,8 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
         self.assertGreater(descriptor["schema_version"], 0)
-        self.assertEqual(descriptor["runtime_protocol_version"], 3)
+        self.assertEqual(descriptor["schema_version"], 6)
+        self.assertEqual(descriptor["runtime_protocol_version"], 4)
         encoded = json.dumps(
             descriptor,
             sort_keys=True,

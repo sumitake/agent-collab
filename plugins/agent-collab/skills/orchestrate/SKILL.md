@@ -1,9 +1,9 @@
 ---
 name: orchestrate
-version: 5.0.0
+version: 6.0.0
 defaults:
-  tier: Standard
-  effort: medium
+  quality_profile: standard
+  effort_class: standard
 
 description: Coordinate a multi-step task through a bounded task graph with explicit dependencies, authority, acceptance checks, and operator gates. Use when the user says "orchestrate this," "run this as a task graph," or "/agent-collab:orchestrate." Also offer this when three or more work units need durable sequencing or parallelism.
 ---

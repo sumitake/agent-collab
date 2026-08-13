@@ -47,6 +47,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "review-1",
             "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
             "target_agent": None,
             "timeout_ms": 5000,
             "prompt": "Review the current repository.",
@@ -58,6 +60,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         )
         native = self.coordinator.validate_request(request, self.wire, host)
         self.assertEqual(native["wire_contract_sha256"], self.wire.sha256)
+        self.assertEqual(native["quality_profile"], "frontier")
+        self.assertEqual(native["effort_class"], "maximum")
         self.assertEqual(
             native["source"], {"mode": "repository", "repo_root": str(ROOT)}
         )
@@ -68,6 +72,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "context-repository-1",
             "logical_action": "context.repository.extract",
+            "quality_profile": "economical",
+            "effort_class": "minimal",
             "target_agent": "grok",
             "timeout_ms": 5000,
             "prompt": "Extract repository facts.",
@@ -98,6 +104,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 {
                     "request_id": "review-2",
                     "logical_action": "review.repository",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
                     "target_agent": None,
                     "timeout_ms": 5000,
                     "prompt": "Review.",
@@ -120,6 +128,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "context-1",
             "logical_action": "context.documents.extract",
+            "quality_profile": "economical",
+            "effort_class": "minimal",
             "target_agent": None,
             "timeout_ms": 5000,
             "prompt": "Extract facts.",
@@ -156,6 +166,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "context-private-error",
             "logical_action": "context.documents.extract",
+            "quality_profile": "economical",
+            "effort_class": "minimal",
             "target_agent": None,
             "timeout_ms": 5000,
             "prompt": "Extract facts.",
@@ -177,6 +189,56 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 "error_code": "runtime_provider_error",
             },
         )
+
+    def test_advisory_is_exit_zero_and_preserves_non_authoritative_metadata(self) -> None:
+        advisory = {
+            "authority": "advisory",
+            "grounding": "ungrounded",
+            "reason": "insufficient_source_evidence",
+            "text": "Useful but non-authoritative analysis.",
+        }
+        provenance = {
+            "wire_contract_sha256": self.wire.sha256,
+            "diagnostics": {"failure_trace": {"adapter_code": "insufficient_evidence"}},
+        }
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda **_kwargs: self.client.RuntimeResult(
+                self.client.RuntimeStatus.ADVISORY,
+                result=advisory,
+                provenance=provenance,
+            ),
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+        request = {
+            "request_id": "advisory-1",
+            "logical_action": "architecture.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": "codex",
+            "timeout_ms": 5000,
+            "prompt": "Analyze the repository.",
+            "repo_root": str(ROOT),
+        }
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy
+        ):
+            response, code = self.coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            response,
+            {
+                "request_id": "advisory-1",
+                "status": "advisory",
+                "result": advisory,
+                "provenance": provenance,
+            },
+        )
+        self.assertNotIn("error_code", response)
 
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []
@@ -237,6 +299,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "review-forged",
             "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
             "target_agent": None,
             "author_lineage": "google",
             "timeout_ms": 5000,
@@ -264,6 +328,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "request_id": "governance-unknown",
             "logical_action": "governance.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
             "target_agent": None,
             "timeout_ms": 5000,
             "prompt": "Govern.",
@@ -278,6 +344,42 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "unavailable")
         self.assertEqual(calls, [])
+
+    def test_semantic_profiles_are_required_closed_and_provider_neutral(self) -> None:
+        base = {
+            "request_id": "profile-1",
+            "logical_action": "architecture.conceptual",
+            "quality_profile": "standard",
+            "effort_class": "standard",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Think.",
+        }
+        native = self.coordinator.validate_request(base, self.wire, self.profile)
+        self.assertEqual(native["quality_profile"], "standard")
+        self.assertEqual(native["effort_class"], "standard")
+
+        for field in ("quality_profile", "effort_class"):
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "closed"):
+                self.coordinator.validate_request(
+                    {key: value for key, value in base.items() if key != field},
+                    self.wire,
+                    self.profile,
+                )
+        for field, value in (
+            ("quality_profile", "premium"),
+            ("effort_class", "xhigh"),
+            ("model", "exact-model"),
+            ("provider", "vendor"),
+            ("transport", "native"),
+            ("pool", "shared"),
+            ("native_effort", "high"),
+            ("shadow", True),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.coordinator.validate_request(
+                    {**base, field: value}, self.wire, self.profile
+                )
 
     def test_codex_thread_proves_family_without_a_model_pin(self) -> None:
         with mock.patch.dict(

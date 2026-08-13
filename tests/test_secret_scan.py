@@ -54,6 +54,18 @@ class SecretScanTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertTrue(any("Google API key" in item for item in findings), findings)
 
+    def test_development_evidence_hmac_path_is_rejected(self) -> None:
+        private = self.root / "nested" / "development-route-evidence.key"
+        private.parent.mkdir()
+        private.write_bytes(b"bounded synthetic key material")
+        findings, scanned, errors = self.scanner.scan_tree(self.root)
+        self.assertEqual(scanned, 1)
+        self.assertEqual(errors, [])
+        self.assertTrue(
+            any("development evidence HMAC material" in item for item in findings),
+            findings,
+        )
+
     def test_symlinked_source_member_fails_scan_incomplete(self) -> None:
         target = self.root / "target.txt"
         target.write_text("safe", encoding="utf-8")
