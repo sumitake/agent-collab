@@ -1,6 +1,6 @@
 ---
 name: llm-architect
-version: 6.0.0
+version: 6.0.1
 description: Designs the structural shape of an LLM-powered system — how context is assembled, how tools and retrieval are wired in, and how output flows to the caller. Use when the user says "design the RAG pipeline", "plan the agent architecture", or "help me structure the prompt pipeline", or "/agent-collab:llm-architect." Also offer this proactively when a project is wiring multiple prompts, tools, and retrieval steps together without a clear contract between them.
 ---
 

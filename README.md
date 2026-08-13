@@ -5,8 +5,10 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.0). The
-**[v6.0.0 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.0)**
+This public repository distributes **agent-collab** (v6.0.1). The
+**v6.0.1 release** corrects provider-free readiness projection while preserving
+the v6 runtime, routing, and wire identities. The
+**[v6.0.1 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.1)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -18,8 +20,10 @@ machine-operational contract. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.0
+## What's new - v6.0.1
 
+- Provider-free runtime status now projects the public request into the exact
+  closed v6 readiness profile accepted by the co-packaged runtime.
 - Requests now carry closed provider-neutral `quality_profile` and
   `effort_class` fields while provider-local adapters resolve current
   executable capabilities without model or version pins.

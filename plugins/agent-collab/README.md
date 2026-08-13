@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.0.0**
+Current: **6.0.1**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
