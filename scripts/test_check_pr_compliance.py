@@ -262,6 +262,20 @@ class TestParseTraceBlock(unittest.TestCase):
         _, errors = cpc.parse_trace_block(body)
         self.assertEqual(errors, [])
 
+    def test_operator_bypass_rejects_bare_operator_reserved_yes(self):
+        for operator_reserved in ("yes", "yes:", "yes —", "yes -"):
+            with self.subTest(operator_reserved=operator_reserved):
+                body = _make_body(
+                    tier="3",
+                    cross_check="OPERATOR-BYPASSED — explicit authorization",
+                    operator_reserved=operator_reserved,
+                )
+                _, errors = cpc.parse_trace_block(body)
+                self.assertTrue(
+                    any("operator_reserved" in error for error in errors),
+                    errors,
+                )
+
     def test_operator_bypass_rejects_operator_reserved_lookalike(self):
         body = _make_body(
             tier="3",
@@ -808,6 +822,14 @@ class TestCrossCheckValidForTier(unittest.TestCase):
             "OPERATOR-BYPASSED — governance-only conditions waived", tier="3")
         self.assertFalse(merge_ok)
         self.assertNotIn("converged PROCEED", merge_reason)
+
+    def test_operator_bypass_explanation_cannot_smuggle_proceed_verdict(self):
+        merge_ok, merge_reason = cpc.cross_check_ok(
+            "OPERATOR-BYPASSED — operator authorizes us to PROCEED",
+            tier="3",
+        )
+        self.assertFalse(merge_ok)
+        self.assertIn("operator bypass", merge_reason.lower())
 
     def test_tier3_operator_bypass_must_be_anchored_exact_state(self):
         for value in (

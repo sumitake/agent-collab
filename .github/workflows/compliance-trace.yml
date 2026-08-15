@@ -263,6 +263,16 @@ jobs:
                               f"sentinel / explicit OPERATOR-BYPASSED state — "
                               f"'N/A'/'none'/empty is only valid at Tier 1")
 
+              _operator_reserved = data.get("operator_reserved", "").strip()
+              _yes = re.match(r"^YES\b", _operator_reserved, re.IGNORECASE)
+              _operator_detail = (
+                  _operator_reserved[_yes.end():]
+                  .strip()
+                  .lstrip(":—–-")
+                  .strip()
+                  if _yes
+                  else ""
+              )
               if (
                   data.get("cross_check")
                   and re.match(
@@ -270,11 +280,7 @@ jobs:
                       data["cross_check"].strip(),
                       re.IGNORECASE,
                   )
-                  and not re.match(
-                      r"^YES\b",
-                      data.get("operator_reserved", "").strip(),
-                      re.IGNORECASE,
-                  )
+                  and not _operator_detail
               ):
                   errors.append(
                       "cross_check OPERATOR-BYPASSED requires operator_reserved "

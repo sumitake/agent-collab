@@ -389,8 +389,13 @@ def _is_operator_bypassed(value: str) -> bool:
 
 
 def _operator_reserved_declared(value: str) -> bool:
-    """True when the trace explicitly marks an operator-controlled path."""
-    return bool(_OPERATOR_RESERVED_YES_RE.match(value.strip()))
+    """True when the trace names an operator-controlled path after ``yes``."""
+    normalized = value.strip()
+    match = _OPERATOR_RESERVED_YES_RE.match(normalized)
+    if match is None:
+        return False
+    detail = normalized[match.end():].strip().lstrip(":—–-").strip()
+    return bool(detail)
 
 
 def _last_deny_signal(value: str):
@@ -472,6 +477,13 @@ def cross_check_ok(cross_check: str, tier=None):
             f"{tier_int if tier_int else 'undeclared/unparseable'} — Tier 2/3 "
             f"require a real cross-check verdict, not an N/A exemption "
             f"(governance-gap fix 2026-06-01)")
+
+    # An operator bypass is valid trace form only. Reject it before scanning
+    # for verdict tokens so explanatory prose containing "PROCEED" cannot turn
+    # the bypass into ordinary agent self-merge eligibility.
+    if _is_operator_bypassed(value):
+        return False, ("cross_check records an operator bypass, not reviewer "
+                       "convergence; ordinary agent self-merge is ineligible")
 
     # auth-expiry + quota-failover fallback contracts: a BLOCKED cross-check
     # pauses the PR (awaiting operator). Anchored to a leading 'BLOCKED'.
