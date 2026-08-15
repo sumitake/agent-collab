@@ -5,10 +5,10 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.3). The
-**v6.0.3 release** keeps readiness failures route-local and activates the
-GLM and Kimi production review routes in runtime 4.0.2. The
-**[v6.0.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.3)**
+This public repository distributes **agent-collab** (v6.0.4). The
+**v6.0.4 release** prevents attempt-local provider and teardown failures from
+becoming false route quarantines or governance blockers. The
+**[v6.0.4 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.4)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -20,22 +20,20 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.3
+## What's new - v6.0.4
 
-- Non-ready readiness candidates may retain their safe signed runtime identity
-  and route-local diagnostic. The public client no longer turns that valid
-  state into a global protocol failure; ready candidates still require the
-  complete signed identity triple and no diagnostic.
-- Runtime 4.0.2 promotes GLM/Zhipu and Kimi/Moonshot review routes to active,
-  accepted production selection through the existing OpenCode selector and
-  generated routing descriptor.
-- Provider-free readiness remains profile-aware and proves zero model calls,
-  while a failed or ineligible route remains local to that action and target.
-- Safe substantive output without grounded evidence remains the existing
-  ungrounded advisory, with no artifact, receipt, governance verdict, retry,
-  replay, or substituted provider authority.
-- No parallel registry, selector, parser, fallback, or release service was
-  added.
+- Every routed skill now treats `provider_error` and `teardown_error` as
+  attempt-local diagnostics. They invalidate that attempt's artifact and
+  evidence without establishing provider/route unavailability or quarantining
+  the route for later caller-authorized work.
+- The no-replay invariant remains explicit: these statuses do not trigger an
+  automatic retry. A later authorized request is a new attempt evaluated from
+  fresh readiness.
+- The public governance trace accepts an anchored `OPERATOR-BYPASSED` state as
+  honest form only when `operator_reserved` begins with `yes`. The state is not
+  reviewer convergence and never grants ordinary agent self-merge eligibility.
+- Runtime 4.0.2 and its route selector are unchanged; no quarantine store,
+  parallel registry, fallback, or release service was added.
 - The 4.7 engineering-process pack remains available as three self-executed
   skills: `decision-map`, `prototype`, and `architecture-review`.
 - The current `code-review` skill retains its spec-fidelity axis and

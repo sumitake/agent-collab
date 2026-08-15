@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.0.3**
+Current: **6.0.4**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -133,6 +133,13 @@ are `ok`, `advisory`, `invalid_request`, `unavailable`, `auth_error`, `quota_err
 `capability_error`, `protocol_error`, `provider_error`, `output_limit`,
 `timeout`, `cancelled`, and route-local `teardown_error`.
 
+`provider_error` and `teardown_error` are attempt-local diagnostics. They
+invalidate only that request's artifact and evidence; they do not establish
+route or provider unavailability and must never quarantine or suppress the
+route for a later request. They also do not authorize an automatic replay: a
+later caller-authorized request is a distinct attempt whose route eligibility
+is recomputed from fresh readiness.
+
 A success contains the descriptor-defined artifact, runtime-owned evidence,
 one provider-neutral execution receipt, and bounded diagnostics. Observed
 agent/provider/model/executable/catalog/bundle identity is diagnostic only; it
@@ -174,7 +181,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 12/13/17 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches this same 6.0.3
+residue is reported separately. Runtime readiness launches this same 6.0.4
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.
 

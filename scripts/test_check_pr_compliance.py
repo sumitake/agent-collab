@@ -241,6 +241,36 @@ class TestParseTraceBlock(unittest.TestCase):
         _, errors = cpc.parse_trace_block(body)
         self.assertEqual(errors, [])
 
+    def test_operator_bypass_requires_operator_reserved_declaration(self):
+        body = _make_body(
+            tier="3",
+            cross_check="OPERATOR-BYPASSED — explicit authorization",
+            operator_reserved="no",
+        )
+        _, errors = cpc.parse_trace_block(body)
+        self.assertTrue(
+            any("operator_reserved" in error and "yes" in error for error in errors),
+            errors,
+        )
+
+    def test_operator_bypass_with_operator_reserved_declaration_is_valid(self):
+        body = _make_body(
+            tier="3",
+            cross_check="OPERATOR-BYPASSED — explicit authorization",
+            operator_reserved="yes — operator-controlled merge path",
+        )
+        _, errors = cpc.parse_trace_block(body)
+        self.assertEqual(errors, [])
+
+    def test_operator_bypass_rejects_operator_reserved_lookalike(self):
+        body = _make_body(
+            tier="3",
+            cross_check="OPERATOR-BYPASSED — explicit authorization",
+            operator_reserved="yesterday",
+        )
+        _, errors = cpc.parse_trace_block(body)
+        self.assertTrue(any("operator_reserved" in error for error in errors), errors)
+
     def test_tier3_garbage_cross_check_invalid(self):
         body = _make_body(tier="3", cross_check="we discussed it offline")
         _, errors = cpc.parse_trace_block(body)
@@ -762,6 +792,32 @@ class TestCrossCheckValidForTier(unittest.TestCase):
             "BLOCKED — quota exhausted (event: 7)", "3")
         self.assertTrue(ok)
         self.assertIn("pause sentinel", reason)
+
+    def test_tier3_operator_bypassed_valid_form_but_not_merge_eligible(self):
+        """An explicit operator override is honest trace form, not reviewer
+        convergence, so it must keep ordinary self-merge eligibility closed."""
+        for tier, value in (
+                ("2", "OPERATOR-BYPASSED — governance-only conditions waived"),
+                ("3", "operator-bypassed: explicit operator authorization")):
+            with self.subTest(tier=tier, value=value):
+                valid, reason = cpc.cross_check_valid_for_tier(value, tier)
+                self.assertTrue(valid)
+                self.assertIn("operator bypass", reason.lower())
+
+        merge_ok, merge_reason = cpc.cross_check_ok(
+            "OPERATOR-BYPASSED — governance-only conditions waived", tier="3")
+        self.assertFalse(merge_ok)
+        self.assertNotIn("converged PROCEED", merge_reason)
+
+    def test_tier3_operator_bypass_must_be_anchored_exact_state(self):
+        for value in (
+                "notes mention OPERATOR-BYPASSED",
+                "NOT OPERATOR-BYPASSED",
+                "OPERATOR-BYPASSEDLY",
+                "OPERATOR-BYPASSED\u200b— hidden suffix"):
+            with self.subTest(value=value):
+                valid, _ = cpc.cross_check_valid_for_tier(value, "3")
+                self.assertFalse(valid)
 
     # --- pause sentinel must be anchored (round-1 Mod 1) ----------------------
 

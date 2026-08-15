@@ -45,6 +45,21 @@ non-empty keys: `author`, `standing_directives`, `tier`, `cross_check`,
 external capability gap exists, or `FILED: <public issue URL>` when follow-up is
 required. Tier 2 and Tier 3 cannot use a bare `N/A` cross-check. In-flight states
 may keep a PR open, but only a converged `PROCEED` makes it merge-eligible.
+An anchored `OPERATOR-BYPASSED` state may record an explicit operator-authorized
+admin/bypass path without making the trace-form check red. It is valid evidence
+form only: it is not a reviewer verdict, does not establish cross-family
+convergence, and never grants ordinary agent self-merge eligibility. The
+`operator_reserved` field must begin with `yes` and identify the
+operator-controlled action.
+
+Coordinator `provider_error` and `teardown_error` results are attempt-local.
+They invalidate that attempt's artifact and evidence, but do not establish
+provider or route unavailability, quarantine the route, or block unrelated
+repository work. Never automatically replay the failed request; a later
+caller-authorized request is a distinct attempt whose eligibility is evaluated
+from fresh readiness. Where governance evidence is still required, use an
+eligible documented alternative or record an explicit operator-authorized path
+honestly; never fabricate reviewer convergence.
 
 Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
 change. For any external contribution, use `OPERATOR-CONFIRMED` only after John

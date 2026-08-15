@@ -15,10 +15,10 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.0.3\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 6.0.4\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.0.3")
+            self.assertEqual(manifest["version"], "6.0.4")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -94,6 +94,22 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         )
         self.assertRegex(text.lower(), r"do not issue one\s+request per action")
 
+    def test_routed_skills_keep_provider_failures_attempt_local(self) -> None:
+        """Invocation failures must never become an implicit route quarantine."""
+        build_skills = self._load_build_skills()
+        for name in sorted(build_skills.ROUTED_SPECS):
+            with self.subTest(name=name):
+                text = (
+                    PLUGIN / "skills" / name / "SKILL.md"
+                ).read_text(encoding="utf-8")
+                invocation = text.split("\n# ", 1)[0].lower()
+                self.assertIn("`provider_error` and `teardown_error`", invocation)
+                self.assertIn("attempt-local", invocation)
+                self.assertIn("must not quarantine", invocation)
+                self.assertIn("route or provider unavailability", invocation)
+                self.assertIn("must not automatically replay", invocation)
+                self.assertIn("fresh readiness", invocation)
+
     def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
         text = (
             PLUGIN / "skills" / "intent-check" / "SKILL.md"
@@ -118,6 +134,17 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 "documents",
             },
         )
+
+    @staticmethod
+    def _load_build_skills():
+        spec = importlib.util.spec_from_file_location(
+            "unified_skill_build_contract", ROOT / "scripts" / "build_skills.py"
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
 
 
 if __name__ == "__main__":
