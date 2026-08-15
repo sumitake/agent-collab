@@ -1,9 +1,9 @@
 ---
 name: intent-check
-version: 6.0.1
+version: 6.0.2
 defaults:
-  quality_profile: economical
-  effort_class: minimal
+  quality_profile: frontier
+  effort_class: maximum
 
 description: Verify that the active primary's interpretation matches the operator's request before consequential planning or execution. Use when the user says "intent check," "confirm what I asked," "check for scope drift," or "/agent-collab:intent-check." Also offer this proactively when a major request has multiple constraints whose omission would materially change the result.
 ---
@@ -12,41 +12,29 @@ description: Verify that the active primary's interpretation matches the operato
 
 Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
 
-# Intent check - distinct-family interpretation comparison
+# Intent check - independent interpretation comparison
 
 Freeze two artifacts: the operator's original request and the active primary's
 plain-language interpretation. Do not include an implementation plan; this
 step checks understanding, not design quality.
 
 Resolve the **plugin root** from this loaded file and invoke only
-`python3 "<plugin-root>/coordinator.py"` with a bounded governance-review
-request. The public policy captures the active primary/model/session and
-artifact-author model, excludes both families, and selects only an eligible
-Gemini or Grok governance row, or a Codex advisory row. No reviewer
-or escalation model is fixed in this skill. Claude is asynchronous inbox-only.
-Configure the Gemini governance row at high effort because its closed contract
-does not admit low. Configure the Codex advisory row at low effort because this
-is a rudimentary interpretation check. Keep the Grok governance fallback at
-high effort to preserve that sealed role's mandatory floor.
+`python3 "<plugin-root>/coordinator.py"` with this descriptor-owned, untargeted
+request. The runtime selects an eligible independent route; the caller does not
+construct an agent/action pair.
+
+```json coordinator-request
+{"request_id":"intent-check-1","logical_action":"context.documents.intent","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Compare the operator request with the primary interpretation. Identify only material omissions, added scope, or ambiguity; do not design or execute the work.","documents":[{"label":"operator_request","content":"<verbatim operator request>"},{"label":"primary_interpretation","content":"<plain-language interpretation>"}]}
+```
 
 ## Workflow
 
 1. Quote the original request exactly, preserving negations and scope limits.
 2. Write the interpretation as objective, in-scope work, out-of-scope work,
    constraints, success criteria, and stop conditions.
-3. Capture artifact author-model provenance. If primary or artifact family is
-   unknown, fail closed; do not accept a caller-provided family assertion.
-   Send `primary` as `{}` on any host that exposes strong identity signals, so
-   the host is observed; on a detected Claude host identity is observation-only
-   and no explicit identity field is accepted at all. Never invent a
-   `session_identifier` the host did not expose: where the real identifier is
-   observed, the invented one registers as an identity conflict that fails every
-   route. On a host that genuinely exposes no identity, a COMPLETE and mutually
-   consistent explicit configuration remains the supported path -- that is
-   configuration, not fabrication. What must never happen is assembling a
-   partial or guessed identity to satisfy a route that reported incomplete
-   identity; let that fail closed.
-4. Ask the dynamically selected independent reviewer to return exactly:
+3. Replace only the two document contents with the frozen artifacts. Preserve
+   every other request field exactly and do not add identity or routing fields.
+4. Ask the selected independent reviewer to return exactly:
 
 ```text
 VERDICT: MATCH | DRIFT | AMBIGUOUS
@@ -64,6 +52,6 @@ RECOMMENDED INTERPRETATION:
    If `AMBIGUOUS`, ask the operator only the load-bearing question. Preserve the
    typed route result and immutable provenance.
 
-Safe mode leaves governance model routes unavailable. Never reconstruct a raw
-provider command, invoke Claude synchronously, or silently use a same-family
-reviewer.
+Never reconstruct a raw provider command, choose a target, invoke Claude
+synchronously, or turn a route-local typed failure into a claim that global
+governance is unavailable.

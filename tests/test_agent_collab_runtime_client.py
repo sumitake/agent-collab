@@ -421,6 +421,66 @@ class DirectRuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, self.client.RuntimeStatus.UNAVAILABLE)
         self.assertEqual(result.error, "not_ready")
 
+    def test_typed_route_error_survives_nonzero_native_exit(self) -> None:
+        failure_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "wire_contract_sha256",
+                "request_id",
+                "status",
+                "error_code",
+                "diagnostics",
+            ],
+            "properties": {
+                "wire_contract_sha256": {"type": "string"},
+                "request_id": {"type": "string"},
+                "status": {"const": "invalid_request"},
+                "error_code": {"const": "unsupported_target_action"},
+                "diagnostics": {"type": "object"},
+            },
+        }
+        wire = replace(self.wire, failure_response=failure_schema)
+        response = {
+            "wire_contract_sha256": wire.sha256,
+            "request_id": "direct-1",
+            "status": "invalid_request",
+            "error_code": "unsupported_target_action",
+            "diagnostics": {},
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            executable = Path(raw) / "agent-collab-runtime"
+            payload = json.dumps(response, separators=(",", ":"))
+            executable.write_text(
+                "#!/usr/bin/python3\n"
+                "import sys\n"
+                "sys.stdin.buffer.read()\n"
+                "sys.stdout.write(" + repr(payload) + ")\n"
+                "raise SystemExit(2)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o700)
+            resolution = self.client.RuntimeResolution(
+                self.client.RuntimeStatus.OK,
+                path=executable,
+                bundle_path=Path(raw),
+                manifest_digest="a" * 64,
+                artifact_digest="b" * 64,
+                identity=self.client._identity(executable, executable=True),
+                wire=wire,
+            )
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ):
+                result = self.client.invoke(envelope=self._envelope(1000))
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.INVALID_REQUEST)
+        self.assertEqual(result.error, "unsupported_target_action")
+        self.assertEqual(
+            result.provenance,
+            {"wire_contract_sha256": wire.sha256, "diagnostics": {}},
+        )
+
     def test_post_exit_stdout_tail_is_appended_before_response_validation(self) -> None:
         class NoEventsSelector:
             def register(self, *_args: object) -> None:
@@ -709,7 +769,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
                     envelope=self._readiness_envelope(1000)
                 )
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
-        self.assertEqual(len(result.result["actions"]), 11)
+        self.assertEqual(len(result.result["actions"]), 12)
         self.assertNotIn("execution_receipt", result.provenance)
 
     def test_valid_response_between_one_and_four_mib_is_accepted(self) -> None:

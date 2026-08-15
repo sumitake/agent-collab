@@ -5,38 +5,42 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.1). The
-**v6.0.1 release** corrects provider-free readiness projection while preserving
-the v6 runtime, routing, and wire identities. The
-**[v6.0.1 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.1)**
+This public repository distributes **agent-collab** (v6.0.2). The
+**v6.0.2 release** makes request construction and typed route failures reliable,
+and carries the corrected 4.0.1 runtime adapters. The
+**[v6.0.2 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.2)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
-the system boundaries and lifecycle. This README and that handbook were
-reconciled against the exact published artifact during the mandatory final
-release documentation closeout; the package reference below remains the
-machine-operational contract. The dated
+the system boundaries and lifecycle. The package reference below is the
+machine-operational contract for this release candidate. The mandatory final
+documentation closeout records the exact published artifact and installation
+evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.1
+## What's new - v6.0.2
 
-- Provider-free runtime status now projects the public request into the exact
-  closed v6 readiness profile accepted by the co-packaged runtime.
-- Requests now carry closed provider-neutral `quality_profile` and
-  `effort_class` fields while provider-local adapters resolve current
-  executable capabilities without model or version pins.
-- Clean substantive results without sufficient native source evidence return
-  first-class ungrounded advisories instead of fabricated authority or generic
-  protocol failures.
-- Codex private-patch code generation expands the internal projection to 13
-  transport actions and 17 action/source pairs while the public semantic
-  surface remains provider-neutral.
-- Provider teardown, cleanup, and route-local degradation are bounded without
-  replay, fallback after possible inference, or a background broker.
-- Promotion uses a fixed three-call mechanical canary; exhaustive live semantic
-  matrices are no longer activation or publication authority.
+- Request skills now use descriptor-owned action/source contracts, including
+  the untargeted `context.documents.intent` action, instead of improvising
+  unsupported agent/action pairs.
+- Provider-free readiness carries the caller's closed quality and effort
+  profiles, so one maximum-profile snapshot does not falsely hide routes whose
+  own minimum effort is higher.
+- A valid typed runtime response remains authoritative independently of the
+  native process's shell exit convention; malformed coordinator input remains
+  a CLI failure.
+- Unsupported target/action combinations fail before inference as the
+  route-local `unsupported_target_action` result and do not imply global
+  provider or governance unavailability.
+- Runtime 4.0.1 preserves bounded cleanup while allowing Gemini a real
+  termination grace, and removes redundant Grok output-shape restrictions.
+  Safe substantive output without grounded evidence remains an ungrounded
+  advisory with no receipt or governance authority.
+- GLM and Kimi production routes are admitted through the existing OpenCode
+  selector and descriptor; no parallel registry, fallback, or replay path was
+  added.
 - The 4.7 engineering-process pack remains available as three self-executed
   skills: `decision-map`, `prototype`, and `architecture-review`.
 - The current `code-review` skill retains its spec-fidelity axis and
@@ -73,13 +77,14 @@ codex plugin add agent-collab@agent-collab
 
 ## Semantic actions
 
-Public requests select one of 11 logical actions:
+Public requests select one of 12 logical actions:
 
 ```text
 architecture.conceptual
 architecture.repository
 codegen.repository
 context.documents.extract
+context.documents.intent
 context.documents.reason
 context.repository.extract
 context.repository.reason
@@ -117,7 +122,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.0`;
+- provider runtime version `4.0.1`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`; and
 - no action-membership mirror in artifact entries.
