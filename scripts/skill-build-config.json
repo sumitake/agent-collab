@@ -20,8 +20,8 @@
     "tier_flash_resolves_to_claude": "an asynchronous Anthropic inbox review; never a synchronous invocation",
     "tier_pro_resolves_to_gemini": "an eligible managed Google-family reviewer with frontier quality and maximum effort",
     "tier_flash_resolves_to_gemini": "an eligible managed Google-family reviewer with economical quality and minimal effort",
-    "skill_version": "6.0.1",
-    "agent_runtime_status_defaults_block": "defaults:\n  quality_profile: economical\n  effort_class: minimal\n",
+    "skill_version": "6.0.2",
+    "agent_runtime_status_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
     "merge_resolve_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
     "merge_resolve_call_params": "with `quality_profile='frontier'` and `effort_class='maximum'`",
     "brainstorm_defaults_block": "defaults:\n  quality_profile: economical\n  effort_class: minimal\n",
@@ -55,7 +55,7 @@
     "visual_review_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
     "visual_review_call_params": "with no managed image route in this release",
     "orchestrate_defaults_block": "defaults:\n  quality_profile: standard\n  effort_class: standard\n",
-    "intent_check_defaults_block": "defaults:\n  quality_profile: economical\n  effort_class: minimal\n",
+    "intent_check_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
     "teamwork_defaults_block": "defaults:\n  quality_profile: standard\n  effort_class: standard\n",
     "consultant_agent": "an eligible managed consultant"
   }

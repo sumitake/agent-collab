@@ -15,16 +15,16 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.0.1\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 6.0.2\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.0.1")
+            self.assertEqual(manifest["version"], "6.0.2")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
         self.assertIn("## Coordinator request", text)
         self.assertIn("wire_contract_sha256", text)
-        self.assertIn("11 logical actions", text)
+        self.assertIn("12 logical actions", text)
         self.assertNotIn("runtime_setup.py", text)
 
     def test_review_skill_examples_are_accepted_closed_coordinator_requests(self) -> None:
@@ -87,10 +87,37 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             {
                 "operation": "readiness",
                 "request_id": "runtime-status-1",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
                 "timeout_ms": 120000,
             },
         )
         self.assertRegex(text.lower(), r"do not issue one\s+request per action")
+
+    def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
+        text = (
+            PLUGIN / "skills" / "intent-check" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        matches = re.findall(r"```json coordinator-request\n(.+?)\n```", text, re.S)
+        self.assertEqual(len(matches), 1)
+        request = json.loads(matches[0])
+        self.assertEqual(request["logical_action"], "context.documents.intent")
+        self.assertIsNone(request["target_agent"])
+        self.assertEqual(request["quality_profile"], "frontier")
+        self.assertEqual(request["effort_class"], "maximum")
+        self.assertEqual(
+            set(request),
+            {
+                "request_id",
+                "logical_action",
+                "quality_profile",
+                "effort_class",
+                "target_agent",
+                "timeout_ms",
+                "prompt",
+                "documents",
+            },
+        )
 
 
 if __name__ == "__main__":

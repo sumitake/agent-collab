@@ -255,6 +255,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "operation": "readiness",
             "request_id": "runtime-status-1",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
             "timeout_ms": 5000,
         }
         with mock.patch.object(
@@ -273,8 +275,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 "wire_contract_sha256": self.wire.sha256,
                 "request_id": "runtime-status-1",
                 "author_lineage": "openai",
-                "quality_profile": "standard",
-                "effort_class": "standard",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
                 "timeout_ms": 5000,
             },
         )
@@ -284,6 +286,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
             {
                 "operation": "readiness",
                 "request_id": "runtime-status-current-schema",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
                 "timeout_ms": 5000,
             },
             self.wire,
@@ -296,6 +300,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         request = {
             "operation": "readiness",
             "request_id": "runtime-status-2",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
             "timeout_ms": 5000,
         }
         unknown = self.host_policy.HostProfile(
@@ -309,6 +315,41 @@ class SemanticCoordinatorTests(unittest.TestCase):
             self.coordinator.validate_readiness_request(
                 {**request, "prompt": "probe"}, self.wire, self.profile
             )
+
+    def test_typed_runtime_route_error_is_not_a_cli_input_failure(self) -> None:
+        fake_client = types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            invoke=lambda **_kwargs: self.client.RuntimeResult(
+                self.client.RuntimeStatus.INVALID_REQUEST,
+                error="unsupported_target_action",
+                provenance={
+                    "wire_contract_sha256": self.wire.sha256,
+                    "diagnostics": {},
+                },
+            ),
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+        request = {
+            "request_id": "unsupported-route",
+            "logical_action": "architecture.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": "gemini",
+            "timeout_ms": 5000,
+            "prompt": "Review architecture.",
+            "repo_root": str(ROOT),
+        }
+        with mock.patch.object(
+            self.coordinator, "_load_runtime", return_value=fake_client
+        ), mock.patch.object(
+            self.coordinator, "_load_host_policy", return_value=fake_policy
+        ):
+            response, code = self.coordinator.process(request)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "invalid_request")
+        self.assertEqual(response["error_code"], "unsupported_target_action")
 
     def test_caller_cannot_assert_author_lineage(self) -> None:
         request = {

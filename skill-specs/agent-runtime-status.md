@@ -13,12 +13,13 @@ profile observations, then submit zero-inference readiness requests through
 `python3 "<plugin-root>/coordinator.py"` once for the complete action matrix:
 
 ```json coordinator-request
-{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
+{"operation":"readiness","request_id":"runtime-status-1","quality_profile":"frontier","effort_class":"maximum","timeout_ms":120000}
 ```
 
 The coordinator derives the author lineage from the current host. Do not add a
-prompt, source, provider, action, model, or version field, and do not issue one
-request per action.
+prompt, source, provider, action, target, model, or version field. Do not issue one request per action.
+Frontier quality with maximum effort admits every route
+whose own minimum is lower without guessing a per-action profile.
 
 Readiness is action- and source-mode-specific. Report logical agent, provider
 surface, lineage, shared pool, and observed executable/model/catalog identity
@@ -30,8 +31,8 @@ Preserve the runtime's typed status (`ok`, `unavailable`, `auth_error`,
 `output_limit`, or `provider_error`). Do not infer provider health from a
 coordinator delivery failure and do not invoke a provider as a readiness probe.
 
-Report all 11 logical actions, their eligible agent set, and readiness source.
-The 12 provider transport actions and source-qualified pairs are diagnostics
+Report all 12 logical actions, their eligible agent set, and readiness source.
+The 13 provider transport actions and source-qualified pairs are diagnostics
 derived from the co-packaged wire descriptor, not a second public routing
 surface. Claude remains host-owned asynchronous coordination and is never
 invented as a headless provider route.

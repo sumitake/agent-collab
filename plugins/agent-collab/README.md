@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.0.1**
+Current: **6.0.2**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -37,7 +37,7 @@ Every request contains exactly these common fields:
 
 - `request_id` is 1–128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `:`,
   and `-`.
-- `logical_action` is one of the 11 actions below.
+- `logical_action` is one of the 12 actions below.
 - `quality_profile` is `economical`, `standard`, or `frontier`.
 - `effort_class` is `minimal`, `standard`, or `maximum`.
   These fields express desired quality and depth; they never name a model.
@@ -60,6 +60,7 @@ architecture.conceptual
 architecture.repository
 codegen.repository
 context.documents.extract
+context.documents.intent
 context.documents.reason
 context.repository.extract
 context.repository.reason
@@ -77,19 +78,19 @@ Runtime status uses one separate closed request. It has no prompt or source and
 returns every logical action in one zero-inference snapshot:
 
 ```json
-{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}
+{"operation":"readiness","request_id":"runtime-status-1","quality_profile":"frontier","effort_class":"maximum","timeout_ms":120000}
 ```
 
 ## Direct runtime boundary
 
 The workspace build emits one schema-4 manifest with a positive-integer wire schema
-revision, runtime protocol 4, native contract 4, and provider runtime `4.0.0`. The
+revision, runtime protocol 4, native contract 4, and provider runtime `4.0.1`. The
 wire revision records compatible descriptor evolution; runtime protocol 4 remains the
 executable compatibility boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
-- the 11 logical actions;
+- the 12 logical actions;
 - the 13 source-collapsed provider transport actions;
 - the 17 currently valid action/source pairs;
 - semantic request and typed response schemas;
@@ -125,10 +126,12 @@ lane, setup command, fallback transport, or automatic whole-request replay.
 
 ## Results and authority
 
-Coordinator results preserve the runtime status. The closed runtime statuses
+Coordinator results preserve a valid typed runtime status independently of the
+native process's shell exit convention. Malformed coordinator input still exits
+as a CLI failure. The closed runtime statuses
 are `ok`, `advisory`, `invalid_request`, `unavailable`, `auth_error`, `quota_error`,
 `capability_error`, `protocol_error`, `provider_error`, `output_limit`,
-`timeout`, and `cancelled`.
+`timeout`, `cancelled`, and route-local `teardown_error`.
 
 A success contains the descriptor-defined artifact, runtime-owned evidence,
 one provider-neutral execution receipt, and bounded diagnostics. Observed
@@ -153,8 +156,8 @@ ineligible target fails typed rather than being silently replaced.
 `context` is the sole source-grounded synthesis and extraction surface. It
 supports exactly one source mode:
 
-- `context.documents.extract` or `context.documents.reason` with bounded inline
-  documents; or
+- `context.documents.extract`, `context.documents.intent`, or
+  `context.documents.reason` with bounded inline documents; or
 - `context.repository.extract` or `context.repository.reason` with one
   canonical repository root.
 
@@ -170,10 +173,10 @@ python3 "<plugin-root>/migration_doctor.py" --json
 
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
-11/13/17 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches the same signed
-one-shot runtime, performs no model inference, and may use one bounded catalog
-metadata process for each OpenCode lineage.
+12/13/17 counts. Active retired packages block direct routing; cache-only
+residue is reported separately. Runtime readiness launches this same 6.0.2
+package's signed one-shot runtime, performs no model inference, and may use one
+bounded catalog metadata process for each OpenCode lineage.
 
 ## Distribution boundary
 

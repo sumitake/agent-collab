@@ -20,6 +20,7 @@ LOGICAL_ACTIONS = (
     "architecture.repository",
     "codegen.repository",
     "context.documents.extract",
+    "context.documents.intent",
     "context.documents.reason",
     "context.repository.extract",
     "context.repository.reason",
@@ -34,6 +35,7 @@ LOGICAL_ACTION_SOURCE_MODES = {
     "architecture.repository": "repository",
     "codegen.repository": "repository",
     "context.documents.extract": "documents",
+    "context.documents.intent": "documents",
     "context.documents.reason": "documents",
     "context.repository.extract": "repository",
     "context.repository.reason": "repository",
@@ -239,9 +241,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.0.1")
-        self.assertEqual(codex["version"], "6.0.1")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.0.1")
+        self.assertEqual(plugin["version"], "6.0.2")
+        self.assertEqual(codex["version"], "6.0.2")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.0.2")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -343,7 +345,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.0.0"},
+            {"const": "4.0.1"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:

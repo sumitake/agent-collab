@@ -33,7 +33,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.0.0"
+PROVIDER_RUNTIME_VERSION = "4.0.1"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -306,9 +306,9 @@ def validate_wire_descriptor(
     actions_value = descriptor["logical_actions"]
     if (
         type(actions_value) is not list
-        or len(actions_value) != 11
+        or len(actions_value) != 12
         or any(type(action) is not str or not action for action in actions_value)
-        or len(set(actions_value)) != 11
+        or len(set(actions_value)) != 12
     ):
         raise ValueError("wire descriptor logical actions are invalid")
     action_source_modes = descriptor["logical_action_source_modes"]
@@ -1310,8 +1310,6 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             manifest_digest=resolution.manifest_digest,
             artifact_digest=resolution.artifact_digest,
         )
-    if returncode != 0:
-        return RuntimeResult(RuntimeStatus.PROVIDER_ERROR, error="direct runtime exited unsuccessfully", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     try:
         response = runtime_bundle.load_closed_json_object(
             stdout, max_bytes=MAX_RESPONSE_BYTES
@@ -1342,7 +1340,12 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             if response.get("wire_contract_sha256") != resolution.wire.sha256:
                 raise ValueError("runtime response wire discriminator differs")
     except (ValueError, runtime_bundle.BundleContractError, UnicodeError, RecursionError):
-        return RuntimeResult(RuntimeStatus.PROTOCOL_ERROR, error="direct runtime response is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+        status = (
+            RuntimeStatus.PROVIDER_ERROR
+            if returncode != 0
+            else RuntimeStatus.PROTOCOL_ERROR
+        )
+        return RuntimeResult(status, error="direct runtime response is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     if status is RuntimeStatus.OK:
         if operation == "readiness":
             return RuntimeResult(

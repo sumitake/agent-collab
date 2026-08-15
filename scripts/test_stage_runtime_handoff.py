@@ -59,7 +59,7 @@ def _manifest_bytes(payload: bytes) -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.0.0",
+            "provider_runtime_version": "4.0.1",
             "signing": {
                 "mode": "developer_id",
                 "identity": "Developer ID Application: Test Runtime (ABCDEFGHIJ)",

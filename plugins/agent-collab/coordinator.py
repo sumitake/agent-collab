@@ -28,7 +28,13 @@ _COMMON_KEYS = {
     "timeout_ms",
     "prompt",
 }
-_READINESS_KEYS = {"operation", "request_id", "timeout_ms"}
+_READINESS_KEYS = {
+    "operation",
+    "request_id",
+    "quality_profile",
+    "effort_class",
+    "timeout_ms",
+}
 
 
 def _reject_nonfinite(_value: str) -> None:
@@ -199,6 +205,8 @@ def validate_readiness_request(
     if document.get("operation") != "readiness":
         raise ValueError("coordinator readiness operation is invalid")
     request_id = document.get("request_id")
+    quality_profile = document.get("quality_profile")
+    effort_class = document.get("effort_class")
     timeout_ms = document.get("timeout_ms")
     if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
         raise ValueError("request_id is invalid")
@@ -208,6 +216,10 @@ def validate_readiness_request(
         or not 1 <= timeout_ms <= 600_000
     ):
         raise ValueError("timeout_ms is invalid")
+    if quality_profile not in {"economical", "standard", "frontier"}:
+        raise ValueError("quality_profile is invalid")
+    if effort_class not in {"minimal", "standard", "maximum"}:
+        raise ValueError("effort_class is invalid")
     author_lineage = getattr(host, "primary_family", "unknown")
     if (
         getattr(host, "identity_conflict", False)
@@ -221,8 +233,8 @@ def validate_readiness_request(
         "wire_contract_sha256": wire.sha256,
         "request_id": request_id,
         "author_lineage": author_lineage,
-        "quality_profile": "standard",
-        "effort_class": "standard",
+        "quality_profile": quality_profile,
+        "effort_class": effort_class,
         "timeout_ms": timeout_ms,
     }
 
@@ -302,7 +314,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         response["provenance"] = result.provenance
     if result.manifest_digest:
         response["manifest_digest"] = result.manifest_digest
-    return response, 0 if result.status not in {runtime.RuntimeStatus.INVALID_REQUEST, runtime.RuntimeStatus.PROTOCOL_ERROR} else 2
+    return response, 0
 
 
 def main() -> int:
