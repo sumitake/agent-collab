@@ -157,16 +157,25 @@ class ExecutionReceiptContractTests(unittest.TestCase):
                 request_id="runtime-status-1",
                 author_lineage="openai",
             )
-        value["result"]["actions"][0]["candidates"][0][
-            "implementation_fingerprint"
-        ] = "a" * 64
-        with self.assertRaises(ValueError):
+        candidate = value["result"]["actions"][0]["candidates"][0]
+        candidate.update(
+            {
+                "status": "temporarily_unavailable",
+                "implementation_fingerprint": "a" * 64,
+                "executable_content_sha256": "b" * 64,
+                "adapter_wire_sha256": "c" * 64,
+                "diagnostic_code": "protocol_capability_drift",
+            }
+        )
+        self.assertEqual(
             module.validate_readiness_response(
                 value,
                 wire,
                 request_id="runtime-status-1",
                 author_lineage="openai",
-            )
+            ),
+            value,
+        )
 
 
 if __name__ == "__main__":

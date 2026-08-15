@@ -1,6 +1,6 @@
 ---
 name: mlops-engineer
-version: 6.0.2
+version: 6.0.3
 description: Designs and hardens the infrastructure that carries models from training through production serving. Use when the user says "set up a model registry", "build the training pipeline", "deploy this model to production", or "/agent-collab:mlops-engineer." Also offer this proactively when a project trains or serves models but has no versioned artifacts, no promotion gate, or no monitoring for prediction quality.
 ---
 

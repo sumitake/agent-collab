@@ -5,10 +5,10 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.2). The
-**v6.0.2 release** makes request construction and typed route failures reliable,
-and carries the corrected 4.0.1 runtime adapters. The
-**[v6.0.2 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.2)**
+This public repository distributes **agent-collab** (v6.0.3). The
+**v6.0.3 release** keeps readiness failures route-local and activates the
+GLM and Kimi production review routes in runtime 4.0.2. The
+**[v6.0.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.3)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -20,26 +20,21 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.2
+## What's new - v6.0.3
 
-- Request skills now use descriptor-owned action/source contracts, including
-  the untargeted `context.documents.intent` action, instead of improvising
-  unsupported agent/action pairs.
-- Provider-free readiness carries the caller's closed quality and effort
-  profiles, so one maximum-profile snapshot does not falsely hide routes whose
-  own minimum effort is higher.
-- A valid typed runtime response remains authoritative independently of the
-  native process's shell exit convention; malformed coordinator input remains
-  a CLI failure.
-- Unsupported target/action combinations fail before inference as the
-  route-local `unsupported_target_action` result and do not imply global
-  provider or governance unavailability.
-- Runtime 4.0.1 preserves bounded cleanup while allowing Gemini a real
-  termination grace, and removes redundant Grok output-shape restrictions.
-  Safe substantive output without grounded evidence remains an ungrounded
-  advisory with no receipt or governance authority.
-- GLM and Kimi production routes are admitted through the existing OpenCode
-  selector and descriptor; no parallel registry, fallback, or replay path was
+- Non-ready readiness candidates may retain their safe signed runtime identity
+  and route-local diagnostic. The public client no longer turns that valid
+  state into a global protocol failure; ready candidates still require the
+  complete signed identity triple and no diagnostic.
+- Runtime 4.0.2 promotes GLM/Zhipu and Kimi/Moonshot review routes to active,
+  accepted production selection through the existing OpenCode selector and
+  generated routing descriptor.
+- Provider-free readiness remains profile-aware and proves zero model calls,
+  while a failed or ineligible route remains local to that action and target.
+- Safe substantive output without grounded evidence remains the existing
+  ungrounded advisory, with no artifact, receipt, governance verdict, retry,
+  replay, or substituted provider authority.
+- No parallel registry, selector, parser, fallback, or release service was
   added.
 - The 4.7 engineering-process pack remains available as three self-executed
   skills: `decision-map`, `prototype`, and `architecture-review`.
@@ -122,7 +117,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.1`;
+- provider runtime version `4.0.2`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`; and
 - no action-membership mirror in artifact entries.
