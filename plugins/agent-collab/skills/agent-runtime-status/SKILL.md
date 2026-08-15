@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 6.0.3
+version: 6.0.4
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Use when the user says "agent runtime status," "check agent runtime
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON readiness request on stdin. Before constructing it, read the **Coordinator readiness request schema** in `<plugin-root>/README.md`; never invent fields. The public coordinator re-observes the active host, validates the zero-inference readiness request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. This single call asks the runtime for the complete all-action readiness matrix and never invokes a model.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON readiness request on stdin. Before constructing it, read the **Coordinator readiness request schema** in `<plugin-root>/README.md`; never invent fields. The public coordinator re-observes the active host, validates the zero-inference readiness request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. This single call asks the runtime for the complete all-action readiness matrix and never invokes a model.
 
 # Agent runtime status
 

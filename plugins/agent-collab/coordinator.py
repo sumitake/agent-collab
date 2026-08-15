@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Closed semantic coordinator for the co-packaged direct runtime."""
+"""Closed semantic coordinator for the co-packaged direct runtime.
+
+The coordinator owns no route-health, exclusion, cooldown, or quarantine
+state. Every accepted call delegates once to the direct runtime, so an
+attempt-local failure cannot suppress a later caller-authorized request.
+"""
 
 from __future__ import annotations
 

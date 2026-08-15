@@ -190,6 +190,61 @@ class SemanticCoordinatorTests(unittest.TestCase):
             },
         )
 
+    def test_attempt_local_failures_do_not_quarantine_later_request(self) -> None:
+        request = {
+            "request_id": "attempt-1",
+            "logical_action": "context.documents.extract",
+            "quality_profile": "economical",
+            "effort_class": "minimal",
+            "target_agent": "gemini",
+            "timeout_ms": 5000,
+            "prompt": "Extract facts.",
+            "documents": [{"label": "a", "content": "one"}],
+        }
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda: self.profile)
+
+        for first_status in (
+            self.client.RuntimeStatus.PROVIDER_ERROR,
+            self.client.RuntimeStatus.TEARDOWN_ERROR,
+        ):
+            with self.subTest(first_status=first_status.value):
+                calls: list[object] = []
+                results = iter((
+                    self.client.RuntimeResult(
+                        first_status, error=f"runtime_{first_status.value}"
+                    ),
+                    self.client.RuntimeResult(
+                        self.client.RuntimeStatus.UNAVAILABLE,
+                        error="later_request_reached_runtime",
+                    ),
+                ))
+
+                def invoke(*, envelope):
+                    calls.append(envelope)
+                    return next(results)
+
+                fake_client = types.SimpleNamespace(
+                    RuntimeStatus=self.client.RuntimeStatus,
+                    runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+                    invoke=invoke,
+                )
+                with mock.patch.object(
+                    self.coordinator, "_load_runtime", return_value=fake_client
+                ), mock.patch.object(
+                    self.coordinator, "_load_host_policy", return_value=fake_policy
+                ):
+                    first, first_code = self.coordinator.process(request)
+                    second_request = {**request, "request_id": "attempt-2"}
+                    second, second_code = self.coordinator.process(second_request)
+
+                self.assertEqual(first_code, 0)
+                self.assertEqual(first["status"], first_status.value)
+                self.assertEqual(second_code, 0)
+                self.assertEqual(second["error_code"], "later_request_reached_runtime")
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(calls[0]["target_agent"], "gemini")
+                self.assertEqual(calls[1]["target_agent"], "gemini")
+
     def test_advisory_is_exit_zero_and_preserves_non_authoritative_metadata(self) -> None:
         advisory = {
             "authority": "advisory",

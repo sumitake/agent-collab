@@ -246,15 +246,46 @@ jobs:
                       # misclassified (round-1 cross-check Mod 1).
                       pause = ccu.startswith("BLOCKED") and (
                           "AUTH" in ccu or "QUOTA" in ccu)
-                      if not (recognized or in_flight or pause):
+                      # Explicit operator override: valid trace form only. Keep
+                      # separate from reviewer verdicts so it cannot imply
+                      # convergence or ordinary agent merge eligibility. The
+                      # delimiter set rejects suffix/look-alike forms.
+                      operator_bypassed = bool(re.match(
+                          r"^OPERATOR-BYPASSED(?:$|[ \t:—–-])", cc,
+                          re.IGNORECASE))
+                      if not (recognized or in_flight or pause or operator_bypassed):
                           tlabel = (f"tier {tier_int}" if tier_int
                                     else "an undeclared/unparseable tier")
                           errors.append(
                               f"cross_check '{cc[:40]}' is not valid for "
                               f"{tlabel}: Tier 2/3 require a real cross-check "
                               f"verdict / in-flight state / BLOCKED pause "
-                              f"sentinel — 'N/A'/'none'/empty is only valid at "
-                              f"Tier 1")
+                              f"sentinel / explicit OPERATOR-BYPASSED state — "
+                              f"'N/A'/'none'/empty is only valid at Tier 1")
+
+              _operator_reserved = data.get("operator_reserved", "").strip()
+              _yes = re.match(r"^YES\b", _operator_reserved, re.IGNORECASE)
+              _operator_detail = (
+                  _operator_reserved[_yes.end():]
+                  .strip()
+                  .lstrip(":—–-")
+                  .strip()
+                  if _yes
+                  else ""
+              )
+              if (
+                  data.get("cross_check")
+                  and re.match(
+                      r"^OPERATOR-BYPASSED(?:$|[ \t:—–-])",
+                      data["cross_check"].strip(),
+                      re.IGNORECASE,
+                  )
+                  and not _operator_detail
+              ):
+                  errors.append(
+                      "cross_check OPERATOR-BYPASSED requires operator_reserved "
+                      "to start with 'yes' and identify the operator-controlled path"
+                  )
 
           if errors:
               # `::error::` is the GitHub Actions annotation prefix — shows

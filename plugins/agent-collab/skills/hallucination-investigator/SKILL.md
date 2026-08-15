@@ -1,6 +1,6 @@
 ---
 name: hallucination-investigator
-version: 6.0.3
+version: 6.0.4
 description: Traces a specific wrong or fabricated AI output back to its root cause in context, retrieval, prompting, or tool use, and recommends the most targeted fix. Use when the user says "why is it hallucinating", "investigate this fabrication", "trace this wrong answer", or "/agent-collab:hallucination-investigator." Also offer this proactively when a factuality failure has been reported but no one has yet reconstructed why the system produced that specific wrong answer.
 ---
 

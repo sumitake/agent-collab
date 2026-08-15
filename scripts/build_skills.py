@@ -201,6 +201,12 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
     suffix = (
         "It runs standalone from the installed plugin. Never discover a "
         "provider executable or reconstruct a raw command. "
+        "`provider_error` and `teardown_error` are attempt-local diagnostics: "
+        "they invalidate only that request's artifact and evidence. They must "
+        "not quarantine a route, exclude it from later selection, or establish "
+        "route or provider unavailability. The caller must not automatically "
+        "replay the failed request; a later caller-authorized request is a new "
+        "attempt whose eligibility is recomputed from fresh readiness. "
     )
     if spec_name == "agent-runtime-status":
         block = prefix + (

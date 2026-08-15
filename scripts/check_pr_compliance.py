@@ -285,6 +285,15 @@ def parse_trace_block(body: str):
             data["cross_check"], data["tier"])
         if not cc_ok:
             errors.append(cc_reason)
+    if (
+        data.get("cross_check")
+        and _is_operator_bypassed(data["cross_check"])
+        and not _operator_reserved_declared(data.get("operator_reserved", ""))
+    ):
+        errors.append(
+            "cross_check OPERATOR-BYPASSED requires operator_reserved to "
+            "start with 'yes' and identify the operator-controlled path"
+        )
     return data, errors
 
 
@@ -330,6 +339,14 @@ _RECOGNIZED_VERDICT_RE = re.compile(
     r"\b(PROCEED|APPROVE|RECONSIDER|REQUEST[_\- ]CHANGES|"
     r"NEEDS[_\- ]DISCUSSION|FAILOVER)\b", re.IGNORECASE)
 
+# An explicit operator override is honest trace form but is NOT a reviewer
+# verdict and never creates ordinary self-merge eligibility. Keep this separate
+# from _RECOGNIZED_VERDICT_RE and _PROCEED_RE. The explicit delimiter set avoids
+# accepting look-alike continuations or invisible-format suffixes.
+_OPERATOR_BYPASSED_RE = re.compile(
+    r"^OPERATOR-BYPASSED(?:$|[ \t:—–-])", re.IGNORECASE)
+_OPERATOR_RESERVED_YES_RE = re.compile(r"^YES\b", re.IGNORECASE)
+
 
 def _parse_tier(tier_raw):
     """Extract the declared tier integer (1/2/3) from a raw `tier:` value.
@@ -359,6 +376,26 @@ def _is_pause_sentinel(value_upper: str) -> bool:
     merge."""
     return value_upper.startswith("BLOCKED") and (
         "AUTH" in value_upper or "QUOTA" in value_upper)
+
+
+def _is_operator_bypassed(value: str) -> bool:
+    """True only for the anchored explicit operator-override trace state.
+
+    This predicate validates process-honesty form. It is intentionally not used
+    by ``cross_check_ok`` and therefore cannot establish reviewer convergence or
+    ordinary agent merge eligibility.
+    """
+    return bool(_OPERATOR_BYPASSED_RE.match(value.strip()))
+
+
+def _operator_reserved_declared(value: str) -> bool:
+    """True when the trace names an operator-controlled path after ``yes``."""
+    normalized = value.strip()
+    match = _OPERATOR_RESERVED_YES_RE.match(normalized)
+    if match is None:
+        return False
+    detail = normalized[match.end():].strip().lstrip(":—–-").strip()
+    return bool(detail)
 
 
 def _last_deny_signal(value: str):
@@ -441,6 +478,13 @@ def cross_check_ok(cross_check: str, tier=None):
             f"require a real cross-check verdict, not an N/A exemption "
             f"(governance-gap fix 2026-06-01)")
 
+    # An operator bypass is valid trace form only. Reject it before scanning
+    # for verdict tokens so explanatory prose containing "PROCEED" cannot turn
+    # the bypass into ordinary agent self-merge eligibility.
+    if _is_operator_bypassed(value):
+        return False, ("cross_check records an operator bypass, not reviewer "
+                       "convergence; ordinary agent self-merge is ineligible")
+
     # auth-expiry + quota-failover fallback contracts: a BLOCKED cross-check
     # pauses the PR (awaiting operator). Anchored to a leading 'BLOCKED'.
     if _is_pause_sentinel(value_upper):
@@ -492,8 +536,11 @@ def cross_check_valid_for_tier(cross_check: str, tier_raw):
         APPROVE / RECONSIDER / REQUEST_CHANGES / NEEDS_DISCUSSION / FAILOVER), an
         in-flight token (PENDING / AWAITING / IN PROGRESS / PEER_REVIEW_OPEN /
         AWAITING-REVIEW / DEFERRED-AS-EQUIVALENT), or a codified pause sentinel (a
-        leading 'BLOCKED' naming AUTH or QUOTA). A bare 'N/A' / 'none' / empty /
-        unrecognized value is REJECTED: Tier 2/3 may not DECLINE the cross-check.
+        leading 'BLOCKED' naming AUTH or QUOTA), or the anchored explicit
+        OPERATOR-BYPASSED state. OPERATOR-BYPASSED is valid form only; it is not
+        reviewer convergence and never grants ordinary self-merge eligibility.
+        A bare 'N/A' / 'none' / empty / unrecognized value is REJECTED: Tier 2/3
+        may not silently DECLINE the cross-check.
 
     Governance-gap fix (2026-06-01): before this check, a Tier-3 PR could merge
     with cross_check 'N/A' because the validate-trace gate only verified the key
@@ -519,13 +566,17 @@ def cross_check_valid_for_tier(cross_check: str, tier_raw):
         return True, "cross_check records an in-flight cross-check state"
     if _is_pause_sentinel(value_upper):
         return True, "cross_check records a codified BLOCKED pause sentinel (auth/quota)"
+    if _is_operator_bypassed(value):
+        return True, ("cross_check records an explicit operator bypass "
+                      "(valid form only; not reviewer convergence)")
 
     tier_label = f"tier {tier_int}" if tier_int else "an undeclared/unparseable tier"
     return False, (
         f"cross_check '{value[:40]}' is not valid for {tier_label}: Tier 2/3 "
         f"require a real cross-check verdict (PROCEED / PROCEED-WITH-MODIFICATIONS "
-        f"/ APPROVE / ...), an in-flight state, or a codified BLOCKED pause "
-        f"sentinel — 'N/A' / 'none' / empty is only valid at Tier 1")
+        f"/ APPROVE / ...), an in-flight state, a codified BLOCKED pause "
+        f"sentinel, or an explicit OPERATOR-BYPASSED state — 'N/A' / 'none' / "
+        f"empty is only valid at Tier 1")
 
 
 # --- pure function (c): parse CODEOWNERS text into rules ---------------------
