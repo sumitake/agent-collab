@@ -30,6 +30,22 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.0.3 — 2026-08-15
+
+#### Fixed
+
+- Accept safe signed identity and route-local diagnostics on non-ready
+  readiness candidates without misclassifying the complete snapshot as a
+  global protocol failure.
+- Ship runtime 4.0.2 with GLM/Zhipu and Kimi/Moonshot review routes promoted
+  through the existing production selector and routing descriptor.
+
+#### Safety
+
+- Ready candidates still require complete signed identity with no diagnostic;
+  ungrounded output still carries no receipt or governance authority, and no
+  retry, replay, fallback, or second routing registry was added.
+
 ### agent-collab 6.0.2 — 2026-08-15
 
 #### Fixed
