@@ -30,6 +30,26 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.0.2 — 2026-08-15
+
+#### Fixed
+
+- Build intent and readiness requests from the co-packaged descriptor contract,
+  preserve valid typed route-local results independently of shell exit status,
+  and reject unsupported target/action pairs before inference.
+- Ship runtime 4.0.1 with bounded Gemini termination grace and deletion-first
+  Grok result projection: safe ungrounded text remains advisory, while malformed
+  envelopes, outside-source evidence, and uncertain cleanup still fail closed.
+- Admit the existing GLM and Kimi OpenCode routes to production selection without
+  adding a registry, selector, fallback, retry, daemon, or compatibility layer.
+
+#### Compliance
+
+- Public distribution remains under the PolyForm Strict License 1.0.0, with
+  commercial licensing administered by Osumi Consulting LLC.
+- Repository governance and validation follow `AGENTS.md`; no private provider
+  source, raw invocation recipe, credential, or fabricated authority is shipped.
+
 ### agent-collab 6.0.1 — 2026-08-13
 
 #### Fixed
@@ -41,6 +61,14 @@ The public changelog intentionally records policy, compatibility, and migration 
 - Keep the activation release gate bound to imported runtime bytes, manifest,
   signature, and notarization instead of treating a descriptive `runtime:`
   commit subject as authority to rebuild unchanged native bytes.
+
+### Changed
+
+- Close out the published v6.0.1 release by reconciling the architecture
+  status, lifecycle guidance, root README, package reference, generated
+  changelog evidence, exact release assets, and observed three-host
+  provider-free installation state. No package, runtime, manifest, wire, or
+  release byte changes.
 
 ### Fixed
 
