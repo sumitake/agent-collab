@@ -33,7 +33,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.0.1"
+PROVIDER_RUNTIME_VERSION = "4.0.2"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -982,13 +982,6 @@ def validate_readiness_response(
     actions = value["result"]["actions"]
     if [group["logical_action"] for group in actions] != sorted(wire.logical_actions):
         raise ValueError("runtime readiness actions are not the admitted ordered set")
-    sensitive = (
-        "implementation_fingerprint",
-        "executable_content_sha256",
-        "adapter_wire_sha256",
-        "observed_model",
-        "catalog_digest",
-    )
     for group in actions:
         logical_action = group["logical_action"]
         expected_source = wire.logical_action_source_modes[logical_action]
@@ -1001,11 +994,16 @@ def validate_readiness_response(
         for candidate in candidates:
             ready = candidate["status"] == "ready"
             if not ready:
-                if any(candidate[field] is not None for field in sensitive):
-                    raise ValueError("non-ready runtime identity is not redacted")
                 continue
             if (
-                any(candidate[field] is None for field in sensitive[:3])
+                any(
+                    candidate[field] is None
+                    for field in (
+                        "implementation_fingerprint",
+                        "executable_content_sha256",
+                        "adapter_wire_sha256",
+                    )
+                )
                 or candidate["diagnostic_code"] is not None
             ):
                 raise ValueError("ready runtime identity is incomplete")

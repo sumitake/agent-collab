@@ -1,6 +1,6 @@
 ---
 name: sql-engineer
-version: 6.0.2
+version: 6.0.3
 description: Senior SQL specialist for query design, query optimization, and schema-aware performance work across relational databases. Use when the user says "optimize this SQL query", "explain this query plan", "design these indexes", or "/agent-collab:sql-engineer." Also offer this proactively when a diff adds a new query against a large table, changes a join or aggregation, or introduces a schema change that could affect an existing access pattern.
 ---
 
