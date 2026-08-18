@@ -36,10 +36,27 @@ multi-round trace records the final operative verdict.
 
 ## Pull-request contract
 
-Every pull request contains exactly one compliance-trace block with these
-non-empty keys: `author`, `standing_directives`, `tier`, `cross_check`,
-`post_condition`, `mcp_coverage_gap`, `contributor_rights`, and
-`operator_reserved`.
+Every agent- or human-authored pull request contains exactly one
+compliance-trace block with these non-empty keys: `author`,
+`standing_directives`, `tier`, `cross_check`, `post_condition`,
+`mcp_coverage_gap`, `contributor_rights`, and `operator_reserved`.
+`dependabot[bot]`-authored PRs are the one exception (operator decision
+2026-08-17): they carry no trace; `compliance-trace.yml` merely exempts them,
+and a DEDICATED required context, `dependabot-gate.yml` (`pull_request_target`
++ `ref: main`), instead hard-fails unless every commit is shaped like a genuine
+Dependabot commit (author + web-flow committer + verified/valid signature) and
+a clean Codex review response bound to the current head exists
+(`scripts/dependabot_gate.py`). `dependabot-automerge.yml` (no checkout;
+mutations on `pull_request_target`) summons that review and arms native
+auto-merge, which completes only when the required checks, remaining CI, and
+review-thread resolution are all satisfied.
+
+Operator-accepted residual (2026-08-17): the commit filter is a shape/sanity
+check, not robust provenance — GitHub signs API-created commits with web-flow
+(verified/valid) for any caller, so a write-capable actor could craft a
+passing commit. The authoritative backstop is the head-bound Codex review (any
+injected commit changes the head and needs a fresh review of that content); the
+residual privilege is skipping the body-governance gates, not skipping review.
 
 `mcp_coverage_gap` remains the stable schema name. Record `NONE` when no
 external capability gap exists, or `FILED: <public issue URL>` when follow-up is

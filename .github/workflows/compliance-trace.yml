@@ -67,12 +67,35 @@ jobs:
     # Public pull requests never execute on a persistent self-hosted machine.
     runs-on: ubuntu-latest
     steps:
+      # dependabot[bot] carve-out (operator decision 2026-08-17, auto-merge
+      # enablement): Dependabot cannot author a compliance trace. Its PRs are
+      # governed by dependabot-automerge.yml (summoned Codex review + all-
+      # commits-Dependabot-authored guard) plus CI and required review-thread
+      # resolution. The job itself ALWAYS runs so this REQUIRED context reports
+      # success — a job-level skip of a required context would strand the PR
+      # (skip-deadlock class). Keyed on the immutable PR AUTHOR, not actor.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
+      # dependabot[bot] carve-out (operator decision 2026-08-17, auto-merge
+      # enablement): Dependabot cannot author a compliance trace, so the trace
+      # steps below are skipped for its PRs and this step keeps the job
+      # SUCCESS (a job-level skip of a required context is the skip-deadlock
+      # class). The actual merge-blocking Dependabot controls — commit
+      # authenticity + head-bound Codex clean-signal — deliberately do NOT
+      # live in this pull_request workflow: pull_request runs PR-controlled
+      # code, which a foreign commit could rewrite. They run in the
+      # BASE-CONTROLLED required context `dependabot-gate`
+      # (.github/workflows/dependabot-gate.yml, pull_request_target +
+      # ref: main).
+      - name: Dependabot exemption notice
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: echo "dependabot[bot]-authored PR — trace not required; enforced by the base-controlled dependabot-gate context"
       - name: Unit-test the compliance checker
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: python3 scripts/test_check_pr_compliance.py
       - name: Validate compliance-trace block in PR body
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

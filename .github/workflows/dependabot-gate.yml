@@ -1,0 +1,64 @@
+name: Dependabot gate
+
+# BASE-CONTROLLED required context for Dependabot auto-merge (operator
+# decision 2026-08-17; peer review Codex r2). pull_request workflows and their
+# default checkout run PR-controlled code, so a foreign commit on a Dependabot
+# branch could rewrite a pull_request-based gate and mint a passing required
+# context. This workflow closes that: pull_request_target runs THIS file from
+# the base branch, and the explicit `ref: main` checkout executes
+# scripts/dependabot_gate.py from trusted main — no PR code ever executes
+# here.
+#
+# The job ALWAYS runs (skipped required contexts strand the PR): for
+# non-Dependabot authors it no-ops success; for dependabot[bot] PRs it
+# hard-fails unless every commit is authentically Dependabot's (author +
+# web-flow committer + verified GitHub signature) and a clean Codex review
+# response bound to the CURRENT head exists. Codex silence, findings, or an
+# unrecognized response shape keep this red — the PR then takes the manual
+# review path. dependabot-automerge.yml summons the review and re-runs this
+# gate when the Codex comment lands.
+#
+# This context must be in the repo's required status checks. Branch protection
+# for BOTH agent-collab and agent-collab-workspace is centrally provisioned by
+# ONE script that lives in the workspace repo:
+# agent-collab-workspace/scripts/enable-branch-protection.sh (its PLUGIN_CHECKS
+# list carries `dependabot-gate`, added 2026-08-17). A clean checkout of THIS
+# repo alone does not contain that script by design — the operator runs it from
+# the workspace checkout to provision both repos. The arm job in
+# dependabot-automerge.yml is fail-closed: it will not enable auto-merge until
+# this context is actually required, so the un-provisioned state is safe.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependabot-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Non-Dependabot PR — gate not applicable
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        run: echo "not a dependabot[bot] PR — gate passes as not-applicable"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        with:
+          # TRUST BOUNDARY: always the base branch, never PR code.
+          ref: main
+      - name: Commit-authenticity + head-bound Codex clean-signal gates
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/test_dependabot_gate.py
+          python3 scripts/dependabot_gate.py commits
+          python3 scripts/dependabot_gate.py signal

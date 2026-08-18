@@ -1,0 +1,165 @@
+name: Dependabot auto-merge
+
+# Operator decision 2026-08-17: Dependabot PRs (all update types) auto-merge
+# once CI is green, review threads are resolved, and — enforced by the
+# dedicated required context `dependabot-gate.yml` — every commit is
+# authentically Dependabot's and a Codex review response bound to the current
+# head exists and is clean. Supersedes per-PR hand adjudication (operator
+# decision 2026-08-04, plugin PR #67).
+#
+# This workflow holds NO merge-blocking authority (that is dependabot-gate.yml).
+# It only:
+#   - summon: asks Codex for a review (open/reopen/synchronize/dispatch);
+#   - arm: enables native auto-merge — SAFE because dependabot-gate holds the
+#     merge until a head-bound clean Codex response exists (Codex silent → gate
+#     red → manual path), AND arm refuses to enable auto-merge unless
+#     dependabot-gate is provably a required context (Codex connector P1 —
+#     otherwise auto-merge would complete on the pre-existing required checks
+#     before the operator enables the gate). Armed on open/reopen AND
+#     synchronize so an already-open PR still arms; `gh pr merge --auto` is
+#     idempotent (Grok trust-model review, concern 4);
+#   - retrigger: clean Codex results are ISSUE COMMENTS (no review event), so
+#     this re-runs the failed dependabot-gate run when the comment lands. If a
+#     gate run is still in progress when the comment arrives, it WAITS
+#     (bounded) for that run to finish before rerunning, so the comment can't
+#     be missed by an in-flight run that then fails with nothing to retry it
+#     (Codex connector P2 race).
+#
+# TRUST MODEL (Grok trust-model review 2026-08-17): summon + arm run on
+# `pull_request_target`, NOT `pull_request`. Rationale is reliability, not a
+# 403 (summon empirically worked on pull_request): Dependabot `pull_request`
+# runs get a read-only token by default and depend on fragile permissions
+# elevation, whereas pull_request_target always has a writable token. SAFE
+# because these jobs check out NO code and interpolate only the integer PR
+# number + a fixed comment body — zero PR-controlled code executes (no
+# `actions/checkout`, no `uses: ./`, no title/body/head-ref interpolation).
+# Do NOT add a checkout to this workflow. `issue_comment` (retrigger) is
+# base-controlled and unrestricted. Permissions are scoped per job to the
+# minimum each needs.
+#
+# Keyed on the immutable PR AUTHOR (bracketed bot logins are unmintable);
+# authenticity beyond the login is dependabot-gate.yml's job.
+#
+# RUNNER PLACEMENT (deliberate): these jobs need the gh CLI, absent from the
+# self-hosted fleet/rhonas images (g4 gh-regression lesson). A few hosted
+# minutes per Dependabot PR.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to summon a Codex review on (summon only)"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  summon:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Summon Codex cross-check review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "@codex review"
+
+  arm:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # FAIL-CLOSED arming (Codex connector P1, 2026-08-17): enabling
+      # auto-merge only makes the merge wait for the CURRENTLY-required checks.
+      # If `dependabot-gate` is not yet a required context (operator has not
+      # run scripts/enable-branch-protection.sh), auto-merge would complete on
+      # the pre-existing required checks WITHOUT the gate. So arm ONLY when
+      # `dependabot-gate` is provably in main's required status checks; any
+      # API error or absence → do not arm (the PR just takes the normal path).
+      - name: Arm native auto-merge only if the dependabot-gate context is required
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          required=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" \
+            --jq '[.[] | select(.type=="required_status_checks")
+                        | .parameters.required_status_checks[].context]
+                   | any(. == "dependabot-gate")' 2>/dev/null || echo "false")
+          if [ "$required" != "true" ]; then
+            echo "::warning::dependabot-gate is not a required status check on main — refusing to arm auto-merge. Provision it by running scripts/enable-branch-protection.sh in the agent-collab-workspace repo (that one script centrally provisions the required contexts for BOTH agent-collab-workspace and agent-collab). No auto-merge enabled; PR takes the normal review path."
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
+
+  retrigger:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.issue.user.login == 'dependabot[bot]' &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Re-run the dependabot-gate run for the PR head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          set -uo pipefail
+          head=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&event=pull_request_target" \
+            --jq '[.workflow_runs[] | select(.name == "Dependabot gate")] | sort_by(.created_at) | last | .id // empty')
+          if [ -z "$run_id" ]; then
+            echo "no pull_request_target Dependabot-gate run found for $head — nothing to retrigger"
+            exit 0
+          fi
+          # RACE FIX (Codex connector P2): the clean Codex comment can arrive
+          # while a gate run is still IN PROGRESS. rerun-failed-jobs cannot rerun
+          # an in-progress run, and that run will fail (it read comments before
+          # this one) with nothing to retry it — leaving the gate stuck red.
+          # So WAIT (bounded) for the current run to finish before rerunning, so
+          # the rerun re-reads comments and sees this clean signal. Gate runs are
+          # ~30s; the gate's own timeout is 5m, so poll up to ~6m. Transient API
+          # errors are tolerated (loop continues); the job timeout is the hard
+          # backstop.
+          status=""
+          for _ in $(seq 1 36); do
+            status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.status' 2>/dev/null || echo "unknown")
+            [ "$status" = "completed" ] && break
+            sleep 10
+          done
+          if [ "$status" != "completed" ]; then
+            echo "::warning::gate run $run_id did not complete within the wait window (status=$status); leaving it — a later event or manual re-run is needed"
+            exit 0
+          fi
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion' 2>/dev/null || echo "unknown")
+          if [ "$conclusion" != "failure" ]; then
+            echo "gate run $run_id conclusion=$conclusion — no rerun needed"
+            exit 0
+          fi
+          # Completed+failed: rerun re-reads comments and picks up the clean
+          # signal. Best-effort (a concurrent rerun already in flight is fine).
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/rerun-failed-jobs" \
+            && echo "re-ran failed jobs of run $run_id" \
+            || echo "run $run_id could not be re-run (likely already re-running) — skipping"
