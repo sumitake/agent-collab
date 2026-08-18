@@ -102,11 +102,6 @@ MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_MEMBER_BYTES = 64 * 1024 * 1024
 MAX_ARCHIVE_TOTAL_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_DEPTH = 3
-RUNTIME_BUNDLE_REL = Path(
-    "plugins/agent-collab/runtime/darwin-arm64/agent-collab-runtime.bundle"
-)
-
-
 def _load_runtime_bundle_contract():
     path = REPO_ROOT / "plugins" / "agent-collab" / "runtime_bundle.py"
     spec = importlib.util.spec_from_file_location(
@@ -136,6 +131,10 @@ def _load_runtime_client_contract():
 
 
 runtime_client = _load_runtime_client_contract()
+RUNTIME_BUNDLE_RELS = frozenset(
+    Path("plugins/agent-collab") / path
+    for path in runtime_client.SUPPORTED_ARTIFACT_PATHS.values()
+)
 HARMLESS_AUDIT_LITERALS: dict[Path, frozenset[str | bytes]] = {
     Path("scripts/check-public-export-safety.py"): frozenset(
         EXECUTOR_SOURCES
@@ -583,14 +582,14 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         relative.relative_to(runtime_root)
     except ValueError:
         return None
-    if relative.parent != RUNTIME_BUNDLE_REL:
+    if relative.parent not in RUNTIME_BUNDLE_RELS:
         return Violation("unmanifested_runtime", str(relative))
 
     manifest_path = root / "plugins" / "agent-collab" / "runtime-manifest.json"
     signing_policy_path = root / "plugins" / "agent-collab" / "signing_policy.py"
     try:
         raw_manifest = manifest_path.read_bytes()
-        validated_item, _wire, manifest = runtime_client.parse_manifest_bytes(
+        _validated_items, _wire, manifest = runtime_client.parse_manifest_bytes(
             raw_manifest, require_artifact=True
         )
     except (OSError, ValueError, RecursionError):
@@ -611,7 +610,16 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
         pinned_values = []
     pinned_team = pinned_values[0] if len(pinned_values) == 1 else ""
 
-    item = manifest["artifacts"][0]
+    item = next(
+        (
+            candidate
+            for candidate in manifest["artifacts"]
+            if Path("plugins/agent-collab") / candidate["path"] == relative.parent
+        ),
+        None,
+    )
+    if not isinstance(item, dict):
+        return Violation("unmanifested_runtime", str(relative))
     signing = item.get("signing")
     try:
         records = runtime_bundle.validate_file_records(item.get("files"))
@@ -639,20 +647,26 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
             "size",
             "sha256",
             "provider_runtime_version",
+            "wire_contract_sha256",
             "signing",
             "files",
         }
         or item.get("platform") != "darwin"
-        or item.get("arch") != "arm64"
+        or (item.get("platform"), item.get("arch"))
+        not in runtime_client.SUPPORTED_ARTIFACT_PATHS
         or item.get("kind") != "standalone_bundle"
         or item.get("minimum_macos") != "14.0"
         or item.get("path")
-        != "runtime/darwin-arm64/agent-collab-runtime.bundle"
+        != runtime_client.SUPPORTED_ARTIFACT_PATHS.get(
+            (item.get("platform"), item.get("arch"))
+        )
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
         or item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION
+        or item.get("wire_contract_sha256") != manifest.get("wire_contract_sha256")
         or type(item.get("size")) is not int
         or item["size"] != sum(record["size"] for record in records)
         or item.get("sha256") != bundle_identity
+        or any(record["architecture"] != item.get("arch") for record in records)
         or not isinstance(signing, dict)
         or set(signing)
         != {
@@ -680,7 +694,7 @@ def _runtime_contract_violation(root: Path, relative: Path, data: bytes) -> Viol
     ):
         return Violation("unmanifested_runtime", str(relative))
 
-    bundle = root / RUNTIME_BUNDLE_REL
+    bundle = root / relative.parent
     by_name = {record["path"]: record for record in records}
     record = by_name.get(relative.name)
     try:
@@ -760,7 +774,7 @@ def scan_active_tree(root: Path) -> list[Violation]:
                 data,
                 str(relative),
                 renamed_candidate=relative.suffix not in {".py", ".md", ".json", ".yaml", ".yml"}
-                and relative.parent != RUNTIME_BUNDLE_REL,
+                and relative.parent not in RUNTIME_BUNDLE_RELS,
                 mask_path=relative,
             )
         )
@@ -785,8 +799,30 @@ def _git_bytes(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     )
 
 
+def _manifested_bundle_rels(root: Path) -> frozenset[Path]:
+    """Bundle directories exempt from renamed-executor candidacy in history mode.
+
+    History scans cannot validate a blob against the manifest of its own
+    commit, so the exemption is limited to bundle directories that carry a
+    manifested artifact row in the CURRENT committed manifest (arm64 today).
+    A prospective host directory with no shipped row stays fully scannable;
+    an unreadable manifest exempts nothing (strictest).
+    """
+    manifest_path = root / "plugins" / "agent-collab" / "runtime-manifest.json"
+    try:
+        entries, _wire = runtime_client.validate_manifest_document(
+            json.loads(manifest_path.read_bytes()), require_artifact=True
+        )
+    except (OSError, ValueError):
+        return frozenset()
+    return frozenset(
+        Path("plugins/agent-collab") / str(item["path"]) for item in entries
+    )
+
+
 def scan_history(root: Path) -> list[Violation]:
     root = root.resolve()
+    manifested_bundle_rels = _manifested_bundle_rels(root)
     violations: list[Violation] = []
     commits = _git(root, "rev-list", "--all")
     if commits.returncode != 0:
@@ -984,7 +1020,7 @@ def scan_history(root: Path) -> list[Violation]:
                     path
                     for path in scan_paths
                     if path.suffix not in {".py", ".md", ".json", ".yaml", ".yml"}
-                    and path.parent != RUNTIME_BUNDLE_REL
+                    and path.parent not in manifested_bundle_rels
                 ]
                 evidence_path = renamed_paths[0] if renamed_paths else scan_paths[0]
                 size = sizes.get(object_id)

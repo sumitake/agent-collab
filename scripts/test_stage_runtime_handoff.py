@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "stage_runtime_handoff.py"
 PLUGIN_REL = Path("plugins/agent-collab")
 BUNDLE_REL = Path("runtime/darwin-arm64/agent-collab-runtime.bundle")
+X86_BUNDLE_REL = Path("runtime/darwin-x86_64/agent-collab-runtime.bundle")
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_plugin_archive as archive_builder  # noqa: E402
@@ -59,7 +60,8 @@ def _manifest_bytes(payload: bytes) -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.0.2",
+            "provider_runtime_version": "4.0.4",
+            "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
                 "identity": "Developer ID Application: Test Runtime (ABCDEFGHIJ)",
@@ -91,6 +93,67 @@ def _make_handoff(parent: Path, name: str, payload: bytes) -> tuple[Path, bytes]
     manifest_path.chmod(0o400)
     root.chmod(0o755)
     return root, manifest
+
+
+def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, bytes]]:
+    root = parent / name
+    payloads = {BUNDLE_REL: b"arm runtime", X86_BUNDLE_REL: b"x86 runtime"}
+    base = json.loads(
+        (ROOT / PLUGIN_REL / "runtime-manifest.json").read_text(encoding="utf-8")
+    )
+    artifacts = []
+    for bundle, payload in payloads.items():
+        architecture = "x86_64" if bundle == X86_BUNDLE_REL else "arm64"
+        record = {
+            "architecture": architecture,
+            "install_mode": 0o500,
+            "macho_type": "executable",
+            "minimum_macos": "14.0",
+            "path": "agent-collab-runtime",
+            "role": "entrypoint",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "signing_profile": "production_developer_id",
+            "size": len(payload),
+        }
+        artifacts.append(
+            {
+                "platform": "darwin",
+                "arch": architecture,
+                "kind": "standalone_bundle",
+                "minimum_macos": "14.0",
+                "path": bundle.as_posix(),
+                "entrypoint": "agent-collab-runtime",
+                "size": len(payload),
+                "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
+                    [record]
+                ),
+                "provider_runtime_version": "4.0.4",
+                "wire_contract_sha256": base["wire_contract_sha256"],
+                "signing": {
+                    "mode": "developer_id",
+                    "identity": "Developer ID Application: Test Runtime (ABCDEFGHIJ)",
+                    "team_id": "ABCDEFGHIJ",
+                    "require_notarization": True,
+                    "hardened_runtime": True,
+                    "secure_timestamp": True,
+                },
+                "files": [record],
+            }
+        )
+        leaf = root / bundle
+        leaf.mkdir(parents=True)
+        (leaf / "agent-collab-runtime").write_bytes(payload)
+        (leaf / "agent-collab-runtime").chmod(0o500)
+        leaf.chmod(0o500)
+    base["artifacts"] = artifacts
+    manifest = (
+        json.dumps(base, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        + "\n"
+    ).encode("ascii")
+    (root / "runtime-manifest.json").write_bytes(manifest)
+    (root / "runtime-manifest.json").chmod(0o400)
+    root.chmod(0o755)
+    return root, payloads
 
 
 def _make_repo(parent: Path) -> tuple[Path, Path, bytes]:
@@ -136,6 +199,18 @@ def _verified_stage(importer, handoff: Path, *, repo_root: Path) -> None:
 
 
 class StageRuntimeHandoffTests(unittest.TestCase):
+    def test_matrix_handoff_stages_both_architectures_as_one_unit(self):
+        importer = _load_importer()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo, plugin, _old_manifest = _make_repo(root)
+            handoff, payloads = _make_matrix_handoff(root, "matrix")
+            _verified_stage(importer, handoff, repo_root=repo)
+            for bundle, payload in payloads.items():
+                self.assertEqual(
+                    (plugin / bundle / "agent-collab-runtime").read_bytes(), payload
+                )
+
     def test_valid_first_import_stages_only_manifest_and_runtime(self) -> None:
         self.assertTrue(SCRIPT.is_file(), "production handoff importer is missing")
         importer = _load_importer()

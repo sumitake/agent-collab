@@ -1,6 +1,6 @@
 ---
 name: simulate-user
-version: 6.0.4
+version: 6.0.5
 defaults:
   quality_profile: economical
   effort_class: minimal

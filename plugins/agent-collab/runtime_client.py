@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import MappingProxyType
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping, Sequence
 
@@ -33,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.0.2"
+PROVIDER_RUNTIME_VERSION = "4.0.4"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -42,8 +43,16 @@ MAX_TIMEOUT_MS = 86_400_000
 TERM_GRACE_SECONDS = 0.5
 PROCESS_CLEANUP_RESERVE_SECONDS = TERM_GRACE_SECONDS * 4
 EXPECTED_MINIMUM_MACOS = "14.0"
-RUNTIME_BUNDLE_PATH = "runtime/darwin-arm64/agent-collab-runtime.bundle"
 RUNTIME_ENTRYPOINT = "agent-collab-runtime"
+SUPPORTED_ARTIFACT_PATHS = MappingProxyType({
+    ("darwin", "arm64"): "runtime/darwin-arm64/agent-collab-runtime.bundle",
+    ("darwin", "x86_64"): "runtime/darwin-x86_64/agent-collab-runtime.bundle",
+})
+_HOST_ARCH_ALIASES = {
+    "arm64": "arm64",
+    "aarch64": "arm64",
+    "x86_64": "x86_64",
+}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,2}$")
@@ -441,7 +450,9 @@ def _path_beneath(root: Path, relative: object) -> Path | None:
     return None
 
 
-def _manifest_entry(data: object) -> tuple[Mapping[str, Any] | None, WireDescriptorSnapshot | None, str]:
+def _manifest_entries(
+    data: object,
+) -> tuple[tuple[Mapping[str, Any], ...] | None, WireDescriptorSnapshot | None, str]:
     keys = {
         "schema_version",
         "protocol_version",
@@ -467,11 +478,10 @@ def _manifest_entry(data: object) -> tuple[Mapping[str, Any] | None, WireDescrip
     except ValueError as exc:
         return None, None, str(exc)
     artifacts = data["artifacts"]
-    if type(artifacts) is not list or len(artifacts) > 1:
+    if type(artifacts) is not list or len(artifacts) > len(SUPPORTED_ARTIFACT_PATHS):
         return None, wire, "runtime manifest artifact cardinality is invalid"
     if not artifacts:
-        return {}, wire, "runtime artifact is absent"
-    item = artifacts[0]
+        return (), wire, "runtime artifact is absent"
     required = {
         "platform",
         "arch",
@@ -482,26 +492,10 @@ def _manifest_entry(data: object) -> tuple[Mapping[str, Any] | None, WireDescrip
         "size",
         "sha256",
         "provider_runtime_version",
+        "wire_contract_sha256",
         "signing",
         "files",
     }
-    if type(item) is not dict or set(item) != required:
-        return None, wire, "runtime artifact record is not closed"
-    if not (
-        item["platform"] == "darwin"
-        and item["arch"] == "arm64"
-        and item["kind"] == "standalone_bundle"
-        and item["minimum_macos"] == EXPECTED_MINIMUM_MACOS
-        and item["path"] == RUNTIME_BUNDLE_PATH
-        and item["entrypoint"] == RUNTIME_ENTRYPOINT
-        and _exact_int(item["size"])
-        and 0 < item["size"] <= runtime_bundle.MAX_BUNDLE_BYTES
-        and type(item["sha256"]) is str
-        and _SHA256_RE.fullmatch(item["sha256"])
-        and item["provider_runtime_version"] == PROVIDER_RUNTIME_VERSION
-    ):
-        return None, wire, "runtime artifact identity is invalid"
-    signing = item["signing"]
     signing_keys = {
         "mode",
         "identity",
@@ -510,56 +504,86 @@ def _manifest_entry(data: object) -> tuple[Mapping[str, Any] | None, WireDescrip
         "hardened_runtime",
         "secure_timestamp",
     }
-    if (
-        type(signing) is not dict
-        or set(signing) != signing_keys
-        or signing["mode"] != "developer_id"
-        or type(signing["identity"]) is not str
-        or type(signing["team_id"]) is not str
-        or _TEAM_ID_RE.fullmatch(signing["team_id"]) is None
-        or signing["require_notarization"] is not True
-        or signing["hardened_runtime"] is not True
-        or signing["secure_timestamp"] is not True
-    ):
-        return None, wire, "runtime signing policy is invalid"
-    try:
-        files = runtime_bundle.validate_file_records(item["files"])
-    except runtime_bundle.BundleContractError as exc:
-        return None, wire, str(exc)
-    entrypoints = [record for record in files if record["role"] == "entrypoint"]
-    if len(entrypoints) != 1 or entrypoints[0]["path"] != RUNTIME_ENTRYPOINT:
-        return None, wire, "runtime entrypoint membership is invalid"
-    normalized = dict(item)
-    normalized["files"] = files
-    return normalized, wire, ""
+    normalized_entries = []
+    seen_hosts: set[tuple[str, str]] = set()
+    for item in artifacts:
+        if type(item) is not dict or set(item) != required:
+            return None, wire, "runtime artifact record is not closed"
+        if type(item["platform"]) is not str or type(item["arch"]) is not str:
+            return None, wire, "runtime artifact identity is invalid"
+        host = (item["platform"], item["arch"])
+        if host in seen_hosts:
+            return None, wire, "runtime manifest has a duplicate host row"
+        seen_hosts.add(host)
+        if not (
+            host in SUPPORTED_ARTIFACT_PATHS
+            and item["kind"] == "standalone_bundle"
+            and item["minimum_macos"] == EXPECTED_MINIMUM_MACOS
+            and item["path"] == SUPPORTED_ARTIFACT_PATHS[host]
+            and item["entrypoint"] == RUNTIME_ENTRYPOINT
+            and _exact_int(item["size"])
+            and 0 < item["size"] <= runtime_bundle.MAX_BUNDLE_BYTES
+            and type(item["sha256"]) is str
+            and _SHA256_RE.fullmatch(item["sha256"])
+            and item["provider_runtime_version"] == PROVIDER_RUNTIME_VERSION
+        ):
+            return None, wire, "runtime artifact identity is invalid"
+        if item["wire_contract_sha256"] != wire.sha256:
+            return None, wire, "runtime artifact wire contract is inconsistent"
+        signing = item["signing"]
+        if (
+            type(signing) is not dict
+            or set(signing) != signing_keys
+            or signing["mode"] != "developer_id"
+            or type(signing["identity"]) is not str
+            or type(signing["team_id"]) is not str
+            or _TEAM_ID_RE.fullmatch(signing["team_id"]) is None
+            or signing["require_notarization"] is not True
+            or signing["hardened_runtime"] is not True
+            or signing["secure_timestamp"] is not True
+        ):
+            return None, wire, "runtime signing policy is invalid"
+        try:
+            files = runtime_bundle.validate_file_records(item["files"])
+        except runtime_bundle.BundleContractError as exc:
+            return None, wire, str(exc)
+        if any(record["architecture"] != item["arch"] for record in files):
+            return None, wire, "runtime artifact member architecture is invalid"
+        entrypoints = [record for record in files if record["role"] == "entrypoint"]
+        if len(entrypoints) != 1 or entrypoints[0]["path"] != RUNTIME_ENTRYPOINT:
+            return None, wire, "runtime entrypoint membership is invalid"
+        normalized = dict(item)
+        normalized["files"] = files
+        normalized_entries.append(normalized)
+    return tuple(normalized_entries), wire, ""
 
 
 def validate_manifest_document(
     data: object, *, require_artifact: bool = False
-) -> tuple[Mapping[str, Any] | None, WireDescriptorSnapshot]:
+) -> tuple[tuple[Mapping[str, Any], ...], WireDescriptorSnapshot]:
     """Validate a manifest document for public archive/release consumers."""
 
-    entry, wire, error = _manifest_entry(data)
-    if entry is None or wire is None or (require_artifact and not entry):
+    entries, wire, error = _manifest_entries(data)
+    if entries is None or wire is None or (require_artifact and not entries):
         raise ValueError(error or "runtime artifact is required")
-    return (entry or None), wire
+    return entries, wire
 
 
 def parse_manifest_bytes(
     raw: bytes, *, require_artifact: bool = False
-) -> tuple[Mapping[str, Any] | None, WireDescriptorSnapshot, Mapping[str, Any]]:
+) -> tuple[tuple[Mapping[str, Any], ...], WireDescriptorSnapshot, Mapping[str, Any]]:
     """Strictly decode and validate the exact bytes every manifest consumer uses."""
 
     try:
         document = runtime_bundle.load_closed_json_object(
             raw, max_bytes=MAX_MANIFEST_BYTES
         )
-        artifact, wire = validate_manifest_document(
+        artifacts, wire = validate_manifest_document(
             document, require_artifact=require_artifact
         )
     except runtime_bundle.BundleContractError as exc:
         raise ValueError("runtime manifest is unreadable") from exc
-    return artifact, wire, document
+    return artifacts, wire, document
 
 
 def _inspect_member(path: Path, record: Mapping[str, Any], signing: Mapping[str, Any]) -> dict[str, str]:
@@ -585,7 +609,11 @@ def _inspect_member(path: Path, record: Mapping[str, Any], signing: Mapping[str,
     except (OSError, subprocess.SubprocessError) as exc:
         raise runtime_bundle.BundleContractError("runtime signature inspection failed") from exc
     detail_text = details.stdout + details.stderr
-    if arch.returncode or arch.stdout.strip().split() != ["arm64"] or load.returncode:
+    if (
+        arch.returncode
+        or arch.stdout.strip().split() != [record["architecture"]]
+        or load.returncode
+    ):
         raise runtime_bundle.BundleContractError("runtime Mach-O identity is invalid")
     if verify.returncode or details.returncode:
         raise runtime_bundle.BundleContractError("runtime Developer ID signature is invalid")
@@ -616,7 +644,7 @@ def _inspect_member(path: Path, record: Mapping[str, Any], signing: Mapping[str,
         raise runtime_bundle.BundleContractError("runtime minimum macOS identity changed")
     return {
         "macho_type": record["macho_type"],
-        "architecture": "arm64",
+        "architecture": record["architecture"],
         "minimum_macos": record["minimum_macos"],
         "signing_profile": "production_developer_id",
     }
@@ -635,10 +663,36 @@ def runtime_contract_snapshot() -> tuple[WireDescriptorSnapshot | None, str, str
     raw, _identity_value = loaded
     digest = hashlib.sha256(raw).hexdigest()
     try:
-        artifact, wire, _data = parse_manifest_bytes(raw)
+        artifacts, wire, _data = parse_manifest_bytes(raw)
     except ValueError as exc:
         return None, digest, str(exc)
-    return wire, digest, "" if artifact is not None else "runtime artifact is absent"
+    return wire, digest, "" if artifacts else "runtime artifact is absent"
+
+
+def _select_artifact(
+    artifacts: Sequence[Mapping[str, Any]], *, system: str, machine: str
+) -> tuple[Mapping[str, Any] | None, RuntimeStatus, str]:
+    """Select exactly one closed manifest row from local OS-provided host facts."""
+
+    if not artifacts:
+        return None, RuntimeStatus.UNAVAILABLE, "runtime artifact is absent"
+    if type(system) is not str or type(machine) is not str:
+        return None, RuntimeStatus.PLATFORM_UNSUPPORTED, "runtime host is unsupported"
+    normalized_system = system.casefold()
+    normalized_arch = _HOST_ARCH_ALIASES.get(machine.casefold())
+    host = (normalized_system, normalized_arch)
+    if normalized_arch is None or host not in SUPPORTED_ARTIFACT_PATHS:
+        return None, RuntimeStatus.PLATFORM_UNSUPPORTED, "runtime host is unsupported"
+    matches = [
+        artifact
+        for artifact in artifacts
+        if (artifact["platform"], artifact["arch"]) == host
+    ]
+    if not matches:
+        return None, RuntimeStatus.PLATFORM_UNSUPPORTED, "runtime host has no artifact"
+    if len(matches) != 1:
+        return None, RuntimeStatus.MANIFEST_INVALID, "runtime host row is ambiguous"
+    return matches[0], RuntimeStatus.OK, ""
 
 
 def resolve_runtime() -> RuntimeResolution:
@@ -650,13 +704,16 @@ def resolve_runtime() -> RuntimeResolution:
     raw, manifest_identity = loaded
     manifest_digest = hashlib.sha256(raw).hexdigest()
     try:
-        entry, wire, _data = parse_manifest_bytes(raw)
+        artifacts, wire, _data = parse_manifest_bytes(raw)
     except ValueError:
         return RuntimeResolution(RuntimeStatus.MANIFEST_INVALID, manifest_digest=manifest_digest, error="runtime manifest is unreadable")
+    entry, status, error = _select_artifact(
+        artifacts, system=platform.system(), machine=platform.machine()
+    )
     if entry is None:
-        return RuntimeResolution(RuntimeStatus.UNAVAILABLE, manifest_digest=manifest_digest, wire=wire, error="runtime artifact is absent")
-    if platform.system().lower() != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
-        return RuntimeResolution(RuntimeStatus.PLATFORM_UNSUPPORTED, manifest_digest=manifest_digest, wire=wire, error="this release supports Darwin arm64 only")
+        return RuntimeResolution(
+            status, manifest_digest=manifest_digest, wire=wire, error=error
+        )
     root = PLUGIN_ROOT.resolve(strict=True)
     bundle_path = _path_beneath(root, entry["path"])
     if bundle_path is None or _identity(bundle_path, directory=True) is None:

@@ -87,34 +87,32 @@ def _directory_identity(path: Path, *, label: str) -> Path:
 
 
 def _expected_handoff_tree(
-    records: tuple[dict[str, object], ...],
+    bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...],
 ) -> tuple[dict[str, int], dict[str, int]]:
     """Derive sealed membership from the existing artifact and file descriptors."""
 
-    bundle = archive_builder.RUNTIME_BUNDLE_REL
     directories: dict[str, int] = {}
-    current = Path()
-    for part in bundle.parts:
-        current /= part
-        directories[current.as_posix()] = (
-            archive_builder.runtime_bundle.INSTALL_MODE
-            if current == bundle
-            else SOURCE_DIRECTORY_MODE
-        )
     files = {MANIFEST_NAME: SEALED_MANIFEST_MODE}
-    files.update(
-        {
+    for bundle, records in bundles:
+        current = Path()
+        for part in bundle.parts:
+            current /= part
+            directories[current.as_posix()] = (
+                archive_builder.runtime_bundle.INSTALL_MODE
+                if current == bundle
+                else SOURCE_DIRECTORY_MODE
+            )
+        files.update({
             (bundle / str(record["path"])).as_posix(): int(record["install_mode"])
             for record in records
-        }
-    )
+        })
     return directories, files
 
 
 def _validate_handoff_tree(
-    root: Path, records: tuple[dict[str, object], ...]
+    root: Path, bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...]
 ) -> None:
-    expected_directories, expected_files = _expected_handoff_tree(records)
+    expected_directories, expected_files = _expected_handoff_tree(bundles)
     try:
         root_info = root.lstat()
     except OSError as exc:
@@ -159,25 +157,38 @@ def _validate_handoff_tree(
 
 def _load_handoff(
     root: Path,
-) -> tuple[bytes, tuple[dict[str, object], ...], dict[str, bytes]]:
+) -> tuple[
+    bytes,
+    tuple[tuple[Path, tuple[dict[str, object], ...]], ...],
+    dict[str, bytes],
+]:
     manifest_bytes = archive_builder._read_manifest_bytes(root)
     manifest = archive_builder._parse_manifest(manifest_bytes)
     artifacts = manifest.get("artifacts")
     if manifest.get("channel") != "production" or not isinstance(artifacts, list):
         _raise("runtime handoff manifest is not production activation")
-    if len(artifacts) != 1:
-        _raise("runtime handoff requires exactly one production artifact")
-    records = archive_builder._validate_activation_manifest(artifacts[0])
-    _validate_handoff_tree(root, records)
-    bundle = root / archive_builder.RUNTIME_BUNDLE_REL
-    archive_builder._validate_activation_bundle_tree(
-        bundle, records, require_install_mode=True
+    if not 1 <= len(artifacts) <= archive_builder.MAX_RUNTIME_ARTIFACTS:
+        _raise("runtime handoff has an invalid production artifact count")
+    bundles = tuple(
+        archive_builder._validate_activation_manifest(
+            item, wire_contract_sha256=manifest.get("wire_contract_sha256")
+        )
+        for item in artifacts
     )
-    payloads = archive_builder._read_runtime_payloads(
-        bundle, records, require_install_mode=True
-    )
-    _validate_handoff_tree(root, records)
-    return manifest_bytes, records, payloads
+    _validate_handoff_tree(root, bundles)
+    payloads: dict[str, bytes] = {}
+    for bundle_rel, records in bundles:
+        bundle = root / bundle_rel
+        archive_builder._validate_activation_bundle_tree(
+            bundle, records, require_install_mode=True
+        )
+        payloads.update(
+            archive_builder._read_runtime_payloads(
+                bundle_rel, bundle, records, require_install_mode=True
+            )
+        )
+    _validate_handoff_tree(root, bundles)
+    return manifest_bytes, bundles, payloads
 
 
 def _read_existing_manifest(plugin: Path) -> tuple[bytes, int]:
@@ -201,7 +212,7 @@ def _stage_transaction(
     transaction: Path,
     plugin: Path,
     manifest_bytes: bytes,
-    records: tuple[dict[str, object], ...],
+    bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...],
     payloads: dict[str, bytes],
     *,
     old_manifest: bytes,
@@ -233,32 +244,40 @@ def _stage_transaction(
     staged_runtime = verification_plugin / "runtime"
     staged_runtime.mkdir(mode=SOURCE_DIRECTORY_MODE)
     staged_runtime.chmod(SOURCE_DIRECTORY_MODE)
-    staged_bundle = staged_runtime
-    for part in archive_builder.RUNTIME_BUNDLE_REL.relative_to("runtime").parts:
-        staged_bundle /= part
-        staged_bundle.mkdir(mode=SOURCE_DIRECTORY_MODE)
+    staged_bundles: list[tuple[Path, tuple[dict[str, object], ...]]] = []
+    for bundle_rel, records in bundles:
+        staged_bundle = verification_plugin / bundle_rel
+        staged_bundle.mkdir(parents=True, mode=SOURCE_DIRECTORY_MODE)
         staged_bundle.chmod(SOURCE_DIRECTORY_MODE)
-    for record in records:
-        relative = archive_builder.RUNTIME_BUNDLE_REL / str(record["path"])
-        _write_file(
-            staged_runtime / relative.relative_to("runtime"),
-            payloads[relative.as_posix()],
-            mode=SOURCE_FILE_MODE,
-        )
+        staged_bundles.append((staged_bundle, records))
+        for record in records:
+            relative = bundle_rel / str(record["path"])
+            _write_file(
+                verification_plugin / relative,
+                payloads[relative.as_posix()],
+                mode=SOURCE_FILE_MODE,
+            )
     staged_manifest = verification_plugin / MANIFEST_NAME
     _write_file(staged_manifest, manifest_bytes, mode=SOURCE_MANIFEST_MODE)
     backup_manifest = transaction / "old-manifest"
     _write_file(backup_manifest, old_manifest, mode=old_manifest_mode)
-    archive_builder._validate_activation_bundle_tree(
-        staged_bundle, records, require_install_mode=False
-    )
-    rebound = archive_builder._read_runtime_payloads(
-        staged_bundle, records, require_install_mode=False
-    )
+    rebound: dict[str, bytes] = {}
+    for (bundle_rel, records), (staged_bundle, _same_records) in zip(
+        bundles, staged_bundles, strict=True
+    ):
+        archive_builder._validate_activation_bundle_tree(
+            staged_bundle, records, require_install_mode=False
+        )
+        rebound.update(
+            archive_builder._read_runtime_payloads(
+                bundle_rel, staged_bundle, records, require_install_mode=False
+            )
+        )
     if rebound != payloads or staged_manifest.read_bytes() != manifest_bytes:
         _raise("staged runtime handoff changed before publication")
-    _fsync_directory(staged_bundle)
-    _fsync_directory(staged_bundle.parent)
+    for staged_bundle, _records in staged_bundles:
+        _fsync_directory(staged_bundle)
+        _fsync_directory(staged_bundle.parent)
     _fsync_directory(staged_runtime)
     _fsync_directory(verification_plugin)
     _fsync_directory(verification_root)
@@ -289,7 +308,7 @@ def stage_runtime_handoff(handoff_dir: Path, *, repo_root: Path = REPO_ROOT) -> 
     plugin = _directory_identity(repo / PLUGIN_REL, label="destination plugin")
     if handoff == plugin or handoff.is_relative_to(plugin) or plugin.is_relative_to(handoff):
         _raise("runtime handoff and destination plugin must be separate trees")
-    manifest_bytes, records, payloads = _load_handoff(handoff)
+    manifest_bytes, bundles, payloads = _load_handoff(handoff)
     old_manifest, old_manifest_mode = _read_existing_manifest(plugin)
     destination_runtime = plugin / "runtime"
     had_runtime = destination_runtime.exists() or destination_runtime.is_symlink()
@@ -313,7 +332,7 @@ def stage_runtime_handoff(handoff_dir: Path, *, repo_root: Path = REPO_ROOT) -> 
             transaction,
             plugin,
             manifest_bytes,
-            records,
+            bundles,
             payloads,
             old_manifest=old_manifest,
             old_manifest_mode=old_manifest_mode,
@@ -328,11 +347,10 @@ def stage_runtime_handoff(handoff_dir: Path, *, repo_root: Path = REPO_ROOT) -> 
         _fsync_directory(transaction)
         os.replace(staged_manifest, plugin / MANIFEST_NAME)
         _fsync_directory(plugin)
-        archive_builder._validate_activation_bundle_tree(
-            plugin / archive_builder.RUNTIME_BUNDLE_REL,
-            records,
-            require_install_mode=False,
-        )
+        for bundle_rel, records in bundles:
+            archive_builder._validate_activation_bundle_tree(
+                plugin / bundle_rel, records, require_install_mode=False
+            )
         if (plugin / MANIFEST_NAME).read_bytes() != manifest_bytes:
             _raise("published runtime manifest changed")
     except BaseException as exc:

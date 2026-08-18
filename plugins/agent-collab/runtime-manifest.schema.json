@@ -18,8 +18,7 @@
     "protocol_version": {"const": 4},
     "contract_version": {"const": 4},
     "wire_contract_sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "const": "9a03012017ffcbe4dd92ca44358dcaf8924b07ed888c7bbc8f3bc8bbabd54463"
     },
     "wire_contract": {
       "type": "object",
@@ -50,8 +49,8 @@
         },
         "logical_actions": {
           "type": "array",
-          "minItems": 11,
-          "maxItems": 11,
+          "minItems": 12,
+          "maxItems": 12,
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
         },
@@ -63,6 +62,7 @@
             "architecture.repository",
             "codegen.repository",
             "context.documents.extract",
+            "context.documents.intent",
             "context.documents.reason",
             "context.repository.extract",
             "context.repository.reason",
@@ -76,6 +76,7 @@
             "architecture.repository": {"const": "repository"},
             "codegen.repository": {"const": "repository"},
             "context.documents.extract": {"const": "documents"},
+            "context.documents.intent": {"const": "documents"},
             "context.documents.reason": {"const": "documents"},
             "context.repository.extract": {"const": "repository"},
             "context.repository.reason": {"const": "repository"},
@@ -146,11 +147,55 @@
     "channel": {"const": "production"},
     "artifacts": {
       "type": "array",
-      "maxItems": 1,
+      "maxItems": 2,
       "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["arch"],
+            "properties": {"arch": {"const": "arm64"}}
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["arch"],
+            "properties": {"arch": {"const": "x86_64"}}
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "arch": {"const": "arm64"},
+              "path": {"const": "runtime/darwin-arm64/agent-collab-runtime.bundle"},
+              "files": {
+                "items": {
+                  "properties": {"architecture": {"const": "arm64"}}
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "arch": {"const": "x86_64"},
+              "path": {"const": "runtime/darwin-x86_64/agent-collab-runtime.bundle"},
+              "files": {
+                "items": {
+                  "properties": {"architecture": {"const": "x86_64"}}
+                }
+              }
+            }
+          }
+        ],
         "required": [
           "platform",
           "arch",
@@ -161,27 +206,50 @@
           "size",
           "sha256",
           "provider_runtime_version",
+          "wire_contract_sha256",
           "signing",
           "files"
         ],
         "properties": {
           "platform": {"const": "darwin"},
-          "arch": {"const": "arm64"},
+          "arch": {"enum": ["arm64", "x86_64"]},
           "kind": {"const": "standalone_bundle"},
           "minimum_macos": {"const": "14.0"},
-          "path": {"const": "runtime/darwin-arm64/agent-collab-runtime.bundle"},
+          "path": {
+            "enum": [
+              "runtime/darwin-arm64/agent-collab-runtime.bundle",
+              "runtime/darwin-x86_64/agent-collab-runtime.bundle"
+            ]
+          },
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"const": "4.0.2"},
+          "provider_runtime_version": {"const": "4.0.4"},
+          "wire_contract_sha256": {"const": "9a03012017ffcbe4dd92ca44358dcaf8924b07ed888c7bbc8f3bc8bbabd54463"},
           "files": {
             "type": "array",
             "minItems": 1,
             "maxItems": 64,
             "uniqueItems": true,
+            "contains": {
+              "type": "object",
+              "required": ["role"],
+              "properties": {
+                "role": {"const": "entrypoint"}
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1,
             "items": {
               "type": "object",
               "additionalProperties": false,
+              "if": {
+                "properties": {"role": {"const": "entrypoint"}},
+                "required": ["role"]
+              },
+              "then": {
+                "properties": {"path": {"const": "agent-collab-runtime"}}
+              },
               "required": [
                 "path",
                 "role",
@@ -200,7 +268,7 @@
                 "size": {"type": "integer", "minimum": 0, "maximum": 67108864},
                 "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                 "macho_type": {"enum": ["executable", "dylib", "bundle"]},
-                "architecture": {"const": "arm64"},
+                "architecture": {"enum": ["arm64", "x86_64"]},
                 "minimum_macos": {"const": "14.0"},
                 "signing_profile": {"const": "production_developer_id"}
               }

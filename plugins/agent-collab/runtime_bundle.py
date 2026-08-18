@@ -41,7 +41,7 @@ _INSPECTION_KEYS = frozenset((
 ))
 _ROLE_CODES = {"entrypoint": 1, "runtime_library": 2}
 _MACHO_TYPE_CODES = {"executable": 1, "dylib": 2, "bundle": 3}
-_ARCHITECTURE_CODES = {"arm64": 1}
+_ARCHITECTURE_CODES = {"arm64": 1, "x86_64": 2}
 _SIGNING_PROFILES = frozenset((
     "development_adhoc", "production_developer_id",
 ))
@@ -203,6 +203,7 @@ def validate_file_records(records: Any) -> Tuple[Dict[str, Any], ...]:
     total_size = 0
     entrypoints = 0
     selected_profile = None
+    selected_architecture = None
 
     for record in records:
         if type(record) is not dict or frozenset(record) != _FILE_KEYS:
@@ -237,8 +238,12 @@ def validate_file_records(records: Any) -> Tuple[Dict[str, Any], ...]:
                 _raise("runtime bundle entrypoint record is invalid")
         elif macho_type not in ("dylib", "bundle"):
             _raise("runtime bundle library record is invalid")
-        if architecture != "arm64":
+        if architecture not in _ARCHITECTURE_CODES:
             _raise("runtime bundle architecture is invalid")
+        if selected_architecture is None:
+            selected_architecture = architecture
+        elif architecture != selected_architecture:
+            _raise("runtime bundle architectures are inconsistent")
         if minimum_macos != MINIMUM_MACOS:
             _raise("runtime bundle minimum macOS is invalid")
         if profile not in _SIGNING_PROFILES:

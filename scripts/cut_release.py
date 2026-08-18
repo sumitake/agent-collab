@@ -441,7 +441,7 @@ def _signed_runtime_verified_or_fail() -> None:
     sys.stderr.write(res.stderr)
     if res.returncode != 0:
         _fail(
-            "activation release requires the co-packaged Darwin-arm64 runtime "
+            "activation release requires every co-packaged Darwin runtime "
             "and successful Developer ID, hardened-runtime, and notarization verification"
         )
 

@@ -57,7 +57,11 @@ class PublicExportSafetyTests(unittest.TestCase):
         module = self._module()
         with tempfile.TemporaryDirectory() as raw:
             root = self._root_with_duplicate_manifest(Path(raw), module)
-            relative = module.RUNTIME_BUNDLE_REL / "agent-collab-runtime"
+            relative = next(
+                path
+                for path in module.RUNTIME_BUNDLE_RELS
+                if "darwin-arm64" in path.as_posix()
+            ) / "agent-collab-runtime"
             violation = module._runtime_contract_violation(root, relative, b"bytes")
             self.assertIsNotNone(violation)
             self.assertEqual(violation.kind, "unmanifested_runtime")
@@ -76,7 +80,11 @@ class PublicExportSafetyTests(unittest.TestCase):
 
         plugin = root / "plugins" / "agent-collab"
         plugin.mkdir(parents=True)
-        bundle = root / module.RUNTIME_BUNDLE_REL
+        bundle = root / next(
+            path
+            for path in module.RUNTIME_BUNDLE_RELS
+            if "darwin-arm64" in path.as_posix()
+        )
         bundle.mkdir(parents=True)
         member = bundle / "agent-collab-runtime"
         member.write_bytes(b"bytes")

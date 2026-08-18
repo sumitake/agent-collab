@@ -28,8 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = REPO_ROOT / "skill-specs"
 PLUGIN_NAME = "agent-collab"
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
-RUNTIME_BUNDLE_REL = Path("runtime/darwin-arm64/agent-collab-runtime.bundle")
-RUNTIME_REL = RUNTIME_BUNDLE_REL / "agent-collab-runtime"
+MAX_RUNTIME_ARTIFACTS = 2
 RUNTIME_FILE_MODE = 0o500
 THIRD_PARTY_NOTICE_REL = Path("THIRD-PARTY-NOTICES.txt")
 THIRD_PARTY_LICENSE_ROOT_REL = Path("third-party-licenses")
@@ -238,7 +237,9 @@ def _load_manifest(plugin_path: Path) -> dict[str, object]:
     return _parse_manifest(_read_manifest_bytes(plugin_path))
 
 
-def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]:
+def _validate_activation_manifest(
+    item: object, *, wire_contract_sha256: object
+) -> tuple[Path, tuple[dict[str, object], ...]]:
     """Validate the activation artifact SHAPE from the committed manifest only.
 
     Deliberately touches no filesystem bundle state: the committed manifest is the
@@ -258,6 +259,7 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
         "size",
         "sha256",
         "provider_runtime_version",
+        "wire_contract_sha256",
         "signing",
         "files",
     }
@@ -281,12 +283,16 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
     )
     if (
         item.get("platform") != "darwin"
-        or item.get("arch") != "arm64"
+        or item.get("arch") not in {"arm64", "x86_64"}
         or item.get("kind") != "standalone_bundle"
         or item.get("minimum_macos") != "14.0"
-        or item.get("path") != RUNTIME_BUNDLE_REL.as_posix()
+        or item.get("path")
+        != runtime_client.SUPPORTED_ARTIFACT_PATHS.get(
+            (item.get("platform"), item.get("arch"))
+        )
         or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
         or item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION
+        or item.get("wire_contract_sha256") != wire_contract_sha256
         or type(item.get("size")) is not int
         or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
         or item["size"] != sum(record["size"] for record in records)
@@ -317,7 +323,7 @@ def _validate_activation_manifest(item: object) -> tuple[dict[str, object], ...]
         )
     ):
         raise ValueError("activation runtime manifest fields are invalid")
-    return records
+    return Path(item["path"]), records
 
 
 def _validate_activation_bundle_tree(
@@ -424,7 +430,7 @@ def _validate_activation_bundle_tree(
 
 def _classify_from_manifest(
     plugin_path: Path, manifest_bytes: bytes
-) -> tuple[str, tuple[dict[str, object], ...]]:
+) -> tuple[str, tuple[tuple[Path, tuple[dict[str, object], ...]], ...]]:
     """Classify + fully validate the package from ONE manifest byte snapshot.
 
     The mode decision, the full activation-manifest shape validation, and the
@@ -445,15 +451,22 @@ def _classify_from_manifest(
         if runtime_root.exists() or runtime_root.is_symlink():
             raise ValueError("policy-only package contains an unadvertised runtime")
         return "policy-only", ()
-    if len(artifacts) != 1:
-        raise ValueError("activation package requires exactly one runtime artifact")
+    if not 1 <= len(artifacts) <= MAX_RUNTIME_ARTIFACTS:
+        raise ValueError("activation package has an invalid runtime artifact count")
     # D1: the committed manifest is the activation marker. The physical bundle
     # is NOT read here — it is validated against its actual source (the committed
     # in-tree runtime, or an external sealed --bundle-source) by
     # `_validate_activation_bundle_tree` (build) and against the frozen manifest
     # records (verify_archive).
-    records = _validate_activation_manifest(artifacts[0])
-    return "activation", records
+    bundles = tuple(
+        _validate_activation_manifest(
+            item, wire_contract_sha256=manifest.get("wire_contract_sha256")
+        )
+        for item in artifacts
+    )
+    if len({bundle for bundle, _records in bundles}) != len(bundles):
+        raise ValueError("activation package contains duplicate runtime artifacts")
+    return "activation", bundles
 
 
 def classify_package(plugin_path: Path) -> str:
@@ -535,18 +548,25 @@ def _require_exact_third_party_notice_tree(plugin_path: Path) -> None:
 # canonical metadata — never statted from a mutable source tree. The two
 # traversal parents are plain 0o755 directories; the bundle leaf itself keeps
 # the sealed install mode.
-_RUNTIME_DIR_MODES: dict[str, int] = {
-    "runtime": 0o755,
-    "runtime/darwin-arm64": 0o755,
-    RUNTIME_BUNDLE_REL.as_posix(): runtime_bundle.INSTALL_MODE,
-}
+def _runtime_dir_modes(
+    bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...]
+) -> dict[str, int]:
+    modes = {"runtime": 0o755}
+    for bundle, _records in bundles:
+        current = Path()
+        for part in bundle.parts:
+            current /= part
+            modes[current.as_posix()] = (
+                runtime_bundle.INSTALL_MODE if current == bundle else 0o755
+            )
+    return modes
 
 
 def _member_plan(
     plugin_path: Path,
     *,
     mode: str,
-    records: tuple[dict[str, object], ...] = (),
+    bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...] = (),
 ) -> list[tuple[str, Path | None]]:
     """Return the canonical (archive name, source path) plan, sorted by name.
 
@@ -558,9 +578,9 @@ def _member_plan(
 
     if mode not in {"policy-only", "activation"}:
         raise ValueError("unknown archive mode")
-    if mode == "activation" and not records:
+    if mode == "activation" and not bundles:
         raise ValueError("activation member plan requires frozen manifest records")
-    if mode == "policy-only" and records:
+    if mode == "policy-only" and bundles:
         raise ValueError("policy-only member plan forbids runtime records")
     _require_no_development_members(plugin_path)
     _require_exact_manifest_trees(plugin_path)
@@ -577,10 +597,11 @@ def _member_plan(
     if mode == "activation":
         _require_exact_third_party_notice_tree(plugin_path)
         relatives.extend(ACTIVATION_THIRD_PARTY_MEMBERS)
-        for name in _RUNTIME_DIR_MODES:
+        for name in _runtime_dir_modes(bundles):
             members[name] = None
-        for record in records:
-            members[(RUNTIME_BUNDLE_REL / record["path"]).as_posix()] = None
+        for bundle, records in bundles:
+            for record in records:
+                members[(bundle / record["path"]).as_posix()] = None
     for relative in relatives:
         source = plugin_path / relative
         _safe_source(source)
@@ -599,7 +620,7 @@ def _member_plan(
 # by offsets WE computed. Only the bounded gzip inflater touches candidate
 # bytes, under hard compressed- and decompressed-size caps.
 #
-# The runtime payload alone may be as large as MAX_ARTIFACT_BYTES (64 MiB); the
+# Each runtime payload may be as large as MAX_ARTIFACT_BYTES (64 MiB); the
 # archive additionally holds the manifest, skills, licenses, plugin metadata,
 # tar headers/padding, and gzip framing, and a poorly-compressible (already
 # compressed/encrypted) runtime near the limit barely shrinks. So BOTH the
@@ -607,8 +628,8 @@ def _member_plan(
 # (2x = 128 MiB) — otherwise the builder could reject its OWN legitimate output
 # — while the decompressed cap still bounds a gzip bomb well below memory
 # exhaustion.
-_MAX_COMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
-_MAX_DECOMPRESSED_ARCHIVE_BYTES = 2 * MAX_ARTIFACT_BYTES
+_MAX_COMPRESSED_ARCHIVE_BYTES = (MAX_RUNTIME_ARTIFACTS + 1) * MAX_ARTIFACT_BYTES
+_MAX_DECOMPRESSED_ARCHIVE_BYTES = (MAX_RUNTIME_ARTIFACTS + 1) * MAX_ARTIFACT_BYTES
 _USTAR_BLOCK = 512
 # The complete fixed canonical 10-byte gzip header the builder emits: magic
 # (1f 8b), DEFLATE method (08), flags 0 (rejects FTEXT/FHCRC/FEXTRA/FNAME/
@@ -657,6 +678,7 @@ def _emit_canonical_tar(
     frozen_manifest: bytes | None,
     record_by_name: dict[str, dict[str, object]],
     runtime_payloads: dict[str, bytes],
+    runtime_dir_modes: dict[str, int],
 ) -> tuple[bytes, dict[str, tuple[int, int]]]:
     """Serialize the ONE canonical uncompressed tar deterministically.
 
@@ -676,11 +698,11 @@ def _emit_canonical_tar(
         fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT
     ) as tar:
         for name, source in plan:
-            if source is None and name in _RUNTIME_DIR_MODES:
+            if source is None and name in runtime_dir_modes:
                 tar.addfile(
                     _finalize_tarinfo(
                         _synthesized_tarinfo(
-                            name, mode=_RUNTIME_DIR_MODES[name], directory=True
+                            name, mode=runtime_dir_modes[name], directory=True
                         )
                     )
                 )
@@ -871,12 +893,14 @@ def verify_archive(
     # caller-supplied snapshot from build_archive, or a single read here in CI).
     if frozen_manifest is None:
         frozen_manifest = _read_manifest_bytes(plugin_path)
-    resolved_mode, records = _classify_from_manifest(plugin_path, frozen_manifest)
+    resolved_mode, bundles = _classify_from_manifest(plugin_path, frozen_manifest)
     if resolved_mode != mode:
         raise ValueError("archive mode no longer matches the source package")
-    plan = _member_plan(plugin_path, mode=mode, records=records)
+    plan = _member_plan(plugin_path, mode=mode, bundles=bundles)
     record_by_name = {
-        (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
+        (bundle / record["path"]).as_posix(): record
+        for bundle, records in bundles
+        for record in records
     }
     zero_payloads = {
         name: b"\x00" * record["size"] for name, record in record_by_name.items()
@@ -887,6 +911,7 @@ def verify_archive(
         frozen_manifest=frozen_manifest,
         record_by_name=record_by_name,
         runtime_payloads=zero_payloads,
+        runtime_dir_modes=_runtime_dir_modes(bundles),
     )
     candidate = _inflate_bounded(_read_bounded_compressed(archive_path))
     if len(candidate) != len(canonical):
@@ -905,6 +930,7 @@ def verify_archive(
 
 
 def _read_runtime_payloads(
+    bundle_rel: Path,
     bundle_leaf: Path,
     records: tuple[dict[str, object], ...],
     *,
@@ -927,7 +953,7 @@ def _read_runtime_payloads(
     )
     payloads: dict[str, bytes] = {}
     for record in records:
-        name = (RUNTIME_BUNDLE_REL / record["path"]).as_posix()
+        name = (bundle_rel / record["path"]).as_posix()
         try:
             descriptor = os.open(bundle_leaf / record["path"], flags)
         except OSError as exc:
@@ -970,7 +996,7 @@ def _read_runtime_payloads(
     return payloads
 
 
-def _resolve_in_tree_bundle_leaf(plugin_path: Path) -> Path:
+def _resolve_in_tree_bundle_leaf(plugin_path: Path, bundle_rel: Path) -> Path:
     """Descend runtime/<platform-arch>/<bundle> from a trusted plugin_path dir fd,
     rejecting any symlinked or non-directory component AT WALK TIME
     (O_NOFOLLOW|O_DIRECTORY per component), then return the leaf path for
@@ -990,7 +1016,7 @@ def _resolve_in_tree_bundle_leaf(plugin_path: Path) -> Path:
     descriptors: list[int] = []
     try:
         descriptors.append(os.open(plugin_path, walk_flags))
-        for component in RUNTIME_BUNDLE_REL.parts:
+        for component in bundle_rel.parts:
             descriptors.append(os.open(component, walk_flags, dir_fd=descriptors[-1]))
     except OSError as exc:
         raise ValueError("in-tree runtime bundle path is unsafe") from exc
@@ -1000,7 +1026,7 @@ def _resolve_in_tree_bundle_leaf(plugin_path: Path) -> Path:
                 os.close(descriptor)
             except OSError:
                 pass
-    return plugin_path / RUNTIME_BUNDLE_REL
+    return plugin_path / bundle_rel
 
 
 def _git_stdout(repo: Path, *args: str) -> bytes:
@@ -1032,7 +1058,7 @@ def _head_blob_bytes(
 
 def _verify_head_provenance(
     plugin_path: Path,
-    records: tuple[dict[str, object], ...],
+    bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...],
     frozen_manifest: bytes | None,
     *,
     expected_commit: str | None,
@@ -1060,11 +1086,12 @@ def _verify_head_provenance(
     )
     if manifest_blob != frozen_manifest:
         raise ValueError("release manifest does not match its HEAD blob")
-    for record in records:
-        git_path = f"{prefix}/{(RUNTIME_BUNDLE_REL / record['path']).as_posix()}"
-        blob = _head_blob_bytes(repo, expected_commit, git_path, "100755")
-        if hashlib.sha256(blob).hexdigest() != record["sha256"]:
-            raise ValueError("release runtime member differs from its HEAD blob")
+    for bundle, records in bundles:
+        for record in records:
+            git_path = f"{prefix}/{(bundle / record['path']).as_posix()}"
+            blob = _head_blob_bytes(repo, expected_commit, git_path, "100755")
+            if hashlib.sha256(blob).hexdigest() != record["sha256"]:
+                raise ValueError("release runtime member differs from its HEAD blob")
 
 
 def _verify_release_worktree(plugin_path: Path, expected_commit: str) -> None:
@@ -1118,13 +1145,13 @@ def build_archive(
     # and verify_archive ALL derive from this single snapshot, so a mid-build
     # A→B→A manifest swap on disk cannot change what gets packaged.
     frozen_manifest: bytes | None = _read_manifest_bytes(plugin_path)
-    mode, records = _classify_from_manifest(plugin_path, frozen_manifest)
+    mode, bundles = _classify_from_manifest(plugin_path, frozen_manifest)
     # Bind the ENTIRE archive to the release commit before packaging any member
     # (both policy-only and activation): the worktree must be the tag commit with
     # no modified tracked files, so no member can carry non-tag bytes.
     if expected_commit is not None:
         _verify_release_worktree(plugin_path, expected_commit)
-    bundle_leaf: Path | None = None
+    bundle_leaves: list[Path] = []
     runtime_payloads: dict[str, bytes] = {}
     if mode == "policy-only":
         # The committed manifest — never the flag — decides the mode.
@@ -1151,10 +1178,16 @@ def build_archive(
             # the evidence that the argument itself was a symlink.
             if stat.S_ISLNK(raw_source.st_mode) or not stat.S_ISDIR(raw_source.st_mode):
                 raise ValueError("runtime bundle source is unsafe")
+            if len(bundles) != 1:
+                raise ValueError(
+                    "multi-artifact activation requires committed in-tree runtimes"
+                )
+            bundle_rel, records = bundles[0]
             bundle_leaf = bundle_source.resolve(strict=True)
+            bundle_leaves.append(bundle_leaf)
             _validate_activation_bundle_tree(bundle_leaf, records, require_install_mode=True)
             runtime_payloads = _read_runtime_payloads(
-                bundle_leaf, records, require_install_mode=True
+                bundle_rel, bundle_leaf, records, require_install_mode=True
             )
         elif in_tree:
             # COMMITTED IN-TREE bundle (trusted checkout, any-umask source floor).
@@ -1162,25 +1195,33 @@ def build_archive(
             # with no followed component, then validate + read under the source
             # floor. Optional git-HEAD provenance binds it to a release commit
             # (see _verify_head_provenance) when --expected-commit is supplied.
-            bundle_leaf = _resolve_in_tree_bundle_leaf(plugin_path)
-            _validate_activation_bundle_tree(bundle_leaf, records, require_install_mode=False)
+            for bundle_rel, records in bundles:
+                bundle_leaf = _resolve_in_tree_bundle_leaf(plugin_path, bundle_rel)
+                bundle_leaves.append(bundle_leaf)
+                _validate_activation_bundle_tree(
+                    bundle_leaf, records, require_install_mode=False
+                )
+                runtime_payloads.update(
+                    _read_runtime_payloads(
+                        bundle_rel, bundle_leaf, records, require_install_mode=False
+                    )
+                )
             _verify_head_provenance(
-                plugin_path, records, frozen_manifest, expected_commit=expected_commit
-            )
-            runtime_payloads = _read_runtime_payloads(
-                bundle_leaf, records, require_install_mode=False
+                plugin_path, bundles, frozen_manifest, expected_commit=expected_commit
             )
         else:
             raise ValueError(
                 "activation manifest requires a committed in-tree runtime or --bundle-source"
             )
-    plan = _member_plan(plugin_path, mode=mode, records=records)
+    plan = _member_plan(plugin_path, mode=mode, bundles=bundles)
     record_by_name = {
-        (RUNTIME_BUNDLE_REL / record["path"]).as_posix(): record for record in records
+        (bundle / record["path"]).as_posix(): record
+        for bundle, records in bundles
+        for record in records
     }
 
     def _reject_source_alias(candidate: Path) -> None:
-        for forbidden in (plugin_path, bundle_leaf):
+        for forbidden in (plugin_path, *bundle_leaves):
             if forbidden is not None and candidate.is_relative_to(forbidden):
                 raise ValueError("archive output must not alias a source tree")
 
@@ -1204,6 +1245,7 @@ def build_archive(
         frozen_manifest=frozen_manifest,
         record_by_name=record_by_name,
         runtime_payloads=runtime_payloads,
+        runtime_dir_modes=_runtime_dir_modes(bundles),
     )
     temp_path = output_resolved.parent / f".{output_resolved.name}.tmp.{os.getpid()}"
     temp_created = False

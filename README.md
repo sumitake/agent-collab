@@ -5,10 +5,11 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.4). The
-**v6.0.4 release** prevents attempt-local provider and teardown failures from
-becoming false route quarantines or governance blockers. The
-**[v6.0.4 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.4)**
+This public repository distributes **agent-collab** (v6.0.5). The
+**v6.0.5 release** ships provider runtime `4.0.4`, which moves the Grok and
+OpenCode carriers to native ACP v1 sessions, and generalizes the public
+manifest validators to the Darwin host matrix. The
+**[v6.0.5 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.5)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -20,20 +21,27 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.4
+## What's new - v6.0.5
 
-- Every routed skill now treats `provider_error` and `teardown_error` as
-  attempt-local diagnostics. They invalidate that attempt's artifact and
-  evidence without establishing provider/route unavailability or quarantining
-  the route for later caller-authorized work.
-- The no-replay invariant remains explicit: these statuses do not trigger an
-  automatic retry. A later authorized request is a new attempt evaluated from
-  fresh readiness.
-- The public governance trace accepts an anchored `OPERATOR-BYPASSED` state as
-  honest form only when `operator_reserved` begins with `yes`. The state is not
-  reviewer convergence and never grants ordinary agent self-merge eligibility.
-- Runtime 4.0.2 and its route selector are unchanged; no quarantine store,
-  parallel registry, fallback, or release service was added.
+- Provider runtime `4.0.4`: the Grok and OpenCode carriers now run native
+  ACP v1 sessions with bounded initialize/new/prompt/permission/close framing,
+  monotonic tool facts, and deny-by-default permission mediation. Logical
+  Gemini remains carried by Agy structured stream-json (the official Gemini
+  CLI ACP endpoint is not used), and Codex remains on native App Server JSONL.
+- Runtime `4.0.4` also carries the earlier lifecycle-diagnostic decoupling:
+  teardown diagnostics stay separate from artifact/evidence validity.
+- The public manifest validators now accept the Darwin host matrix
+  (arm64 today, x86_64-ready) and bind each artifact record to the manifest's
+  wire-contract digest (`wire_contract_sha256`), completing the consumer side
+  of the workspace two-arch producer contract.
+- From the unreleased v6.0.4 line: every routed skill treats `provider_error`
+  and `teardown_error` as attempt-local diagnostics — they invalidate that
+  attempt's artifact and evidence without quarantining the route, and the
+  no-replay invariant remains explicit. The public governance trace accepts an
+  anchored `OPERATOR-BYPASSED` state as honest form only when
+  `operator_reserved` begins with `yes`.
+- No quarantine store, parallel registry, fallback transport, or release
+  service was added.
 - The 4.7 engineering-process pack remains available as three self-executed
   skills: `decision-map`, `prototype`, and `architecture-review`.
 - The current `code-review` skill retains its spec-fidelity axis and
@@ -115,9 +123,9 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.2`;
+- provider runtime version `4.0.4`;
 - one top-level closed `wire_contract` plus canonical
-  `wire_contract_sha256`; and
+  `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.
 
 The public client verifies fixed plugin-relative path, exact membership and

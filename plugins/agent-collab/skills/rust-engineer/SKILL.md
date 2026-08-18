@@ -1,6 +1,6 @@
 ---
 name: rust-engineer
-version: 6.0.4
+version: 6.0.5
 description: Senior Rust engineer for ownership-heavy, performance-sensitive, and systems-level code. Use when the user says "review this Rust code for soundness", "help me fix this borrow checker error", "optimize this Rust hot path", or "/agent-collab:rust-engineer." Also offer this proactively when a diff introduces unsafe blocks, changes lifetime bounds, or touches an async task's cancellation path.
 ---
 

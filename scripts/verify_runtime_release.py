@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the signed/notarized Darwin-arm64 runtime before activation release."""
+"""Verify every signed/notarized Darwin runtime before activation release."""
 
 from __future__ import annotations
 
@@ -21,8 +21,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_REL = Path("plugins/agent-collab")
 MANIFEST_REL = PLUGIN_REL / "runtime-manifest.json"
 SIGNING_POLICY_REL = PLUGIN_REL / "signing_policy.py"
-RUNTIME_BUNDLE_REL = Path("runtime/darwin-arm64/agent-collab-runtime.bundle")
-RUNTIME_REL = RUNTIME_BUNDLE_REL / "agent-collab-runtime"
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.IGNORECASE)
@@ -132,10 +130,10 @@ def _normalized_version(value: str) -> tuple[int, ...] | None:
 
 
 def _verify_macho_identity(
-    path: Path, *, minimum_macos: str
+    path: Path, *, architecture: str, minimum_macos: str
 ) -> tuple[bool, bool, str]:
     try:
-        architecture = subprocess.run(
+        architecture_result = subprocess.run(
             ["/usr/bin/lipo", "-archs", str(path)],
             capture_output=True,
             text=True,
@@ -150,11 +148,11 @@ def _verify_macho_identity(
     except (OSError, subprocess.SubprocessError):
         return False, False, "Mach-O inspection tool failed"
     arch_ok = (
-        architecture.returncode == 0
-        and architecture.stdout.strip().split() == ["arm64"]
+        architecture_result.returncode == 0
+        and architecture_result.stdout.strip().split() == [architecture]
     )
     if not arch_ok:
-        return False, False, "Mach-O artifact is not a thin arm64 binary"
+        return False, False, f"Mach-O artifact is not a thin {architecture} binary"
     if load_commands.returncode != 0:
         return True, False, "Mach-O load commands cannot be inspected"
     build_versions: list[tuple[str, str]] = []
@@ -191,8 +189,8 @@ def _manifest(root: Path) -> tuple[dict[str, Any] | None, Path, list[str]]:
         )
     except (OSError, ValueError, RecursionError):
         return None, manifest_path, ["runtime manifest is unreadable"]
-    if len(data["artifacts"]) != 1:
-        errors.append("activation release requires exactly one Darwin-arm64 artifact")
+    if not 1 <= len(data["artifacts"]) <= len(runtime_client.SUPPORTED_ARTIFACT_PATHS):
+        errors.append("activation release has an invalid runtime artifact count")
     return data, manifest_path, errors
 
 
@@ -200,7 +198,9 @@ def _verify_macho_record(
     path: Path, record: dict[str, Any]
 ) -> tuple[bool, bool, bool, str]:
     arch_ok, minimum_ok, error = _verify_macho_identity(
-        path, minimum_macos=record["minimum_macos"]
+        path,
+        architecture=record["architecture"],
+        minimum_macos=record["minimum_macos"],
     )
     if error:
         return arch_ok, minimum_ok, False, error
@@ -348,7 +348,6 @@ def verify_release(
     data, manifest_path, errors = _manifest(root)
     if data is None or errors:
         return False, {}, errors
-    item = data["artifacts"][0]
     expected_fields = {
         "platform",
         "arch",
@@ -359,180 +358,190 @@ def verify_release(
         "size",
         "sha256",
         "provider_runtime_version",
+        "wire_contract_sha256",
         "signing",
         "files",
     }
-    if not isinstance(item, dict) or set(item) != expected_fields:
-        return False, {}, ["runtime artifact manifest shape is invalid"]
-    if item.get("provider_runtime_version") != runtime_client.PROVIDER_RUNTIME_VERSION:
-        errors.append("runtime artifact contract anchor is invalid")
-
-    signing = item.get("signing")
     if not _TEAM_ID_RE.fullmatch(EXPECTED_DEVELOPER_ID_TEAM):
         errors.append("operator Developer ID Team ID is not configured")
-    try:
-        records = runtime_bundle.validate_file_records(item.get("files"))
-        artifact_digest = runtime_bundle.compute_bundle_identity(records)
-    except runtime_bundle.BundleContractError:
-        records = ()
-        artifact_digest = ""
-        errors.append("runtime bundle file records are invalid")
-
-    identity_value = signing.get("identity") if isinstance(signing, dict) else None
-    identity_match = (
-        re.fullmatch(
-            r"Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)",
-            identity_value,
-        )
-        if isinstance(identity_value, str)
-        else None
-    )
-    if (
-        item.get("platform") != "darwin"
-        or item.get("arch") != "arm64"
-        or item.get("kind") != "standalone_bundle"
-        or item.get("minimum_macos") != EXPECTED_MINIMUM_MACOS
-        or item.get("path") != RUNTIME_BUNDLE_REL.as_posix()
-        or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
-        or type(item.get("size")) is not int
-        or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
-        or item["size"] != sum(record["size"] for record in records)
-        or not isinstance(item.get("sha256"), str)
-        or item["sha256"] != artifact_digest
-        or not isinstance(signing, dict)
-        or set(signing)
-        != {
-            "mode",
-            "identity",
-            "team_id",
-            "require_notarization",
-            "hardened_runtime",
-            "secure_timestamp",
-        }
-        or signing.get("mode") != "developer_id"
-        or identity_match is None
-        or not isinstance(signing.get("team_id"), str)
-        or _TEAM_ID_RE.fullmatch(signing["team_id"]) is None
-        or identity_match.group(1) != signing["team_id"]
-        or signing["team_id"] != EXPECTED_DEVELOPER_ID_TEAM
-        or signing.get("require_notarization") is not True
-        or signing.get("hardened_runtime") is not True
-        or signing.get("secure_timestamp") is not True
-        or any(
-            record["signing_profile"] != "production_developer_id"
-            for record in records
-        )
-    ):
-        errors.append("runtime artifact platform/signing fields are invalid")
-
-    bundle = root / PLUGIN_REL / RUNTIME_BUNDLE_REL
-    try:
-        bundle_info = bundle.lstat()
-        names = sorted(path.name for path in bundle.iterdir())
-        expected_names = [record["path"] for record in records]
-        if (
-            not stat.S_ISDIR(bundle_info.st_mode)
-            or stat.S_ISLNK(bundle_info.st_mode)
-            or bundle_info.st_uid != os.getuid()
-            # Release CI verifies the checked-out git tree (--git-sha HEAD), whose
-            # modes are 0o755/0o700; content is verified by digest/signature below.
-            or not runtime_bundle.source_mode_ok(bundle_info.st_mode)
-            or names != expected_names
-        ):
-            errors.append("runtime bundle root identity or membership is unsafe")
-    except OSError:
-        errors.append("runtime bundle is missing or unreadable")
-
-    file_evidence: list[dict[str, Any]] = []
-    metadata_valid = not errors
-    for record in records:
-        member = bundle / record["path"]
-        member_errors: list[str] = []
+    artifact_evidence: list[dict[str, Any]] = []
+    for item in data["artifacts"]:
+        item_errors: list[str] = []
+        if not isinstance(item, dict) or set(item) != expected_fields:
+            errors.append("runtime artifact manifest shape is invalid")
+            continue
+        signing = item.get("signing")
         try:
-            info = member.lstat()
-            if (
-                not stat.S_ISREG(info.st_mode)
-                or stat.S_ISLNK(info.st_mode)
-                or info.st_uid != os.getuid()
-                or info.st_nlink != 1
-                or not runtime_bundle.source_mode_ok(info.st_mode)
-                or info.st_size != record["size"]
-                or _sha256(member) != record["sha256"]
-            ):
-                member_errors.append("runtime bundle member identity is unsafe")
-        except OSError:
-            member_errors.append("runtime bundle member is missing or unreadable")
-        evidence_row = {
-            "path": record["path"],
-            "sha256": record["sha256"],
-            "codesign_timestamp": "",
-            "spctl_source": "",
-            "codesign_verified": False,
-            "hardened_runtime_verified": False,
-            "macho_arch_verified": False,
-            "macho_type_verified": False,
-            "minimum_macos_verified": False,
-        }
-        if metadata_valid and not member_errors:
-            arch_ok, minimum_ok, type_ok, macho_error = _verify_macho_record(
-                member, record
+            records = runtime_bundle.validate_file_records(item.get("files"))
+            artifact_digest = runtime_bundle.compute_bundle_identity(records)
+        except runtime_bundle.BundleContractError:
+            records = ()
+            artifact_digest = ""
+            item_errors.append("runtime bundle file records are invalid")
+        identity_value = signing.get("identity") if isinstance(signing, dict) else None
+        identity_match = (
+            re.fullmatch(
+                r"Developer ID Application: [^\r\n]{1,160} \(([A-Z0-9]{10})\)",
+                identity_value,
             )
-            evidence_row["macho_arch_verified"] = arch_ok
-            evidence_row["minimum_macos_verified"] = minimum_ok
-            evidence_row["macho_type_verified"] = type_ok
-            if macho_error:
-                member_errors.append(macho_error)
-            if not member_errors:
-                signature_evidence, signature_errors = _verify_member_signature(
-                    member,
-                    signing=signing,
-                    assess_notarization=record["role"] == "entrypoint",
-                )
-                evidence_row.update(signature_evidence)
-                member_errors.extend(signature_errors)
-        errors.extend(
-            f"{record['path']}: {message}" for message in member_errors
+            if isinstance(identity_value, str)
+            else None
         )
-        file_evidence.append(evidence_row)
+        host = (item.get("platform"), item.get("arch"))
+        if (
+            host not in runtime_client.SUPPORTED_ARTIFACT_PATHS
+            or item.get("kind") != "standalone_bundle"
+            or item.get("minimum_macos") != EXPECTED_MINIMUM_MACOS
+            or item.get("path") != runtime_client.SUPPORTED_ARTIFACT_PATHS.get(host)
+            or item.get("entrypoint") != runtime_bundle.ENTRYPOINT_NAME
+            or item.get("provider_runtime_version")
+            != runtime_client.PROVIDER_RUNTIME_VERSION
+            or item.get("wire_contract_sha256") != data.get("wire_contract_sha256")
+            or type(item.get("size")) is not int
+            or not 1 <= item["size"] <= MAX_ARTIFACT_BYTES
+            or item["size"] != sum(record["size"] for record in records)
+            or not isinstance(item.get("sha256"), str)
+            or item["sha256"] != artifact_digest
+            or any(record["architecture"] != item.get("arch") for record in records)
+            or not isinstance(signing, dict)
+            or set(signing)
+            != {
+                "mode",
+                "identity",
+                "team_id",
+                "require_notarization",
+                "hardened_runtime",
+                "secure_timestamp",
+            }
+            or signing.get("mode") != "developer_id"
+            or identity_match is None
+            or not isinstance(signing.get("team_id"), str)
+            or _TEAM_ID_RE.fullmatch(signing["team_id"]) is None
+            or identity_match.group(1) != signing["team_id"]
+            or signing["team_id"] != EXPECTED_DEVELOPER_ID_TEAM
+            or signing.get("require_notarization") is not True
+            or signing.get("hardened_runtime") is not True
+            or signing.get("secure_timestamp") is not True
+            or any(
+                record["signing_profile"] != "production_developer_id"
+                for record in records
+            )
+        ):
+            item_errors.append("runtime artifact platform/signing fields are invalid")
 
-    if platform.system().lower() != "darwin" or platform.machine().lower() not in {
-        "arm64",
-        "aarch64",
-    }:
-        errors.append("signing verification must run on Darwin arm64")
+        bundle_rel = Path(str(item.get("path", "invalid")))
+        bundle = root / PLUGIN_REL / bundle_rel
+        try:
+            bundle_info = bundle.lstat()
+            names = sorted(path.name for path in bundle.iterdir())
+            if (
+                not stat.S_ISDIR(bundle_info.st_mode)
+                or stat.S_ISLNK(bundle_info.st_mode)
+                or bundle_info.st_uid != os.getuid()
+                or not runtime_bundle.source_mode_ok(bundle_info.st_mode)
+                or names != [record["path"] for record in records]
+            ):
+                item_errors.append("runtime bundle root identity or membership is unsafe")
+        except OSError:
+            item_errors.append("runtime bundle is missing or unreadable")
 
-    entrypoint_evidence = next(
-        (
-            row
-            for row, record in zip(file_evidence, records, strict=True)
-            if record["role"] == "entrypoint"
-        ),
-        {},
-    )
+        file_evidence: list[dict[str, Any]] = []
+        metadata_valid = not item_errors
+        for record in records:
+            member = bundle / record["path"]
+            member_errors: list[str] = []
+            try:
+                info = member.lstat()
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or stat.S_ISLNK(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_nlink != 1
+                    or not runtime_bundle.source_mode_ok(info.st_mode)
+                    or info.st_size != record["size"]
+                    or _sha256(member) != record["sha256"]
+                ):
+                    member_errors.append("runtime bundle member identity is unsafe")
+            except OSError:
+                member_errors.append("runtime bundle member is missing or unreadable")
+            row = {
+                "path": record["path"],
+                "sha256": record["sha256"],
+                "codesign_timestamp": "",
+                "spctl_source": "",
+                "codesign_verified": False,
+                "hardened_runtime_verified": False,
+                "macho_arch_verified": False,
+                "macho_type_verified": False,
+                "minimum_macos_verified": False,
+            }
+            if metadata_valid and not member_errors:
+                arch_ok, minimum_ok, type_ok, macho_error = _verify_macho_record(
+                    member, record
+                )
+                row.update(
+                    macho_arch_verified=arch_ok,
+                    minimum_macos_verified=minimum_ok,
+                    macho_type_verified=type_ok,
+                )
+                if macho_error:
+                    member_errors.append(macho_error)
+                if not member_errors:
+                    signature_evidence, signature_errors = _verify_member_signature(
+                        member,
+                        signing=signing,
+                        assess_notarization=record["role"] == "entrypoint",
+                    )
+                    row.update(signature_evidence)
+                    member_errors.extend(signature_errors)
+            item_errors.extend(
+                f"{record['path']}: {message}" for message in member_errors
+            )
+            file_evidence.append(row)
+        entrypoint = next(
+            (
+                row
+                for row, record in zip(file_evidence, records, strict=True)
+                if record["role"] == "entrypoint"
+            ),
+            {},
+        )
+        artifact_evidence.append(
+            {
+                "arch": item.get("arch", ""),
+                "artifact_path": (PLUGIN_REL / bundle_rel).as_posix(),
+                "artifact_sha256": artifact_digest,
+                "artifact_size": item.get("size", 0),
+                "files": file_evidence,
+                "team_id": signing.get("team_id", "")
+                if isinstance(signing, dict)
+                else "",
+                "codesign_timestamp": entrypoint.get("codesign_timestamp", ""),
+                "spctl_source": entrypoint.get("spctl_source", ""),
+                "codesign_verified": bool(file_evidence)
+                and all(row["codesign_verified"] for row in file_evidence),
+                "notarization_verified": entrypoint.get("spctl_source")
+                == "Notarized Developer ID",
+                "hardened_runtime_verified": bool(file_evidence)
+                and all(row["hardened_runtime_verified"] for row in file_evidence),
+                "macho_arch_verified": bool(file_evidence)
+                and all(row["macho_arch_verified"] for row in file_evidence),
+                "macho_type_verified": bool(file_evidence)
+                and all(row["macho_type_verified"] for row in file_evidence),
+                "minimum_macos_verified": bool(file_evidence)
+                and all(row["minimum_macos_verified"] for row in file_evidence),
+            }
+        )
+        errors.extend(f"{bundle_rel}: {message}" for message in item_errors)
+
+    if platform.system().lower() != "darwin":
+        errors.append("signing verification must run on Darwin")
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "git_sha": git_sha,
         "manifest_sha256": _sha256(manifest_path) if manifest_path.is_file() else "",
-        "artifact_path": (PLUGIN_REL / RUNTIME_BUNDLE_REL).as_posix(),
-        "artifact_sha256": artifact_digest,
-        "artifact_size": item.get("size", 0),
-        "files": file_evidence,
         "signing_policy_sha256": signing_policy_sha256,
-        "team_id": signing.get("team_id", "") if isinstance(signing, dict) else "",
-        "codesign_timestamp": entrypoint_evidence.get("codesign_timestamp", ""),
-        "spctl_source": entrypoint_evidence.get("spctl_source", ""),
-        "codesign_verified": bool(file_evidence)
-        and all(row["codesign_verified"] for row in file_evidence),
-        "notarization_verified": entrypoint_evidence.get("spctl_source")
-        == "Notarized Developer ID",
-        "hardened_runtime_verified": bool(file_evidence)
-        and all(row["hardened_runtime_verified"] for row in file_evidence),
-        "macho_arch_verified": bool(file_evidence)
-        and all(row["macho_arch_verified"] for row in file_evidence),
-        "macho_type_verified": bool(file_evidence)
-        and all(row["macho_type_verified"] for row in file_evidence),
-        "minimum_macos_verified": bool(file_evidence)
-        and all(row["minimum_macos_verified"] for row in file_evidence),
+        "artifacts": artifact_evidence,
     }
     return not errors, evidence, errors
 def verify_evidence(root: Path, evidence_path: Path, *, git_sha: str) -> list[str]:
@@ -545,41 +554,16 @@ def verify_evidence(root: Path, evidence_path: Path, *, git_sha: str) -> list[st
         "schema_version",
         "git_sha",
         "manifest_sha256",
-        "artifact_path",
-        "artifact_sha256",
-        "artifact_size",
-        "files",
         "signing_policy_sha256",
-        "team_id",
-        "codesign_timestamp",
-        "spctl_source",
-        "codesign_verified",
-        "notarization_verified",
-        "hardened_runtime_verified",
-        "macho_arch_verified",
-        "macho_type_verified",
-        "minimum_macos_verified",
+        "artifacts",
     }
     errors: list[str] = []
     if not isinstance(evidence, dict) or set(evidence) != expected_keys:
         return ["runtime verification evidence shape is invalid"]
     if (
-        not _exact_int(evidence.get("schema_version"), 2)
+        not _exact_int(evidence.get("schema_version"), 3)
         or evidence.get("git_sha") != git_sha
-        or evidence.get("artifact_path")
-        != (PLUGIN_REL / RUNTIME_BUNDLE_REL).as_posix()
-        or type(evidence.get("artifact_size")) is not int
-        or not isinstance(evidence.get("codesign_timestamp"), str)
-        or not _secure_codesign_timestamp(
-            f"Timestamp={evidence.get('codesign_timestamp', '')}"
-        )
-        or evidence.get("spctl_source") != "Notarized Developer ID"
-        or evidence.get("codesign_verified") is not True
-        or evidence.get("notarization_verified") is not True
-        or evidence.get("hardened_runtime_verified") is not True
-        or evidence.get("macho_arch_verified") is not True
-        or evidence.get("macho_type_verified") is not True
-        or evidence.get("minimum_macos_verified") is not True
+        or type(evidence.get("artifacts")) is not list
     ):
         errors.append("runtime verification evidence is not valid for this release commit")
 
@@ -595,20 +579,23 @@ def verify_evidence(root: Path, evidence_path: Path, *, git_sha: str) -> list[st
         _artifact, _wire, manifest = runtime_client.parse_manifest_bytes(
             manifest_path.read_bytes(), require_artifact=True
         )
-        item = manifest["artifacts"][0]
-        records = runtime_bundle.validate_file_records(item["files"])
-        artifact_digest = runtime_bundle.compute_bundle_identity(records)
-        if evidence.get("artifact_sha256") != artifact_digest:
-            errors.append("runtime evidence artifact digest mismatch")
-        if evidence.get("artifact_size") != sum(record["size"] for record in records):
-            errors.append("runtime evidence artifact size mismatch")
-        signing = item["signing"]
-        if evidence.get("team_id") != signing.get("team_id"):
-            errors.append("runtime evidence signing team mismatch")
-        if evidence.get("team_id") != EXPECTED_DEVELOPER_ID_TEAM:
-            errors.append("runtime evidence does not match the pinned operator identity")
-
-        rows = evidence.get("files")
+        artifact_rows = evidence.get("artifacts")
+        artifact_keys = {
+            "arch",
+            "artifact_path",
+            "artifact_sha256",
+            "artifact_size",
+            "files",
+            "team_id",
+            "codesign_timestamp",
+            "spctl_source",
+            "codesign_verified",
+            "notarization_verified",
+            "hardened_runtime_verified",
+            "macho_arch_verified",
+            "macho_type_verified",
+            "minimum_macos_verified",
+        }
         row_keys = {
             "path",
             "sha256",
@@ -621,14 +608,58 @@ def verify_evidence(root: Path, evidence_path: Path, *, git_sha: str) -> list[st
             "minimum_macos_verified",
         }
         if (
-            type(rows) is not list
-            or len(rows) != len(records)
-            or any(type(row) is not dict or set(row) != row_keys for row in rows)
+            type(artifact_rows) is not list
+            or len(artifact_rows) != len(manifest["artifacts"])
+            or any(
+                type(row) is not dict or set(row) != artifact_keys
+                for row in artifact_rows
+            )
         ):
-            errors.append("runtime evidence bundle-member shape mismatch")
-        else:
+            errors.append("runtime evidence artifact shape mismatch")
+            return errors
+        for artifact_row, item in zip(
+            artifact_rows, manifest["artifacts"], strict=True
+        ):
+            records = runtime_bundle.validate_file_records(item["files"])
+            bundle_rel = Path(item["path"])
+            signing = item["signing"]
+            if (
+                artifact_row["arch"] != item["arch"]
+                or artifact_row["artifact_path"]
+                != (PLUGIN_REL / bundle_rel).as_posix()
+                or artifact_row["artifact_sha256"]
+                != runtime_bundle.compute_bundle_identity(records)
+                or artifact_row["artifact_size"]
+                != sum(record["size"] for record in records)
+                or artifact_row["team_id"] != signing.get("team_id")
+                or artifact_row["team_id"] != EXPECTED_DEVELOPER_ID_TEAM
+                or not _secure_codesign_timestamp(
+                    f"Timestamp={artifact_row['codesign_timestamp']}"
+                )
+                or artifact_row["spctl_source"] != "Notarized Developer ID"
+                or any(
+                    artifact_row[key] is not True
+                    for key in (
+                        "codesign_verified",
+                        "notarization_verified",
+                        "hardened_runtime_verified",
+                        "macho_arch_verified",
+                        "macho_type_verified",
+                        "minimum_macos_verified",
+                    )
+                )
+            ):
+                errors.append("runtime evidence artifact identity mismatch")
+            rows = artifact_row["files"]
+            if (
+                type(rows) is not list
+                or len(rows) != len(records)
+                or any(type(row) is not dict or set(row) != row_keys for row in rows)
+            ):
+                errors.append("runtime evidence bundle-member shape mismatch")
+                continue
             for row, record in zip(rows, records, strict=True):
-                member = root / PLUGIN_REL / RUNTIME_BUNDLE_REL / record["path"]
+                member = root / PLUGIN_REL / bundle_rel / record["path"]
                 if (
                     row["path"] != record["path"]
                     or row["sha256"] != record["sha256"]
