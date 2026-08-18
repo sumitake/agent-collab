@@ -1,37 +1,38 @@
 name: Dependabot auto-merge
 
 # Operator decision 2026-08-17: Dependabot PRs (all update types) auto-merge
-# once a summoned Codex review has been submitted, CI is green, and every
-# review thread is resolved (ruleset-enforced). Supersedes the per-PR
-# hand-adjudication path (operator decision 2026-08-04, plugin PR #67).
+# once CI is green, review threads are resolved, and — enforced INSIDE the
+# required context (compliance-trace.yml → dependabot_gate.py) — every commit is
+# authentically Dependabot's and a Codex review response bound to the current
+# head exists and is clean. Supersedes per-PR hand adjudication (operator
+# decision 2026-08-04, plugin PR #67).
 #
-# Design (cross-family review 2026-08-17, Grok PROCEED-WITH-MODIFICATIONS,
-# concerns 1+2 integrated):
-# - summon: on opened/reopened (or manual dispatch), comment "@codex review".
-# - arm: ONLY when a Codex review is actually submitted — never on open. If
-#   Codex stays silent, nothing arms and the PR takes the manual path; that is
-#   the fail-closed direction. Codex findings are review threads, and the
-#   ruleset's required-thread-resolution blocks the merge until adjudicated.
-# - guard: on every synchronize, and again before arming, every PR commit must
-#   be AUTHORED by dependabot[bot] (committer is legitimately web-flow; a null
-#   author fails closed). Any foreign commit disarms auto-merge and fails —
-#   without this, a write-capable session could push onto a Dependabot branch
-#   and ride the body-gate exemption to main (shared-identity bypass).
-# - workflow_dispatch is the summon-only E2E path for already-open PRs.
+# Architecture (cross-family reviews 2026-08-17 — Grok r1/r2, Codex r1
+# REQUEST_CHANGES integrated): this workflow holds NO merge-blocking
+# authority. It only
+#   - summon: asks Codex for a review (open/reopen/synchronize/dispatch);
+#   - arm: enables native auto-merge immediately on open — SAFE because the
+#     required clean-signal gate blocks the merge until a head-bound clean
+#     Codex response exists (Codex silent → gate red → manual path);
+#   - retrigger: when the Codex response lands (an issue comment — clean
+#     results fire no review event), re-runs the failed Compliance-trace run so
+#     the gate re-evaluates without polling;
+#   - guard: best-effort disarm on foreign commits (the authoritative control
+#     is the required commit-authenticity gate).
 #
-# Keyed on the immutable PR AUTHOR, not actor: bracketed bot logins are
-# unmintable by users, and actor varies on later events.
+# Keyed on the immutable PR AUTHOR (bracketed bot logins are unmintable);
+# authenticity beyond the login is the required gate's job.
 #
-# RUNNER PLACEMENT (deliberate): these jobs need the gh CLI, which the
-# self-hosted fleet/rhonas images do not carry (g4 gh-regression lesson).
-# A few API calls per Dependabot PR on hosted runners ≈ ~1 min/week.
+# RUNNER PLACEMENT (deliberate): these jobs need the gh CLI, absent from the
+# self-hosted fleet/rhonas images (g4 gh-regression lesson). A few hosted
+# minutes per Dependabot PR.
 
 on:
   pull_request:
     types: [opened, reopened, synchronize]
     branches: [main]
-  pull_request_review:
-    types: [submitted]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       pr:
@@ -42,13 +43,13 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   summon:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-       (github.event.action == 'opened' || github.event.action == 'reopened') &&
        github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -59,6 +60,20 @@ jobs:
           PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
         run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "@codex review"
 
+  arm:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action == 'opened' || github.event.action == 'reopened') &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable native auto-merge (squash) — required gates hold the merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
+
   guard:
     if: >-
       github.event_name == 'pull_request' &&
@@ -67,39 +82,53 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Disarm auto-merge if any commit is not Dependabot-authored
+      - name: Best-effort disarm on non-Dependabot-authored commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate \
-            --jq '[.[] | select((.author.login // "") != "dependabot[bot]")] | length')
+          # --slurp folds the paginated pages into one array-of-pages; add
+          # concatenates them (a bare `--paginate | length` emits one count
+          # PER PAGE and would false-fail past 100 commits).
+          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate --slurp \
+            --jq '[add[] | select((.author.login // "") != "dependabot[bot]")] | length')
           if [ "$bad" != "0" ]; then
-            echo "::error::$bad non-Dependabot-authored commit(s) on a Dependabot PR — disarming auto-merge"
+            echo "::error::$bad non-Dependabot-authored commit(s) — disarming auto-merge (required commit gate blocks regardless)"
             gh pr merge --disable-auto "$PR" --repo "$GITHUB_REPOSITORY" || true
             exit 1
           fi
           echo "all commits Dependabot-authored"
 
-  arm:
+  retrigger:
+    # Clean Codex results are ISSUE COMMENTS (no review event fires), so this
+    # is the event that flips the required clean-signal gate green: re-run the
+    # failed required-gates jobs for the PR head. issue_comment workflows run
+    # from the default branch (trusted). No-op comments from anyone else are
+    # filtered by the job condition.
     if: >-
-      github.event_name == 'pull_request_review' &&
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.review.user.login == 'chatgpt-codex-connector[bot]'
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.issue.user.login == 'dependabot[bot]' &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify all commits are Dependabot-authored, then arm auto-merge
+      - name: Re-run failed required-gates for the PR head
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate \
-            --jq '[.[] | select((.author.login // "") != "dependabot[bot]")] | length')
-          if [ "$bad" != "0" ]; then
-            echo "::error::$bad non-Dependabot-authored commit(s) — refusing to arm auto-merge"
-            exit 1
+          head=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&event=pull_request" \
+            --jq '[.workflow_runs[] | select(.name == "Compliance trace")] | sort_by(.created_at) | last | .id // empty')
+          if [ -z "$run_id" ]; then
+            echo "no pull_request Compliance-trace run found for $head — nothing to retrigger"
+            exit 0
           fi
-          gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
+          # rerun-failed-jobs 403s on a non-failed run; that is fine (gate
+          # already green or still running) — do not fail the retrigger.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/rerun-failed-jobs" \
+            && echo "re-ran failed jobs of run $run_id" \
+            || echo "run $run_id not in a rerunnable failed state — skipping"
