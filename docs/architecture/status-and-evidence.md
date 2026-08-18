@@ -140,5 +140,12 @@ When source, release, or installation state changes:
 3. Preserve older facts as historical when they remain useful.
 4. Do not promote repository-only behavior to installed/active without a host
    observation.
-5. Re-run the link, generated-source, release-consistency, and sanitization
+5. Keep operational detail coarse. Describe readiness and activation at the
+   contract level (for example "the supported hosts" and "the advertised
+   contracts") without enumerating host fleets, internal route counts, or
+   private-runtime mechanism names; existing rows remain as recorded history.
+   The fragment-disclosure boundary in
+   [`changelog.d/README.md`](../../changelog.d/README.md) applies to snapshot
+   prose as well.
+6. Re-run the link, generated-source, release-consistency, and sanitization
    checks described in [Repository and release architecture](repository-and-release.md).
