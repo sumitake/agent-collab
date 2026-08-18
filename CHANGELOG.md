@@ -30,6 +30,50 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.0.5 — 2026-08-17
+
+#### Changed
+
+- Ship provider runtime `4.0.4`: the Grok and OpenCode carriers now run
+  native ACP v1 sessions (bounded initialize/new/prompt/permission/close
+  framing, allow-once-only permission answers, deny-by-default location
+  containment, monotonic completed tool facts, end_turn-only success).
+- Logical Gemini remains carried by Agy structured stream-json; the official
+  Gemini CLI ACP endpoint is a different retired consumer CLI and was not
+  used. Codex remains on native App Server JSONL.
+- Runtime `4.0.4` already contains the lifecycle-diagnostic decoupling from
+  workspace #2733: teardown diagnostics stay separate from artifact and
+  evidence validity.
+- Generalize the public manifest validators, importer, release verifier, and
+  archive builder to the Darwin host matrix (arm64 today, x86_64-ready) and
+  require each artifact record to bind the manifest's wire-contract digest
+  via `wire_contract_sha256` — the consumer side of the workspace two-arch
+  producer contract (workspace #2735).
+
+#### Safety
+
+- The routing source is unchanged (`routing_source_sha256` identical). The
+  wire descriptor evolves compatibly: the canonical `wire_contract_sha256`
+  advances, and `cleanup_confirmed` authority constraints widen from
+  const-true to boolean across execution receipts, success results, and
+  private-patch evidence (the workspace two-arch producer contract).
+  Consumers must adopt the shipped descriptor rather than pin the prior
+  digest; a retained old descriptor would reject valid 4.0.4 responses
+  where cleanup is uncertain.
+- No retry, replay, fallback transport, bridge, provider default, or
+  protocol/model/family downgrade was added; a candidate that fails ACP
+  qualification would retain its existing native transport rather than force
+  uniformity.
+
+### agent-collab 6.0.4 — 2026-08-15
+
+Treat an explicit `OPERATOR-BYPASSED` compliance-trace state as valid form only
+when the trace declares an operator-reserved path, without misrepresenting it
+as reviewer convergence or ordinary self-merge eligibility. Routed skills now
+keep `provider_error` and `teardown_error` attempt-local: neither status may
+quarantine a route or establish provider unavailability, and neither triggers
+automatic replay.
+
 ### agent-collab 6.0.3 — 2026-08-15
 
 #### Fixed
