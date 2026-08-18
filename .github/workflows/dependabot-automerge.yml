@@ -2,23 +2,26 @@ name: Dependabot auto-merge
 
 # Operator decision 2026-08-17: Dependabot PRs (all update types) auto-merge
 # once CI is green, review threads are resolved, and — enforced INSIDE the
-# required context (compliance-trace.yml → dependabot_gate.py) — every commit is
+# required context (dependabot-gate.yml → dependabot_gate.py) — every commit is
 # authentically Dependabot's and a Codex review response bound to the current
 # head exists and is clean. Supersedes per-PR hand adjudication (operator
 # decision 2026-08-04, plugin PR #67).
 #
-# Architecture (cross-family reviews 2026-08-17 — Grok r1/r2, Codex r1
-# REQUEST_CHANGES integrated): this workflow holds NO merge-blocking
-# authority. It only
+# Architecture (cross-family reviews 2026-08-17 — Grok r1/r2, Codex r1/r2
+# integrated; reliability-baseline pass): this workflow holds NO
+# merge-blocking authority. It only
 #   - summon: asks Codex for a review (open/reopen/synchronize/dispatch);
 #   - arm: enables native auto-merge immediately on open — SAFE because the
 #     required clean-signal gate blocks the merge until a head-bound clean
 #     Codex response exists (Codex silent → gate red → manual path);
 #   - retrigger: when the Codex response lands (an issue comment — clean
 #     results fire no review event), re-runs the failed Dependabot-gate run so
-#     the gate re-evaluates without polling;
-#   - guard: best-effort disarm on foreign commits (the authoritative control
-#     is the required commit-authenticity gate).
+#     the gate re-evaluates without polling.
+# A best-effort disarm-on-foreign-commit job was deliberately REMOVED
+# (simplicity baseline): the required commit-authenticity gate is the
+# authoritative control — a contaminated PR's merge can never complete, and a
+# later clean force-push is a new head that demands a fresh head-bound
+# signal. Redundant machinery, zero reliability gain.
 #
 # Keyed on the immutable PR AUTHOR (bracketed bot logins are unmintable);
 # authenticity beyond the login is the required gate's job.
@@ -73,32 +76,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
-
-  guard:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.action == 'synchronize' &&
-      github.event.pull_request.user.login == 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Best-effort disarm on non-Dependabot-authored commits
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          # --slurp folds the paginated pages into one array-of-pages; add
-          # concatenates them (a bare `--paginate | length` emits one count
-          # PER PAGE and would false-fail past 100 commits).
-          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate --slurp \
-            --jq '[add[] | select((.author.login // "") != "dependabot[bot]")] | length')
-          if [ "$bad" != "0" ]; then
-            echo "::error::$bad non-Dependabot-authored commit(s) — disarming auto-merge (required commit gate blocks regardless)"
-            gh pr merge --disable-auto "$PR" --repo "$GITHUB_REPOSITORY" || true
-            exit 1
-          fi
-          echo "all commits Dependabot-authored"
 
   retrigger:
     # Clean Codex results are ISSUE COMMENTS (no review event fires), so this
