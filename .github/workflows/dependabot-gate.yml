@@ -27,6 +27,11 @@ name: Dependabot gate
 # the workspace checkout to provision both repos. The arm job in
 # dependabot-automerge.yml is fail-closed: it will not enable auto-merge until
 # this context is actually required, so the un-provisioned state is safe.
+#
+# Bootstrap note: the branch-protection script's preflight refuses to pin a
+# context that has never published a check-run (it would deadlock merges). This
+# workflow must therefore run on at least one PR before `dependabot-gate` is
+# pinned required; this PR is that first run (2026-08-18).
 
 on:
   pull_request_target:
