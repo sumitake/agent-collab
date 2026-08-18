@@ -1385,7 +1385,7 @@ def _safe_create_exclusive(base: Path, path: Path):
     dfd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | nofollow)
     try:
         fd = os.open(path.name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow,
-                     0o644, dir_fd=dfd)
+                     0o600, dir_fd=dfd)
     except FileExistsError:
         raise SystemExit(f"refusing to overwrite existing file: {path}")
     finally:
