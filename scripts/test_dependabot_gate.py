@@ -118,8 +118,6 @@ class TestClassifySignal(unittest.TestCase):
         self.assertEqual(verdict, "absent")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestTrustBoundary(unittest.TestCase):
@@ -153,3 +151,7 @@ class TestTrustBoundary(unittest.TestCase):
             "compliance-trace.yml runs PR-controlled code and must not "
             "execute the merge-blocking Dependabot gate",
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
