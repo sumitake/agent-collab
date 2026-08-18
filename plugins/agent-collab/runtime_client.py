@@ -34,13 +34,19 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.0.4"
+PROVIDER_RUNTIME_VERSION = "4.0.5"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
 MAX_TIMEOUT_MS = 86_400_000
 TERM_GRACE_SECONDS = 0.5
+# Teardown proof gets its own small bounded budget, independent of the
+# (possibly already exhausted) request deadline. A SIGKILLed process group
+# normally vanishes in milliseconds; sharing the request deadline starved
+# the proof after long provider calls and minted frequent false
+# teardown_error results, most visibly on long Agy runs.
+TEARDOWN_REAP_SECONDS = 5.0
 PROCESS_CLEANUP_RESERVE_SECONDS = TERM_GRACE_SECONDS * 4
 EXPECTED_MINIMUM_MACOS = "14.0"
 RUNTIME_ENTRYPOINT = "agent-collab-runtime"
@@ -1314,6 +1320,10 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime request exceeds input bound", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     if _identity(resolution.path, executable=True) != resolution.identity:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime identity changed before launch", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+    teardown_note = ""
+    stdout = None
+    terminal = None
+    returncode = None
     try:
         with _isolated_tmpdir() as tmpdir:
             try:
@@ -1335,7 +1345,10 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 if stream is not None and not stream.closed:
                     stream.close()
             if terminal:
-                reaped = _terminate_and_reap(process, deadline=deadline)
+                reaped = _terminate_and_reap(
+                    process,
+                    deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
+                )
                 status = RuntimeStatus.TIMEOUT if terminal == "timeout" else RuntimeStatus.OUTPUT_LIMIT
                 if not reaped:
                     status = RuntimeStatus.TEARDOWN_ERROR
@@ -1344,7 +1357,10 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             try:
                 returncode = process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
-                reaped = _terminate_and_reap(process, deadline=deadline)
+                reaped = _terminate_and_reap(
+                    process,
+                    deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
+                )
                 return RuntimeResult(
                     RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR,
                     error=(
@@ -1355,16 +1371,32 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                     manifest_digest=resolution.manifest_digest,
                     artifact_digest=resolution.artifact_digest,
                 )
-            reaped = _terminate_and_reap(process, deadline=deadline)
-            if not reaped:
-                return RuntimeResult(RuntimeStatus.TEARDOWN_ERROR, error="process group teardown unproven", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+            # The runtime child exited on its own and the response bytes are
+            # in hand. Teardown of any remaining process-group descendants is
+            # bounded hygiene, never a reason to void a valid response: the
+            # group is SIGTERM/SIGKILLed either way, and an unproven death
+            # within the budget degrades to a client-side diagnostic note
+            # (the wire's cleanup facts already model unproven cleanup).
+            try:
+                if not _terminate_and_reap(
+                    process,
+                    deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
+                ):
+                    teardown_note = "process group teardown unproven"
+            except Exception:
+                teardown_note = "process group teardown unproven"
     except _PrivateTmpCleanupError as exc:
-        return RuntimeResult(
-            RuntimeStatus.TEARDOWN_ERROR,
-            error=str(exc),
-            manifest_digest=resolution.manifest_digest,
-            artifact_digest=resolution.artifact_digest,
-        )
+        if not stdout or terminal is not None or returncode != 0:
+            return RuntimeResult(
+                RuntimeStatus.TEARDOWN_ERROR,
+                error=str(exc),
+                manifest_digest=resolution.manifest_digest,
+                artifact_digest=resolution.artifact_digest,
+            )
+        # A collected, cleanly exited response survives a private-tmp
+        # cleanup failure; the residue is recorded, not converted into a
+        # false provider failure.
+        teardown_note = teardown_note or str(exc)
     try:
         response = runtime_bundle.load_closed_json_object(
             stdout, max_bytes=MAX_RESPONSE_BYTES
@@ -1407,6 +1439,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 status,
                 result=response["result"],
                 provenance={"wire_contract_sha256": resolution.wire.sha256},
+                error=teardown_note,
                 manifest_digest=resolution.manifest_digest,
                 artifact_digest=resolution.artifact_digest,
             )
@@ -1418,6 +1451,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 "execution_receipt": response["execution_receipt"],
                 "diagnostics": response["diagnostics"],
             },
+            error=teardown_note,
             manifest_digest=resolution.manifest_digest,
             artifact_digest=resolution.artifact_digest,
         )

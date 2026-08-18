@@ -15,10 +15,10 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.0.5\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 6.0.6\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.0.5")
+            self.assertEqual(manifest["version"], "6.0.6")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -119,8 +119,10 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         request = json.loads(matches[0])
         self.assertEqual(request["logical_action"], "context.documents.intent")
         self.assertIsNone(request["target_agent"])
-        self.assertEqual(request["quality_profile"], "frontier")
-        self.assertEqual(request["effort_class"], "maximum")
+        # standard/standard per the operator-adjudicated verify-intent
+        # effort floors (workspace #2771; skill companion in v6.0.6).
+        self.assertEqual(request["quality_profile"], "standard")
+        self.assertEqual(request["effort_class"], "standard")
         self.assertEqual(
             set(request),
             {
