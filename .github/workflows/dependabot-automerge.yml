@@ -12,9 +12,12 @@ name: Dependabot auto-merge
 #   - summon: asks Codex for a review (open/reopen/synchronize/dispatch);
 #   - arm: enables native auto-merge — SAFE because dependabot-gate holds the
 #     merge until a head-bound clean Codex response exists (Codex silent → gate
-#     red → manual path). Armed on open/reopen AND synchronize so an
-#     already-open PR (opened before this workflow reached main) still arms;
-#     `gh pr merge --auto` is idempotent (Grok trust-model review, concern 4);
+#     red → manual path), AND arm refuses to enable auto-merge unless
+#     dependabot-gate is provably a required context (Codex connector P1 —
+#     otherwise auto-merge would complete on the pre-existing required checks
+#     before the operator enables the gate). Armed on open/reopen AND
+#     synchronize so an already-open PR still arms; `gh pr merge --auto` is
+#     idempotent (Grok trust-model review, concern 4);
 #   - retrigger: clean Codex results are ISSUE COMMENTS (no review event), so
 #     this re-runs the failed dependabot-gate run when the comment lands.
 #
@@ -79,11 +82,28 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Enable native auto-merge (squash) — dependabot-gate holds the merge
+      # FAIL-CLOSED arming (Codex connector P1, 2026-08-17): enabling
+      # auto-merge only makes the merge wait for the CURRENTLY-required checks.
+      # If `dependabot-gate` is not yet a required context (operator has not
+      # run scripts/enable-branch-protection.sh), auto-merge would complete on
+      # the pre-existing required checks WITHOUT the gate. So arm ONLY when
+      # `dependabot-gate` is provably in main's required status checks; any
+      # API error or absence → do not arm (the PR just takes the normal path).
+      - name: Arm native auto-merge only if the dependabot-gate context is required
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-        run: gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
+        run: |
+          set -euo pipefail
+          required=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" \
+            --jq '[.[] | select(.type=="required_status_checks")
+                        | .parameters.required_status_checks[].context]
+                   | any(. == "dependabot-gate")' 2>/dev/null || echo "false")
+          if [ "$required" != "true" ]; then
+            echo "::warning::dependabot-gate is not a required status check on main — refusing to arm auto-merge (run scripts/enable-branch-protection.sh). No auto-merge enabled; PR takes the normal review path."
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
 
   retrigger:
     if: >-
