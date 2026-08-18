@@ -70,22 +70,32 @@ def _get_paginated(path: str):
 
 
 def check_commits(commits) -> list[str]:
-    """Return violation strings; empty means every commit is authentic.
+    """Return violation strings; empty means every commit is *shaped* like a
+    genuine Dependabot commit (author dependabot[bot] + committer web-flow +
+    verified signature with reason=valid).
 
-    Signer-identity binding (Codex connector P2, 2026-08-17): requiring
-    ``verified is True`` alone would not identify WHO signed — a valid signature
-    from any key satisfies it. We additionally require ``reason == "valid"`` AND
-    ``committer.login == "web-flow"``. GitHub only assigns ``reason: valid``
-    when the signing key belongs to an account whose verified email matches the
-    commit's committer email; since ``committer.login`` resolves to ``web-flow``
-    only for GitHub's own ``noreply@github.com`` committer, ``reason: valid``
-    there means GitHub's web-flow key signed it — which a push-capable attacker
-    cannot forge (they hold no web-flow private key; signing with their own key
-    would not match the web-flow committer identity and would fail
-    ``reason: valid``). Residual: this relies on GitHub's identity-binding
-    semantics rather than a raw web-flow key-ID comparison (deliberately not
-    hand-parsing PGP in the gate — simplicity baseline); flagged for operator
-    confirmation as a signing surface.
+    KNOWN, OPERATOR-ACCEPTED RESIDUAL (2026-08-17): this is NOT robust
+    provenance against an actor with WRITE ACCESS to the repo. GitHub signs
+    commits it creates via the contents/git-data API with its own web-flow key
+    (verified=true, reason=valid) for ANY caller, and author/committer are
+    caller-selectable metadata (empirically: the #2762 merge commit is
+    web-flow-signed + verified + valid with a non-Dependabot author). So a
+    write-capable actor can create a web-flow-signed commit with
+    author=dependabot[bot] and arbitrary content and pass every predicate here
+    without holding any key. The commit-content/signature approach therefore
+    cannot prove Dependabot ORIGIN against a write-capable actor (Codex
+    connector P1, escalated + operator-accepted 2026-08-17).
+
+    Why this is accepted rather than closed: the authoritative backstop is the
+    HEAD-BOUND Codex clean-signal in classify_signal() — any injected commit
+    changes the PR head, invalidating the clean signal, so the content needs a
+    FRESH Codex review of that exact commit (the same review bar any PR faces).
+    The residual privilege an insider gains is skipping the agent-body
+    governance gates (trace/tier/phase1), not skipping review. Under the shared
+    identity model (write-capable agents already exist) the operator accepted
+    this tradeoff over reintroducing actor-restriction complexity. This function
+    is thus a cheap shape/sanity filter layered UNDER the Codex review, not a
+    standalone provenance proof.
     """
     bad = []
     for c in commits:
