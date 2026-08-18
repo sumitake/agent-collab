@@ -67,6 +67,8 @@ transport after the exact target identity, family, session, and current
 readiness are observed. The public coordinator exposes readiness only. It does
 not send, does not create a synchronous Claude route, and does not treat an
 async reply as independent governance merely because it arrived.
+[Claude participation](claude-participation.md) explains why no synchronous
+Claude route exists.
 
 ### Reproducible composition
 
@@ -122,7 +124,7 @@ grant governance or mutation authority.
 
 | Surface | Public package evidence | User expectation |
 | --- | --- | --- |
-| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. Claude model participation remains async-only. |
+| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. Claude model participation remains async-only (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
 | Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |
