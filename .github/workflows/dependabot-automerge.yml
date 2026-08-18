@@ -1,37 +1,44 @@
 name: Dependabot auto-merge
 
 # Operator decision 2026-08-17: Dependabot PRs (all update types) auto-merge
-# once CI is green, review threads are resolved, and — enforced INSIDE the
-# required context (dependabot-gate.yml → dependabot_gate.py) — every commit is
+# once CI is green, review threads are resolved, and — enforced by the
+# dedicated required context `dependabot-gate.yml` — every commit is
 # authentically Dependabot's and a Codex review response bound to the current
 # head exists and is clean. Supersedes per-PR hand adjudication (operator
 # decision 2026-08-04, plugin PR #67).
 #
-# Architecture (cross-family reviews 2026-08-17 — Grok r1/r2, Codex r1/r2
-# integrated; reliability-baseline pass): this workflow holds NO
-# merge-blocking authority. It only
+# This workflow holds NO merge-blocking authority (that is dependabot-gate.yml).
+# It only:
 #   - summon: asks Codex for a review (open/reopen/synchronize/dispatch);
-#   - arm: enables native auto-merge immediately on open — SAFE because the
-#     required clean-signal gate blocks the merge until a head-bound clean
-#     Codex response exists (Codex silent → gate red → manual path);
-#   - retrigger: when the Codex response lands (an issue comment — clean
-#     results fire no review event), re-runs the failed Dependabot-gate run so
-#     the gate re-evaluates without polling.
-# A best-effort disarm-on-foreign-commit job was deliberately REMOVED
-# (simplicity baseline): the required commit-authenticity gate is the
-# authoritative control — a contaminated PR's merge can never complete, and a
-# later clean force-push is a new head that demands a fresh head-bound
-# signal. Redundant machinery, zero reliability gain.
+#   - arm: enables native auto-merge — SAFE because dependabot-gate holds the
+#     merge until a head-bound clean Codex response exists (Codex silent → gate
+#     red → manual path). Armed on open/reopen AND synchronize so an
+#     already-open PR (opened before this workflow reached main) still arms;
+#     `gh pr merge --auto` is idempotent (Grok trust-model review, concern 4);
+#   - retrigger: clean Codex results are ISSUE COMMENTS (no review event), so
+#     this re-runs the failed dependabot-gate run when the comment lands.
+#
+# TRUST MODEL (Grok trust-model review 2026-08-17): summon + arm run on
+# `pull_request_target`, NOT `pull_request`. Rationale is reliability, not a
+# 403 (summon empirically worked on pull_request): Dependabot `pull_request`
+# runs get a read-only token by default and depend on fragile permissions
+# elevation, whereas pull_request_target always has a writable token. SAFE
+# because these jobs check out NO code and interpolate only the integer PR
+# number + a fixed comment body — zero PR-controlled code executes (no
+# `actions/checkout`, no `uses: ./`, no title/body/head-ref interpolation).
+# Do NOT add a checkout to this workflow. `issue_comment` (retrigger) is
+# base-controlled and unrestricted. Permissions are scoped per job to the
+# minimum each needs.
 #
 # Keyed on the immutable PR AUTHOR (bracketed bot logins are unmintable);
-# authenticity beyond the login is the required gate's job.
+# authenticity beyond the login is dependabot-gate.yml's job.
 #
 # RUNNER PLACEMENT (deliberate): these jobs need the gh CLI, absent from the
 # self-hosted fleet/rhonas images (g4 gh-regression lesson). A few hosted
 # minutes per Dependabot PR.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize]
     branches: [main]
   issue_comment:
@@ -43,19 +50,18 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+permissions: {}
 
 jobs:
   summon:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
+      (github.event_name == 'pull_request_target' &&
        github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      pull-requests: write
     steps:
       - name: Summon Codex cross-check review
         env:
@@ -65,24 +71,21 @@ jobs:
 
   arm:
     if: >-
-      github.event_name == 'pull_request' &&
-      (github.event.action == 'opened' || github.event.action == 'reopened') &&
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Enable native auto-merge (squash) — required gates hold the merge
+      - name: Enable native auto-merge (squash) — dependabot-gate holds the merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
         run: gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
 
   retrigger:
-    # Clean Codex results are ISSUE COMMENTS (no review event fires), so this
-    # is the event that flips the required clean-signal gate green: re-run the
-    # failed required-gates jobs for the PR head. issue_comment workflows run
-    # from the default branch (trusted). No-op comments from anyone else are
-    # filtered by the job condition.
     if: >-
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
@@ -90,8 +93,11 @@ jobs:
       github.event.comment.user.login == 'chatgpt-codex-connector[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
     steps:
-      - name: Re-run failed required-gates for the PR head
+      - name: Re-run the dependabot-gate run for the PR head
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.issue.number }}
@@ -104,8 +110,8 @@ jobs:
             echo "no pull_request_target Dependabot-gate run found for $head — nothing to retrigger"
             exit 0
           fi
-          # rerun-failed-jobs 403s on a non-failed run; that is fine (gate
-          # already green or still running) — do not fail the retrigger.
+          # rerun-failed-jobs 403s on a non-failed/in-progress run; that is fine
+          # (gate already green or still running) — do not fail the retrigger.
           gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/rerun-failed-jobs" \
             && echo "re-ran failed jobs of run $run_id" \
             || echo "run $run_id not in a rerunnable failed state — skipping"

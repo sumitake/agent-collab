@@ -8,14 +8,15 @@
 #
 # Workflow tie-in (operator decision 2026-08-17): Dependabot PRs auto-merge —
 # all update types — via .github/workflows/dependabot-automerge.yml (summon /
-# arm / retrigger only). The merge is held by the REQUIRED validate-trace
-# context: for dependabot[bot] PRs it hard-fails unless every commit is
-# authentically Dependabot's (author + web-flow committer + verified
-# signature) and a clean Codex response bound to the current head exists
-# (scripts/dependabot_gate.py) — Codex silence or findings keep the check red
-# and the PR on the manual path. Agent-authored dependency changes remain
-# Tier 2/3 under docs/public-governance.md with an independent cross-family
-# check.
+# arm / retrigger only). The merge is held by the DEDICATED required context
+# .github/workflows/dependabot-gate.yml (pull_request_target + ref:main): for
+# dependabot[bot] PRs it hard-fails unless every commit is authentically
+# Dependabot's (author + web-flow committer + verified signature) and a clean
+# Codex response bound to the current head exists (scripts/dependabot_gate.py)
+# — Codex silence or findings keep the check red and the PR on the manual
+# path. validate-trace (compliance-trace.yml) merely exempts dependabot from
+# the trace. Agent-authored dependency changes remain Tier 2/3 under
+# docs/public-governance.md with an independent cross-family check.
 #
 # Rollback: delete this file (revert PR). Vulnerability-alerts and
 # automated-security-fixes remain enabled at the repo level independently.

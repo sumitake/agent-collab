@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import dependabot_gate  # noqa: E402
 from dependabot_gate import check_commits, classify_signal  # noqa: E402
 
 CODEX = "chatgpt-codex-connector[bot]"
@@ -72,6 +73,30 @@ class TestCheckCommits(unittest.TestCase):
 
     def test_any_bad_commit_among_good_ones_fails(self):
         self.assertTrue(check_commits([_commit(), _commit(author="mallory")]))
+
+    def test_commits_mode_fails_closed_on_empty_commit_list(self):
+        # The `commits` mode must fail closed on an empty API result (Grok
+        # trust-model review, concern 9).
+        import os
+        import sys as _sys
+
+        orig_get = dependabot_gate._get_paginated
+        orig_env = {k: os.environ.get(k) for k in ("REPO", "PR_NUMBER")}
+        orig_argv = _sys.argv
+        try:
+            dependabot_gate._get_paginated = lambda path: []
+            os.environ["REPO"] = "o/r"
+            os.environ["PR_NUMBER"] = "1"
+            _sys.argv = ["dependabot_gate.py", "commits"]
+            self.assertEqual(dependabot_gate.main(), 1)
+        finally:
+            dependabot_gate._get_paginated = orig_get
+            _sys.argv = orig_argv
+            for k, v in orig_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
 
 class TestClassifySignal(unittest.TestCase):

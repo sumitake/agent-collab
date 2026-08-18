@@ -126,6 +126,11 @@ def main() -> int:
     pr = os.environ["PR_NUMBER"]
     if mode == "commits":
         commits = _get_paginated(f"/repos/{repo}/pulls/{pr}/commits?per_page=100")
+        if not commits:
+            # Fail closed: an empty commit list must never satisfy the
+            # authenticity gate (Grok trust-model review, concern 9).
+            print("::error::PR reported zero commits — failing closed")
+            return 1
         bad = check_commits(commits)
         if bad:
             print(
