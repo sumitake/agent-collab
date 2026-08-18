@@ -11,6 +11,29 @@ This directory holds **per-PR changelog fragments** that compile into `CHANGELOG
 
    The `<sortable-id>` is anything that sorts lexically the way you want entries to appear (most projects use zero-padded incrementing IDs, PR numbers, or ISO date prefixes). **Use a unique filename** (prefer your PR number or an ISO date + sequence) — two PRs creating the *same* fragment filename is the only remaining way to collide on `changelog.d/`, so distinct names make conflicts structurally impossible.
 
+## Public-disclosure boundary for fragment content
+
+Fragments compile into the public `CHANGELOG.md`, the GitHub release notes,
+and permanent git history. They are among the most widely read prose this
+repository publishes, and generated history is never rewritten, so a
+disclosure in a fragment is effectively permanent. Author fragments at the
+resolution of user-visible effect and public contract change:
+
+- Describe **what** changed for users (fixed, added, changed contract,
+  compatibility), not **how** the private runtime implements it.
+- Keep private-runtime implementation strategy at coarse resolution (for
+  example "carrier reliability repairs"). Mechanism names, internal session
+  or lifecycle steps, fallback-ladder designs, and provider-integration
+  internals belong in the private producer's own records, not here.
+- Do not include host-fleet enumeration, internal route counts, private
+  paths, or machine state.
+- When an entry needs technical depth to be truthful (for example a
+  rollback-defect record), describe the defect's user-visible effect and the
+  release that corrects it rather than the internal mechanism.
+
+Reviewers should treat a fragment that crosses this boundary as a change
+request, the same as any other sanitization finding.
+
 2. **Write the entry content** in standard CHANGELOG section format:
 
    ```markdown

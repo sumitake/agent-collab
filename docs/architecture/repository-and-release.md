@@ -186,9 +186,13 @@ concepts, examples, lifecycle, boundary rationale, and honest uncertainty. The
 machine-operational fields and closed interface detail. Public pages must omit
 raw provider invocation recipes, private paths, credentials, private
 control-plane discovery, and enough executor detail to become a turnkey
-specification for a foreign agent. The private producer/workspace may keep the
-copyable internal operating recipe under its own governance; this public
-repository does not enumerate or depend on it.
+specification for a foreign agent. Changelog fragments and release notes
+follow the same boundary: record user-visible effect and contract changes at
+coarse resolution, and leave private-runtime implementation strategy to the
+private producer's records (see
+[`changelog.d/README.md`](../../changelog.d/README.md)). The private
+producer/workspace may keep the copyable internal operating recipe under its
+own governance; this public repository does not enumerate or depend on it.
 
 Finish by running the current repository checks from `AGENTS.md`, including
 generation, unit/regression, release consistency, changelog dry-run, active-tree
