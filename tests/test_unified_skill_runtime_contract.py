@@ -119,8 +119,8 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         request = json.loads(matches[0])
         self.assertEqual(request["logical_action"], "context.documents.intent")
         self.assertIsNone(request["target_agent"])
-        self.assertEqual(request["quality_profile"], "frontier")
-        self.assertEqual(request["effort_class"], "maximum")
+        self.assertEqual(request["quality_profile"], "standard")
+        self.assertEqual(request["effort_class"], "standard")
         self.assertEqual(
             set(request),
             {

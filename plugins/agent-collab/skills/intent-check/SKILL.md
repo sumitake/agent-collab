@@ -2,8 +2,8 @@
 name: intent-check
 version: 6.0.5
 defaults:
-  quality_profile: frontier
-  effort_class: maximum
+  quality_profile: standard
+  effort_class: standard
 
 description: Verify that the active primary's interpretation matches the operator's request before consequential planning or execution. Use when the user says "intent check," "confirm what I asked," "check for scope drift," or "/agent-collab:intent-check." Also offer this proactively when a major request has multiple constraints whose omission would materially change the result.
 ---
@@ -24,7 +24,7 @@ request. The runtime selects an eligible independent route; the caller does not
 construct an agent/action pair.
 
 ```json coordinator-request
-{"request_id":"intent-check-1","logical_action":"context.documents.intent","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Compare the operator request with the primary interpretation. Identify only material omissions, added scope, or ambiguity; do not design or execute the work.","documents":[{"label":"operator_request","content":"<verbatim operator request>"},{"label":"primary_interpretation","content":"<plain-language interpretation>"}]}
+{"request_id":"intent-check-1","logical_action":"context.documents.intent","quality_profile":"standard","effort_class":"standard","target_agent":null,"timeout_ms":120000,"prompt":"Compare the operator request with the primary interpretation. Identify only material omissions, added scope, or ambiguity; do not design or execute the work.","documents":[{"label":"operator_request","content":"<verbatim operator request>"},{"label":"primary_interpretation","content":"<plain-language interpretation>"}]}
 ```
 
 ## Workflow

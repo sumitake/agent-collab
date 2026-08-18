@@ -55,7 +55,7 @@
     "visual_review_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
     "visual_review_call_params": "with no managed image route in this release",
     "orchestrate_defaults_block": "defaults:\n  quality_profile: standard\n  effort_class: standard\n",
-    "intent_check_defaults_block": "defaults:\n  quality_profile: frontier\n  effort_class: maximum\n",
+    "intent_check_defaults_block": "defaults:\n  quality_profile: standard\n  effort_class: standard\n",
     "teamwork_defaults_block": "defaults:\n  quality_profile: standard\n  effort_class: standard\n",
     "consultant_agent": "an eligible managed consultant"
   }

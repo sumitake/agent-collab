@@ -1,0 +1,4 @@
+### agent-collab — 2026-08-18
+
+#### Changed
+- `intent-check` skill now requests `quality_profile: standard` / `effort_class: standard` (was `frontier` / `maximum`). The Step-0 intent check is a bounded two-document interpretation comparison, not architecture-grade deliberation; the top-tier pin made it the most expensive high-frequency managed call in the system with no quality justification. For the `context.documents.intent` route the `quality_profile` knob is functionally inert (identical candidate lists across all profiles), so this is a pure cost reduction with no routing change. Matches the existing `teamwork` / `orchestrate` standard/standard default pattern. Companion workspace PR downgrades the route-level `effort_class` floor so the new request is admitted (workspace merges first — a request below the floor is rejected `effort_ineligible`).
