@@ -170,6 +170,17 @@ class TestTrustBoundary(unittest.TestCase):
         self.assertIn("scripts/dependabot_gate.py commits", self.gate_wf)
         self.assertIn("scripts/dependabot_gate.py signal", self.gate_wf)
 
+    def test_every_referenced_python_path_exists(self):
+        # Catch the DOA class where the gate references a wrong path and
+        # hard-fails every Dependabot PR (GLM peer review, concern 1).
+        import re as _re
+
+        for path in _re.findall(r"python3 (\S+\.py)", self.gate_wf):
+            self.assertTrue(
+                (self.REPO / path).is_file(),
+                msg=f"dependabot-gate.yml references non-existent path: {path}",
+            )
+
     def test_pr_controlled_trace_workflow_never_runs_the_gate(self):
         self.assertNotIn(
             "dependabot_gate.py", self.trace_wf,
