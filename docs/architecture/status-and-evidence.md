@@ -17,7 +17,35 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v6.0.1 release closeout snapshot
+## v6.0.6 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-18. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated [`v6.0.6` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.0.6) identifies public commit `1d6ae7a0921e29133eb405e73ffbe820b5c7080c`. | published | The immutable source contains package version 6.0.6 and the provider runtime 4.0.5 bundle (native ACP carriers for Grok and OpenCode with display-drift tolerance, the tagless-catalog fallback ladder, fail-safe failure envelopes, and the repaired zero-inference readiness path that caused the v6.0.5 rollback). |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/32143886259) completed successfully and the release is published, non-draft, and non-prerelease. | published | The signed tag and GitHub Release planes agree; neither repository state nor tag existence alone was used as publication proof. |
+| The release contains exactly `agent-collab.v6.0.6.plugin`, `agent-collab.v6.0.6.plugin.sha256`, and `agent-collab-v6.0.6.spdx.json`. Their SHA-256 values are `6d74b28b8f659627bf3f2b116183f5407a37feb76b5671f1a51a2e358927f03c`, `a2f6540cbf03cdbea78aa211a1b51c135c2796c29cf72c81be74f2a5a23886a0`, and `23ea532078c1fb3189c4f9ffff0f1a9f5e8c4f4d701f1c5ec210e3c63e9879b3`. The released archive is byte-identical to the locally built commit-bound qualification archive. | verified release evidence | The archive, checksum, and SPDX assets were verified against the exact release object. This does not by itself prove installation on a host. |
+| The generated `CHANGELOG.md` contains the compiled v6.0.6 entry (and the intervening v6.0.2–v6.0.5 line, including the v6.0.5 rollback-defect record). | verified current | Generated release history agrees with the tag and package bytes; this closeout does not rewrite generated history or a signed release. |
+| All four primary hosts — Claude, Codex, Antigravity, and Grok — installed 6.0.6 through their supported plugin CLIs, and every installed tree matched the released archive byte-for-byte (only host-generated cache files excluded). Provider-free readiness from the installed coordinator returned a typed zero-model snapshot with confirmed cleanup (54 candidates ready across 12 actions; only known host-local Codex native-CLI routes degraded). | installed and provider-free ready on the observed hosts | This proves exact installation and readiness mechanics on those hosts at that time. It does not guarantee future provider authentication, quota, semantic quality, or another host's state. |
+| One consumed post-install canary per migrated ACP carrier returned a receipted, content-correct result with repository-read evidence and confirmed cleanup (Grok over `grok_cli`; OpenCode over `opencode_go`). | activation qualified | Both migrated native ACP carriers executed end-to-end on the installed release. This does not extend to unmigrated carriers or future requests. |
+| Provider-specific and host-specific predecessor packages | retired | Migration and regression tests block their return as active packages or rollback targets. |
+
+The public repository may advance after this immutable release tag for the
+documentation closeout or later work. Re-check the tag, release, assets, host
+inventory, and readiness plane before making a new release or activation claim.
+
+### v6.0.6 closeout determinations
+
+| Public surface | Determination | Closeout result |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | This status snapshot records the v6.0.6 release and four-host activation; the remaining handbook pages describe the direct-runtime lifecycle and boundaries unchanged by this release. |
+| Root `README.md` | **verified current** | The version, what's-new narrative (runtime 4.0.5 repairs and carrier hardening), and release link were refreshed in the distribution PR and verified by the release-cut consistency gates. |
+| `plugins/agent-collab/README.md` | **verified current** | The package reference describes the exact coordinator request, response union, manifest, and one-process lifecycle shipped in 6.0.6. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v6.0.6 entry; this post-release closeout leaves generated history unchanged. |
+
+## Historical v6.0.1 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-13. It is a
 dated snapshot, not a permanent “latest version” badge.
