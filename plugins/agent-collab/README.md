@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.0.6**
+Current: **6.1.0**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -181,9 +181,25 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 12/13/17 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches this same 6.0.6
+residue is reported separately. Runtime readiness launches this same 6.1.0
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.
+
+## Local project tools
+
+Two skills bundle deterministic, stdlib-only CLIs that run offline inside
+the user's project and never touch the coordinator or the native runtime:
+
+```text
+python3 "<plugin-root>/knowledge_tool.py" --help
+python3 "<plugin-root>/learning_ledger.py" --help
+```
+
+`knowledge_tool.py` (the `project-knowledge` skill) maintains a
+provenance-tracked `knowledge/` page layer; `learning_ledger.py` (the
+`learning-loop` skill) maintains a `.learnings/` lesson ledger. Both write
+only within the user-chosen `--root`, make no network calls, and launch no
+provider process.
 
 ## Distribution boundary
 

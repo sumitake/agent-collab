@@ -1,6 +1,6 @@
 # Shared skill specifications
 
-The 47 non-underscore Markdown files in this directory are the editable source
+The 52 non-underscore Markdown files in this directory are the editable source
 for their matching `plugins/agent-collab/skills/*/SKILL.md` files. There is one
 output package and no alias or preset generation.
 

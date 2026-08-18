@@ -1,6 +1,6 @@
 ---
 name: start-inbox-monitor
-version: 6.0.6
+version: 6.1.0
 description: Use when the user says "start the inbox monitor", "keep monitoring agent messages", or "/agent-collab:start-inbox-monitor", or when an active cross-agent thread needs durable session-scoped inbox monitoring. Select the native Codex, Claude, or Antigravity lifecycle instead of inventing a universal polling loop.
 ---
 

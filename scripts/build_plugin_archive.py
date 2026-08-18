@@ -102,6 +102,8 @@ REQUIRED_ROOTS = (
     "runtime_bundle.py",
     "host_policy.py",
     "migration_doctor.py",
+    "knowledge_tool.py",
+    "learning_ledger.py",
     "signing_policy.py",
     "runtime-manifest.json",
     "runtime-manifest.schema.json",
