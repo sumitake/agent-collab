@@ -1,6 +1,6 @@
 ---
 name: ai-writing-auditor
-version: 6.0.5
+version: 6.0.6
 description: Audits prose for the tells of machine-generated writing and rewrites it to read as if a careful human wrote it, without softening the actual content. Use when the user says "de-AI this text", "audit this writing for AI patterns", "make this read human", or "/agent-collab:ai-writing-auditor." Also offer this proactively when a piece of customer-facing or published prose is dense with the stock phrasing and mechanical structure typical of unedited model output.
 ---
 

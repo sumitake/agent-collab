@@ -5,11 +5,13 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.0.5). The
-**v6.0.5 release** ships provider runtime `4.0.4`, which moves the Grok and
-OpenCode carriers to native ACP v1 sessions, and generalizes the public
-manifest validators to the Darwin host matrix. The
-**[v6.0.5 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.5)**
+This public repository distributes **agent-collab** (v6.0.6). The
+**v6.0.6 release** ships provider runtime `4.0.5` — repairing the readiness
+crash that forced the v6.0.5 activation rollback, tolerating provider-CLI
+display-title drift and catalog metadata drift, and hardening failure
+envelopes — plus a teardown-tolerant public client and a standard-effort
+intent-check. The
+**[v6.0.6 release](https://github.com/sumitake/agent-collab/releases/tag/v6.0.6)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -21,35 +23,25 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.0.5
+## What's new - v6.0.6
 
-- Provider runtime `4.0.4`: the Grok and OpenCode carriers now run native
-  ACP v1 sessions with bounded initialize/new/prompt/permission/close framing,
-  monotonic tool facts, and deny-by-default permission mediation. Logical
-  Gemini remains carried by Agy structured stream-json (the official Gemini
-  CLI ACP endpoint is not used), and Codex remains on native App Server JSONL.
-- Runtime `4.0.4` also carries the earlier lifecycle-diagnostic decoupling:
-  teardown diagnostics stay separate from artifact/evidence validity.
-- The public manifest validators now accept the Darwin host matrix
-  (arm64 today, x86_64-ready) and bind each artifact record to the manifest's
-  wire-contract digest (`wire_contract_sha256`), completing the consumer side
-  of the workspace two-arch producer contract.
-- From the unreleased v6.0.4 line: every routed skill treats `provider_error`
-  and `teardown_error` as attempt-local diagnostics — they invalidate that
-  attempt's artifact and evidence without quarantining the route, and the
-  no-replay invariant remains explicit. The public governance trace accepts an
-  anchored `OPERATOR-BYPASSED` state as honest form only when
-  `operator_reserved` begins with `yes`.
-- No quarantine store, parallel registry, fallback transport, or release
-  service was added.
-- The 4.7 engineering-process pack remains available as three self-executed
-  skills: `decision-map`, `prototype`, and `architecture-review`.
-- The current `code-review` skill retains its spec-fidelity axis and
-  evidence-bound Fowler smell baseline; `Spec` and `Smell` findings remain
-  separate from defect severity and merge-blocking aggregation.
-- `orchestrate` and `teamwork` retain conditional tracer-bullet and
-  expand–contract guidance for product-feature decomposition without adding a
-  provider route or generic orchestration layer.
+- Provider runtime `4.0.5` repairs the 4.0.4 zero-inference readiness crash
+  (the v6.0.5 rollback defect): a defective candidate probe now degrades
+  route-locally with a bounded exception-class diagnostic instead of failing
+  the whole snapshot.
+- ACP tool-title tolerance: display-title drift across tool-call updates
+  (current grok CLIs decorate titles) no longer voids read evidence;
+  authorization keeps strict title+kind agreement, and mutation/execution/
+  meta-hinting titles stay non-evidentiary (quoted argument spans exempt).
+- OpenCode catalog tolerance: a catalog without role tags resolves through a
+  deterministic newest-dominant ladder instead of failing the lineage.
+- Failure envelopes are fail-safe: invalid compositions degrade to the
+  canonical typed protocol_error instead of an opaque provider_error.
+- Public client: process-group teardown gets its own bounded budget and can
+  never void a valid collected response (frequent false agy teardown_error
+  fixed); private-tmp residue is recorded, not converted into failure.
+- intent-check runs at standard quality/effort on its dedicated verify
+  intent (operator-adjudicated effort floors).
 
 ## What ships
 
@@ -123,7 +115,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.4`;
+- provider runtime version `4.0.5`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.

@@ -1,6 +1,6 @@
 ---
 name: dev-delegate
-version: 6.0.5
+version: 6.0.6
 defaults:
   quality_profile: standard
   effort_class: standard

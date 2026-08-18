@@ -1,6 +1,6 @@
 ---
 name: decision-map
-version: 6.0.5
+version: 6.0.6
 description: Plan an effort too large for one session as a shared map of decision tickets on the repo's issue tracker, then resolve them one per session until the way to the destination is clear. Use when the user says "decision map," "chart this effort," "map out this project," "break this fog into tickets," "work the map," or "/agent-collab:decision-map." Also offer this proactively when a request is a loose multi-session idea whose route is not yet visible — where the open questions outnumber the known steps and a single planning pass would either stall or guess.
 ---
 

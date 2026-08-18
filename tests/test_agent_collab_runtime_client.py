@@ -189,14 +189,19 @@ class DirectRuntimeClientTests(unittest.TestCase):
         ), mock.patch.object(
             self.client, "_terminate_and_reap", return_value=True
         ) as reap, mock.patch.object(
-            self.client.time, "monotonic", side_effect=(100.0, 101.0)
+            self.client.time, "monotonic", side_effect=(100.0, 101.0, 102.0)
         ):
             result = self.client.invoke(envelope=self._envelope(5_000))
 
         self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
         self.assertEqual(observed["request"]["timeout_ms"], 2_000)
         self.assertEqual(observed["collection_deadline"], 104.0)
-        reap.assert_called_once_with(mock.ANY, deadline=105.0)
+        # Teardown proof runs on its own bounded budget, independent of the
+        # request deadline (third mocked monotonic reading + the reap grace).
+        reap.assert_called_once_with(
+            mock.ANY,
+            deadline=102.0 + self.client.TEARDOWN_REAP_SECONDS,
+        )
 
     def test_advisory_is_a_usable_receipt_free_runtime_result(self) -> None:
         self.assertTrue(hasattr(self.client.RuntimeStatus, "ADVISORY"))
@@ -820,6 +825,81 @@ class DirectRuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertEqual(len(result.result), 2 * 1024 * 1024)
 
+    def _tolerance_fixture(self, raw: str):
+        """A runtime script that emits a valid minimal success and exits 0."""
+        success_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "wire_contract_sha256", "request_id", "status", "result",
+                "execution_receipt", "diagnostics",
+            ],
+            "properties": {
+                "wire_contract_sha256": {"type": "string"},
+                "request_id": {"type": "string"},
+                "status": {"const": "ok"},
+                "result": {"type": "string", "minLength": 1},
+                "execution_receipt": {"type": "object"},
+                "diagnostics": {"type": "object"},
+            },
+        }
+        wire = replace(self.wire, success_response=success_schema)
+        response = {
+            "wire_contract_sha256": wire.sha256,
+            "request_id": "direct-1",
+            "status": "ok",
+            "result": "answer",
+            "execution_receipt": {},
+            "diagnostics": {},
+        }
+        executable = Path(raw) / "agent-collab-runtime"
+        payload = json.dumps(response, separators=(",", ":"))
+        executable.write_text(
+            "#!/usr/bin/python3\nimport sys\nsys.stdout.write(" + repr(payload) + ")\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o700)
+        return self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=executable,
+            bundle_path=Path(raw),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client._identity(executable, executable=True),
+            wire=wire,
+        )
+
+    def test_unproven_teardown_never_voids_a_valid_response(self) -> None:
+        """Release 4.0.4/agy regression: a cleanly exited runtime with a valid
+        collected response must return OK even when process-group teardown
+        cannot be proven; the unproven teardown degrades to a client note."""
+        with tempfile.TemporaryDirectory() as raw:
+            resolution = self._tolerance_fixture(raw)
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ), mock.patch.object(
+                self.client, "_terminate_and_reap", return_value=False
+            ):
+                result = self.client.invoke(envelope=self._envelope(5000))
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result, "answer")
+        self.assertEqual(result.error, "process group teardown unproven")
+
+    def test_reap_crash_never_voids_a_valid_response(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            resolution = self._tolerance_fixture(raw)
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ), mock.patch.object(
+                self.client,
+                "_terminate_and_reap",
+                side_effect=OSError("reap machinery failed"),
+            ):
+                result = self.client.invoke(envelope=self._envelope(5000))
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result, "answer")
+        self.assertEqual(result.error, "process group teardown unproven")
+
     def test_exited_leader_descendant_is_killed_and_private_tree_removed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -859,7 +939,11 @@ class DirectRuntimeClientTests(unittest.TestCase):
                 after = heartbeat.stat().st_size if heartbeat.exists() else 0
                 self.assertEqual(after, before, "direct-runtime descendant survived teardown")
                 self.assertFalse(private_tmp.exists())
-                self.assertEqual(result.status, self.client.RuntimeStatus.TEARDOWN_ERROR)
+                # The descendant was killed within the dedicated reap budget
+                # and the runtime exited cleanly, so teardown no longer masks
+                # the actual defect: the empty response is a typed protocol
+                # failure, not a false teardown verdict.
+                self.assertEqual(result.status, self.client.RuntimeStatus.PROTOCOL_ERROR)
             finally:
                 if child_pid:
                     try:
