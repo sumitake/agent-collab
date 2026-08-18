@@ -46,12 +46,13 @@ FINDINGS_REVIEW = {
 }
 
 
-def _commit(author="dependabot[bot]", committer="web-flow", verified=True, sha="a" * 40):
+def _commit(author="dependabot[bot]", committer="web-flow", verified=True,
+            reason="valid", sha="a" * 40):
     return {
         "sha": sha,
         "author": {"login": author} if author is not None else None,
         "committer": {"login": committer} if committer is not None else None,
-        "commit": {"verification": {"verified": verified}},
+        "commit": {"verification": {"verified": verified, "reason": reason}},
     }
 
 
@@ -64,6 +65,12 @@ class TestCheckCommits(unittest.TestCase):
         # spoofable; committer + signature must also match.
         self.assertTrue(check_commits([_commit(committer="sumitake")]))
         self.assertTrue(check_commits([_commit(verified=False)]))
+
+    def test_valid_signer_reason_required(self):
+        # verified=True alone does not identify the signer (Codex connector P2).
+        self.assertTrue(check_commits([_commit(reason="unverified")]))
+        self.assertTrue(check_commits([_commit(reason=None)]))
+        self.assertEqual(check_commits([_commit(reason="valid")]), [])
 
     def test_foreign_author_fails(self):
         self.assertTrue(check_commits([_commit(author="sumitake")]))

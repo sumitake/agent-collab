@@ -70,21 +70,37 @@ def _get_paginated(path: str):
 
 
 def check_commits(commits) -> list[str]:
-    """Return violation strings; empty means every commit is authentic."""
+    """Return violation strings; empty means every commit is authentic.
+
+    Signer-identity binding (Codex connector P2, 2026-08-17): requiring
+    ``verified is True`` alone would not identify WHO signed — a valid signature
+    from any key satisfies it. We additionally require ``reason == "valid"`` AND
+    ``committer.login == "web-flow"``. GitHub only assigns ``reason: valid``
+    when the signing key belongs to an account whose verified email matches the
+    commit's committer email; since ``committer.login`` resolves to ``web-flow``
+    only for GitHub's own ``noreply@github.com`` committer, ``reason: valid``
+    there means GitHub's web-flow key signed it — which a push-capable attacker
+    cannot forge (they hold no web-flow private key; signing with their own key
+    would not match the web-flow committer identity and would fail
+    ``reason: valid``). Residual: this relies on GitHub's identity-binding
+    semantics rather than a raw web-flow key-ID comparison (deliberately not
+    hand-parsing PGP in the gate — simplicity baseline); flagged for operator
+    confirmation as a signing surface.
+    """
     bad = []
     for c in commits:
         sha = (c.get("sha") or "?")[:10]
         author = ((c.get("author") or {}).get("login")) or ""
         committer = ((c.get("committer") or {}).get("login")) or ""
-        verified = bool(
-            ((c.get("commit") or {}).get("verification") or {}).get("verified")
-        )
+        verification = (c.get("commit") or {}).get("verification") or {}
+        verified = bool(verification.get("verified"))
+        reason = verification.get("reason")
         if author != "dependabot[bot]":
             bad.append(f"{sha} author={author or 'NULL'}")
         elif committer != "web-flow":
             bad.append(f"{sha} committer={committer or 'NULL'}")
-        elif not verified:
-            bad.append(f"{sha} signature-unverified")
+        elif not verified or reason != "valid":
+            bad.append(f"{sha} signature-not-valid(verified={verified},reason={reason})")
     return bad
 
 
