@@ -1,6 +1,6 @@
 ---
 name: qa-verify
-version: 6.0.6
+version: 6.1.0
 defaults:
   quality_profile: economical
   effort_class: minimal

@@ -1,6 +1,6 @@
 ---
 name: merge-resolve
-version: 6.0.6
+version: 6.1.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
