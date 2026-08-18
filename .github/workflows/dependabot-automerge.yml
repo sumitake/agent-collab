@@ -15,7 +15,7 @@ name: Dependabot auto-merge
 #     required clean-signal gate blocks the merge until a head-bound clean
 #     Codex response exists (Codex silent → gate red → manual path);
 #   - retrigger: when the Codex response lands (an issue comment — clean
-#     results fire no review event), re-runs the failed Compliance-trace run so
+#     results fire no review event), re-runs the failed Dependabot-gate run so
 #     the gate re-evaluates without polling;
 #   - guard: best-effort disarm on foreign commits (the authoritative control
 #     is the required commit-authenticity gate).
@@ -121,10 +121,10 @@ jobs:
         run: |
           set -euo pipefail
           head=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
-          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&event=pull_request" \
-            --jq '[.workflow_runs[] | select(.name == "Compliance trace")] | sort_by(.created_at) | last | .id // empty')
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&event=pull_request_target" \
+            --jq '[.workflow_runs[] | select(.name == "Dependabot gate")] | sort_by(.created_at) | last | .id // empty')
           if [ -z "$run_id" ]; then
-            echo "no pull_request Compliance-trace run found for $head — nothing to retrigger"
+            echo "no pull_request_target Dependabot-gate run found for $head — nothing to retrigger"
             exit 0
           fi
           # rerun-failed-jobs 403s on a non-failed run; that is fine (gate

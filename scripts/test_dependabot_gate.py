@@ -120,3 +120,36 @@ class TestClassifySignal(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTrustBoundary(unittest.TestCase):
+    """Pin the base-controlled trust boundary (peer review Codex r2):
+    the merge-blocking Dependabot gate must never execute PR-controlled code.
+    """
+
+    REPO = Path(__file__).resolve().parents[1]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.gate_wf = (cls.REPO / ".github" / "workflows" / "dependabot-gate.yml").read_text(
+            encoding="utf-8"
+        )
+        cls.trace_wf = (cls.REPO / ".github" / "workflows" / "compliance-trace.yml").read_text(
+            encoding="utf-8"
+        )
+
+    def test_gate_workflow_is_base_controlled(self):
+        self.assertIn("pull_request_target", self.gate_wf)
+        self.assertNotIn("\n  pull_request:\n", self.gate_wf)
+        self.assertIn("ref: main", self.gate_wf, "checkout must pin the trusted base ref")
+
+    def test_gate_workflow_runs_the_gate_scripts(self):
+        self.assertIn("scripts/dependabot_gate.py commits", self.gate_wf)
+        self.assertIn("scripts/dependabot_gate.py signal", self.gate_wf)
+
+    def test_pr_controlled_trace_workflow_never_runs_the_gate(self):
+        self.assertNotIn(
+            "dependabot_gate.py", self.trace_wf,
+            "compliance-trace.yml runs PR-controlled code and must not "
+            "execute the merge-blocking Dependabot gate",
+        )
