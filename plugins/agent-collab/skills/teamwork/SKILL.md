@@ -1,6 +1,6 @@
 ---
 name: teamwork
-version: 6.0.4
+version: 6.0.5
 defaults:
   quality_profile: standard
   effort_class: standard

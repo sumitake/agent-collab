@@ -1,6 +1,6 @@
 ---
 name: kubernetes-specialist
-version: 6.0.4
+version: 6.0.5
 description: Designs, hardens, and troubleshoots Kubernetes clusters and the workloads running on them. Use when the user says "review this Kubernetes manifest", "why is my pod crash-looping", or "help me design a multi-tenant cluster", or "/agent-collab:kubernetes-specialist." Also offer this proactively when a change touches Deployment/StatefulSet/DaemonSet specs, RBAC bindings, network policies, or persistent volume claims.
 ---
 

@@ -44,9 +44,11 @@ COPYRIGHT_TEXT = (
     "Copyright (c) 2026 John Osumi. All rights reserved except as expressly granted."
 )
 LEGAL_FILES = ("COMMERCIAL-LICENSING.md", "LICENSE", "NOTICE")
-MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
-MAX_MEMBER_BYTES = 64 * 1024 * 1024
-MAX_TOTAL_FILE_BYTES = 128 * 1024 * 1024
+MAX_ARCHIVE_BYTES = (
+    (archive_builder.MAX_RUNTIME_ARTIFACTS + 1) * archive_builder.MAX_ARTIFACT_BYTES
+)
+MAX_MEMBER_BYTES = archive_builder.MAX_ARTIFACT_BYTES
+MAX_TOTAL_FILE_BYTES = MAX_ARCHIVE_BYTES
 MAX_MEMBERS = 4096
 SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
@@ -217,7 +219,11 @@ def _file_license(name: str, *, mode: str) -> str:
     if name in MIXED_LICENSE_SKILL_MEMBERS:
         return PACKAGE_LICENSE_EXPRESSION
     if mode == "activation" and (
-        name.startswith(archive_builder.RUNTIME_BUNDLE_REL.as_posix() + "/")
+        any(
+            name.startswith(bundle_rel + "/")
+            for bundle_rel in
+            archive_builder.runtime_client.SUPPORTED_ARTIFACT_PATHS.values()
+        )
         or name == archive_builder.THIRD_PARTY_NOTICE_REL.as_posix()
         or name.startswith(
             archive_builder.THIRD_PARTY_LICENSE_ROOT_REL.as_posix() + "/"

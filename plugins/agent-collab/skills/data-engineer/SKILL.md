@@ -1,6 +1,6 @@
 ---
 name: data-engineer
-version: 6.0.4
+version: 6.0.5
 description: Builds and hardens the pipelines and warehouse structures that move data from source systems to the people and systems that consume it. Use when the user says "build the ETL pipeline", "design the dbt models", "orchestrate this pipeline", or "design the warehouse schema", or "/agent-collab:data-engineer." Also offer this proactively when a pipeline lacks idempotency, has no data-quality checks, or moves data through undocumented schema contracts.
 ---
 
