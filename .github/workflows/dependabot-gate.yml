@@ -18,9 +18,15 @@ name: Dependabot gate
 # review path. dependabot-automerge.yml summons the review and re-runs this
 # gate when the Codex comment lands.
 #
-# This context must be in the repo's required status checks
-# (scripts/enable-branch-protection.sh in the workspace repo is the
-# authoritative list; `dependabot-gate` added 2026-08-17).
+# This context must be in the repo's required status checks. Branch protection
+# for BOTH agent-collab and agent-collab-workspace is centrally provisioned by
+# ONE script that lives in the workspace repo:
+# agent-collab-workspace/scripts/enable-branch-protection.sh (its PLUGIN_CHECKS
+# list carries `dependabot-gate`, added 2026-08-17). A clean checkout of THIS
+# repo alone does not contain that script by design — the operator runs it from
+# the workspace checkout to provision both repos. The arm job in
+# dependabot-automerge.yml is fail-closed: it will not enable auto-merge until
+# this context is actually required, so the un-provisioned state is safe.
 
 on:
   pull_request_target:

@@ -100,7 +100,7 @@ jobs:
                         | .parameters.required_status_checks[].context]
                    | any(. == "dependabot-gate")' 2>/dev/null || echo "false")
           if [ "$required" != "true" ]; then
-            echo "::warning::dependabot-gate is not a required status check on main — refusing to arm auto-merge (run scripts/enable-branch-protection.sh). No auto-merge enabled; PR takes the normal review path."
+            echo "::warning::dependabot-gate is not a required status check on main — refusing to arm auto-merge. Provision it by running scripts/enable-branch-protection.sh in the agent-collab-workspace repo (that one script centrally provisions the required contexts for BOTH agent-collab-workspace and agent-collab). No auto-merge enabled; PR takes the normal review path."
             exit 0
           fi
           gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
