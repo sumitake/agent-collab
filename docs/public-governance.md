@@ -36,10 +36,15 @@ multi-round trace records the final operative verdict.
 
 ## Pull-request contract
 
-Every pull request contains exactly one compliance-trace block with these
-non-empty keys: `author`, `standing_directives`, `tier`, `cross_check`,
-`post_condition`, `mcp_coverage_gap`, `contributor_rights`, and
-`operator_reserved`.
+Every agent- or human-authored pull request contains exactly one
+compliance-trace block with these non-empty keys: `author`,
+`standing_directives`, `tier`, `cross_check`, `post_condition`,
+`mcp_coverage_gap`, `contributor_rights`, and `operator_reserved`.
+`dependabot[bot]`-authored PRs are the one exception (operator decision
+2026-08-17): they carry no trace; `compliance-trace.yml` instead hard-fails if
+any commit is not Dependabot-authored, and they merge only via
+`dependabot-automerge.yml` after a summoned Codex review is submitted, with CI
+green and review threads resolved.
 
 `mcp_coverage_gap` remains the stable schema name. Record `NONE` when no
 external capability gap exists, or `FILED: <public issue URL>` when follow-up is

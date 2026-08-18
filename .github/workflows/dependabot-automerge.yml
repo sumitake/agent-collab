@@ -1,0 +1,105 @@
+name: Dependabot auto-merge
+
+# Operator decision 2026-08-17: Dependabot PRs (all update types) auto-merge
+# once a summoned Codex review has been submitted, CI is green, and every
+# review thread is resolved (ruleset-enforced). Supersedes the per-PR
+# hand-adjudication path (operator decision 2026-08-04, plugin PR #67).
+#
+# Design (cross-family review 2026-08-17, Grok PROCEED-WITH-MODIFICATIONS,
+# concerns 1+2 integrated):
+# - summon: on opened/reopened (or manual dispatch), comment "@codex review".
+# - arm: ONLY when a Codex review is actually submitted — never on open. If
+#   Codex stays silent, nothing arms and the PR takes the manual path; that is
+#   the fail-closed direction. Codex findings are review threads, and the
+#   ruleset's required-thread-resolution blocks the merge until adjudicated.
+# - guard: on every synchronize, and again before arming, every PR commit must
+#   be AUTHORED by dependabot[bot] (committer is legitimately web-flow; a null
+#   author fails closed). Any foreign commit disarms auto-merge and fails —
+#   without this, a write-capable session could push onto a Dependabot branch
+#   and ride the body-gate exemption to main (shared-identity bypass).
+# - workflow_dispatch is the summon-only E2E path for already-open PRs.
+#
+# Keyed on the immutable PR AUTHOR, not actor: bracketed bot logins are
+# unmintable by users, and actor varies on later events.
+#
+# RUNNER PLACEMENT (deliberate): these jobs need the gh CLI, which the
+# self-hosted fleet/rhonas images do not carry (g4 gh-regression lesson).
+# A few API calls per Dependabot PR on hosted runners ≈ ~1 min/week.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to summon a Codex review on (summon only)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  summon:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       (github.event.action == 'opened' || github.event.action == 'reopened') &&
+       github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summon Codex cross-check review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "@codex review"
+
+  guard:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Disarm auto-merge if any commit is not Dependabot-authored
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate \
+            --jq '[.[] | select((.author.login // "") != "dependabot[bot]")] | length')
+          if [ "$bad" != "0" ]; then
+            echo "::error::$bad non-Dependabot-authored commit(s) on a Dependabot PR — disarming auto-merge"
+            gh pr merge --disable-auto "$PR" --repo "$GITHUB_REPOSITORY" || true
+            exit 1
+          fi
+          echo "all commits Dependabot-authored"
+
+  arm:
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.review.user.login == 'chatgpt-codex-connector[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all commits are Dependabot-authored, then arm auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          bad=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --paginate \
+            --jq '[.[] | select((.author.login // "") != "dependabot[bot]")] | length')
+          if [ "$bad" != "0" ]; then
+            echo "::error::$bad non-Dependabot-authored commit(s) — refusing to arm auto-merge"
+            exit 1
+          fi
+          gh pr merge --auto --squash "$PR" --repo "$GITHUB_REPOSITORY"
