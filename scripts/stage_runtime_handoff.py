@@ -11,6 +11,7 @@ the manifest as the activation marker.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -298,17 +299,79 @@ def _remove_runtime_tree(path: Path) -> None:
     shutil.rmtree(path)
 
 
-def stage_runtime_handoff(handoff_dir: Path, *, repo_root: Path = REPO_ROOT) -> None:
-    """Stage one canonical handoff without rewriting its manifest metadata."""
+def _merge_loaded_handoffs(
+    loaded: list[tuple[bytes, tuple, dict]],
+) -> tuple[bytes, tuple, dict]:
+    """Combine per-architecture handoffs into one canonical activation set.
 
-    raw_handoff = Path(handoff_dir)
-    handoff = _directory_identity(raw_handoff, label="runtime handoff")
+    Each handoff was already fully validated by ``_load_handoff``; this only
+    unions their attested artifact rows. Every manifest field OTHER than
+    ``artifacts`` must be identical across handoffs (same wire contract,
+    channel, and versions), the (platform, arch) pairs must be disjoint, and
+    the merged rows are ordered deterministically. The single-handoff path
+    passes its manifest bytes through untouched."""
+    if len(loaded) == 1:
+        return loaded[0]
+    parsed = [archive_builder._parse_manifest(item[0]) for item in loaded]
+    base = {key: value for key, value in parsed[0].items() if key != "artifacts"}
+    for manifest in parsed[1:]:
+        if {k: v for k, v in manifest.items() if k != "artifacts"} != base:
+            _raise("runtime handoffs disagree outside their artifact rows")
+    merged_rows: list = []
+    seen_hosts: set[tuple[str, str]] = set()
+    for manifest in parsed:
+        for row in manifest["artifacts"]:
+            host = (row.get("platform"), row.get("arch"))
+            if host in seen_hosts:
+                _raise("runtime handoffs duplicate an architecture")
+            seen_hosts.add(host)
+            merged_rows.append(row)
+    merged_rows.sort(key=lambda row: (str(row.get("platform")), str(row.get("arch"))))
+    merged_manifest = dict(base)
+    merged_manifest["artifacts"] = merged_rows
+    merged_bytes = (
+        json.dumps(merged_manifest, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    # Re-validate the merged document through the same strict decoder the
+    # single-handoff path relies on (fails closed on any merge defect).
+    archive_builder._parse_manifest(merged_bytes)
+    merged_bundles: list = []
+    merged_payloads: dict[str, bytes] = {}
+    for _bytes, bundles, payloads in loaded:
+        merged_bundles.extend(bundles)
+        for key, value in payloads.items():
+            if key in merged_payloads:
+                _raise("runtime handoffs duplicate a bundle member")
+            merged_payloads[key] = value
+    return merged_bytes, tuple(merged_bundles), merged_payloads
+
+
+def stage_runtime_handoff(
+    handoff_dir: Path | list[Path], *, repo_root: Path = REPO_ROOT
+) -> None:
+    """Stage one or two per-architecture handoffs as one activation set."""
+
+    handoff_dirs = (
+        [Path(item) for item in handoff_dir]
+        if isinstance(handoff_dir, list)
+        else [Path(handoff_dir)]
+    )
+    if not 1 <= len(handoff_dirs) <= 2:
+        _raise("between one and two runtime handoffs are required")
     raw_repo = Path(repo_root)
     repo = _directory_identity(raw_repo, label="destination repository")
     plugin = _directory_identity(repo / PLUGIN_REL, label="destination plugin")
-    if handoff == plugin or handoff.is_relative_to(plugin) or plugin.is_relative_to(handoff):
-        _raise("runtime handoff and destination plugin must be separate trees")
-    manifest_bytes, bundles, payloads = _load_handoff(handoff)
+    handoffs = []
+    for raw in handoff_dirs:
+        handoff = _directory_identity(raw, label="runtime handoff")
+        if handoff == plugin or handoff.is_relative_to(plugin) or plugin.is_relative_to(handoff):
+            _raise("runtime handoff and destination plugin must be separate trees")
+        handoffs.append(handoff)
+    if len(handoffs) == 2 and handoffs[0] == handoffs[1]:
+        _raise("runtime handoffs duplicate an architecture")
+    manifest_bytes, bundles, payloads = _merge_loaded_handoffs(
+        [_load_handoff(handoff) for handoff in handoffs]
+    )
     old_manifest, old_manifest_mode = _read_existing_manifest(plugin)
     destination_runtime = plugin / "runtime"
     had_runtime = destination_runtime.exists() or destination_runtime.is_symlink()
@@ -391,7 +454,11 @@ def main(argv: list[str] | None = None) -> int:
         "--handoff",
         type=Path,
         required=True,
-        help="sealed workspace production handoff directory",
+        action="append",
+        help=(
+            "sealed workspace production handoff directory; repeat once to "
+            "stage a second architecture's handoff atomically alongside"
+        ),
     )
     args = parser.parse_args(argv)
     try:

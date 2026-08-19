@@ -35,12 +35,12 @@ def _load_importer():
     return module
 
 
-def _manifest_bytes(payload: bytes) -> bytes:
+def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
     base = json.loads(
         (ROOT / PLUGIN_REL / "runtime-manifest.json").read_text(encoding="utf-8")
     )
     record = {
-        "architecture": "arm64",
+        "architecture": arch,
         "install_mode": 0o500,
         "macho_type": "executable",
         "minimum_macos": "14.0",
@@ -50,17 +50,18 @@ def _manifest_bytes(payload: bytes) -> bytes:
         "signing_profile": "production_developer_id",
         "size": len(payload),
     }
+    bundle_rel = BUNDLE_REL if arch == "arm64" else X86_BUNDLE_REL
     base["artifacts"] = [
         {
             "platform": "darwin",
-            "arch": "arm64",
+            "arch": arch,
             "kind": "standalone_bundle",
             "minimum_macos": "14.0",
-            "path": BUNDLE_REL.as_posix(),
+            "path": bundle_rel.as_posix(),
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.0.5",
+            "provider_runtime_version": "4.0.6",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -79,15 +80,17 @@ def _manifest_bytes(payload: bytes) -> bytes:
     ).encode("ascii")
 
 
-def _make_handoff(parent: Path, name: str, payload: bytes) -> tuple[Path, bytes]:
+def _make_handoff(
+    parent: Path, name: str, payload: bytes, arch: str = "arm64"
+) -> tuple[Path, bytes]:
     root = parent / name
-    bundle = root / BUNDLE_REL
+    bundle = root / (BUNDLE_REL if arch == "arm64" else X86_BUNDLE_REL)
     bundle.mkdir(parents=True)
     member = bundle / "agent-collab-runtime"
     member.write_bytes(payload)
     member.chmod(0o500)
     bundle.chmod(0o500)
-    manifest = _manifest_bytes(payload)
+    manifest = _manifest_bytes(payload, arch=arch)
     manifest_path = root / "runtime-manifest.json"
     manifest_path.write_bytes(manifest)
     manifest_path.chmod(0o400)
@@ -127,7 +130,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "4.0.5",
+                "provider_runtime_version": "4.0.6",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -555,6 +558,83 @@ class StageRuntimeHandoffTests(unittest.TestCase):
                 self.assertEqual(
                     (recovery / "old-manifest").read_bytes(), first_manifest
                 )
+
+
+class DualArchitectureStagingTests(unittest.TestCase):
+    """Second-architecture import (runbook Phase A2 step 4): two attested
+    per-arch handoffs stage as ONE activation set — artifacts unioned and
+    deterministically ordered, both bundle trees materialized — while
+    same-arch duplication and cross-handoff metadata drift fail closed."""
+
+    def test_two_arch_handoffs_stage_as_one_activation_set(self) -> None:
+        module = _load_importer()
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp)
+            arm, _ = _make_handoff(parent, "handoff-arm", b"arm runtime")
+            x86, _ = _make_handoff(
+                parent, "handoff-x86", b"x86 runtime", arch="x86_64"
+            )
+            repo, plugin, _ = _make_repo(parent)
+            _verified_stage(module, [arm, x86], repo_root=repo)
+            staged = json.loads(
+                (plugin / "runtime-manifest.json").read_text()
+            )
+            hosts = [(row["platform"], row["arch"]) for row in staged["artifacts"]]
+            self.assertEqual(hosts, [("darwin", "arm64"), ("darwin", "x86_64")])
+            self.assertTrue((plugin / BUNDLE_REL / "agent-collab-runtime").is_file())
+            self.assertTrue((plugin / X86_BUNDLE_REL / "agent-collab-runtime").is_file())
+
+    def test_duplicate_architecture_fails_closed(self) -> None:
+        module = _load_importer()
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp)
+            first, _ = _make_handoff(parent, "handoff-a", b"arm one")
+            second, _ = _make_handoff(parent, "handoff-b", b"arm two")
+            repo, plugin, old = _make_repo(parent)
+            with self.assertRaisesRegex(
+                module.StageRuntimeHandoffError, "duplicate an architecture"
+            ):
+                _verified_stage(module, [first, second], repo_root=repo)
+            self.assertEqual(
+                (plugin / "runtime-manifest.json").read_bytes(), old
+            )
+
+    def test_metadata_drift_fails_closed_at_decode_or_merge(self) -> None:
+        # Any drift in decoder-pinned fields (channel, wire contract,
+        # versions) is rejected by the sealed per-handoff decoder BEFORE the
+        # merge backstop can see it; the drifted handoff must fail the
+        # staging call and leave the destination untouched. The merge-time
+        # equality check remains as a backstop for any future field the
+        # decoder does not pin (source-asserted).
+        module = _load_importer()
+        import inspect
+
+        self.assertIn(
+            "disagree outside their artifact rows",
+            inspect.getsource(module._merge_loaded_handoffs),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp)
+            arm, _ = _make_handoff(parent, "handoff-arm", b"arm runtime")
+            x86, _ = _make_handoff(
+                parent, "handoff-x86", b"x86 runtime", arch="x86_64"
+            )
+            manifest_path = x86 / "runtime-manifest.json"
+            doc = json.loads(manifest_path.read_text())
+            doc["channel"] = "development"
+            manifest_path.chmod(0o600)
+            manifest_path.write_text(
+                json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n"
+            )
+            manifest_path.chmod(0o400)
+            repo, plugin, old = _make_repo(parent)
+            with self.assertRaises(
+                (module.StageRuntimeHandoffError, ValueError)
+            ):
+                _verified_stage(module, [arm, x86], repo_root=repo)
+            self.assertEqual(
+                (plugin / "runtime-manifest.json").read_bytes(), old
+            )
 
 
 if __name__ == "__main__":
