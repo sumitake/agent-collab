@@ -107,8 +107,10 @@ For each accepted request the public client:
 
 1. Reads the fixed plugin-relative manifest without following links.
 2. Validates the descriptor hash and derives all projections from it.
-3. Verifies exact bundle membership, file digests, thin-arm64 Mach-O identity,
-   minimum macOS, hardened Developer ID signature, team, and secure timestamp.
+3. Selects the artifact matching the host (macOS arm64 or macOS x86_64) and
+   verifies exact bundle membership, file digests, thin single-architecture
+   Mach-O identity, minimum macOS, hardened Developer ID signature, team, and
+   secure timestamp.
    Notarization is verified by the release gate, not by an online Apple lookup
    on each invocation.
 4. Rechecks entrypoint identity immediately before spawning.

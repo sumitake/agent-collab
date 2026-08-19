@@ -368,16 +368,27 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertEqual(manifest["protocol_version"], 4)
         self.assertEqual(manifest["contract_version"], 4)
         self.assertEqual(manifest["channel"], "production")
-        self.assertEqual(len(manifest["artifacts"]), 1)
-        artifact = manifest["artifacts"][0]
-        self.assertEqual(artifact["kind"], "standalone_bundle")
-        self.assertEqual(artifact["platform"], "darwin")
-        self.assertEqual(artifact["arch"], "arm64")
+        self.assertEqual(len(manifest["artifacts"]), 2)
         self.assertEqual(
-            artifact["path"],
-            "runtime/darwin-arm64/agent-collab-runtime.bundle",
+            [artifact["arch"] for artifact in manifest["artifacts"]],
+            ["arm64", "x86_64"],
         )
-        self.assertEqual(len(artifact["files"]), 38)
+        for artifact in manifest["artifacts"]:
+            arch = artifact["arch"]
+            with self.subTest(arch=arch):
+                self.assertEqual(artifact["kind"], "standalone_bundle")
+                self.assertEqual(artifact["platform"], "darwin")
+                self.assertEqual(
+                    artifact["path"],
+                    f"runtime/darwin-{arch}/agent-collab-runtime.bundle",
+                )
+                self.assertEqual(len(artifact["files"]), 38)
+                self.assertTrue(
+                    all(
+                        record["architecture"] == arch
+                        for record in artifact["files"]
+                    )
+                )
 
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
