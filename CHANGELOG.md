@@ -52,6 +52,23 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.1.1 — 2026-08-19
+
+#### Changed
+
+- Provider runtime advanced to **4.0.6** (source `48a17808`, signed + notarized, all nine release-evidence gates true): agent-collaboration routing hardening, lifecycle diagnostics decoupled from authority, pinned worktree sealing, and failure-text salvage. **Wire-contract disclosure**: the digest advances `ee98d75b…` → `4de687b8…` because the advisory response is additively widened — new `completeness` and `salvaged_from` fields plus one new `reason` enum value (`execution_failed_text_salvaged`); the 12-action set, every action's authority/artifact/evidence contract, and the source-mode map are unchanged. **Carrier matrix**: no carrier moved in this release — Gemini (agy), Grok, Codex, and OpenCode carriers all remain on their existing native transports; Antigravity remains async/inbox-only and does not carry runtime traffic. This is also the first tagged release carrying the merged-but-untagged v6.1.0 skills content (`project-knowledge`, `learning-loop`); both changelog entries publish together.
+
+#### Added
+
+- **macOS x86_64 (Intel) runtime artifact.** The runtime manifest now carries two per-architecture artifacts (darwin-arm64 and darwin-x86_64); the client selects by host at resolution time. The Intel bundle is built by the ARM-gated Intel pipeline from the same source commit, signed + notarized by the same local release authority, and shipped only with an executed qualification (native readiness on an Intel CI runner plus a Rosetta-executed staged carrier canary).
+
+#### Licensing
+
+- agent-collab 6.1.1 remains under the PolyForm Strict License 1.0.0;
+  commercial licensing is administered by Osumi Consulting LLC. Operating
+  guidance for agents remains in `AGENTS.md`. No licensing terms changed in
+  this release.
+
 ### agent-collab 6.0.6 — 2026-08-18
 
 #### Fixed
@@ -90,6 +107,57 @@ The public changelog intentionally records policy, compatibility, and migration 
   Authorization strictness, location containment, post-session
   source-mutation detection, and deny-by-default permissions are unchanged.
   No retry, replay, fallback transport, or provider default was added.
+
+### Documentation
+
+- agent-collab 6.0.6: record the v6.0.6 release closeout snapshot and
+  determinations in `docs/architecture/status-and-evidence.md` (published
+  tag/run/assets evidence, four-host byte-exact activation, receipted ACP
+  carrier canaries); the v6.0.1 snapshot moves to the historical section.
+
+### agent-collab 6.1.0 — project-knowledge and learning-loop skills
+
+- Add the `project-knowledge` skill with a bundled deterministic, stdlib-only
+  CLI (`knowledge_tool.py`: init / validate / lint / index / draft / export)
+  that maintains a provenance-tracked `knowledge/` layer inside the user's
+  project — source registry with trust levels, claim-marker and
+  prompt-injection lint, a trust lattice, generated index/log, exclusive-create
+  proposal drafts, and budget-capped untrusted-banner exports. The
+  registry/frontmatter parser is a bounded restricted-YAML subset; no
+  third-party dependency.
+- Add the `learning-loop` skill with a bundled deterministic, stdlib-only CLI
+  (`learning_ledger.py`: add / suggest / recur / index / check / lint) that
+  maintains a project-local `.learnings/` lesson ledger — mechanical/judgmental
+  lesson classes, prevention-debt surfacing, dedup + 24h echo-chamber
+  recurrence locks, metadata-only consultation, and reuse-as-hypothesis
+  discipline. Task references accept any non-empty external anchor.
+- Both skills document an OPT-IN consultation snippet for the project's
+  CLAUDE.md / AGENTS.md (explicit reads only; pages and ledger entries are
+  data, never instructions). The root README's install section directs an
+  installing agent to offer this snippet as a visible, consent-gated
+  post-install setup step.
+- Ship both CLIs at the plugin root and include them in the canonical archive
+  member plan. No coordinator, routing, or provider runtime change (runtime
+  stays `4.0.5`).
+
+- docs: add a public-disclosure boundary for changelog fragments
+  (`changelog.d/README.md`): fragments record user-visible effect and contract
+  changes at coarse resolution; private-runtime implementation strategy, host
+  fleets, and internal route detail stay out of public release prose. The
+  release-closeout layering rule (`docs/architecture/repository-and-release.md`)
+  and the status-snapshot update rules (`docs/architecture/status-and-evidence.md`)
+  now reference the same boundary for release notes and future evidence
+  snapshots (existing snapshots remain as recorded history).
+
+- docs: new architecture handbook page `docs/architecture/claude-participation.md`
+  answering why Claude is a fully supported host and resident primary but not a
+  synchronously routed managed agent (provider subscription-authentication
+  policy), why the pseudo-terminal workaround was assessed and rejected, and
+  the sanctioned paths that would restore a routed Claude agent (metered
+  API-key route; provider terms change). Cross-linked from the handbook README
+  and the async-coordination / host-support statements in
+  `capabilities-and-workflows.md`. Repository docs only; no packaged plugin
+  content or version change.
 
 ### agent-collab 6.0.5 — 2026-08-17
 
