@@ -241,9 +241,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.1.0")
-        self.assertEqual(codex["version"], "6.1.0")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.1.0")
+        self.assertEqual(plugin["version"], "6.1.1")
+        self.assertEqual(codex["version"], "6.1.1")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.1.1")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -345,7 +345,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.0.5"},
+            {"const": "4.0.6"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:

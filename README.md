@@ -5,12 +5,16 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.1.0). The
-**v6.1.0 release** adds two project-local skills — `project-knowledge` and
-`learning-loop` — each bundling a deterministic, stdlib-only CLI
-(`knowledge_tool.py`, `learning_ledger.py`) that runs offline inside the
-user's project, on the unchanged provider runtime `4.0.5`. The
-**[v6.1.0 release](https://github.com/sumitake/agent-collab/releases/tag/v6.1.0)**
+This public repository distributes **agent-collab** (v6.1.1). The
+**v6.1.1 release** advances the provider runtime to `4.0.6` (routing
+hardening, lifecycle-diagnostics decoupling, worktree sealing, and
+failure-text salvage with an additively widened advisory response) and is
+the first tagged release to carry the v6.1.0 project-local skills —
+`project-knowledge` and `learning-loop`, each bundling a deterministic,
+stdlib-only CLI (`knowledge_tool.py`, `learning_ledger.py`) that runs
+offline inside the user's project (6.1.0 merged without a tag; this
+release publishes both changelog entries). The
+**[v6.1.1 release](https://github.com/sumitake/agent-collab/releases/tag/v6.1.1)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -22,7 +26,18 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.1.0
+## What's new - v6.1.1
+
+- Provider runtime advanced to `4.0.6`: agent-collaboration routing
+  hardening, lifecycle diagnostics decoupled from authority, pinned
+  worktree sealing, and failure-text salvage — the advisory response is
+  additively widened (`completeness`, `salvaged_from`, one new `reason`
+  value), advancing the wire-contract digest; the 12-action set and every
+  action's authority/artifact contract are unchanged.
+- Everything below from the merged-but-untagged v6.1.0 is included in this
+  first tagged publication.
+
+### Included from v6.1.0
 
 - New `project-knowledge` skill: a durable, provenance-tracked knowledge
   layer inside the user's project (`knowledge/`), with a bundled
@@ -37,8 +52,6 @@ keeps repository, tag, release, installation, and readiness claims separate.
   CLAUDE.md / AGENTS.md (explicit reads only; pages and ledger entries are
   data, never instructions), offered at install time as a visible,
   consent-gated setup step (see Install).
-- Provider runtime unchanged at `4.0.5`; no coordinator, routing, or
-  provider-boundary changes.
 
 ## What ships
 
@@ -128,7 +141,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.5`;
+- provider runtime version `4.0.6`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.

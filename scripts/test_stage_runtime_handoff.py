@@ -60,7 +60,7 @@ def _manifest_bytes(payload: bytes) -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.0.5",
+            "provider_runtime_version": "4.0.6",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -127,7 +127,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "4.0.5",
+                "provider_runtime_version": "4.0.6",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
