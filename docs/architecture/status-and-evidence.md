@@ -17,7 +17,35 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v6.0.6 release closeout snapshot
+## v6.1.1 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-19. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated [`v6.1.1` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.1.1) identifies public commit `816a8b2863ec2475f52014fd0f4d611f2523da39`. | published | The immutable source contains package version 6.1.1 and the provider runtime 4.0.6 bundle set. This is the first release shipping **two per-architecture runtime artifacts** — macOS arm64 and macOS x86_64 — built from the same workspace source commit; the client selects by host at resolution time. It is also the first tagged release carrying the previously merged v6.1.0 skills content (`project-knowledge`, `learning-loop`). |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/32306427126) completed successfully and the release is published, non-draft, and non-prerelease. | published | The signed tag and GitHub Release planes agree; neither repository state nor tag existence alone was used as publication proof. |
+| The release contains exactly `agent-collab.v6.1.1.plugin`, `agent-collab.v6.1.1.plugin.sha256`, and `agent-collab-v6.1.1.spdx.json`. Their SHA-256 values are `2bec0c7f213e84616517756fa25b6b41442dd8115c6e8294ff0f6ebf3909e822`, `b7f5ea766fcd305d64e0d99a8c9715a9fc6bfb570c2a5265d0eed7165ffdceff`, and `6729f766e8b008384e5466328fc33eee703ce9ce59b8810e1ff95737a88f8579`. | verified release evidence | The archive, checksum, and SPDX assets were verified against the exact release object. This does not by itself prove installation on a host. |
+| The generated `CHANGELOG.md` contains the compiled v6.1.1 entry, including the runtime 4.0.6 wire-contract disclosure and the x86_64 second-architecture entry, alongside the co-published v6.1.0 skills entries. | verified current | Generated release history agrees with the tag and package bytes; this closeout does not rewrite generated history or a signed release. |
+| Both runtime architectures were qualified before the tag. The arm64 bundle passed staged qualification (zero-inference readiness plus consumed gemini, grok, and OpenCode carrier canaries). The x86_64 bundle, built by the ARM-evidence-gated Intel pipeline from the same source commit, passed a native readiness smoke on an Intel CI runner before signing, and — after local signing and notarization — a Rosetta-executed qualification: direct readiness, a full-stack staged carrier canary through the coordinator, and positive client resolution of the x86_64 artifact whose digest equals the promoted artifact. | release qualified (both architectures) | Each architecture executed end-to-end before publication. Rosetta execution qualifies the signed x86_64 code path on the available hardware; per-host activation on a physical Intel Mac applies only where such a host exists. |
+| All four primary hosts — Claude, Codex, Antigravity, and Grok — installed 6.1.1 through their supported plugin CLIs, and every installed tree matched the released archive byte-for-byte (only host-generated cache files excluded). Provider-free readiness from the installed coordinator returned a typed zero-model snapshot with confirmed cleanup (54 candidates ready across 12 actions; only known host-local Codex native-CLI routes degraded, in the same shape as the prior installed release). | installed and provider-free ready on the observed hosts | This proves exact installation and readiness mechanics on those hosts at that time. It does not guarantee future provider authentication, quota, semantic quality, or another host's state. |
+| One consumed post-install canary returned a receipted, content-correct result with confirmed cleanup (Grok over `grok_cli`). No carrier moved transport in this release. | activation qualified | The installed release executed one bounded end-to-end request. This does not extend to future requests or unexercised carriers. |
+
+The public repository may advance after this immutable release tag for the
+documentation closeout or later work. Re-check the tag, release, assets, host
+inventory, and readiness plane before making a new release or activation claim.
+
+### v6.1.1 closeout determinations
+
+| Public surface | Determination | Closeout result |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | This status snapshot records the v6.1.1 release, the dual-architecture runtime, and four-host activation; the remaining handbook pages describe the direct-runtime lifecycle and boundaries in architecture-neutral terms unchanged by this release. |
+| Root `README.md` | **verified current** | The version, what's-new narrative (runtime 4.0.6 and the Intel second architecture), and release link were refreshed in the distribution PR and verified by the release-cut consistency gates. |
+| `plugins/agent-collab/README.md` | **verified current** | The package reference describes host-keyed artifact selection across the two per-architecture bundles and the unchanged one-process lifecycle shipped in 6.1.1. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v6.1.1 entry; this post-release closeout leaves generated history unchanged. |
+
+## Historical v6.0.6 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-18. It is a
 dated snapshot, not a permanent “latest version” badge.
