@@ -203,11 +203,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Release notes are the release's own compiled CHANGELOG section
+          # (operator direction 2026-08-19) prefixed with a one-line mode
+          # summary. Extraction fails closed: no section → no release.
           if [ "${{ needs.classify-release.outputs.mode }}" = "policy-only" ]; then
-            NOTES="Policy-only release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}. This archive contains the fail-closed policy/client surface and no native runtime artifact; native routes remain unavailable. See CHANGELOG.md for changes."
+            SUMMARY="Policy-only release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}. This archive contains the fail-closed policy/client surface and no native runtime artifact; native routes remain unavailable."
           else
-            NOTES="Activation release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }} with the commit-bound, signed, hardened, and notarized Darwin-arm64 native runtime. See CHANGELOG.md for changes."
+            SUMMARY="Activation release for ${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }} with the commit-bound, signed, hardened, and notarized native runtime for every architecture in the shipped runtime manifest."
           fi
+          SECTION="$(python3 scripts/extract_changelog_section.py "${{ steps.meta.outputs.version }}")"
+          NOTES="$(printf '%s\n\n%s' "$SUMMARY" "$SECTION")"
           gh release create "${{ github.ref_name }}" \
             "/tmp/${{ steps.meta.outputs.archive_name }}" \
             "/tmp/${{ steps.meta.outputs.archive_name }}.sha256" \
