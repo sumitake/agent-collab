@@ -228,8 +228,11 @@ jobs:
       - name: Close issues addressed by this release (feedback-loop closeout)
         # Best-effort and non-fatal: the release has already shipped, so a
         # failure here must never fail the job. continue-on-error guards the
-        # step; the script itself also swallows per-issue errors.
+        # step outcome; timeout-minutes bounds a hung gh so it cannot run to the
+        # job deadline; the script itself also times out each call and swallows
+        # per-issue errors.
         continue-on-error: true
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

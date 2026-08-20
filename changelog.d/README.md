@@ -13,18 +13,17 @@ add an own-line marker to the fragment:
 
 - Correct the coordinator `timeout_ms` validation bound.
 
-Addressed: #125
+Addressed: #<issue-number>
 ```
 
-`Addressed: #125` (or `Addressed: #130, #131` for several) is a **release-time**
+`Addressed: #<issue-number>` (or several: `Addressed: #12, #34`) is a **release-time**
 closer, deliberately distinct from GitHub's `Fixes #125` keyword. `Fixes #125`
 in a commit or PR body closes the issue the moment the PR merges to `main` —
 before the fix has actually shipped in a signed build. `Addressed:` instead lets
 the release workflow (`scripts/resolve_addressed_issues.py`, run post-publish)
 close the issue only when the release that ships the fix is published, posting
 the version + release URL as evidence and applying the `resolved-in-release`
-label. Closure is best-effort and non-fatal, only touches open issues on this
-repo, and is trivially reopenable. Preview what a prospective release would close
+label. Closure is best-effort and non-fatal, only touches open issues on this repo, and is trivially reopenable. (This README is itself excluded from the scan, so the example above never closes anything.) Preview what a prospective release would close
 with `python3 scripts/resolve_addressed_issues.py --repo sumitake/agent-collab
 --tag <next-version> --target-rev HEAD --dry-run`.
 

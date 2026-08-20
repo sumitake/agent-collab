@@ -46,7 +46,31 @@ _EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 # Files whose ADDED lines are scanned for markers. The marker may live in a
 # changelog fragment (pre-compilation) or the compiled CHANGELOG section
 # (post-compilation); diffing both across the tag window catches it either way.
-_SCANNED_PATHS = ("CHANGELOG.md", "changelog.d/")
+# changelog.d/README.md is EXCLUDED: it documents the marker with example
+# `Addressed: #N` lines that must never be read as real closures (Grok review,
+# HIGH — a README example would otherwise close that issue on the next release).
+# Excluded from the scan: the fragment README (carries example markers) and the
+# archived/ dir (already-released fragments moved there at release time; their
+# markers already reached CHANGELOG.md in the release that shipped them). The
+# compiled CHANGELOG.md always carries a fix's marker, so excluding these loses
+# nothing while removing two false-closure sources.
+_SCAN_EXCLUDES = ("changelog.d/README.md", "changelog.d/archived/")
+
+
+def scan_pathspec() -> list[str]:
+    """Git pathspec: scanned files minus the excluded non-fragment paths."""
+
+    spec = ["CHANGELOG.md", "changelog.d/"]
+    spec.extend(f":(exclude){path}" for path in _SCAN_EXCLUDES)
+    return spec
+
+
+def select_actionable(numbers: list[int]) -> list[int]:
+    """Fail-safe cap: refuse to act on a runaway marker set (testable)."""
+
+    if len(numbers) > _MAX_ISSUES_PER_RUN:
+        return []
+    return numbers
 
 # An own-line marker, optionally bulleted: ``Addressed: #1, #2``. Case-insensitive
 # on the keyword; issue refs are extracted from the remainder of the line only,
@@ -67,8 +91,17 @@ class ResolveError(RuntimeError):
     per-issue best-effort failures which are swallowed and logged."""
 
 
+# Per-call wall-clock bound: a hung gh/git call must not run to the job
+# deadline and fail an already-published release. TimeoutExpired propagates to
+# the caller, which classifies it as a per-issue (non-fatal) or setup failure.
+_CALL_TIMEOUT_SECONDS = 60
+
+
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(args, capture_output=True, text=True, check=check)
+    return subprocess.run(
+        args, capture_output=True, text=True, check=check,
+        timeout=_CALL_TIMEOUT_SECONDS,
+    )
 
 
 def extract_addressed_issue_numbers(diff_text: str) -> list[int]:
@@ -112,7 +145,7 @@ def _diff_since(repo_root: Path, base: str, target: str) -> str:
     result = _run(
         [
             "git", "-C", str(repo_root), "diff", "--unified=0",
-            f"{base}..{target}", "--", *_SCANNED_PATHS,
+            f"{base}..{target}", "--", *scan_pathspec(),
         ],
         check=False,
     )
@@ -124,11 +157,14 @@ def _diff_since(repo_root: Path, base: str, target: str) -> str:
 def _issue_state(repo: str, number: int) -> str | None:
     """'open' / 'closed' for an issue, or None for a PR or a missing number."""
 
-    result = _run(
-        ["gh", "api", f"repos/{repo}/issues/{number}",
-         "--jq", '(if .pull_request then "pr" else .state end)'],
-        check=False,
-    )
+    try:
+        result = _run(
+            ["gh", "api", f"repos/{repo}/issues/{number}",
+             "--jq", '(if .pull_request then "pr" else .state end)'],
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if result.returncode != 0:
         return None
     state = result.stdout.strip()
@@ -181,7 +217,8 @@ def resolve(
     if not numbers:
         print(f"resolve-addressed: no Addressed: markers in {base}..{target}")
         return 0
-    if len(numbers) > _MAX_ISSUES_PER_RUN:
+    actionable = select_actionable(numbers)
+    if not actionable:
         # Fail-safe: refuse a runaway rather than close a flood of issues.
         print(
             f"resolve-addressed: {len(numbers)} markers exceed the per-run cap "
@@ -192,27 +229,27 @@ def resolve(
 
     label_ensured = False
     closed = 0
-    for number in numbers:
-        state = _issue_state(repo, number)
-        if state is None:
-            print(f"resolve-addressed: #{number} is a PR or missing — skipped")
-            continue
-        if state == "closed":
-            print(f"resolve-addressed: #{number} already closed — skipped")
-            continue
-        if dry_run:
-            print(f"resolve-addressed: [dry-run] would close #{number} for {tag}")
-            closed += 1
-            continue
+    for number in actionable:
         try:
+            state = _issue_state(repo, number)
+            if state is None:
+                print(f"resolve-addressed: #{number} is a PR or missing — skipped")
+                continue
+            if state == "closed":
+                print(f"resolve-addressed: #{number} already closed — skipped")
+                continue
+            if dry_run:
+                print(f"resolve-addressed: [dry-run] would close #{number} for {tag}")
+                closed += 1
+                continue
             if not label_ensured:
                 _ensure_label(repo)
                 label_ensured = True
             _close_issue(repo, number, tag, release_url)
         except Exception as exc:  # noqa: BLE001 — per-issue best-effort, never fatal
             print(
-                f"resolve-addressed: closing #{number} failed ({exc}); "
-                f"continuing — the release is unaffected.",
+                f"resolve-addressed: #{number} failed ({exc}); continuing — "
+                f"the release is unaffected.",
                 file=sys.stderr,
             )
             continue

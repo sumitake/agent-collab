@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from resolve_addressed_issues import extract_addressed_issue_numbers  # noqa: E402
+from resolve_addressed_issues import (  # noqa: E402
+    extract_addressed_issue_numbers,
+    scan_pathspec,
+    select_actionable,
+    _MAX_ISSUES_PER_RUN,
+)
 
 
 class ExtractAddressedTests(unittest.TestCase):
@@ -66,6 +71,34 @@ class ExtractAddressedTests(unittest.TestCase):
         self.assertEqual(
             extract_addressed_issue_numbers("+### Added\n+- a feature\n"), []
         )
+
+
+    def test_issue_zero_is_dropped(self) -> None:
+        self.assertEqual(extract_addressed_issue_numbers("+Addressed: #0\n"), [])
+        self.assertEqual(extract_addressed_issue_numbers("+Addressed: #0, #4\n"), [4])
+
+
+class ScanPathspecTests(unittest.TestCase):
+    def test_excludes_readme_and_archived(self) -> None:
+        spec = scan_pathspec()
+        self.assertIn("CHANGELOG.md", spec)
+        self.assertIn("changelog.d/", spec)
+        self.assertIn(":(exclude)changelog.d/README.md", spec)
+        self.assertIn(":(exclude)changelog.d/archived/", spec)
+
+
+class SelectActionableTests(unittest.TestCase):
+    def test_passes_through_under_cap(self) -> None:
+        nums = list(range(1, 11))
+        self.assertEqual(select_actionable(nums), nums)
+
+    def test_at_cap_allowed(self) -> None:
+        nums = list(range(1, _MAX_ISSUES_PER_RUN + 1))
+        self.assertEqual(select_actionable(nums), nums)
+
+    def test_over_cap_refuses_all(self) -> None:
+        nums = list(range(1, _MAX_ISSUES_PER_RUN + 2))
+        self.assertEqual(select_actionable(nums), [])
 
 
 if __name__ == "__main__":
