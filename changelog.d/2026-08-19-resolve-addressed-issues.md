@@ -1,0 +1,3 @@
+### Added
+
+- Add a release-time feedback-loop closeout: `scripts/resolve_addressed_issues.py`, run post-publish by `release.yml`, closes GitHub issues a release has fixed. A changelog fragment marks a fix with an own-line `Addressed: #N` (deliberately not GitHub's merge-time `Fixes #N` keyword), and the resolver diffs `CHANGELOG.md` + `changelog.d/` across the release's tag window, then for each open issue posts the version + release URL as evidence, applies the `resolved-in-release` label, and closes it. Explicit-marker only, open-issues only, idempotent, bounded, and non-fatal (a failure never fails the build); preview with `--target-rev HEAD --dry-run`.
