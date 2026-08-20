@@ -99,6 +99,12 @@ jobs:
 
   build-release:
     needs: [verify-release-ref, classify-release, verify-runtime-macos]
+    # issues: write scopes the feedback-loop closeout (close issues a release
+    # fixed). It overrides the workflow-level contents: write for THIS job only,
+    # so the earlier verify/classify jobs keep the narrower default.
+    permissions:
+      contents: write
+      issues: write
     if: >-
       ${{
         always() &&
@@ -219,3 +225,21 @@ jobs:
             "/tmp/agent-collab-v${{ steps.meta.outputs.version }}.spdx.json" \
             --title "${{ steps.meta.outputs.plugin }} v${{ steps.meta.outputs.version }}" \
             --notes "$NOTES"
+      - name: Close issues addressed by this release (feedback-loop closeout)
+        # Best-effort and non-fatal: the release has already shipped, so a
+        # failure here must never fail the job. continue-on-error guards the
+        # step; the script itself also swallows per-issue errors.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fetch tags so `git describe` can find the PREVIOUS release tag and
+          # bound the diff to exactly this release's window. Missing tags would
+          # fall back to scanning all history (safe — already-closed issues are
+          # skipped — but wasteful), so fetch them.
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          RELEASE_URL="$(gh release view "${{ github.ref_name }}" --json url --jq .url 2>/dev/null || true)"
+          python3 scripts/resolve_addressed_issues.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --tag "${{ github.ref_name }}" \
+            --release-url "${RELEASE_URL}"

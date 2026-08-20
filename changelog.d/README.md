@@ -2,6 +2,32 @@
 
 This directory holds **per-PR changelog fragments** that compile into `CHANGELOG.md` at build / release time. The fragment-based approach (Towncrier-style) eliminates the top-of-CHANGELOG.md merge-conflict class that historically caused geometric rebase cost on deep PR stacks (empirically: ~30 min of pure CHANGELOG conflict resolution during the 2026-05-24 Phase 2 16-spec burst).
 
+## Closing a filed issue (the `Addressed:` marker)
+
+When a change fixes a GitHub issue filed against this repo (e.g. the plugin-error
+issues that sessions file per the workspace `AGENTS.md` § Learning loop rule),
+add an own-line marker to the fragment:
+
+```markdown
+### Fixed
+
+- Correct the coordinator `timeout_ms` validation bound.
+
+Addressed: #125
+```
+
+`Addressed: #125` (or `Addressed: #130, #131` for several) is a **release-time**
+closer, deliberately distinct from GitHub's `Fixes #125` keyword. `Fixes #125`
+in a commit or PR body closes the issue the moment the PR merges to `main` —
+before the fix has actually shipped in a signed build. `Addressed:` instead lets
+the release workflow (`scripts/resolve_addressed_issues.py`, run post-publish)
+close the issue only when the release that ships the fix is published, posting
+the version + release URL as evidence and applying the `resolved-in-release`
+label. Closure is best-effort and non-fatal, only touches open issues on this
+repo, and is trivially reopenable. Preview what a prospective release would close
+with `python3 scripts/resolve_addressed_issues.py --repo sumitake/agent-collab
+--tag <next-version> --target-rev HEAD --dry-run`.
+
 ## How to add a fragment
 
 1. **Create a file in this directory** named `<sortable-id>-<short-slug>.md`. Examples:
