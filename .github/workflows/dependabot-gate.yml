@@ -1,37 +1,33 @@
 name: Dependabot gate
 
-# BASE-CONTROLLED required context for Dependabot auto-merge (operator
-# decision 2026-08-17; peer review Codex r2). pull_request workflows and their
-# default checkout run PR-controlled code, so a foreign commit on a Dependabot
-# branch could rewrite a pull_request-based gate and mint a passing required
-# context. This workflow closes that: pull_request_target runs THIS file from
-# the base branch, and the explicit `ref: main` checkout executes
-# scripts/dependabot_gate.py from trusted main — no PR code ever executes
-# here.
+# BASE-CONTROLLED, single-event required context for Dependabot auto-merge
+# (deterministic no-AI design 2026-08-19; Grok design review PROCEED-WITH-
+# MODIFICATIONS integrated). Authoritative merge-blocking control for
+# dependabot[bot] PRs. Replaces the retired Codex-review gate — GitHub Models,
+# the intended free reviewer, was retired 2026-07-30, and this removes the
+# Codex-quota dependency entirely.
 #
-# The job ALWAYS runs (skipped required contexts strand the PR): for
-# non-Dependabot authors it no-ops success; for dependabot[bot] PRs it
-# hard-fails unless every commit is authentically Dependabot's (author +
-# web-flow committer + verified GitHub signature) and a clean Codex review
-# response bound to the CURRENT head exists. Codex silence, findings, or an
-# unrecognized response shape keep this red — the PR then takes the manual
-# review path. dependabot-automerge.yml summons the review and re-runs this
-# gate when the Codex comment lands.
+# Trust boundary: pull_request_target runs THIS file from the base branch, and
+# the explicit `ref: main` checkout runs scripts/dependabot_gate.py from
+# trusted main — no PR-controlled code executes (read-only token + zero PR
+# code). fetch-metadata reads PR metadata via the API; it executes no PR code.
 #
-# This context must be in the repo's required status checks. Branch protection
-# for BOTH agent-collab and agent-collab-workspace is centrally provisioned by
-# ONE script that lives in the workspace repo:
-# agent-collab-workspace/scripts/enable-branch-protection.sh (its PLUGIN_CHECKS
-# list carries `dependabot-gate`, added 2026-08-17). A clean checkout of THIS
-# repo alone does not contain that script by design — the operator runs it from
-# the workspace checkout to provision both repos. The arm job in
-# dependabot-automerge.yml is fail-closed: it will not enable auto-merge until
-# this context is actually required, so the un-provisioned state is safe.
+# Single-event pull_request_target (not steps inside required-gates.yml, whose
+# dual-event summary skip-passes a Dependabot pull_request run). The job ALWAYS
+# runs so this required context is always published; non-Dependabot PRs no-op
+# success — fetch-metadata is NOT run on them (it setFailed()s and would
+# deadlock the required context).
 #
-# Bootstrap note: the branch-protection script's preflight refuses to pin a
-# context that has never published a check-run (it would deadlock merges). This
-# workflow must therefore run on at least one PR before `dependabot-gate` is
-# pinned required; this PR is that first run (2026-08-18).
+# For dependabot[bot] PRs the gate hard-fails unless ALL hold:
+#   - commits: every commit author dependabot[bot] + committer web-flow +
+#     verified/valid signature (shape/sanity filter; empty list fails closed);
+#   - files: every changed path within .github/workflows|actions AND no
+#     control-plane file touched (the oracle must not auto-update itself);
+#   - update-type: EVERY dependency update is patch or minor (majors held).
+# Any failure keeps the required context red → the PR takes the manual path.
+#
+# Required-context membership: scripts/enable-branch-protection.sh
+# (WORKSPACE_CHECKS + PLUGIN_CHECKS) — already pinned on both repos.
 
 on:
   pull_request_target:
@@ -44,6 +40,8 @@ permissions:
 
 jobs:
   dependabot-gate:
+    # RUNNER PLACEMENT (deliberate): security gate on a hosted runner; must not
+    # run on the self-hosted fleet.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -55,15 +53,28 @@ jobs:
         with:
           # TRUST BOUNDARY: always the base branch, never PR code.
           ref: main
-      - name: Commit-authenticity + head-bound Codex clean-signal gates
+      - name: Fetch Dependabot metadata
+        id: metadata
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        # SHA-pinned (Grok concern 3): this action's output IS the merge
+        # decision, so a moved/compromised tag could auto-merge majors. A
+        # Dependabot bump of this pin lives in dependabot-gate.yml, which the
+        # `files` control-plane hold sends to manual review.
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+      - name: Commit-authenticity + file allowlist + update-type gates
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          UPDATED_DEPENDENCIES_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
         run: |
           set -euo pipefail
+          # in the plugin repo both the gate test and module live at scripts/
+          # (plugin: both at scripts/). The pin test verifies these paths exist.
           python3 scripts/test_dependabot_gate.py
           python3 scripts/dependabot_gate.py commits
-          python3 scripts/dependabot_gate.py signal
+          python3 scripts/dependabot_gate.py files
+          python3 scripts/dependabot_gate.py update-type

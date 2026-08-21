@@ -1,40 +1,61 @@
 #!/usr/bin/env python3
-"""Dependabot auto-merge gate — required-context enforcement (2026-08-17).
+"""Dependabot auto-merge gate — required-context enforcement (deterministic,
+no-AI design 2026-08-19).
 
-Two subcommands, both HARD-FAIL (exit 1) unless their condition positively
+Three subcommands, each HARD-FAILS (exit 1) unless its condition positively
 holds; any API/network error raises and fails the step (never passes on a
-failed read). stdlib-only: the self-hosted runner images carry no gh CLI.
+failed read). stdlib-only.
 
-``commits``  Every commit on the PR must be authentically Dependabot's:
-             commit author ``dependabot[bot]`` AND committer ``web-flow`` AND
-             GitHub signature verification ``verified``. ``author.login`` alone
-             is spoofable via the commit-header email (peer review 2026-08-17,
-             Codex concern 2); a forged commit cannot carry GitHub's own
-             web-flow signature.
+``commits``       Every commit on the PR must be authentically Dependabot's:
+                  author ``dependabot[bot]`` AND committer ``web-flow`` AND
+                  signature verification ``reason == valid``. Empty commit list
+                  fails closed. (Shape/sanity filter — see the residual note in
+                  check_commits.)
 
-``signal``   A Codex review response bound to the CURRENT head must exist and
-             be clean. Clean results arrive as issue comments containing
-             "Didn't find any major issues" plus ``**Reviewed commit:**
-             `<short-sha>```; findings arrive as reviews (``commit_id``) whose
-             bodies carry ``![Pn Badge]`` markers. Head binding is mandatory
-             (Codex concern 3); findings or any unrecognized/unbound response
-             shape fail closed (Codex concern 1) — the PR then takes the
-             manual review path.
+``files``         Every changed path must be within the github-actions
+                  ecosystem allowlist (``.github/workflows/`` or
+                  ``.github/actions/``); empty file list fails closed; and a PR
+                  touching the gate's own CONTROL PLANE (dependabot-gate.yml /
+                  dependabot-automerge.yml / this script / its test) is HELD for
+                  manual review — the oracle must not auto-update itself.
 
-Env: GH_TOKEN (or GITHUB_TOKEN), REPO, PR_NUMBER, HEAD_SHA.
+``update-type``   Reads ``UPDATED_DEPENDENCIES_JSON`` (dependabot/fetch-metadata's
+                  ``updated-dependencies-json`` output) and requires a non-empty
+                  list where EVERY entry's ``updateType`` is patch or minor.
+                  fetch-metadata's scalar ``update-type`` uses ``maxSemver()``,
+                  which OMITS unknown/missing tokens instead of promoting them —
+                  so a grouped PR with a missing/unknown type plus a minor reads
+                  as "minor" and would hide the unknown entry. Checking every
+                  entry here closes that fail-open (Grok design review 2026-08-19,
+                  concern 1). Majors are held for manual review.
+
+Env: GH_TOKEN (or GITHUB_TOKEN), REPO, PR_NUMBER  [commits, files];
+     UPDATED_DEPENDENCIES_JSON  [update-type].
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import urllib.request
 
-CODEX_LOGIN = "chatgpt-codex-connector[bot]"
-CLEAN_MARKER = "Didn't find any major issues"
-BADGE_RE = re.compile(r"!\[P\d Badge\]")
-REVIEWED_COMMIT_RE = re.compile(r"\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`")
+ALLOWED_UPDATE_TYPES = {
+    "version-update:semver-patch",
+    "version-update:semver-minor",
+}
+# github-actions-ecosystem Dependabot PRs only rewrite workflow/action pins.
+ALLOWED_PATH_PREFIXES = (".github/workflows/", ".github/actions/")
+# Files that ARE workflows/actions (so pass the allowlist) but are the gate's
+# own control plane: a Dependabot bump of the fetch-metadata pin inside these
+# must go manual. Non-workflow entries here are redundant with the allowlist
+# but kept explicit for defence in depth.
+CONTROL_PLANE_PATHS = {
+    ".github/workflows/dependabot-gate.yml",
+    ".github/workflows/dependabot-automerge.yml",
+    "scripts/dependabot_gate.py",
+    "scripts/test_dependabot_gate.py",
+    "tests/test_dependabot_gate.py",
+}
 
 
 def _next_link(link_header: str):
@@ -74,28 +95,17 @@ def check_commits(commits) -> list[str]:
     genuine Dependabot commit (author dependabot[bot] + committer web-flow +
     verified signature with reason=valid).
 
-    KNOWN, OPERATOR-ACCEPTED RESIDUAL (2026-08-17): this is NOT robust
-    provenance against an actor with WRITE ACCESS to the repo. GitHub signs
-    commits it creates via the contents/git-data API with its own web-flow key
-    (verified=true, reason=valid) for ANY caller, and author/committer are
-    caller-selectable metadata (empirically: the #2762 merge commit is
-    web-flow-signed + verified + valid with a non-Dependabot author). So a
-    write-capable actor can create a web-flow-signed commit with
-    author=dependabot[bot] and arbitrary content and pass every predicate here
-    without holding any key. The commit-content/signature approach therefore
-    cannot prove Dependabot ORIGIN against a write-capable actor (Codex
-    connector P1, escalated + operator-accepted 2026-08-17).
-
-    Why this is accepted rather than closed: the authoritative backstop is the
-    HEAD-BOUND Codex clean-signal in classify_signal() — any injected commit
-    changes the PR head, invalidating the clean signal, so the content needs a
-    FRESH Codex review of that exact commit (the same review bar any PR faces).
-    The residual privilege an insider gains is skipping the agent-body
-    governance gates (trace/tier/phase1), not skipping review. Under the shared
-    identity model (write-capable agents already exist) the operator accepted
-    this tradeoff over reintroducing actor-restriction complexity. This function
-    is thus a cheap shape/sanity filter layered UNDER the Codex review, not a
-    standalone provenance proof.
+    KNOWN, OPERATOR-ACCEPTED RESIDUAL: this is a shape/sanity filter, NOT robust
+    provenance against an actor with WRITE ACCESS. GitHub signs API-created
+    commits with its own web-flow key (verified/valid) for any caller, and
+    author/committer are caller-selectable, so a write-capable actor could forge
+    a commit that passes here. The no-AI design (2026-08-19) removed the former
+    head-bound Codex review backstop; the limits now are (a) this all-commit
+    filter, (b) the `files` path allowlist + control-plane hold, and (c) the
+    `update-type` patch/minor gate — all deterministic, plus required CI. The
+    `update-type` value is Dependabot's own first-commit YAML trailer, NOT the
+    diff, so it assumes honest Dependabot metadata; it is not a second
+    provenance proof (Grok design review 2026-08-19, concern 2).
     """
     bad = []
     for c in commits:
@@ -114,72 +124,96 @@ def check_commits(commits) -> list[str]:
     return bad
 
 
-def classify_signal(head_sha: str, comments, reviews) -> tuple[str, str]:
-    """Return (verdict, detail): verdict in {clean, findings, absent}.
-
-    Precedence is fail-closed: ANY head-bound findings response wins over a
-    clean one; an unrecognized head-bound shape counts as findings (never
-    clean); responses that cannot be bound to the current head are ignored.
+def check_files(files) -> list[str]:
+    """Return violation strings; empty means every changed path is an allowed
+    github-actions-ecosystem path AND none touches the gate's control plane.
     """
-    head_bound_clean = None
-    for r in reviews:
-        if ((r.get("user") or {}).get("login")) != CODEX_LOGIN:
-            continue
-        if (r.get("commit_id") or "") != head_sha:
-            continue
-        body = r.get("body") or ""
-        if BADGE_RE.search(body) or CLEAN_MARKER not in body:
-            return "findings", f"review {r.get('id')} at head has findings/unknown shape"
-        head_bound_clean = f"review {r.get('id')}"
-    for c in comments:
-        if ((c.get("user") or {}).get("login")) != CODEX_LOGIN:
-            continue
-        body = c.get("body") or ""
-        m = REVIEWED_COMMIT_RE.search(body)
-        if not m or not head_sha.startswith(m.group(1)):
-            continue
-        if BADGE_RE.search(body) or CLEAN_MARKER not in body:
-            return "findings", f"comment {c.get('id')} at head has findings/unknown shape"
-        head_bound_clean = f"comment {c.get('id')}"
-    if head_bound_clean:
-        return "clean", head_bound_clean
-    return "absent", "no Codex response bound to the current head"
+    bad = []
+    for f in files:
+        for path in (f.get("filename"), f.get("previous_filename")):
+            if not path:
+                continue
+            if path in CONTROL_PLANE_PATHS:
+                bad.append(f"{path} (control-plane — held for manual review)")
+            elif not path.startswith(ALLOWED_PATH_PREFIXES):
+                bad.append(f"{path} (outside the github-actions ecosystem allowlist)")
+    return bad
+
+
+def check_update_types(deps) -> list[str]:
+    """Return violation strings; empty means every dependency update is
+    patch or minor. `deps` is fetch-metadata's updated-dependencies-json.
+    """
+    bad = []
+    for d in deps:
+        name = (d or {}).get("dependencyName") or "?"
+        update_type = (d or {}).get("updateType")
+        if update_type not in ALLOWED_UPDATE_TYPES:
+            bad.append(f"{name} update-type={update_type!r}")
+    return bad
+
+
+def _repo_pr():
+    return os.environ["REPO"], os.environ["PR_NUMBER"]
 
 
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    repo = os.environ["REPO"]
-    pr = os.environ["PR_NUMBER"]
+
     if mode == "commits":
+        repo, pr = _repo_pr()
         commits = _get_paginated(f"/repos/{repo}/pulls/{pr}/commits?per_page=100")
         if not commits:
-            # Fail closed: an empty commit list must never satisfy the
-            # authenticity gate (Grok trust-model review, concern 9).
             print("::error::PR reported zero commits — failing closed")
             return 1
         bad = check_commits(commits)
         if bad:
-            print(
-                "::error::non-authentic commit(s) on a dependabot[bot] PR: "
-                + "; ".join(bad)
-            )
+            print("::error::non-authentic commit(s) on a dependabot[bot] PR: "
+                  + "; ".join(bad))
             return 1
-        print(f"all {len(commits)} commit(s) authentically Dependabot-authored")
+        print(f"all {len(commits)} commit(s) authentically Dependabot-shaped")
         return 0
-    if mode == "signal":
-        head = os.environ["HEAD_SHA"]
-        comments = _get_paginated(f"/repos/{repo}/issues/{pr}/comments?per_page=100")
-        reviews = _get_paginated(f"/repos/{repo}/pulls/{pr}/reviews?per_page=100")
-        verdict, detail = classify_signal(head, comments, reviews)
-        if verdict == "clean":
-            print(f"head-bound clean Codex signal: {detail}")
-            return 0
-        print(
-            f"::error::no clean head-bound Codex signal ({verdict}: {detail}) — "
-            "merge stays blocked; manual review path applies"
-        )
-        return 1
-    print("::error::usage: dependabot_gate.py commits|signal")
+
+    if mode == "files":
+        repo, pr = _repo_pr()
+        files = _get_paginated(f"/repos/{repo}/pulls/{pr}/files?per_page=100")
+        if not files:
+            print("::error::PR reported zero changed files — failing closed")
+            return 1
+        bad = check_files(files)
+        if bad:
+            print("::error::disallowed/held path(s) on a dependabot[bot] PR: "
+                  + "; ".join(bad))
+            return 1
+        print(f"all {len(files)} changed file(s) within the github-actions "
+              "allowlist; no control-plane touch")
+        return 0
+
+    if mode == "update-type":
+        raw = os.environ.get("UPDATED_DEPENDENCIES_JSON", "")
+        if not raw.strip():
+            print("::error::UPDATED_DEPENDENCIES_JSON empty/missing "
+                  "(fetch-metadata output absent) — failing closed")
+            return 1
+        try:
+            deps = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            print(f"::error::updated-dependencies-json not parseable ({exc}) — "
+                  "failing closed")
+            return 1
+        if not isinstance(deps, list) or not deps:
+            print("::error::updated-dependencies-json is not a non-empty list — "
+                  "failing closed")
+            return 1
+        bad = check_update_types(deps)
+        if bad:
+            print("::error::update(s) not in {patch, minor} — held for manual "
+                  "review: " + "; ".join(bad))
+            return 1
+        print(f"all {len(deps)} dependency update(s) are patch/minor")
+        return 0
+
+    print("::error::usage: dependabot_gate.py commits|files|update-type")
     return 2
 
 
