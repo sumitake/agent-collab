@@ -29,6 +29,15 @@ python3 scripts/check-public-export-safety.py --active-tree
 git diff --check
 ```
 
+For a release containing `project-estimation`, first obtain the governed,
+privacy-safe maintenance handoff. The public tree may admit only its declared
+aggregate prior, pricing snapshot, quota snapshot, and version-bound receipt;
+never substitute fixtures or raw evidence. Run
+`scripts/verify_project_estimation_maintenance.py` directly when diagnosing the
+gate. `scripts/check_release_consistency.py` and the remote release workflow
+must both reject a missing, stale, mismatched, or privacy-unsafe handoff. See
+[`docs/architecture/project-estimation.md`](docs/architecture/project-estimation.md).
+
 Commit only a unique `changelog.d/` fragment for user-visible changes. The
 generated `CHANGELOG.md` is compiled by the release flow.
 

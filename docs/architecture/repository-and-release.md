@@ -14,6 +14,7 @@ contributors do not need access to it.
 | `skill-specs/` | current | Editable source for collaboration skills. | Edit here; do not hand-edit generated copies. |
 | `plugins/agent-collab/skills/` | generated/current | Host-readable installed skill contracts. | Regenerate with `scripts/build_skills.py`. |
 | `plugins/agent-collab/` public Python modules | current | Coordinator, identity/authority policy, migration, runtime verification/management, and signing policy. | Keep the public module inventory closed. |
+| `plugins/agent-collab/project-estimation-data/` | repository-only contracts; release data pending | Strict request/result and maintenance schemas plus, after governed admission, privacy-safe aggregate/pricing/quota data and a version-bound receipt. | Never add raw evidence; admit only closed, receipt-declared members. |
 | `plugins/agent-collab/.claude-plugin/` and `.codex-plugin/` | current | Host manifests for the same name and version. | Update together. |
 | `.claude-plugin/` and `.agents/plugins/` | generated/current | Claude-compatible and Codex marketplace views. | Regenerate with `scripts/build_marketplace.py`. |
 | `plugins/agent-collab/runtime-manifest.json` | current contract | Closed runtime artifact and route metadata. | Generated/reviewed release input; never use it to infer host activation. |
@@ -76,6 +77,36 @@ GitHub-hosted runners without private build/sign credentials.
 
 ## Release modes
 
+### Project-estimation maintenance prerequisite
+
+Before either release mode proceeds, the governed maintenance workspace must
+collect, calibrate, backtest, audit, and refresh pricing/quota evidence, then
+provide one content-addressed privacy-safe handoff. The plugin worktree may
+receive only the aggregate prior, pricing snapshot, quota snapshot, and
+maintenance receipt named by that handoff. The public release process does not
+collect private history or silently manufacture a seed.
+
+`scripts/verify_project_estimation_maintenance.py` is the shared validator.
+`scripts/check_release_consistency.py` calls it for the local pre-tag gate, and
+the release workflow calls it again before archive construction or GitHub
+Release creation. `scripts/build_plugin_archive.py` admits project-estimation
+members from an exact inventory rather than recursively packaging the data
+directory.
+
+Calibration can use a verified last-good artifact through day 60. Official
+pricing and numeric quota metadata can use a labeled last-good artifact through
+day 90. Stale pricing retains its last successful official retrieval date. A
+failed refresh receives one bounded official-source research pass and then an
+operator notification if still unsuccessful. Expired pricing becomes
+`unpriced`; expired quota becomes `unknown`. Structural, privacy, provenance,
+integrity, schema, and material-regression failures always block.
+
+The v6.2.0 development branch currently has the implementation and schemas but
+no promoted empirical aggregate, pricing/quota snapshots, or receipt because
+the initial governed promotion failed. Local and remote release gates must
+therefore reject it. No v6.2.0 tag, release, installation, activation, or
+loaded-version claim exists. See [Project estimation](project-estimation.md).
+
 ### Policy-only
 
 A policy-only release has an empty runtime manifest and no native runtime tree
@@ -129,7 +160,8 @@ are:
 3. **Distribution:** exactly one public package, correct manifests, no retired
    package trees, and deterministic archives/evidence.
 4. **Release consistency:** versions, README markers, marketplaces, manifests,
-   changelog inputs, and tag rules agree.
+   changelog inputs, tag rules, and the version/hash/freshness-bound
+   project-estimation maintenance receipt agree.
 5. **Public-export safety:** active tree and locally reachable history contain
    no provider executor source, raw invocation recipes, credentials, private
    paths, retired trees, or unreviewed artifacts.

@@ -2,7 +2,7 @@
 
 < [Architecture handbook index](README.md)
 
-The unified package exposes 50 generated skills under the
+The unified package exposes 53 generated skills under the
 `agent-collab` namespace. A skill is a workflow contract: it defines when to
 use the capability, what evidence to gather, which authority is acceptable,
 and when to stop. It is not a promise that every managed route is currently
@@ -17,7 +17,7 @@ organizes that inventory by user outcome.
 | User job | Skills | Typical outcome |
 | --- | --- | --- |
 | Identity, routing, and readiness | `agent-readiness`, `agent-runtime-status`, `migration-doctor`, `route`, `start-inbox-monitor`, `teamwork` | Establish which host, family, route, or async target is eligible before relying on it. |
-| Planning and architecture | `architect`, `brainstorm`, `compose-skills`, `intent-check`, `second-opinion` | Clarify a design, widen options, select workflows, or obtain an independent read. |
+| Planning, architecture, and estimation | `architect`, `brainstorm`, `compose-skills`, `intent-check`, `project-estimation`, `second-opinion` | Clarify a design, widen options, select workflows, obtain an independent read, or forecast agent-led delivery. |
 | Governance and assurance | `autonomy-readiness`, `code-review`, `governance-review`, `logic-check`, `qa-verify`, `red-team`, `untrusted-audit` | Test correctness, independence, security, provenance, and completion evidence. |
 | Deliberation and stakeholder lenses | `debate`, `simulate-user` | Expose conflicting arguments or test a proposal against a persona. |
 | Delegation and implementation | `delegate`, `dev-delegate`, `worker` | Return bounded research or output for the primary to integrate. |
@@ -112,6 +112,16 @@ Use `brainstorm` to widen the option space, `architect` for an independent
 read-only architecture consultation, `architecture-review` for a primary-led
 codebase sweep, `intent-check` to validate task interpretation, and
 `decision-map` when the effort is too large for one session.
+
+`project-estimation` adds a deterministic delivery forecast once a formal
+design or plan has a concrete completion boundary, phases, dependencies,
+roles, and material gates. The skill description supports situational
+auto-selection, while package-owned `architect`, `orchestrate`, and `teamwork`
+workflows explicitly compose the checkpoint before final presentation. A host
+without contextual skill selection uses explicit invocation and reports that
+the automatic checkpoint was unavailable. See
+[Project estimation](project-estimation.md) for modes, examples, output
+semantics, and the current unreleased status.
 
 ### Large-context work
 

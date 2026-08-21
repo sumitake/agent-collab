@@ -10,7 +10,11 @@ Current: **6.2.0** (source only; not tagged, released, installed, or activated)
 Version 6.2.0 adds the public `project-estimation` skill. It provides
 read-only-by-default, structured estimates for agent-led work and a compact
 design/plan checkpoint; it does not alter provider routing or the co-packaged
-native runtime.
+native runtime. Its source is implemented, but the initial governed empirical
+promotion failed: no production aggregate, pricing/quota snapshot, or
+maintenance receipt exists in this branch. Release verification therefore
+fails closed. v6.2.0 is not tagged, published, installed, activated, or
+observed as loaded.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -231,6 +235,35 @@ provenance-tracked `knowledge/` page layer; `learning_ledger.py` (the
 `learning-loop` skill) maintains a `.learnings/` lesson ledger. Both write
 only within the user-chosen `--root`, make no network calls, and launch no
 provider process.
+
+## Project estimation
+
+`project_estimation.py` is a deterministic, stdlib-only helper for the
+`project-estimation` skill. It consumes strict request, aggregate-prior,
+pricing, and quota JSON documents and has no provider or network dependency:
+
+```text
+python3 "<plugin-root>/project_estimation.py" estimate --request REQUEST.json --prior PRIOR.json --pricing PRICING.json --quota QUOTA.json
+python3 "<plugin-root>/project_estimation.py" reconcile --prior-result ESTIMATE.json --actual VERIFIED-ACTUAL.json --pricing PRICING.json
+```
+
+The estimate headline reports focused agent wall-clock, calendar elapsed and
+waits, and current API-equivalent token cost. Actual marginal cash and quota
+capacity remain detailed, separate, non-additive views. Pricing output includes
+state and the last successful official retrieval date; stale evidence keeps
+that historical date rather than claiming a fresh retrieval.
+
+Ordinary runs write canonical JSON to stdout. `--out` requires explicit
+persistence consent in the validated request or actual document. The skill is
+also auto-invocable for formal implementation designs and plans on supported
+hosts; `architect`, `orchestrate`, and `teamwork` compose the checkpoint
+explicitly. Unsupported hosts use explicit invocation without claiming a
+lifecycle hook.
+
+The public schemas are in `project-estimation-data/`. Production aggregate,
+pricing, quota, and receipt files are intentionally absent until a governed,
+privacy-safe handoff passes release verification. Full semantics and examples
+are in the [project-estimation architecture](../../docs/architecture/project-estimation.md).
 
 ## Distribution boundary
 

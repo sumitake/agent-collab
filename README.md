@@ -47,11 +47,19 @@ request or misreading a transient failure as an outage.
   `1-600000` (Addressed: #125).
 
 - **Empirical project estimation.** Add `project-estimation`, a
-  read-only-by-default skill for scoped agent-led delivery estimates,
-  reconciliation, calibration, and audit. It keeps focused agent wall-clock,
-  calendar waits, API-equivalent cost, actual marginal cash, and quota capacity
-  distinct, and supplies a compact checkpoint for formal implementation
-  designs and plans where the host supports it.
+  read-only-by-default skill for scoped agent-led
+  delivery estimates, reconciliation, calibration, and audit. It keeps focused
+  agent wall-clock, calendar waits, API-equivalent cost, actual marginal cash,
+  and quota capacity distinct, and supplies a compact checkpoint for formal
+  implementation designs and plans where the host supports it. See the
+  [project-estimation architecture](docs/architecture/project-estimation.md)
+  for public modes and examples.
+
+  The estimator source is implemented, but the initial governed empirical
+  promotion failed. No production aggregate, pricing/quota snapshot, or
+  maintenance receipt is present, so v6.2.0 remains release-blocked and has not
+  been tagged, installed, activated, or observed as loaded. Test fixtures are
+  not production calibration data.
 
 The signed provider runtime, the 12-action set, and every action's
 authority/artifact/evidence contract are unchanged from v6.1.1.

@@ -16,16 +16,19 @@ silently treating them as the same thing.
    not, its actors, and its public/private boundary.
 2. [Capabilities and workflows](capabilities-and-workflows.md) maps the skill
    surface to common user jobs and explains availability limits.
-3. [Governance and authority](governance-and-authority.md) explains family
+3. [Project estimation](project-estimation.md) explains deterministic delivery
+   forecasting, reconciliation, pricing and quota semantics, privacy-safe
+   priors, planning checkpoints, and release maintenance.
+4. [Governance and authority](governance-and-authority.md) explains family
    independence, sealed authority, review evidence, and operator control.
-4. [Lifecycle and operations](lifecycle-and-operations.md) covers installation,
+5. [Lifecycle and operations](lifecycle-and-operations.md) covers installation,
    verification, use, updates, troubleshooting, safe mode, rollback, and
    removal.
-5. [Repository and release architecture](repository-and-release.md) maps the
+6. [Repository and release architecture](repository-and-release.md) maps the
    public package, generated sources, validation, and release flow.
-6. [Status and evidence](status-and-evidence.md) defines the binding lifecycle
+7. [Status and evidence](status-and-evidence.md) defines the binding lifecycle
    labels and records the dated evidence snapshot used by this documentation.
-7. [Claude participation](claude-participation.md) explains why Claude is a
+8. [Claude participation](claude-participation.md) explains why Claude is a
    fully supported host and resident primary but not a synchronously routed
    managed agent, and what would change that.
 
@@ -96,6 +99,7 @@ not a public issue or pull request.
 | --- | --- | --- |
 | What does the package install? | [System context](system-context.md) | Host manifests, generated marketplaces, package tree, and distribution tests. |
 | Which workflows exist? | [Capabilities and workflows](capabilities-and-workflows.md) | `skill-specs/`, generated skills, package reference, and skill-contract tests. |
+| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, skill checkpoints, maintenance verifier, and focused tests. |
 | Who may review, write, or merge? | [Governance and authority](governance-and-authority.md) | Host policy, coordinator, public governance contract, PR template, and compliance checks. |
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
 | How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |
