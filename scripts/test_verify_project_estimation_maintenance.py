@@ -44,7 +44,7 @@ def _sha(value: object) -> str:
 def _node(release_hash: str = DIGEST) -> dict[str, object]:
     return {
         "schema_version": 1, "estimator_method_version": "empirical-v2", "generated_date": "2026-08-20",
-        "source_cutoff_date": "2026-08-20", "hierarchy_node": "all", "fallback_parent": None,
+        "source_cutoff_date": "2026-08-20", "hierarchy_node": "project_type.enhancement", "fallback_parent": None,
         "sample_count": 20, "effective_sample_size": 20, "aggregate_sha256": DIGEST,
         "release_manifest_sha256": release_hash,
         "phase_duration_quantiles": [{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}],
@@ -223,6 +223,19 @@ class MaintenanceVerifierTests(unittest.TestCase):
     def test_complete_task7_fixture_and_day_60_pass(self) -> None:
         ok, lines = self.check(generated="2026-06-21")
         self.assertTrue(ok, lines)
+
+    def test_shared_public_semantic_validators_are_each_called_once(self) -> None:
+        _fixture(self.root)
+        with (
+            mock.patch.object(self.verifier._PUBLIC_ESTIMATOR, "validate_aggregate", wraps=self.verifier._PUBLIC_ESTIMATOR.validate_aggregate) as aggregate,
+            mock.patch.object(self.verifier._PUBLIC_ESTIMATOR, "validate_pricing", wraps=self.verifier._PUBLIC_ESTIMATOR.validate_pricing) as pricing,
+            mock.patch.object(self.verifier._PUBLIC_ESTIMATOR, "validate_quota", wraps=self.verifier._PUBLIC_ESTIMATOR.validate_quota) as quota,
+        ):
+            ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertTrue(ok, lines)
+        aggregate.assert_called_once()
+        pricing.assert_called_once()
+        quota.assert_called_once()
 
     def test_day_61_fails_closed(self) -> None:
         _fixture(self.root, generated="2026-06-20")
@@ -475,15 +488,15 @@ class MaintenanceVerifierTests(unittest.TestCase):
             pass
 
         with self.assertRaisesRegex(ValueError, "bounded array"):
-            self.verifier._quantiles(
-                ListSubclass([{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}]),
-                field="quantiles",
-                category="phase",
+            aggregate = _aggregate()
+            aggregate["nodes"][0]["phase_duration_quantiles"] = ListSubclass(
+                [{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}]
             )
+            self.verifier._PUBLIC_ESTIMATOR.validate_aggregate(aggregate)
         with self.assertRaisesRegex(ValueError, "source_eras"):
-            self.verifier._public_prior_optional(
-                {"source_eras": ListSubclass(["era-1"])}, field="node"
-            )
+            aggregate = _aggregate()
+            aggregate["nodes"][0]["source_eras"] = ListSubclass(["era-1"])
+            self.verifier._PUBLIC_ESTIMATOR.validate_aggregate(aggregate)
 
     def test_public_prior_schema_matches_task1_identifier_date_and_metric_bounds(self) -> None:
         schema = json.loads((DATA_SOURCE / "aggregate-prior.schema.json").read_text())
@@ -520,7 +533,17 @@ class MaintenanceVerifierTests(unittest.TestCase):
 
     def test_quota_subscription_windows_and_cooldown_are_strict(self) -> None:
         with self.assertRaises(ValueError):
-            self.verifier._record({"record_id": "r", "model": "m", "modality": "text", "tier": "standard", "limit_kind": "subscription_5_hour", "limit_value": 1, "window_seconds": 60, "cooldown_seconds": 0, "modifiers": [], "approved_value_sha256": "a" * 64}, field="record", kind="quota")
+            quota = _snapshot("quota")
+            quota["providers"]["provider-a"]["values"][0].update(
+                {"limit_kind": "subscription_5_hour", "window_seconds": 60}
+            )
+            self.verifier._PUBLIC_ESTIMATOR.validate_quota(quota)
+
+    def test_quota_unpriced_remains_release_blocked_after_shared_validation(self) -> None:
+        quota = _snapshot("quota", status="unpriced")
+        self.assertEqual(self.verifier._PUBLIC_ESTIMATOR.validate_quota(quota)["kind"], "quota")
+        with self.assertRaisesRegex(ValueError, "quota unresolved status"):
+            self.verifier._snapshot(quota, kind="quota", today=TODAY, threshold=1000)
 
     def test_task5_public_schemas_have_nonempty_closed_request_and_result_shapes(self) -> None:
         request = json.loads((DATA_SOURCE / "estimate-request.schema.json").read_text())
@@ -536,8 +559,8 @@ class MaintenanceVerifierTests(unittest.TestCase):
         nodes = []
         for index in range(1200):
             node = _node()
-            node["hierarchy_node"] = f"n{index:04d}"
-            node["fallback_parent"] = f"n{index - 1:04d}" if index else None
+            node["hierarchy_node"] = "project_type.enhancement" if index == 0 else f"z{index:04d}"
+            node["fallback_parent"] = None if index == 0 else ("project_type.enhancement" if index == 1 else f"z{index - 1:04d}")
             node["generated_date"] = aggregate["generated_date"]
             node["source_cutoff_date"] = aggregate["source_cutoff_date"]
             nodes.append(node)

@@ -97,9 +97,12 @@ class PluginArchiveTests(unittest.TestCase):
                 mock.patch.object(archive, "_require_exact_manifest_trees"), \
                 mock.patch.object(archive, "skill_tree_differences", return_value=[]), \
                 mock.patch.object(archive, "expected_skill_relpaths", return_value=[]):
-            names = {name for name, _ in archive._member_plan(plugin, mode="policy-only", maintenance=maintenance)}
+            plan = archive._member_plan(plugin, mode="policy-only", maintenance=maintenance)
+            names = [name for name, _ in plan]
         self.assertIn("project-estimation-data/estimate-request.schema.json", names)
         self.assertIn("project_estimation.py", names)
+        self.assertEqual(archive.REQUIRED_ROOTS.count("project_estimation.py"), 1)
+        self.assertEqual(len(names), len(set(names)))
         self.assertIn("project-estimation-data/maintenance-receipt.json", names)
         self.assertNotIn("project-estimation-data/raw-observations.json", names)
 
