@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import errno
 import os
 import subprocess
 import sys
@@ -146,6 +147,73 @@ class EstimatorCliTests(unittest.TestCase):
                                      "--actual", str(actual), "--pricing", str(FIXTURES / "pricing-small.json"),
                                      "--out", str(output)], capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(output.exists())
+
+    def test_output_readback_is_bound_to_created_name_and_cleanup_is_guarded(self):
+        module = _load()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            output = root / "result.json"
+            displaced = root / "created-inode.json"
+            real_fsync = os.fsync
+            substituted = False
+
+            def substitute_after_file_sync(fd: int) -> None:
+                nonlocal substituted
+                real_fsync(fd)
+                if not substituted:
+                    substituted = True
+                    os.replace(output, displaced)
+                    output.write_bytes(b"substituted\n")
+
+            with mock.patch.object(module.os, "fsync", side_effect=substitute_after_file_sync):
+                with self.assertRaises(module.EstimationError):
+                    module._write_exclusive(str(output), b"created\n")
+            self.assertEqual(output.read_bytes(), b"substituted\n")
+            self.assertEqual(displaced.read_bytes(), b"created\n")
+
+    def test_directory_fsync_tolerates_only_documented_unsupported_errors(self):
+        module = _load()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            output = root / "portable.json"
+            real_fsync = os.fsync
+            calls = 0
+
+            def unsupported_directory(fd: int) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError(errno.EINVAL, "directory fsync unsupported")
+                real_fsync(fd)
+
+            with mock.patch.object(module.os, "fsync", side_effect=unsupported_directory):
+                module._write_exclusive(str(output), b"portable\n")
+            self.assertEqual(calls, 2)
+            self.assertEqual(output.read_bytes(), b"portable\n")
+
+            failing = root / "failure.json"
+            calls = 0
+
+            def failing_directory(fd: int) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError(errno.EIO, "directory fsync failed")
+                real_fsync(fd)
+
+            with mock.patch.object(module.os, "fsync", side_effect=failing_directory):
+                with self.assertRaises(OSError):
+                    module._write_exclusive(str(failing), b"failure\n")
+            self.assertFalse(failing.exists())
+
+    def test_output_readback_mismatch_removes_only_created_file(self):
+        module = _load()
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw).resolve() / "mismatch.json"
+            with mock.patch.object(module, "_read_bounded_fd", return_value=b"wrong\n"):
+                with self.assertRaisesRegex(module.EstimationError, "readback"):
+                    module._write_exclusive(str(output), b"expected\n")
             self.assertFalse(output.exists())
 
 

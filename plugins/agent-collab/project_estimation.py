@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _datetime
+import errno
 import hashlib
 import json
 import math
@@ -27,7 +28,6 @@ from typing import Any
 MAX_BYTES = 1_048_576
 SIMULATION_COUNT = 2_048
 BACKOFF_PENALTY_BASIS_POINTS = 1_000
-UNKNOWN_QUOTA_FLOOR_BASIS_POINTS = 1_000
 _MASK64 = (1 << 64) - 1
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _NODE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -57,6 +57,29 @@ def _canonical(value: object) -> bytes:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise EstimationError("value is not finite JSON") from exc
+
+
+def _admit_document(value: object, field: str) -> dict[str, object]:
+    """Apply the public, typed one-MiB boundary before semantic inspection."""
+    if type(value) is not dict:
+        raise EstimationError(f"{field} must be an object")
+    # Canonicalization rejects cycles and non-finite/non-JSON values before the
+    # explicit key walk.  Walking first would never terminate on a cyclic
+    # programmatic graph, while canonicalization remains bounded by that graph.
+    payload = _canonical(value)
+    stack: list[object] = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, item in current.items():
+                if type(key) is not str:
+                    raise EstimationError(f"{field} contains a non-string object key")
+                stack.append(item)
+        elif isinstance(current, list):
+            stack.extend(current)
+    if len(payload) > MAX_BYTES:
+        raise EstimationError(f"{field} exceeds the one MiB document bound")
+    return value
 
 
 def _mapping(value: object, field: str) -> dict[str, object]:
@@ -153,10 +176,25 @@ def _quantiles(value: object, field: str) -> dict[str, int]:
 
 def _hours_quantiles(value: object, field: str) -> dict[str, str]:
     row = _exact(value, {"p50", "p80", "p95"}, field)
+    numbers: list[Decimal] = []
     for name in ("p50", "p80", "p95"):
         if type(row[name]) is not str or re.fullmatch(r"[0-9]+\.[0-9]{6}", row[name]) is None:
             raise EstimationError(f"{field}.{name} must be a fixed six-decimal hour string")
+        numbers.append(Decimal(row[name]))
+    if numbers != sorted(numbers):
+        raise EstimationError(f"{field} quantiles are unordered")
     return row  # type: ignore[return-value]
+
+
+def _nullable_hours_quantiles(value: object, field: str) -> tuple[dict[str, str | None], bool]:
+    row = _exact(value, {"p50", "p80", "p95"}, field)
+    nulls = [row[name] is None for name in ("p50", "p80", "p95")]
+    if all(nulls):
+        return row, False  # type: ignore[return-value]
+    if any(nulls):
+        raise EstimationError(f"{field} quantiles must be all null or all numeric")
+    _hours_quantiles(row, field)
+    return row, True  # type: ignore[return-value]
 
 
 def _inert_strings(value: object, field: str) -> list[str]:
@@ -222,8 +260,8 @@ def _scope_projection_validated(row: Mapping[str, object]) -> dict[str, object]:
 
 def validate_request(value: object) -> dict[str, object]:
     fields = {"schema_version", "as_of_date", "artifact_kind", "invocation_source", "auto_invocation_depth", "project_type", "repository_class", "project_maturity", "risk_tier", "requested_completion_boundary", "reusable_classification", "subsystem_count", "integration_count", "migration_burden", "operator_gate_profile", "requirements", "max_agent_concurrency", "phases", "dependency_edges", "routes", "assumptions", "exclusions", "persistence_consent", "request_id", "artifact_scope_hash", "seed"}
-    row = _exact(value, fields, "request", fields - {"request_id", "artifact_scope_hash", "seed"})
-    if row["schema_version"] != 1:
+    row = _exact(_admit_document(value, "request"), fields, "request", fields - {"request_id", "artifact_scope_hash", "seed"})
+    if type(row["schema_version"]) is not int or row["schema_version"] != 1:
         raise EstimationError("request.schema_version is unsupported")
     _date(row["as_of_date"], "request.as_of_date")
     _enum(row["artifact_kind"], {"standalone", "implementation_design", "implementation_plan"}, "request.artifact_kind")
@@ -327,8 +365,8 @@ def _quantile_family(value: object, field: str, identity: str, choices: set[str]
 
 def validate_aggregate(value: object) -> dict[str, object]:
     fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "nodes"}
-    row = _exact(value, fields, "aggregate-prior")
-    if row["schema_version"] != 1 or row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate-prior version is unsupported")
+    row = _exact(_admit_document(value, "aggregate-prior"), fields, "aggregate-prior")
+    if type(row["schema_version"]) is not int or row["schema_version"] != 1 or row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate-prior version is unsupported")
     generated = _date(row["generated_date"], "aggregate.generated_date"); cutoff = _date(row["source_cutoff_date"], "aggregate.source_cutoff_date")
     if cutoff > generated: raise EstimationError("aggregate source cutoff follows generated date")
     _version(row["policy_version"], "aggregate.policy_version"); _sha(row["policy_sha256"], "aggregate.policy_sha256")
@@ -340,7 +378,7 @@ def validate_aggregate(value: object) -> dict[str, object]:
     metric_fields = {"calibration_quality": {"holdout_count", "p80_coverage_basis_points", "p95_coverage_basis_points"}, "drift_indicators": {"duration_drift_basis_points", "token_drift_basis_points"}, "uncertainty_floors": {"duration_basis_points", "token_basis_points"}}
     for index, item in enumerate(row["nodes"]):
         node_row = _exact(item, allowed, f"aggregate.nodes[{index}]", required)
-        if node_row["schema_version"] != 1 or node_row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate node version is unsupported")
+        if type(node_row["schema_version"]) is not int or node_row["schema_version"] != 1 or node_row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate node version is unsupported")
         if _date(node_row["generated_date"], "aggregate.node.generated_date") != generated or _date(node_row["source_cutoff_date"], "aggregate.node.source_cutoff_date") != cutoff: raise EstimationError("aggregate node dates do not match aggregate")
         name = _node(node_row["hierarchy_node"], "aggregate.hierarchy_node")
         names.append(name); parent = node_row.get("fallback_parent")
@@ -355,7 +393,8 @@ def validate_aggregate(value: object) -> dict[str, object]:
             if field in node_row: _quantile_family(node_row[field], f"aggregate.{field}", identity, choices)
         for field, permitted in metric_fields.items():
             if field in node_row:
-                metric = _exact(node_row[field], permitted, f"aggregate.{field}", set(node_row[field]))
+                metric_object = _mapping(node_row[field], f"aggregate.{field}")
+                metric = _exact(metric_object, permitted, f"aggregate.{field}", set(metric_object))
                 for key, number in metric.items(): _integer(number, f"aggregate.{field}.{key}", 0, 1_000_000_000)
         if "pricing_snapshot" in node_row:
             nested = _exact(node_row["pricing_snapshot"], {"sha256", "retrieved_date", "status"}, "aggregate.pricing_snapshot")
@@ -403,8 +442,8 @@ def _record(value: object, kind: str, field: str) -> dict[str, object]:
 
 def _validate_snapshot(value: object, kind: str) -> dict[str, object]:
     fields = {"schema_version", "kind", "policy_version", "policy_sha256", "retrieved_date", "providers", "operator_notification_required", "material_unpriced", "uncertainty_basis_points"}
-    row = _exact(value, fields, f"{kind}-snapshot")
-    if row["schema_version"] != 1 or row["kind"] != kind: raise EstimationError(f"{kind} snapshot version is unsupported")
+    row = _exact(_admit_document(value, f"{kind}-snapshot"), fields, f"{kind}-snapshot")
+    if type(row["schema_version"]) is not int or row["schema_version"] != 1 or row["kind"] != kind: raise EstimationError(f"{kind} snapshot version is unsupported")
     _version(row["policy_version"], f"{kind}.policy_version"); _sha(row["policy_sha256"], f"{kind}.policy_sha256"); retrieved = _date(row["retrieved_date"], f"{kind}.retrieved_date")
     notification = _boolean(row["operator_notification_required"], f"{kind}.operator_notification_required")
     material = _boolean(row["material_unpriced"], f"{kind}.material_unpriced")
@@ -464,11 +503,12 @@ def validate_quota(value: object) -> dict[str, object]: return _validate_snapsho
 
 def validate_actual(value: object) -> dict[str, object]:
     fields = {"schema_version", "completion_boundary", "focused_agent_wall_clock_seconds", "calendar_elapsed_seconds", "summed_agent_runtime_seconds", "token_usage", "wait_decomposition", "actual_marginal_cash", "execution_era_pricing", "persistence_consent"}
-    row = _exact(value, fields, "actual", fields - {"execution_era_pricing"})
-    if row["schema_version"] != 1: raise EstimationError("actual.schema_version is unsupported")
+    row = _exact(_admit_document(value, "actual"), fields, "actual", fields - {"execution_era_pricing"})
+    if type(row["schema_version"]) is not int or row["schema_version"] != 1: raise EstimationError("actual.schema_version is unsupported")
     _enum(row["completion_boundary"], _BOUNDARIES, "actual.completion_boundary")
     for name in ("focused_agent_wall_clock_seconds", "calendar_elapsed_seconds", "summed_agent_runtime_seconds"): _integer(row[name], f"actual.{name}")
     if row["focused_agent_wall_clock_seconds"] > row["summed_agent_runtime_seconds"]: raise EstimationError("actual focused time exceeds summed runtime")
+    if row["focused_agent_wall_clock_seconds"] > row["calendar_elapsed_seconds"]: raise EstimationError("actual focused time exceeds calendar elapsed time")
     if type(row["token_usage"]) is not list or len(row["token_usage"]) > 4096: raise EstimationError("actual.token_usage is invalid")
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(row["token_usage"]):
@@ -584,6 +624,16 @@ def _largest_remainder(total: int, weights: Sequence[tuple[str, int]]) -> dict[s
     return result
 
 
+def _integer_median(values: Sequence[int]) -> int:
+    ordered = sorted(values)
+    if not ordered:
+        raise EstimationError("cannot take a median of an empty sequence")
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle] + 1) // 2
+
+
 def _allocated_durations(phases: list[dict[str, object]], rows: Mapping[str, Mapping[str, int]], overall: Mapping[str, int], index: int, seed: int) -> tuple[dict[str, int], int, bool]:
     autonomous = [phase for phase in phases if phase["owner"] == "autonomous_agent"]
     total = _sample(overall, index, seed, "duration:overall")
@@ -591,7 +641,7 @@ def _allocated_durations(phases: list[dict[str, object]], rows: Mapping[str, Map
         direct = {str(phase["id"]): _sample(rows[str(phase["prior_phase"])], index, seed, f"duration:{phase['id']}") for phase in autonomous}
         return direct, sum(direct.values()), False
     known_units = [int(rows[str(phase["prior_phase"])]["p50"]) // int(phase["effort_weight"]) for phase in autonomous if str(phase["prior_phase"]) in rows]
-    fallback_unit = sum(known_units) // len(known_units) if known_units else max(1, int(overall["p50"]) // max(1, sum(int(phase["effort_weight"]) for phase in autonomous)))
+    fallback_unit = _integer_median(known_units) if known_units else max(1, int(overall["p50"]) // max(1, sum(int(phase["effort_weight"]) for phase in autonomous)))
     weights = []
     for phase in autonomous:
         weight = int(rows[str(phase["prior_phase"])]["p50"]) if str(phase["prior_phase"]) in rows else fallback_unit * int(phase["effort_weight"])
@@ -674,7 +724,12 @@ def _quota_cap(request: Mapping[str, object], quota: Mapping[str, object]) -> in
     return max(1, cap)
 
 
-def _quota_analysis(request: Mapping[str, object], quota: Mapping[str, object], route_tokens: Mapping[str, int]) -> tuple[int, int, list[dict[str, object]]]:
+def _quota_analysis(
+    request: Mapping[str, object], quota: Mapping[str, object],
+    route_tokens: Mapping[str, int], *, token_evidence_present: bool,
+) -> tuple[int, int, list[dict[str, object]]]:
+    if not request["routes"]:
+        return 0, 10_000, []
     provider_delays: dict[str, int] = {}; covered_share = 0; rows: list[dict[str, object]] = []
     for route in request["routes"]:
         provider = quota["providers"].get(route["provider"])
@@ -685,19 +740,25 @@ def _quota_analysis(request: Mapping[str, object], quota: Mapping[str, object], 
             if (item["model"], item["modality"], item["tier"]) == (route["model"], route["modality"], route["tier"]):
                 grouped.setdefault(str(item["limit_kind"]), []).append(item)
         matches = {kind: items[0] for kind, items in grouped.items() if len(items) == 1}
+        ambiguous = {kind for kind, items in grouped.items() if len(items) != 1}
+        usage = {str(item["limit_kind"]): int(item["quantity"]) for item in route.get("quota_usage", [])}
         delay = 0; complete = resolved
         token_quantity = int(route_tokens.get(str(route["id"]), 0))
-        tpm = matches.get("tpm")
-        if token_quantity:
-            if tpm is None or int(tpm["limit_value"]) <= 0: complete = False
-            else: delay += max(0, math.ceil(token_quantity / int(tpm["limit_value"])) - 1) * 60
-        for usage in route.get("quota_usage", []):
-            kind = str(usage["limit_kind"])
-            if kind in {"tpm", "concurrency"}: continue
-            record = matches.get(kind); quantity = int(usage["quantity"])
-            if record is None or int(record["limit_value"]) <= 0:
-                complete = False; continue
-            limit = int(record["limit_value"])
+        if token_evidence_present or "tpm" in usage:
+            tpm = matches.get("tpm")
+            quantity = token_quantity if token_evidence_present else usage["tpm"]
+            if "tpm" in ambiguous or tpm is None or int(tpm["limit_value"]) <= 0:
+                complete = False
+            else:
+                delay += max(0, math.ceil(quantity / int(tpm["limit_value"])) - 1) * int(tpm["window_seconds"])
+        comparable_kinds = {"rpm", "subscription_5_hour", "subscription_weekly", "subscription_monthly", "cooldown"}
+        applicable = (set(grouped) | set(usage)) & comparable_kinds
+        for kind in sorted(applicable):
+            record = matches.get(kind)
+            if kind in ambiguous or record is None or kind not in usage or int(record["limit_value"]) <= 0:
+                complete = False
+                continue
+            quantity = usage[kind]; limit = int(record["limit_value"])
             if kind.startswith("subscription_"):
                 excess_windows = max(0, math.ceil(quantity / limit) - 1)
                 delay += excess_windows * (int(record["window_seconds"]) + int(record["cooldown_seconds"]))
@@ -705,6 +766,10 @@ def _quota_analysis(request: Mapping[str, object], quota: Mapping[str, object], 
                 delay += max(0, math.ceil(quantity / limit) - 1) * int(record["window_seconds"])
             elif kind == "cooldown":
                 delay += max(0, quantity - limit) * int(record["cooldown_seconds"])
+        concurrency_records = grouped.get("concurrency", [])
+        if "concurrency" in usage or concurrency_records:
+            if len(concurrency_records) != 1 or int(concurrency_records[0]["limit_value"]) <= 0:
+                complete = False
         if complete: covered_share += int(route["token_share_basis_points"])
         provider_delays[str(route["provider"])] = provider_delays.get(str(route["provider"]), 0) + delay
         rows.append({"route_id": route["id"], "provider": route["provider"], "delay_seconds": delay, "coverage": "known" if complete else "unknown"})
@@ -732,6 +797,9 @@ def _identities(request: Mapping[str, object], prior: Mapping[str, object], pric
 def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing: Mapping[str, object], quota: Mapping[str, object]) -> dict[str, object]:
     request2 = validate_request(request); prior2 = validate_aggregate(prior); pricing2 = validate_pricing(pricing); quota2 = validate_quota(quota)
     if any(provider["status"] == "review_required" for provider in pricing2["providers"].values()): raise EstimationError("pricing contains review_required evidence")
+    for name, date_value in (("aggregate generation", prior2["generated_date"]), ("pricing snapshot", pricing2["retrieved_date"]), ("quota snapshot", quota2["retrieved_date"])):
+        if str(date_value) > str(request2["as_of_date"]):
+            raise EstimationError(f"{name} is after request as_of_date")
     identities = _identities(request2, prior2, pricing2, quota2)
     if not request2["phases"]:
         result = {**identities, "estimate_unavailable": "insufficient_scope", "labels": dict(_LABELS)}
@@ -786,7 +854,9 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
             route_known_token_samples[route_id].append(route_known_tokens[route_id])
             route_unpriced_token_samples[route_id].append(route_unpriced_tokens[route_id])
             route_known_cost_samples[route_id].append(route_known_costs[route_id])
-        quota_delay, quota_coverage, quota_rows = _quota_analysis(request2, quota2, route_tokens)
+        quota_delay, quota_coverage, quota_rows = _quota_analysis(
+            request2, quota2, route_tokens, token_evidence_present=bool(token_rows),
+        )
         if index == 0: quota_rows_representative = quota_rows
         quota_coverages.append(quota_coverage); quota_delay_samples.append(quota_delay)
         schedule = _schedule(request2, durations, cap); schedules.append(schedule)
@@ -800,8 +870,6 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
     duration_floor = base_duration_floor + backoff_penalty
     token_floor = base_token_floor + backoff_penalty + int(pricing2["uncertainty_basis_points"])
     quota_coverage = min(quota_coverages, default=0)
-    quota_uncertainty = max(UNKNOWN_QUOTA_FLOOR_BASIS_POINTS, int(quota2["uncertainty_basis_points"])) if quota_coverage < 10_000 else 0
-    duration_floor += quota_uncertainty
     focused_q = _q(focused_samples); runtime_q = _q(runtime_samples); calendar_q = _q(calendar_samples)
     focused_q["p95"] = _widen(focused_q["p95"], duration_floor); runtime_q["p95"] = _widen(runtime_q["p95"], duration_floor); calendar_q["p95"] = _widen(calendar_q["p95"], duration_floor)
     operator_q = _q(operator_wait_samples); vendor_q = _q(vendor_wait_samples); quota_q = _q(quota_delay_samples)
@@ -811,7 +879,8 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
     unpriced_basis = 10_000 - known_basis
     known_cost_q = {"p50": None, "p80": None, "p95": None} if not routes or not token_rows or sum(known_token_samples) == 0 else _q(cost_samples)
     if known_cost_q["p95"] is not None: known_cost_q["p95"] = _widen(int(known_cost_q["p95"]), token_floor)
-    p80_calendar = _nearest(calendar_samples, 80); p80_index = min(range(SIMULATION_COUNT), key=lambda item: (abs(calendar_samples[item] - p80_calendar), item))
+    dag_makespans = [schedule.makespan for schedule in schedules]
+    p80_dag = _nearest(dag_makespans, 80); p80_index = min(range(SIMULATION_COUNT), key=lambda item: (abs(dag_makespans[item] - p80_dag), item))
     critical_path = schedules[p80_index].critical_path
     calibration_age = (_datetime.date.fromisoformat(str(request2["as_of_date"])) - _datetime.date.fromisoformat(str(node["generated_date"]))).days
     if calibration_age < 0: raise EstimationError("request as_of_date precedes calibration")
@@ -835,39 +904,59 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
         known_quantity["p95"] = _widen(known_quantity["p95"], token_floor); unpriced_quantity["p95"] = _widen(unpriced_quantity["p95"], token_floor)
         route_known_cost = _q(route_known_cost_samples[route_id]) if sum(known_values) else {"p50": None, "p80": None, "p95": None}
         if route_known_cost["p95"] is not None: route_known_cost["p95"] = _widen(int(route_known_cost["p95"]), token_floor)
-        route_costs.append({"route_id": route_id, "provider": route["provider"], "known_microusd": route_known_cost, "known_token_quantity": known_quantity, "unpriced_token_quantity": unpriced_quantity, "coverage_basis_points": coverage})
+        route_costs.append({"route_id": route_id, "provider": route["provider"], "model": route["model"], "modality": route["modality"], "tier": route["tier"], "known_microusd": route_known_cost, "known_token_quantity": known_quantity, "unpriced_token_quantity": unpriced_quantity, "coverage_basis_points": coverage})
     splits = {field: _split_rows(phases, phase_samples, field) for field in ("prior_phase", "scenario", "delivery_class", "owner")}
+    calendar_status = "complete" if quota_coverage == 10_000 else "unavailable_unknown_quota"
+    null_seconds = {"p50": None, "p80": None, "p95": None}
+    null_hours = {"p50": None, "p80": None, "p95": None}
+    full_calendar_seconds = calendar_q if calendar_status == "complete" else dict(null_seconds)
+    full_calendar_hours = _hours_q(calendar_q) if calendar_status == "complete" else dict(null_hours)
+    full_quota_seconds = quota_q if calendar_status == "complete" else dict(null_seconds)
+    full_quota_hours = _hours_q(quota_q) if calendar_status == "complete" else dict(null_hours)
+    full_total_wait_seconds = total_wait_q if calendar_status == "complete" else dict(null_seconds)
+    full_total_wait_hours = _hours_q(total_wait_q) if calendar_status == "complete" else dict(null_hours)
     result = {**identities,
         "headline": {
             "scope": {key: request2[key] for key in ("artifact_kind", "project_type", "repository_class", "project_maturity", "risk_tier", "reusable_classification")},
             "completion_boundary": request2["requested_completion_boundary"],
-            "focused_agent_wall_clock_hours": _hours_q(focused_q), "calendar_elapsed_hours": _hours_q(calendar_q),
-            "wait_decomposition_hours": {"operator": _hours_q(operator_q), "vendor": _hours_q(vendor_q), "quota": _hours_q(quota_q), "total": _hours_q(total_wait_q)},
+            "focused_agent_wall_clock_hours": _hours_q(focused_q), "calendar_estimate_status": calendar_status,
+            "calendar_elapsed_hours": full_calendar_hours, "calendar_known_floor_hours": _hours_q(calendar_q),
+            "wait_decomposition_hours": {"operator": _hours_q(operator_q), "vendor": _hours_q(vendor_q), "quota": full_quota_hours, "total": full_total_wait_hours},
             "api_equivalent_cost_current": {"known_microusd": known_cost_q, "known_basis_points": known_basis, "unpriced_basis_points": unpriced_basis},
             "calibration": {"selected_node": node["hierarchy_node"], "path": path, "sample_count": node["sample_count"], "effective_sample_size": node["effective_sample_size"], "age_days": calibration_age, "confidence": "high" if not missing_levels and duration_floor < 1000 else "moderate" if duration_floor < 3000 else "low", "base_duration_uncertainty_basis_points": base_duration_floor, "base_token_uncertainty_basis_points": base_token_floor, "snapshot_pricing_uncertainty_basis_points": pricing2["uncertainty_basis_points"], "snapshot_quota_uncertainty_basis_points": quota2["uncertainty_basis_points"], "uncertainty_floor_basis_points": duration_floor, "token_uncertainty_floor_basis_points": token_floor, "backoff_penalty_basis_points": backoff_penalty},
             "pricing": {"aggregate_state": aggregate_pricing_state, "providers": pricing_providers},
-            "assumptions": list(request2["assumptions"]), "critical_path": critical_path, "planned_concurrency": cap,
-            "uncertainty_drivers": uncertainty_drivers, "prerequisites": [], "splits": splits,
+            "assumptions": list(request2["assumptions"]), "critical_path": critical_path, "critical_path_basis": "dag_makespan_p80", "planned_concurrency": cap,
+            "uncertainty_drivers": uncertainty_drivers, "prerequisites": ["resolve_unknown_quota"] if calendar_status != "complete" else [], "splits": splits,
             "evidence_coverage": {"duration_basis_points": 10_000, "token_basis_points": 10_000 if token_rows else 0, "pricing_basis_points": known_basis, "quota_basis_points": quota_coverage},
         },
         "detail": {
-            "focused_agent_wall_clock_seconds": focused_q, "summed_agent_runtime_seconds": runtime_q, "calendar_elapsed_seconds": calendar_q,
-            "wait_decomposition_seconds": {"operator": operator_q, "vendor": vendor_q, "quota": quota_q, "total": total_wait_q},
+            "focused_agent_wall_clock_seconds": focused_q, "summed_agent_runtime_seconds": runtime_q,
+            "calendar_elapsed_seconds": full_calendar_seconds, "calendar_known_floor_seconds": calendar_q,
+            "wait_decomposition_seconds": {"operator": operator_q, "vendor": vendor_q, "quota": full_quota_seconds, "total": full_total_wait_seconds},
             "allocated_overall_seconds": _q(allocated_overall_samples), "phase_rows": phase_rows, "token_class_quantities": token_detail,
-            "route_costs": route_costs, "quota": {"delay_seconds": quota_q, "coverage_basis_points": quota_coverage, "provider_aggregation_rule": "sum_within_provider_max_across_providers", "routes": quota_rows_representative},
+            "route_costs": route_costs, "quota": {"delay_seconds": full_quota_seconds, "known_delay_floor_seconds": quota_q, "status": calendar_status, "coverage_basis_points": quota_coverage, "provider_aggregation_rule": "sum_within_provider_max_across_providers", "routes": quota_rows_representative},
             "cohort": {"expected_path": expected_path, "selected_node": node["hierarchy_node"], "fallback_path": path, "backoff_levels": missing_levels},
             "actual_marginal_cash_status": "unknown",
         }, "labels": dict(_LABELS)}
     return validate_result(result)
 
 
-def _validate_seconds_q(value: object, field: str, nullable: bool = False) -> None:
+def _validate_seconds_q(value: object, field: str) -> dict[str, int]:
     row = _exact(value, {"p50", "p80", "p95"}, field)
-    values = []
-    for name in ("p50", "p80", "p95"):
-        if nullable and row[name] is None: continue
-        values.append(_integer(row[name], f"{field}.{name}"))
+    values = [_integer(row[name], f"{field}.{name}") for name in ("p50", "p80", "p95")]
     if values and values != sorted(values): raise EstimationError(f"{field} quantiles are unordered")
+    return row  # type: ignore[return-value]
+
+
+def _validate_nullable_seconds_q(value: object, field: str) -> tuple[dict[str, int | None], bool]:
+    row = _exact(value, {"p50", "p80", "p95"}, field)
+    nulls = [row[name] is None for name in ("p50", "p80", "p95")]
+    if all(nulls):
+        return row, False  # type: ignore[return-value]
+    if any(nulls):
+        raise EstimationError(f"{field} quantiles must be all null or all numeric")
+    _validate_seconds_q(row, field)
+    return row, True  # type: ignore[return-value]
 
 
 def _validate_labels(value: object) -> None:
@@ -876,16 +965,26 @@ def _validate_labels(value: object) -> None:
 
 
 def _validate_available_result(row: dict[str, object]) -> None:
-    headline_fields = {"scope", "completion_boundary", "focused_agent_wall_clock_hours", "calendar_elapsed_hours", "wait_decomposition_hours", "api_equivalent_cost_current", "calibration", "pricing", "assumptions", "critical_path", "planned_concurrency", "uncertainty_drivers", "prerequisites", "splits", "evidence_coverage"}
+    headline_fields = {"scope", "completion_boundary", "focused_agent_wall_clock_hours", "calendar_estimate_status", "calendar_elapsed_hours", "calendar_known_floor_hours", "wait_decomposition_hours", "api_equivalent_cost_current", "calibration", "pricing", "assumptions", "critical_path", "critical_path_basis", "planned_concurrency", "uncertainty_drivers", "prerequisites", "splits", "evidence_coverage"}
     headline = _exact(row["headline"], headline_fields, "result.headline")
     scope = _exact(headline["scope"], {"artifact_kind", "project_type", "repository_class", "project_maturity", "risk_tier", "reusable_classification"}, "result.headline.scope")
-    for key, value in scope.items(): _string(value, f"result.headline.scope.{key}", 128)
+    _enum(scope["artifact_kind"], {"standalone", "implementation_design", "implementation_plan"}, "result.scope.artifact_kind")
+    _enum(scope["project_type"], {"greenfield", "enhancement"}, "result.scope.project_type")
+    _enum(scope["repository_class"], {"workspace", "plugin", "project_local", "unknown"}, "result.scope.repository_class")
+    _enum(scope["project_maturity"], {"new", "established", "legacy", "unknown"}, "result.scope.project_maturity")
+    _enum(scope["risk_tier"], {"low", "medium", "high", "critical", "unknown"}, "result.scope.risk_tier")
+    _enum(scope["reusable_classification"], _REUSABLE, "result.scope.reusable_classification")
     _enum(headline["completion_boundary"], _BOUNDARIES, "result.headline.completion_boundary")
-    _hours_quantiles(headline["focused_agent_wall_clock_hours"], "result.headline.focused_hours"); _hours_quantiles(headline["calendar_elapsed_hours"], "result.headline.calendar_hours")
+    calendar_status = _enum(headline["calendar_estimate_status"], {"complete", "unavailable_unknown_quota"}, "result.headline.calendar_status")
+    _hours_quantiles(headline["focused_agent_wall_clock_hours"], "result.headline.focused_hours")
+    calendar_hours, calendar_numeric = _nullable_hours_quantiles(headline["calendar_elapsed_hours"], "result.headline.calendar_hours")
+    calendar_floor_hours = _hours_quantiles(headline["calendar_known_floor_hours"], "result.headline.calendar_floor_hours")
     waits = _exact(headline["wait_decomposition_hours"], {"operator", "vendor", "quota", "total"}, "result.headline.wait_decomposition_hours")
-    for name, item in waits.items(): _hours_quantiles(item, f"result.headline.wait.{name}")
+    for name in ("operator", "vendor"): _hours_quantiles(waits[name], f"result.headline.wait.{name}")
+    quota_hours, quota_hours_numeric = _nullable_hours_quantiles(waits["quota"], "result.headline.wait.quota")
+    total_hours, total_hours_numeric = _nullable_hours_quantiles(waits["total"], "result.headline.wait.total")
     cost = _exact(headline["api_equivalent_cost_current"], {"known_microusd", "known_basis_points", "unpriced_basis_points"}, "result.headline.cost")
-    _validate_seconds_q(cost["known_microusd"], "result.headline.cost.known", True)
+    _validate_nullable_seconds_q(cost["known_microusd"], "result.headline.cost.known")
     known = _integer(cost["known_basis_points"], "result.headline.cost.known_basis_points", 0, 10_000); unpriced = _integer(cost["unpriced_basis_points"], "result.headline.cost.unpriced_basis_points", 0, 10_000)
     if known + unpriced != 10_000: raise EstimationError("result cost coverage is inconsistent")
     calibration_fields = {"selected_node", "path", "sample_count", "effective_sample_size", "age_days", "confidence", "base_duration_uncertainty_basis_points", "base_token_uncertainty_basis_points", "snapshot_pricing_uncertainty_basis_points", "snapshot_quota_uncertainty_basis_points", "uncertainty_floor_basis_points", "token_uncertainty_floor_basis_points", "backoff_penalty_basis_points"}
@@ -898,40 +997,64 @@ def _validate_available_result(row: dict[str, object]) -> None:
     pricing = _exact(headline["pricing"], {"aggregate_state", "providers"}, "result.headline.pricing")
     _enum(pricing["aggregate_state"], {"official", "estimated_stale", "unpriced"}, "result.pricing.aggregate_state")
     if type(pricing["providers"]) is not list or len(pricing["providers"]) > 100: raise EstimationError("result pricing providers are invalid")
+    pricing_names: set[str] = set()
     for item in pricing["providers"]:
         provider = _exact(item, {"provider", "state", "last_successful_official_retrieval_date"}, "result.pricing.provider")
-        _identifier(provider["provider"], "result.pricing.provider"); _enum(provider["state"], {"official", "estimated_stale", "unpriced"}, "result.pricing.state"); _nullable_date(provider["last_successful_official_retrieval_date"], "result.pricing.last_official")
+        provider_name = _identifier(provider["provider"], "result.pricing.provider")
+        if provider_name in pricing_names: raise EstimationError("result pricing providers must be unique")
+        pricing_names.add(provider_name); _enum(provider["state"], {"official", "estimated_stale", "unpriced"}, "result.pricing.state"); _nullable_date(provider["last_successful_official_retrieval_date"], "result.pricing.last_official")
     for field in ("assumptions", "uncertainty_drivers", "prerequisites", "critical_path"):
         if type(headline[field]) is not list or len(headline[field]) > 256: raise EstimationError(f"result.{field} is invalid")
         for item in headline[field]: _string(item, f"result.{field}")
     _integer(headline["planned_concurrency"], "result.planned_concurrency", 1, 32)
+    if headline["critical_path_basis"] != "dag_makespan_p80": raise EstimationError("result critical path basis is invalid")
     splits = _exact(headline["splits"], {"prior_phase", "scenario", "delivery_class", "owner"}, "result.headline.splits")
+    split_enums = {"prior_phase": _PHASE_PRIORS, "scenario": _SCENARIOS, "delivery_class": _DELIVERY, "owner": _OWNERS}
     for field, items in splits.items():
         if type(items) is not list or len(items) > 128: raise EstimationError(f"result.splits.{field} is invalid")
+        names: set[str] = set()
         for item in items:
-            split = _exact(item, {"name", "duration_seconds"}, f"result.splits.{field}"); _string(split["name"], f"result.splits.{field}.name"); _validate_seconds_q(split["duration_seconds"], f"result.splits.{field}.duration")
+            split = _exact(item, {"name", "duration_seconds"}, f"result.splits.{field}"); name = _enum(split["name"], split_enums[field], f"result.splits.{field}.name")
+            if name in names: raise EstimationError(f"result.splits.{field} names must be unique")
+            names.add(name); _validate_seconds_q(split["duration_seconds"], f"result.splits.{field}.duration")
     coverage = _exact(headline["evidence_coverage"], {"duration_basis_points", "token_basis_points", "pricing_basis_points", "quota_basis_points"}, "result.headline.evidence_coverage")
     for key, value in coverage.items(): _integer(value, f"result.coverage.{key}", 0, 10_000)
-    detail_fields = {"focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_elapsed_seconds", "wait_decomposition_seconds", "allocated_overall_seconds", "phase_rows", "token_class_quantities", "route_costs", "quota", "cohort", "actual_marginal_cash_status"}
+    detail_fields = {"focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_elapsed_seconds", "calendar_known_floor_seconds", "wait_decomposition_seconds", "allocated_overall_seconds", "phase_rows", "token_class_quantities", "route_costs", "quota", "cohort", "actual_marginal_cash_status"}
     detail = _exact(row["detail"], detail_fields, "result.detail")
-    for field in ("focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_elapsed_seconds", "allocated_overall_seconds"): _validate_seconds_q(detail[field], f"result.detail.{field}")
+    for field in ("focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_known_floor_seconds", "allocated_overall_seconds"): _validate_seconds_q(detail[field], f"result.detail.{field}")
+    calendar_seconds, calendar_seconds_numeric = _validate_nullable_seconds_q(detail["calendar_elapsed_seconds"], "result.detail.calendar_elapsed_seconds")
     waits2 = _exact(detail["wait_decomposition_seconds"], {"operator", "vendor", "quota", "total"}, "result.detail.waits")
-    for name, item in waits2.items(): _validate_seconds_q(item, f"result.detail.waits.{name}")
+    for name in ("operator", "vendor"): _validate_seconds_q(waits2[name], f"result.detail.waits.{name}")
+    quota_seconds, quota_seconds_numeric = _validate_nullable_seconds_q(waits2["quota"], "result.detail.waits.quota")
+    total_seconds, total_seconds_numeric = _validate_nullable_seconds_q(waits2["total"], "result.detail.waits.total")
     if type(detail["phase_rows"]) is not list or len(detail["phase_rows"]) > 128: raise EstimationError("result phase rows are invalid")
+    phase_ids: set[str] = set()
     for item in detail["phase_rows"]:
         phase = _exact(item, {"id", "kind", "prior_phase", "owner", "scenario", "delivery_class", "duration_seconds"}, "result.phase_row")
-        for name in ("id", "kind", "prior_phase", "owner", "scenario", "delivery_class"): _string(phase[name], f"result.phase.{name}", 128)
+        ident = _identifier(phase["id"], "result.phase.id")
+        if ident in phase_ids: raise EstimationError("result phase ids must be unique")
+        phase_ids.add(ident); _identifier(phase["kind"], "result.phase.kind")
+        _enum(phase["prior_phase"], _PHASE_PRIORS, "result.phase.prior_phase"); _enum(phase["owner"], _OWNERS, "result.phase.owner")
+        _enum(phase["scenario"], _SCENARIOS, "result.phase.scenario"); _enum(phase["delivery_class"], _DELIVERY, "result.phase.delivery_class")
         _validate_seconds_q(phase["duration_seconds"], "result.phase.duration")
+    if len(headline["critical_path"]) != len(set(headline["critical_path"])) or not set(headline["critical_path"]) <= phase_ids:
+        raise EstimationError("result critical path must reference unique phase rows")
     if type(detail["token_class_quantities"]) is not list or len(detail["token_class_quantities"]) > 128: raise EstimationError("result token rows are invalid")
     for item in detail["token_class_quantities"]:
         token = _exact(item, {"token_class", "quantity"}, "result.token"); _identifier(token["token_class"], "result.token_class"); _validate_seconds_q(token["quantity"], "result.token.quantity")
     if type(detail["route_costs"]) is not list or len(detail["route_costs"]) > 32: raise EstimationError("result route costs are invalid")
+    route_ids: set[str] = set()
     for item in detail["route_costs"]:
-        route = _exact(item, {"route_id", "provider", "known_microusd", "known_token_quantity", "unpriced_token_quantity", "coverage_basis_points"}, "result.route_cost")
-        _identifier(route["route_id"], "result.route_id"); _identifier(route["provider"], "result.route.provider")
-        _validate_seconds_q(route["known_microusd"], "result.route.known_cost", True); _validate_seconds_q(route["known_token_quantity"], "result.route.known_tokens"); _validate_seconds_q(route["unpriced_token_quantity"], "result.route.unpriced_tokens"); _integer(route["coverage_basis_points"], "result.route.coverage", 0, 10_000)
-    quota = _exact(detail["quota"], {"delay_seconds", "coverage_basis_points", "provider_aggregation_rule", "routes"}, "result.detail.quota")
-    _validate_seconds_q(quota["delay_seconds"], "result.quota.delay"); _integer(quota["coverage_basis_points"], "result.quota.coverage", 0, 10_000)
+        route = _exact(item, {"route_id", "provider", "model", "modality", "tier", "known_microusd", "known_token_quantity", "unpriced_token_quantity", "coverage_basis_points"}, "result.route_cost")
+        route_id = _identifier(route["route_id"], "result.route_id")
+        if route_id in route_ids: raise EstimationError("result route ids must be unique")
+        route_ids.add(route_id)
+        for name in ("provider", "model", "modality", "tier"): _identifier(route[name], f"result.route.{name}")
+        _validate_nullable_seconds_q(route["known_microusd"], "result.route.known_cost"); _validate_seconds_q(route["known_token_quantity"], "result.route.known_tokens"); _validate_seconds_q(route["unpriced_token_quantity"], "result.route.unpriced_tokens"); _integer(route["coverage_basis_points"], "result.route.coverage", 0, 10_000)
+    quota = _exact(detail["quota"], {"delay_seconds", "known_delay_floor_seconds", "status", "coverage_basis_points", "provider_aggregation_rule", "routes"}, "result.detail.quota")
+    quota_delay, quota_delay_numeric = _validate_nullable_seconds_q(quota["delay_seconds"], "result.quota.delay")
+    _validate_seconds_q(quota["known_delay_floor_seconds"], "result.quota.known_delay_floor"); quota_status = _enum(quota["status"], {"complete", "unavailable_unknown_quota"}, "result.quota.status")
+    quota_coverage = _integer(quota["coverage_basis_points"], "result.quota.coverage", 0, 10_000)
     if quota["provider_aggregation_rule"] != "sum_within_provider_max_across_providers": raise EstimationError("result quota aggregation rule is invalid")
     if type(quota["routes"]) is not list or len(quota["routes"]) > 32: raise EstimationError("result quota routes are invalid")
     for item in quota["routes"]:
@@ -940,7 +1063,25 @@ def _validate_available_result(row: dict[str, object]) -> None:
     for field in ("expected_path", "fallback_path"):
         if type(cohort[field]) is not list or not cohort[field]: raise EstimationError(f"result cohort {field} is invalid")
         for item in cohort[field]: _node(item, f"result.cohort.{field}")
-    _node(cohort["selected_node"], "result.cohort.selected_node"); _integer(cohort["backoff_levels"], "result.cohort.backoff_levels")
+    selected = _node(cohort["selected_node"], "result.cohort.selected_node"); backoff = _integer(cohort["backoff_levels"], "result.cohort.backoff_levels")
+    if selected != calibration["selected_node"] or cohort["fallback_path"] != calibration["path"] or cohort["fallback_path"][0] != selected or selected not in cohort["expected_path"]:
+        raise EstimationError("result cohort and calibration paths are inconsistent")
+    if backoff != len(cohort["expected_path"]) - 1 - cohort["expected_path"].index(selected): raise EstimationError("result cohort backoff is inconsistent")
+    complete = calendar_status == "complete"
+    if quota_status != calendar_status or calendar_numeric is not complete or calendar_seconds_numeric is not complete or quota_hours_numeric is not complete or quota_seconds_numeric is not complete or quota_delay_numeric is not complete or total_hours_numeric is not complete or total_seconds_numeric is not complete:
+        raise EstimationError("result calendar/quota status relationships are inconsistent")
+    if complete:
+        if calendar_hours != calendar_floor_hours or calendar_seconds != detail["calendar_known_floor_seconds"] or quota_hours != _hours_q(quota["known_delay_floor_seconds"]) or quota_seconds != quota["known_delay_floor_seconds"] or quota_delay != quota["known_delay_floor_seconds"] or quota_coverage != 10_000:
+            raise EstimationError("complete result calendar/quota values are inconsistent")
+    elif quota_coverage >= 10_000:
+        raise EstimationError("unknown-quota result must have incomplete coverage")
+    drivers = set(headline["uncertainty_drivers"]); prerequisites = set(headline["prerequisites"])
+    if complete:
+        if "unknown_quota" in drivers or "resolve_unknown_quota" in prerequisites: raise EstimationError("complete result carries unknown-quota markers")
+    elif "unknown_quota" not in drivers or "resolve_unknown_quota" not in prerequisites:
+        raise EstimationError("unknown-quota result is missing its driver or prerequisite")
+    if headline["focused_agent_wall_clock_hours"] != _hours_q(detail["focused_agent_wall_clock_seconds"]) or headline["calendar_known_floor_hours"] != _hours_q(detail["calendar_known_floor_seconds"]):
+        raise EstimationError("result headline/detail hours are inconsistent")
     if detail["actual_marginal_cash_status"] != "unknown": raise EstimationError("estimate actual cash status must be unknown")
 
 
@@ -948,22 +1089,47 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
     duration = _mapping(row["duration_errors"], "reconciliation.duration_errors")
     if set(duration) != {"focused", "calendar", "summed_runtime"}: raise EstimationError("reconciliation duration errors are invalid")
     for name, item in duration.items():
-        error = _exact(item, {"planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds", "log_ratio_millionths", "within_p50_p95"}, f"reconciliation.duration_errors.{name}")
-        for field in ("planned_p50_seconds", "actual_seconds", "absolute_error_seconds"): _integer(error[field], f"reconciliation.{name}.{field}")
-        _integer(error["signed_error_seconds"], f"reconciliation.{name}.signed", -1_000_000_000_000_000, 1_000_000_000_000_000); _integer(error["log_ratio_millionths"], f"reconciliation.{name}.log", -1_000_000_000_000_000, 1_000_000_000_000_000); _boolean(error["within_p50_p95"], f"reconciliation.{name}.coverage")
+        fields = {"status", "planned_p50_seconds", "planned_p95_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds", "log_ratio_millionths", "within_p50_p95"}
+        error = _exact(item, fields, f"reconciliation.duration_errors.{name}")
+        status = _enum(error["status"], {"comparable", "prior_unavailable"}, f"reconciliation.{name}.status")
+        _integer(error["actual_seconds"], f"reconciliation.{name}.actual")
+        derived = ("planned_p50_seconds", "planned_p95_seconds", "signed_error_seconds", "absolute_error_seconds", "log_ratio_millionths")
+        if status == "comparable":
+            for field in derived: _integer(error[field], f"reconciliation.{name}.{field}", -1_000_000_000_000_000 if field in {"signed_error_seconds", "log_ratio_millionths"} else 0)
+            _boolean(error["within_p50_p95"], f"reconciliation.{name}.coverage")
+            planned = int(error["planned_p50_seconds"]); p95 = int(error["planned_p95_seconds"]); actual = int(error["actual_seconds"]); signed = actual - planned
+            if p95 < planned or error["signed_error_seconds"] != signed or error["absolute_error_seconds"] != abs(signed) or error["log_ratio_millionths"] != _log_ratio_millionths(actual, planned) or error["within_p50_p95"] is not (planned <= actual <= p95):
+                raise EstimationError("reconciliation duration derivation is inconsistent")
+        elif name != "calendar" or any(error[field] is not None for field in (*derived, "within_p50_p95")):
+            raise EstimationError("only calendar may carry null prior-unavailable duration evidence")
     wait = _mapping(row["wait_errors"], "reconciliation.wait_errors")
     if set(wait) != {"operator", "vendor", "quota"}: raise EstimationError("reconciliation wait errors are invalid")
     for name, item in wait.items():
-        error = _exact(item, {"planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds"}, f"reconciliation.wait_errors.{name}")
-        for field in ("planned_p50_seconds", "actual_seconds", "absolute_error_seconds"): _integer(error[field], f"reconciliation.wait.{field}")
-        _integer(error["signed_error_seconds"], "reconciliation.wait.signed", -1_000_000_000_000_000, 1_000_000_000_000_000)
+        error = _exact(item, {"status", "planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds"}, f"reconciliation.wait_errors.{name}")
+        status = _enum(error["status"], {"comparable", "prior_unavailable"}, f"reconciliation.wait.{name}.status")
+        _integer(error["actual_seconds"], f"reconciliation.wait.{name}.actual")
+        if status == "comparable":
+            _integer(error["planned_p50_seconds"], f"reconciliation.wait.{name}.planned")
+            _integer(error["signed_error_seconds"], f"reconciliation.wait.{name}.signed", -1_000_000_000_000_000, 1_000_000_000_000_000)
+            _integer(error["absolute_error_seconds"], f"reconciliation.wait.{name}.absolute")
+            signed = int(error["actual_seconds"]) - int(error["planned_p50_seconds"])
+            if error["signed_error_seconds"] != signed or error["absolute_error_seconds"] != abs(signed): raise EstimationError("reconciliation wait derivation is inconsistent")
+        elif name != "quota" or any(error[field] is not None for field in ("planned_p50_seconds", "signed_error_seconds", "absolute_error_seconds")):
+            raise EstimationError("only quota may carry null prior-unavailable wait evidence")
     concurrency = _exact(row["concurrency_error"], {"planned_concurrency", "observed_peak_concurrency", "status"}, "reconciliation.concurrency_error")
     _integer(concurrency["planned_concurrency"], "reconciliation.planned_concurrency", 1, 32)
     if concurrency["observed_peak_concurrency"] is not None: _integer(concurrency["observed_peak_concurrency"], "reconciliation.observed_concurrency", 1, 32)
     _enum(concurrency["status"], {"unavailable"}, "reconciliation.concurrency.status")
-    quota = _exact(row["quota_error"], {"planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds", "coverage_basis_points"}, "reconciliation.quota_error")
-    for field in ("planned_p50_seconds", "actual_seconds", "absolute_error_seconds"): _integer(quota[field], f"reconciliation.quota.{field}")
-    _integer(quota["signed_error_seconds"], "reconciliation.quota.signed", -1_000_000_000_000_000, 1_000_000_000_000_000); _integer(quota["coverage_basis_points"], "reconciliation.quota.coverage", 0, 10_000)
+    quota = _exact(row["quota_error"], {"status", "planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds", "coverage_basis_points"}, "reconciliation.quota_error")
+    quota_status = _enum(quota["status"], {"comparable", "prior_unavailable"}, "reconciliation.quota.status")
+    _integer(quota["actual_seconds"], "reconciliation.quota.actual"); _integer(quota["coverage_basis_points"], "reconciliation.quota.coverage", 0, 10_000)
+    if quota_status == "comparable":
+        _integer(quota["planned_p50_seconds"], "reconciliation.quota.planned"); _integer(quota["signed_error_seconds"], "reconciliation.quota.signed", -1_000_000_000_000_000, 1_000_000_000_000_000); _integer(quota["absolute_error_seconds"], "reconciliation.quota.absolute")
+    elif any(quota[field] is not None for field in ("planned_p50_seconds", "signed_error_seconds", "absolute_error_seconds")):
+        raise EstimationError("prior-unavailable quota error must have null derived fields")
+    if quota_status != wait["quota"]["status"]: raise EstimationError("quota error statuses are inconsistent")
+    if {key: quota[key] for key in ("status", "planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds")} != wait["quota"]:
+        raise EstimationError("quota and wait error evidence are inconsistent")
     cohort = _exact(row["cohort"], {"selected_node", "fallback_path", "backoff_levels"}, "reconciliation.cohort")
     _node(cohort["selected_node"], "reconciliation.cohort.selected"); _integer(cohort["backoff_levels"], "reconciliation.cohort.backoff")
     if type(cohort["fallback_path"]) is not list: raise EstimationError("reconciliation fallback path is invalid")
@@ -980,16 +1146,32 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
         if set(cash) != {"status"}: raise EstimationError("unknown reconciliation cash is invalid")
     else:
         _exact(cash, {"status", "amount_microusd", "evidence_sha256"}, "reconciliation.actual_cash"); _integer(cash["amount_microusd"], "reconciliation.actual_cash.amount"); _sha(cash["evidence_sha256"], "reconciliation.actual_cash.evidence")
-    cost_error = _exact(row["cost_error_current"], {"planned_p50_microusd", "actual_repriced_microusd", "signed_error_microusd", "absolute_error_microusd", "log_ratio_millionths", "coverage_basis_points"}, "reconciliation.cost_error_current")
-    for field in ("planned_p50_microusd", "actual_repriced_microusd", "signed_error_microusd", "absolute_error_microusd", "log_ratio_millionths"):
-        if cost_error[field] is not None: _integer(cost_error[field], f"reconciliation.cost_error.{field}", -1_000_000_000_000_000 if "signed" in field or "log" in field else 0, 1_000_000_000_000_000)
-    _integer(cost_error["coverage_basis_points"], "reconciliation.cost_error.coverage", 0, 10_000)
+        if cash["status"] == "subscription_zero" and cash["amount_microusd"] != 0: raise EstimationError("subscription_zero reconciliation cash must be zero")
+    cost_fields = {"status", "planned_p50_microusd", "planned_p95_microusd", "actual_repriced_microusd", "planned_known_basis_points", "actual_known_basis_points", "signed_error_microusd", "absolute_error_microusd", "log_ratio_millionths", "within_p50_p95"}
+    cost_error = _exact(row["cost_error_current"], cost_fields, "reconciliation.cost_error_current")
+    status = _enum(cost_error["status"], {"comparable_full", "incomparable_coverage"}, "reconciliation.cost_error.status")
+    for field in ("planned_p50_microusd", "planned_p95_microusd", "actual_repriced_microusd"):
+        if cost_error[field] is not None: _integer(cost_error[field], f"reconciliation.cost_error.{field}")
+    planned_coverage = _integer(cost_error["planned_known_basis_points"], "reconciliation.cost_error.planned_coverage", 0, 10_000)
+    actual_coverage = _integer(cost_error["actual_known_basis_points"], "reconciliation.cost_error.actual_coverage", 0, 10_000)
+    if status == "comparable_full":
+        if planned_coverage != 10_000 or actual_coverage != 10_000 or any(cost_error[field] is None for field in ("planned_p50_microusd", "planned_p95_microusd", "actual_repriced_microusd")):
+            raise EstimationError("comparable cost error requires fully priced values")
+        _integer(cost_error["signed_error_microusd"], "reconciliation.cost_error.signed", -1_000_000_000_000_000, 1_000_000_000_000_000)
+        _integer(cost_error["absolute_error_microusd"], "reconciliation.cost_error.absolute")
+        _integer(cost_error["log_ratio_millionths"], "reconciliation.cost_error.log", -1_000_000_000_000_000, 1_000_000_000_000_000)
+        _boolean(cost_error["within_p50_p95"], "reconciliation.cost_error.coverage")
+        planned = int(cost_error["planned_p50_microusd"]); p95 = int(cost_error["planned_p95_microusd"]); actual = int(cost_error["actual_repriced_microusd"]); signed = actual - planned
+        if p95 < planned or cost_error["signed_error_microusd"] != signed or cost_error["absolute_error_microusd"] != abs(signed) or cost_error["log_ratio_millionths"] != _log_ratio_millionths(actual, planned) or cost_error["within_p50_p95"] is not (planned <= actual <= p95):
+            raise EstimationError("reconciliation cost derivation is inconsistent")
+    elif any(cost_error[field] is not None for field in ("signed_error_microusd", "absolute_error_microusd", "log_ratio_millionths", "within_p50_p95")):
+        raise EstimationError("incomparable cost error must have null derived fields")
 
 
 def validate_result(value: object) -> dict[str, object]:
-    row = _mapping(value, "result")
+    row = _admit_document(value, "result")
     common = {"schema_version", "result_kind", "labels"}
-    if row.get("schema_version") != 1: raise EstimationError("result.schema_version is unsupported")
+    if type(row.get("schema_version")) is not int or row.get("schema_version") != 1: raise EstimationError("result.schema_version is unsupported")
     kind = _enum(row.get("result_kind"), {"estimate", "reconciliation"}, "result.result_kind")
     _validate_labels(row.get("labels"))
     if kind == "estimate":
@@ -1000,7 +1182,7 @@ def validate_result(value: object) -> dict[str, object]:
             _exact(row, unavailable_fields, "result"); _enum(row["estimate_unavailable"], {"insufficient_scope", "no_compatible_prior"}, "result.estimate_unavailable")
         else:
             _exact(row, available_fields, "result"); _validate_available_result(row)
-        _version(row["estimator_method_version"], "result.estimator_method_version")
+        if row["estimator_method_version"] != "empirical-sim-v1": raise EstimationError("result estimator method is unsupported")
         for name in ("scope_hash", "prior_sha256", "pricing_sha256", "quota_sha256"): _sha(row[name], f"result.{name}")
         _integer(row["seed"], "result.seed", 0, 2_147_483_647)
         if row["simulation_count"] != SIMULATION_COUNT: raise EstimationError("result simulation count is unsupported")
@@ -1021,23 +1203,32 @@ def _log_ratio_millionths(actual: int, planned: int) -> int:
         return int(ratio.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def _signed_error(planned: int, actual: int, p95: int) -> dict[str, object]:
-    signed = actual - planned
-    ratio = _log_ratio_millionths(actual, planned)
-    return {"planned_p50_seconds": planned, "actual_seconds": actual, "signed_error_seconds": signed, "absolute_error_seconds": abs(signed), "log_ratio_millionths": ratio, "within_p50_p95": planned <= actual <= p95}
+def _duration_error(planned: Mapping[str, object], actual: int) -> dict[str, object]:
+    p50 = planned["p50"]; p95 = planned["p95"]
+    if p50 is None or p95 is None:
+        return {"status": "prior_unavailable", "planned_p50_seconds": None, "planned_p95_seconds": None, "actual_seconds": actual, "signed_error_seconds": None, "absolute_error_seconds": None, "log_ratio_millionths": None, "within_p50_p95": None}
+    signed = actual - int(p50)
+    return {"status": "comparable", "planned_p50_seconds": p50, "planned_p95_seconds": p95, "actual_seconds": actual, "signed_error_seconds": signed, "absolute_error_seconds": abs(signed), "log_ratio_millionths": _log_ratio_millionths(actual, int(p50)), "within_p50_p95": int(p50) <= actual <= int(p95)}
+
+
+def _wait_error(planned: object, actual: int) -> dict[str, object]:
+    if planned is None:
+        return {"status": "prior_unavailable", "planned_p50_seconds": None, "actual_seconds": actual, "signed_error_seconds": None, "absolute_error_seconds": None}
+    signed = actual - int(planned)
+    return {"status": "comparable", "planned_p50_seconds": planned, "actual_seconds": actual, "signed_error_seconds": signed, "absolute_error_seconds": abs(signed)}
 
 
 def _reprice_actual(actual: Mapping[str, object], pricing: Mapping[str, object], prior: Mapping[str, object]) -> dict[str, object]:
-    route_meta = {str(item["route_id"]): (str(item["provider"]),) for item in prior["detail"]["route_costs"]}
-    # The estimate intentionally stores provider but not model dimensions in its
-    # route-cost rows.  Repricing therefore uses the unique matching provider +
-    # token-class record; ambiguity remains unpriced rather than guessed.
+    route_meta = {str(item["route_id"]): tuple(str(item[key]) for key in ("provider", "model", "modality", "tier")) for item in prior["detail"]["route_costs"]}
     providers = pricing["providers"]; known = 0; known_quantity = 0; total = 0
     for token in actual["token_usage"]:
         quantity = int(token["quantity"]); total += quantity
-        meta = route_meta.get(str(token["route_id"])); candidates = []
-        if meta and meta[0] in providers and providers[meta[0]]["status"] in {"official", "estimated_stale"}:
-            candidates = [record for record in providers[meta[0]]["values"] if record.get("token_class") == token["token_class"] and record.get("unit") == "per_million_tokens"]
+        route_id = str(token["route_id"])
+        if route_id not in route_meta:
+            raise EstimationError(f"actual token usage references unknown route {route_id}")
+        provider_name, model, modality, tier = route_meta[route_id]; candidates = []
+        if provider_name in providers and providers[provider_name]["status"] in {"official", "estimated_stale"}:
+            candidates = [record for record in providers[provider_name]["values"] if (record.get("model"), record.get("modality"), record.get("tier"), record.get("token_class"), record.get("unit")) == (model, modality, tier, token["token_class"], "per_million_tokens")]
         if len(candidates) == 1:
             known += (quantity * int(candidates[0]["amount_microusd"]) + 500_000) // 1_000_000; known_quantity += quantity
     coverage = 0 if total == 0 else known_quantity * 10_000 // total
@@ -1049,21 +1240,24 @@ def reconcile(prior_result: Mapping[str, object], actual: Mapping[str, object], 
     if prior["result_kind"] != "estimate" or "detail" not in prior: raise EstimationError("prior result must be an available estimate")
     duration_errors = {}
     for name, actual_field, detail_field in (("focused", "focused_agent_wall_clock_seconds", "focused_agent_wall_clock_seconds"), ("calendar", "calendar_elapsed_seconds", "calendar_elapsed_seconds"), ("summed_runtime", "summed_agent_runtime_seconds", "summed_agent_runtime_seconds")):
-        planned = prior["detail"][detail_field]; duration_errors[name] = _signed_error(int(planned["p50"]), int(actual2[actual_field]), int(planned["p95"]))
+        planned = prior["detail"][detail_field]; duration_errors[name] = _duration_error(planned, int(actual2[actual_field]))
     wait_errors = {}
     for name, actual_field in (("operator", "operator_seconds"), ("vendor", "vendor_seconds"), ("quota", "quota_seconds")):
-        planned = int(prior["detail"]["wait_decomposition_seconds"][name]["p50"]); observed = int(actual2["wait_decomposition"][actual_field]); signed = observed - planned
-        wait_errors[name] = {"planned_p50_seconds": planned, "actual_seconds": observed, "signed_error_seconds": signed, "absolute_error_seconds": abs(signed)}
+        planned = prior["detail"]["wait_decomposition_seconds"][name]["p50"]
+        wait_errors[name] = _wait_error(planned, int(actual2["wait_decomposition"][actual_field]))
     current_view = _reprice_actual(actual2, pricing2, prior)
     execution = actual2.get("execution_era_pricing")
     execution_view = _reprice_actual(actual2, execution, prior) if execution is not None else {"known_microusd": None, "known_basis_points": 0, "unpriced_basis_points": 10_000}
-    planned_cost = prior["headline"]["api_equivalent_cost_current"]["known_microusd"]["p50"]
+    planned_costs = prior["headline"]["api_equivalent_cost_current"]["known_microusd"]
+    planned_cost = planned_costs["p50"]; planned_p95 = planned_costs["p95"]
+    planned_coverage = int(prior["headline"]["api_equivalent_cost_current"]["known_basis_points"])
     actual_cost = current_view["known_microusd"]
-    if planned_cost is None or actual_cost is None:
-        cost_error = {"planned_p50_microusd": planned_cost, "actual_repriced_microusd": actual_cost, "signed_error_microusd": None, "absolute_error_microusd": None, "log_ratio_millionths": None, "coverage_basis_points": current_view["known_basis_points"]}
+    actual_coverage = int(current_view["known_basis_points"])
+    if planned_coverage != 10_000 or actual_coverage != 10_000 or planned_cost is None or planned_p95 is None or actual_cost is None:
+        cost_error = {"status": "incomparable_coverage", "planned_p50_microusd": planned_cost, "planned_p95_microusd": planned_p95, "actual_repriced_microusd": actual_cost, "planned_known_basis_points": planned_coverage, "actual_known_basis_points": actual_coverage, "signed_error_microusd": None, "absolute_error_microusd": None, "log_ratio_millionths": None, "within_p50_p95": None}
     else:
         signed = int(actual_cost) - int(planned_cost)
-        cost_error = {"planned_p50_microusd": planned_cost, "actual_repriced_microusd": actual_cost, "signed_error_microusd": signed, "absolute_error_microusd": abs(signed), "log_ratio_millionths": _log_ratio_millionths(int(actual_cost), int(planned_cost)), "coverage_basis_points": current_view["known_basis_points"]}
+        cost_error = {"status": "comparable_full", "planned_p50_microusd": planned_cost, "planned_p95_microusd": planned_p95, "actual_repriced_microusd": actual_cost, "planned_known_basis_points": planned_coverage, "actual_known_basis_points": actual_coverage, "signed_error_microusd": signed, "absolute_error_microusd": abs(signed), "log_ratio_millionths": _log_ratio_millionths(int(actual_cost), int(planned_cost)), "within_p50_p95": int(planned_cost) <= int(actual_cost) <= int(planned_p95)}
     cohort = prior["detail"]["cohort"]
     result = {"schema_version": 1, "result_kind": "reconciliation", "scope_hash": prior["scope_hash"], "prior_result_sha256": hashlib.sha256(_canonical(prior)).hexdigest(), "current_pricing_sha256": hashlib.sha256(_canonical(pricing2)).hexdigest(), "execution_pricing_sha256": hashlib.sha256(_canonical(execution)).hexdigest() if execution is not None else None, "completion_boundary": actual2["completion_boundary"], "duration_errors": duration_errors, "wait_errors": wait_errors, "concurrency_error": {"planned_concurrency": prior["headline"]["planned_concurrency"], "observed_peak_concurrency": None, "status": "unavailable"}, "quota_error": {**wait_errors["quota"], "coverage_basis_points": prior["detail"]["quota"]["coverage_basis_points"]}, "cohort": {"selected_node": cohort["selected_node"], "fallback_path": cohort["fallback_path"], "backoff_levels": cohort["backoff_levels"]}, "cost_views": {"current_api_equivalent": current_view, "execution_era_api_equivalent": execution_view, "actual_marginal_cash": dict(actual2["actual_marginal_cash"])}, "cost_error_current": cost_error, "labels": dict(_LABELS)}
     return validate_result(result)
@@ -1140,23 +1334,52 @@ def _read_json(path: str) -> object:
 
 def _write_exclusive(path: str, payload: bytes) -> None:
     directory, name = _open_parent(path); created = False; fd: int | None = None
+    created_identity: tuple[int, int] | None = None
     try:
-        flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         fd = os.open(name, flags, 0o600, dir_fd=directory); created = True; remaining = memoryview(payload)
+        created_stat = os.fstat(fd)
+        created_identity = (created_stat.st_dev, created_stat.st_ino)
         while remaining:
             count = os.write(fd, remaining)
             if count <= 0: raise EstimationError("output write was short")
             remaining = remaining[count:]
-        os.fsync(fd); os.lseek(fd, 0, os.SEEK_SET)
-        if _read_bounded_fd(fd, "output") != payload: raise EstimationError("output readback failed")
+        os.fsync(fd)
+        read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+        read_fd = os.open(name, read_flags, dir_fd=directory)
+        try:
+            visible = os.fstat(read_fd)
+            if not stat.S_ISREG(visible.st_mode) or (visible.st_dev, visible.st_ino) != created_identity:
+                raise EstimationError("output name no longer identifies the created file")
+            if _read_bounded_fd(read_fd, "output") != payload: raise EstimationError("output readback failed")
+        finally:
+            os.close(read_fd)
+        try:
+            os.fsync(directory)
+        except OSError as exc:
+            unsupported = {errno.EINVAL}
+            for name2 in ("ENOTSUP", "EOPNOTSUPP"):
+                value = getattr(errno, name2, None)
+                if value is not None: unsupported.add(value)
+            if exc.errno not in unsupported:
+                raise
     except BaseException:
         if fd is not None:
             try: os.close(fd)
             except OSError: pass
             fd = None
-        if created:
-            try: os.unlink(name, dir_fd=directory)
-            except OSError: pass
+        if created and created_identity is not None:
+            guard_fd: int | None = None
+            try:
+                guard_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+                guard_fd = os.open(name, guard_flags, dir_fd=directory)
+                visible = os.fstat(guard_fd)
+                if stat.S_ISREG(visible.st_mode) and (visible.st_dev, visible.st_ino) == created_identity:
+                    os.unlink(name, dir_fd=directory)
+            except OSError:
+                pass
+            finally:
+                if guard_fd is not None: os.close(guard_fd)
         raise
     finally:
         if fd is not None: os.close(fd)

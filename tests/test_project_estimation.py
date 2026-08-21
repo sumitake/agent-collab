@@ -65,6 +65,36 @@ def _second_route(request: dict[str, object]) -> None:
     ]
 
 
+def _rehash_provider(snapshot: dict[str, object], provider_name: str = "provider-a") -> None:
+    values = snapshot["providers"][provider_name]["values"]
+    snapshot["providers"][provider_name]["value_sha256"] = hashlib.sha256(_canonical(values)).hexdigest()
+
+
+def _unknown_quota() -> dict[str, object]:
+    quota = _json("quota-small.json")
+    row = quota["providers"]["provider-a"]
+    row.update({"status": "unknown", "retrieved_date": None,
+                "last_successful_official_date": None, "original_last_good_date": None,
+                "values": [], "value_sha256": None, "source_url_sha256": None,
+                "final_url_sha256": None, "redirect_chain_sha256": None,
+                "content_type": None, "elapsed_class": None,
+                "failure_class": "quota_unavailable"})
+    quota["operator_notification_required"] = True
+    quota["uncertainty_basis_points"] = 1000
+    return quota
+
+
+def _actual(*, route_id: str = "route-a", quantity: int = 1_000_000) -> dict[str, object]:
+    return {
+        "schema_version": 1, "completion_boundary": "merged",
+        "focused_agent_wall_clock_seconds": 4000, "calendar_elapsed_seconds": 5000,
+        "summed_agent_runtime_seconds": 4500,
+        "token_usage": [{"route_id": route_id, "token_class": "input", "quantity": quantity}],
+        "wait_decomposition": {"operator_seconds": 0, "vendor_seconds": 0, "quota_seconds": 1000},
+        "actual_marginal_cash": {"status": "unknown"}, "persistence_consent": False,
+    }
+
+
 class ValidatorTests(unittest.TestCase):
     def test_runtime_schema_enums_and_top_level_shapes_are_in_parity(self):
         request_schema = json.loads((ROOT / "plugins" / "agent-collab" / "project-estimation-data" / "estimate-request.schema.json").read_text())
@@ -84,6 +114,13 @@ class ValidatorTests(unittest.TestCase):
         )
         self.assertFalse(result_schema["additionalProperties"])
         self.assertEqual(set(result_schema["required"]), {"schema_version", "result_kind", "labels"})
+        self.assertIn("nullable_seconds", result_schema["$defs"])
+        self.assertIn("nullable_hours", result_schema["$defs"])
+        self.assertEqual(
+            set(result_schema["$defs"]["route_cost"]["required"]),
+            {"route_id", "provider", "model", "modality", "tier", "known_microusd",
+             "known_token_quantity", "unpriced_token_quantity", "coverage_basis_points"},
+        )
         for variant in result_schema["anyOf"]:
             self.assertEqual(variant["type"], "object")
             self.assertFalse(variant["additionalProperties"])
@@ -181,6 +218,82 @@ class ValidatorTests(unittest.TestCase):
         pricing["retrieved_date"] = "2026-02-30"
         with self.assertRaises(module.EstimationError):
             module.validate_pricing(pricing)
+
+    def test_all_programmatic_validators_enforce_exact_schema_type_and_one_mib(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        prior = _json("prior-small.json")
+        pricing = _json("pricing-small.json")
+        quota = _json("quota-small.json")
+        result = module.estimate(request, prior, pricing, quota)
+        actual = _actual()
+        cases = (
+            (module.validate_request, request), (module.validate_aggregate, prior),
+            (module.validate_pricing, pricing), (module.validate_quota, quota),
+            (module.validate_actual, actual), (module.validate_result, result),
+        )
+        for validator, document in cases:
+            with self.subTest(validator=validator.__name__, condition="boolean-version"):
+                malformed = copy.deepcopy(document)
+                malformed["schema_version"] = True
+                with self.assertRaises(module.EstimationError):
+                    validator(malformed)
+            with self.subTest(validator=validator.__name__, condition="oversized"):
+                oversized = copy.deepcopy(document)
+                oversized["oversized"] = "x" * (module.MAX_BYTES + 1)
+                with self.assertRaisesRegex(module.EstimationError, "one MiB"):
+                    validator(oversized)
+        nested = copy.deepcopy(prior)
+        nested["nodes"][0]["schema_version"] = True
+        with self.assertRaises(module.EstimationError):
+            module.validate_aggregate(nested)
+
+    def test_mixed_mapping_keys_and_malformed_metric_objects_are_typed_errors(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        request[7] = "mixed-key"
+        with self.assertRaises(module.EstimationError):
+            module.validate_request(request)
+        request = _json("request-enhancement.json")
+        request["assumptions"].append(request)
+        with self.assertRaises(module.EstimationError):
+            module.validate_request(request)
+        deeply_nested: dict[str, object] = {}
+        cursor = deeply_nested
+        for _ in range(2000):
+            child: dict[str, object] = {}
+            cursor["child"] = child
+            cursor = child
+        with self.assertRaises(module.EstimationError):
+            module.validate_request(deeply_nested)
+        prior = _json("prior-small.json")
+        prior["nodes"][0]["uncertainty_floors"] = 7
+        with self.assertRaises(module.EstimationError):
+            module.validate_aggregate(prior)
+
+    def test_estimate_rejects_snapshots_after_request_date(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        pricing = _json("pricing-small.json")
+        pricing["retrieved_date"] = "2026-08-22"
+        pricing["providers"]["provider-a"]["retrieved_date"] = "2026-08-22"
+        pricing["providers"]["provider-a"]["last_successful_official_date"] = "2026-08-22"
+        with self.assertRaisesRegex(module.EstimationError, "after request"):
+            module.estimate(request, _json("prior-small.json"), pricing, _json("quota-small.json"))
+        quota = _json("quota-small.json")
+        quota["retrieved_date"] = "2026-08-22"
+        quota["providers"]["provider-a"]["retrieved_date"] = "2026-08-22"
+        quota["providers"]["provider-a"]["last_successful_official_date"] = "2026-08-22"
+        with self.assertRaisesRegex(module.EstimationError, "after request"):
+            module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), quota)
+
+    def test_actual_focused_time_cannot_exceed_calendar_time(self):
+        module = _load()
+        actual = _actual()
+        actual["focused_agent_wall_clock_seconds"] = 5001
+        actual["summed_agent_runtime_seconds"] = 6000
+        with self.assertRaisesRegex(module.EstimationError, "calendar"):
+            module.validate_actual(actual)
 
 
 class ProjectionAndHierarchyTests(unittest.TestCase):
@@ -305,6 +418,37 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(result["detail"]["wait_decomposition_seconds"]["operator"]["p50"], 600)
         self.assertIn("rework", {row["id"] for row in result["detail"]["phase_rows"]})
 
+    def test_allocated_fallback_uses_pinned_odd_and_even_integer_medians(self):
+        module = _load()
+        odd_phases = [
+            {"id": "a", "owner": "autonomous_agent", "prior_phase": "primary", "effort_weight": 1},
+            {"id": "b", "owner": "autonomous_agent", "prior_phase": "review", "effort_weight": 1},
+            {"id": "c", "owner": "autonomous_agent", "prior_phase": "test", "effort_weight": 1},
+            {"id": "missing", "owner": "autonomous_agent", "prior_phase": "deployment", "effort_weight": 1},
+        ]
+        odd_rows = {
+            "primary": {"p50": 100, "p80": 100, "p95": 100},
+            "review": {"p50": 1000, "p80": 1000, "p95": 1000},
+            "test": {"p50": 100, "p80": 100, "p95": 100},
+        }
+        odd, total, allocated = module._allocated_durations(
+            odd_phases, odd_rows, {"p50": 1300, "p80": 1300, "p95": 1300}, 0, 7,
+        )
+        self.assertTrue(allocated)
+        self.assertEqual(sum(odd.values()), total)
+        self.assertEqual(odd["missing"], odd["a"])
+
+        even_phases = odd_phases[:2] + [odd_phases[-1]]
+        even_rows = {
+            "primary": {"p50": 100, "p80": 100, "p95": 100},
+            "review": {"p50": 101, "p80": 101, "p95": 101},
+        }
+        even, total, _ = module._allocated_durations(
+            even_phases, even_rows, {"p50": 302, "p80": 302, "p95": 302}, 0, 7,
+        )
+        self.assertEqual(sum(even.values()), total)
+        self.assertEqual(even, {"a": 100, "b": 101, "missing": 101})
+
 
 class CostQuotaTests(unittest.TestCase):
     def test_multiple_token_classes_are_aggregated_once_per_route_sample(self):
@@ -418,10 +562,9 @@ class CostQuotaTests(unittest.TestCase):
         self.assertGreaterEqual(result["detail"]["quota"]["delay_seconds"]["p50"], 3_215_060)
         self.assertEqual(result["detail"]["quota"]["coverage_basis_points"], 10_000)
 
-    def test_unknown_quota_widens_p95_and_never_shortens(self):
+    def test_unknown_quota_preserves_a_numeric_known_calendar_floor(self):
         module = _load()
         request = _json("request-enhancement.json")
-        known = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), _json("quota-small.json"))
         quota = _json("quota-small.json")
         row = quota["providers"]["provider-a"]
         row.update({"status": "unknown", "retrieved_date": None, "last_successful_official_date": None,
@@ -431,8 +574,91 @@ class CostQuotaTests(unittest.TestCase):
         quota["operator_notification_required"] = True
         quota["uncertainty_basis_points"] = 1000
         unknown = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), quota)
-        self.assertGreaterEqual(unknown["detail"]["calendar_elapsed_seconds"]["p95"], known["detail"]["calendar_elapsed_seconds"]["p95"])
+        self.assertTrue(all(
+            type(value) is int
+            for value in unknown["detail"]["calendar_known_floor_seconds"].values()
+        ))
         self.assertLess(unknown["detail"]["quota"]["coverage_basis_points"], 10000)
+
+    def test_unknown_quota_exposes_only_numeric_floors_and_never_changes_work(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        request["routes"][0]["quota_usage"].append({"limit_kind": "subscription_5_hour", "quantity": 3})
+        known_quota = _json("quota-small.json")
+        known_quota["providers"]["provider-a"]["values"].append(_approved({
+            "record_id": "five", "model": "m", "modality": "text", "tier": "standard",
+            "limit_kind": "subscription_5_hour", "limit_value": 1,
+            "window_seconds": 18_000, "cooldown_seconds": 60, "modifiers": [],
+        }))
+        _rehash_provider(known_quota)
+        known = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), known_quota)
+        unknown = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), _unknown_quota())
+        self.assertEqual(known["headline"]["calendar_estimate_status"], "complete")
+        self.assertEqual(known["detail"]["calendar_elapsed_seconds"], known["detail"]["calendar_known_floor_seconds"])
+        self.assertEqual(unknown["headline"]["calendar_estimate_status"], "unavailable_unknown_quota")
+        self.assertEqual(unknown["detail"]["calendar_elapsed_seconds"], {"p50": None, "p80": None, "p95": None})
+        self.assertEqual(unknown["detail"]["quota"]["delay_seconds"], {"p50": None, "p80": None, "p95": None})
+        self.assertEqual(unknown["detail"]["wait_decomposition_seconds"]["total"], {"p50": None, "p80": None, "p95": None})
+        self.assertTrue(all(type(value) is int for value in unknown["detail"]["calendar_known_floor_seconds"].values()))
+        self.assertTrue(all(type(value) is int for value in unknown["detail"]["quota"]["known_delay_floor_seconds"].values()))
+        self.assertEqual(unknown["detail"]["focused_agent_wall_clock_seconds"], known["detail"]["focused_agent_wall_clock_seconds"])
+        self.assertEqual(unknown["detail"]["summed_agent_runtime_seconds"], known["detail"]["summed_agent_runtime_seconds"])
+        self.assertEqual(unknown["headline"]["calibration"]["confidence"], known["headline"]["calibration"]["confidence"])
+        self.assertEqual(unknown["headline"]["critical_path"], known["headline"]["critical_path"])
+        self.assertEqual(unknown["headline"]["critical_path_basis"], "dag_makespan_p80")
+        self.assertIn("resolve_unknown_quota", unknown["headline"]["prerequisites"])
+
+    def test_quota_applicability_is_cross_checked_and_tpm_has_usage_fallback(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        quota = _json("quota-small.json")
+        quota["providers"]["provider-a"]["values"].append(_approved({
+            "record_id": "five", "model": "m", "modality": "text", "tier": "standard",
+            "limit_kind": "subscription_5_hour", "limit_value": 1,
+            "window_seconds": 18_000, "cooldown_seconds": 0, "modifiers": [],
+        }))
+        _rehash_provider(quota)
+        missing_request_usage = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), quota)
+        self.assertEqual(missing_request_usage["detail"]["quota"]["status"], "unavailable_unknown_quota")
+
+        request_usage = _json("request-enhancement.json")
+        request_usage["routes"][0]["quota_usage"].append({"limit_kind": "subscription_5_hour", "quantity": 2})
+        missing_snapshot = module.estimate(request_usage, _json("prior-small.json"), _json("pricing-small.json"), _json("quota-small.json"))
+        self.assertEqual(missing_snapshot["detail"]["quota"]["status"], "unavailable_unknown_quota")
+
+        no_tokens_prior = _json("prior-small.json")
+        no_tokens_prior["nodes"][0]["token_class_quantiles"] = []
+        tpm_request = _json("request-enhancement.json")
+        tpm_request["routes"][0]["quota_usage"][0]["quantity"] = 2_000_000
+        fallback = module.estimate(tpm_request, no_tokens_prior, _json("pricing-small.json"), _json("quota-small.json"))
+        self.assertEqual(fallback["detail"]["quota"]["status"], "complete")
+        self.assertEqual(fallback["detail"]["quota"]["delay_seconds"]["p50"], 60)
+
+    def test_ambiguous_zero_and_missing_concurrency_quota_are_unknown(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        request["routes"][0]["quota_usage"].append({"limit_kind": "concurrency", "quantity": 1})
+        missing = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), _json("quota-small.json"))
+        self.assertEqual(missing["detail"]["quota"]["status"], "unavailable_unknown_quota")
+
+        request = _json("request-enhancement.json")
+        quota = _json("quota-small.json")
+        quota["providers"]["provider-a"]["values"][0]["limit_value"] = 0
+        quota["providers"]["provider-a"]["values"][0] = _approved({
+            key: value for key, value in quota["providers"]["provider-a"]["values"][0].items()
+            if key != "approved_value_sha256"
+        })
+        _rehash_provider(quota)
+        zero = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), quota)
+        self.assertEqual(zero["detail"]["quota"]["status"], "unavailable_unknown_quota")
+
+        quota = _json("quota-small.json")
+        duplicate = _approved({**{key: value for key, value in quota["providers"]["provider-a"]["values"][0].items()
+                                           if key != "approved_value_sha256"}, "record_id": "duplicate-tpm"})
+        quota["providers"]["provider-a"]["values"].append(duplicate)
+        _rehash_provider(quota)
+        ambiguous = module.estimate(request, _json("prior-small.json"), _json("pricing-small.json"), quota)
+        self.assertEqual(ambiguous["detail"]["quota"]["status"], "unavailable_unknown_quota")
 
 
 class ReconciliationTests(unittest.TestCase):
@@ -457,6 +683,133 @@ class ReconciliationTests(unittest.TestCase):
         self.assertIn("execution_era_api_equivalent", result["cost_views"])
         self.assertEqual(result["cost_views"]["actual_marginal_cash"]["amount_microusd"], 2500000)
         self.assertIn("non_additive", result["labels"]["non_additivity"])
+
+    def test_repricing_is_bound_to_full_route_identity_and_rejects_unknown_routes(self):
+        module = _load()
+        pricing = _json("pricing-small.json")
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"), pricing, _json("quota-small.json"),
+        )
+        route = prior_result["detail"]["route_costs"][0]
+        self.assertEqual(
+            {key: route[key] for key in ("provider", "model", "modality", "tier")},
+            {"provider": "provider-a", "model": "m", "modality": "text", "tier": "standard"},
+        )
+        for dimension, wrong_value in (
+            ("model", "wrong-model"),
+            ("modality", "audio"),
+            ("tier", "premium"),
+        ):
+            with self.subTest(dimension=dimension):
+                mismatched = copy.deepcopy(pricing)
+                record = mismatched["providers"]["provider-a"]["values"][0]
+                record[dimension] = wrong_value
+                record["approved_value_sha256"] = hashlib.sha256(_canonical({
+                    key: value for key, value in record.items()
+                    if key != "approved_value_sha256"
+                })).hexdigest()
+                _rehash_provider(mismatched)
+                reconciled = module.reconcile(prior_result, _actual(), mismatched)
+                self.assertIsNone(reconciled["cost_views"]["current_api_equivalent"]["known_microusd"])
+                self.assertEqual(reconciled["cost_error_current"]["status"], "incomparable_coverage")
+        with self.assertRaisesRegex(module.EstimationError, "unknown route"):
+            module.reconcile(prior_result, _actual(route_id="not-planned"), pricing)
+
+    def test_reconciliation_cost_comparability_and_duration_intervals_are_auditable(self):
+        module = _load()
+        pricing = _json("pricing-small.json")
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"), pricing, _json("quota-small.json"),
+        )
+        full = module.reconcile(prior_result, _actual(), pricing)
+        focused = full["duration_errors"]["focused"]
+        self.assertEqual(focused["status"], "comparable")
+        self.assertEqual(focused["planned_p95_seconds"], prior_result["detail"]["focused_agent_wall_clock_seconds"]["p95"])
+        cost = full["cost_error_current"]
+        self.assertEqual(cost["status"], "comparable_full")
+        self.assertEqual(cost["planned_p95_microusd"], prior_result["headline"]["api_equivalent_cost_current"]["known_microusd"]["p95"])
+        self.assertEqual(cost["planned_known_basis_points"], 10_000)
+        self.assertEqual(cost["actual_known_basis_points"], 10_000)
+        self.assertIs(type(cost["within_p50_p95"]), bool)
+
+        wrong_model = copy.deepcopy(pricing)
+        record = wrong_model["providers"]["provider-a"]["values"][0]
+        record["model"] = "wrong-model"
+        record["approved_value_sha256"] = hashlib.sha256(_canonical({key: value for key, value in record.items() if key != "approved_value_sha256"})).hexdigest()
+        _rehash_provider(wrong_model)
+        partial = module.reconcile(prior_result, _actual(), wrong_model)["cost_error_current"]
+        self.assertEqual(partial["status"], "incomparable_coverage")
+        for field in ("signed_error_microusd", "absolute_error_microusd", "log_ratio_millionths", "within_p50_p95"):
+            self.assertIsNone(partial[field])
+
+    def test_unknown_quota_reconciliation_never_uses_known_floor_as_interval(self):
+        module = _load()
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _unknown_quota(),
+        )
+        result = module.reconcile(prior_result, _actual(), _json("pricing-small.json"))
+        calendar = result["duration_errors"]["calendar"]
+        self.assertEqual(calendar["status"], "prior_unavailable")
+        self.assertEqual(calendar["actual_seconds"], 5000)
+        for field in ("planned_p50_seconds", "planned_p95_seconds", "signed_error_seconds", "absolute_error_seconds", "log_ratio_millionths", "within_p50_p95"):
+            self.assertIsNone(calendar[field])
+        self.assertEqual(result["wait_errors"]["quota"]["status"], "prior_unavailable")
+        self.assertEqual(result["quota_error"]["status"], "prior_unavailable")
+
+    def test_reconciliation_validation_recomputes_derived_interval_claims(self):
+        module = _load()
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _json("quota-small.json"),
+        )
+        result = module.reconcile(prior_result, _actual(), _json("pricing-small.json"))
+        forged = copy.deepcopy(result)
+        forged["duration_errors"]["focused"]["signed_error_seconds"] += 1
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+        forged = copy.deepcopy(result)
+        forged["cost_error_current"]["within_p50_p95"] = not forged["cost_error_current"]["within_p50_p95"]
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+    def test_unknown_quota_status_requires_resolution_driver_and_prerequisite(self):
+        module = _load()
+        result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _unknown_quota(),
+        )
+        forged = copy.deepcopy(result)
+        forged["headline"]["prerequisites"] = []
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+        forged = copy.deepcopy(result)
+        forged["headline"]["uncertainty_drivers"].remove("unknown_quota")
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+    def test_result_validation_rejects_invalid_enums_mixed_cost_and_path_inconsistency(self):
+        module = _load()
+        result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _json("quota-small.json"),
+        )
+        invalid = copy.deepcopy(result)
+        invalid["headline"]["scope"]["project_type"] = "invalid"
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(invalid)
+        invalid = copy.deepcopy(result)
+        invalid["headline"]["api_equivalent_cost_current"]["known_microusd"]["p80"] = None
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(invalid)
+        invalid = copy.deepcopy(result)
+        invalid["headline"]["critical_path"].append("not-a-phase")
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(invalid)
+        invalid = copy.deepcopy(result)
+        invalid["detail"]["cohort"]["selected_node"] = "project_type.greenfield"
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(invalid)
 
 
 if __name__ == "__main__":
