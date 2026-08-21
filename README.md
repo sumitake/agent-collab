@@ -5,16 +5,20 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.1.1). The
-**v6.1.1 release** advances the provider runtime to `4.0.6` (routing
+This public repository distributes **agent-collab** (v6.2.0). The
+**v6.2.0 release** is a client-behavior update on the unchanged v6.1.1 signed
+provider runtime (`4.0.6`): the coordinator now returns actionable, bounded
+rejection detail and classifies every non-usable outcome into a closed
+disposition, so a caller corrects an invalid invocation in place and never
+misreads an attempt-local failure as a provider outage. The underlying
+**v6.1.1 release** advanced the provider runtime to `4.0.6` (routing
 hardening, lifecycle-diagnostics decoupling, worktree sealing, and
-failure-text salvage with an additively widened advisory response) and is
-the first tagged release to carry the v6.1.0 project-local skills —
+failure-text salvage with an additively widened advisory response) and was
+the first tagged release to carry the v6.1.0 project-local skills:
 `project-knowledge` and `learning-loop`, each bundling a deterministic,
 stdlib-only CLI (`knowledge_tool.py`, `learning_ledger.py`) that runs
-offline inside the user's project (6.1.0 merged without a tag; this
-release publishes both changelog entries). The
-**[v6.1.1 release](https://github.com/sumitake/agent-collab/releases/tag/v6.1.1)**
+offline inside the user's project. The
+**[v6.2.0 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**
 is the governed publication target for the signed runtime, archive, checksum,
 SPDX evidence, and installation proof described below.
 
@@ -25,6 +29,33 @@ documentation closeout records the exact published artifact and installation
 evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
+
+## What's new - v6.2.0
+
+Client-behavior release on the unchanged v6.1.1 signed runtime (`4.0.6`). The
+coordinator boundary is now tolerant of imperfect invocation and self-describing
+about every outcome, so a caller recovers in place instead of re-deriving a
+request or misreading a transient failure as an outage.
+
+- **Actionable rejections.** An invalid or underspecified request no longer
+  collapses to a bare `invalid_request`. It carries a specific `error_code`
+  (`timeout_ms_over_cap`, `unknown_logical_action`, `quality_profile_invalid`,
+  `request_not_closed`, and so on) and a bounded `detail` object naming the
+  field, its constraint, and the admitted values or required source. `detail`
+  never reflects unbounded or untrusted input.
+- **Outcome disposition.** Every non-usable response carries a `disposition`
+  (`fix_request`, `retry`, `inspect`, or `unavailable`) and a short `recovery`
+  hint. By construction `provider_error`, `teardown_error`, and `protocol_error`
+  are never classified `unavailable`, so an attempt-local failure is no longer
+  read as a provider outage.
+- **In-place recovery.** An empty `target_agent` is coerced to `null` (recorded
+  in a `normalized` field). Nothing that changes cost, depth, or a security
+  decision is rewritten; the closed-request, fail-closed posture is unchanged.
+- **Doc currency.** The documented `timeout_ms` bound now matches the enforced
+  `1-600000` (Addressed: #125).
+
+The signed provider runtime, the 12-action set, and every action's
+authority/artifact/evidence contract are unchanged from v6.1.1.
 
 ## What's new - v6.1.1
 

@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.1.1**
+Current: **6.2.0**
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -45,7 +45,9 @@ Every request contains exactly these common fields:
   logical agent name, not a provider or model selector.
 - The coordinator observes the current host family and adds `author_lineage`
   internally. A caller-supplied lineage is rejected.
-- `timeout_ms` is 1–86400000. The public client owns this outer deadline.
+- `timeout_ms` is 1–600000 (the enforced outer deadline the coordinator applies
+  to the native process). A value over the cap is rejected with an actionable
+  `timeout_ms_over_cap` error naming the `max`, not silently clamped.
 - `prompt` is non-empty UTF-8, bounded to 1 MiB.
 - Every repository action adds exactly one canonical absolute `repo_root`.
 - Document-context actions replace `repo_root` with `documents`, an array of
@@ -141,6 +143,28 @@ route or provider unavailability and must never quarantine or suppress the
 route for a later request. They also do not authorize an automatic replay: a
 later caller-authorized request is a distinct attempt whose route eligibility
 is recomputed from fresh readiness.
+
+Every non-usable response also carries two additive fields so a caller cannot
+misread it and need not re-derive the request:
+
+- `disposition` classifies the outcome into one closed set:
+  `fix_request` (adjust the request: shape, target, action, effort, or size),
+  `retry` (attempt-local or transient; a fresh request may succeed), `inspect`
+  (overloaded; inspect the specific diagnostic before deciding), or
+  `unavailable` (the only "route down" class). By construction `provider_error`,
+  `teardown_error`, and `protocol_error` are never `unavailable`.
+- `recovery` is a short human hint for that disposition.
+
+A rejected request (`status: invalid_request`) additionally carries a specific
+`error_code` (e.g. `timeout_ms_over_cap`, `unknown_logical_action`,
+`quality_profile_invalid`, `request_not_closed`) and a bounded `detail` object
+naming the offending field, its constraint, and the admitted values or the
+required source, so the caller can correct it in place. Echoed values in
+`detail` are ASCII-printable, length-bounded, and list-bounded, so a rejection
+never reflects unbounded or raw untrusted input back to the caller. The only
+in-place normalization is coercing an empty `target_agent` to `null` (recorded
+in a `normalized` field); nothing that changes cost, depth, or a security
+decision is rewritten.
 
 A success contains the descriptor-defined artifact, runtime-owned evidence,
 one provider-neutral execution receipt, and bounded diagnostics. Observed
