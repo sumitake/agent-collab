@@ -320,6 +320,43 @@ class MaintenanceVerifierTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("mode" in line or "regular" in line for line in lines), lines)
 
+    def test_world_writable_public_member_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        os.chmod(data / "pricing-snapshot.json", 0o666)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("mode" in line or "writable" in line for line in lines), lines)
+
+    def test_foreign_owner_is_rejected_at_descriptor_admission(self) -> None:
+        _fixture(self.root)
+        with mock.patch.object(self.verifier.os, "getuid", return_value=os.getuid() + 1):
+            ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("owner" in line or "current user" in line for line in lines), lines)
+
+    def test_metadata_identity_drift_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        calls = [0]
+        original_identity = self.verifier._identity
+
+        def identity_with_drift(info: os.stat_result):
+            calls[0] += 1
+            identity = original_identity(info)
+            if calls[0] == 2:
+                return self.verifier._ReadIdentity(identity.dev, identity.ino, identity.mode, identity.uid, identity.gid, identity.nlink, identity.size, identity.mtime_ns + 1, identity.ctime_ns)
+            return identity
+
+        with mock.patch.object(self.verifier, "_identity", side_effect=identity_with_drift):
+            ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("changed" in line or "identity" in line for line in lines), lines)
+
+    def test_group_writable_0664_public_member_is_admitted(self) -> None:
+        data = _fixture(self.root)
+        os.chmod(data / "pricing-snapshot.json", 0o664)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertTrue(ok, lines)
+
     def test_hard_linked_public_member_is_rejected(self) -> None:
         data = _fixture(self.root)
         external = self.root / "pricing-snapshot-copy.json"
@@ -376,6 +413,35 @@ class MaintenanceVerifierTests(unittest.TestCase):
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertTrue(ok, lines)
 
+    def test_each_public_prior_optional_family_rejects_malformed_values(self) -> None:
+        malformed = {
+            "source_eras": "era-1",
+            "calibration_quality": {"holdout_count": "20"},
+            "drift_indicators": [],
+            "uncertainty_floors": {"duration_basis_points": True},
+            "pricing_snapshot": {"sha256": DIGEST, "retrieved_date": "2026-08-20", "status": "bogus"},
+        }
+        for field, value in malformed.items():
+            with self.subTest(field=field):
+                shutil.rmtree(self.root / "plugins", ignore_errors=True)
+                data = _fixture(self.root)
+                aggregate = json.loads((data / "aggregate-prior.json").read_text())
+                aggregate["nodes"][0][field] = value
+                _write_json(data / "aggregate-prior.json", aggregate)
+                _rebind_receipt(data)
+                ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+                self.assertFalse(ok, lines)
+
+    def test_public_prior_schema_matches_task1_identifier_date_and_metric_bounds(self) -> None:
+        schema = json.loads((DATA_SOURCE / "aggregate-prior.schema.json").read_text())
+        defs = schema["$defs"]
+        self.assertEqual(defs["token_quantile"]["properties"]["token_class"]["pattern"], self.verifier._IDENTIFIER_RE.pattern)
+        self.assertEqual(defs["wait_quantile"]["properties"]["wait_class"]["pattern"], self.verifier._IDENTIFIER_RE.pattern)
+        self.assertEqual(defs["node"]["properties"]["hierarchy_node"]["pattern"], self.verifier._NODE_RE.pattern)
+        self.assertEqual(defs["date"]["pattern"], rf"^{self.verifier._DATE_PATTERN}$")
+        self.assertEqual(defs["calibration_quality"]["properties"]["p80_coverage_basis_points"]["maximum"], 1_000_000_000)
+        self.assertEqual(defs["uncertainty_floors"]["properties"]["token_basis_points"]["maximum"], 1_000_000_000)
+
     def test_threshold_zero_is_rejected_by_schema_and_runtime(self) -> None:
         data = _fixture(self.root)
         receipt = json.loads((data / "maintenance-receipt.json").read_text())
@@ -424,16 +490,33 @@ class MaintenanceVerifierTests(unittest.TestCase):
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertTrue(ok, lines)
 
-    def test_strict_receipt_and_extra_raw_private_linked_files_fail(self) -> None:
+    def test_unknown_receipt_field_is_rejected(self) -> None:
         data = _fixture(self.root)
         receipt = json.loads((data / "maintenance-receipt.json").read_text())
         receipt["unexpected"] = "private"
         _write_json(data / "maintenance-receipt.json", receipt)
-        (data / "raw-observations.json").write_text("{}")
-        (data / "private-secret.json").symlink_to(data / "aggregate-prior.json")
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
-        self.assertTrue(any("inventory" in line or "unknown" in line or "symlink" in line or "forbidden" in line for line in lines), lines)
+        self.assertTrue(any("unknown" in line or "receipt" in line for line in lines), lines)
+
+    def test_extra_raw_private_members_are_rejected(self) -> None:
+        data = _fixture(self.root)
+        (data / "raw-observations.json").write_text("{}")
+        (data / "private-secret.json").write_text("secret")
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("inventory" in line or "forbidden" in line for line in lines), lines)
+
+    def test_expected_public_member_symlink_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        target = data / "pricing-snapshot.json"
+        replacement = self.root / "pricing-snapshot-copy.json"
+        replacement.write_bytes(target.read_bytes())
+        target.unlink()
+        target.symlink_to(replacement)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("open" in line or "symlink" in line or "public member" in line for line in lines), lines)
 
     def test_quantile_duplicate_and_nonfinite_are_rejected(self) -> None:
         data = _fixture(self.root)
@@ -469,9 +552,9 @@ class MaintenanceVerifierTests(unittest.TestCase):
         import build_plugin_archive as archive
         maintenance = archive.MaintenanceSnapshot(
             tuple(archive.FrozenMaintenanceMember(
-                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=DIGEST,
+                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=hashlib.sha256(b"{}").hexdigest(),
                 source_mode=0o644, source_uid=os.getuid(), source_gid=os.getgid(),
-            ) for path in archive.PUBLIC_ESTIMATION_MEMBERS if path.name != "operator-notification.json"),
+            ) for path in sorted(archive.PUBLIC_ESTIMATION_MEMBERS) if path.name != "operator-notification.json"),
             False, TODAY,
         )
         with mock.patch.object(archive, "_safe_source"), mock.patch.object(archive, "_require_no_development_members"), mock.patch.object(archive, "_require_exact_manifest_trees"), mock.patch.object(archive, "skill_tree_differences", return_value=[]), mock.patch.object(archive, "expected_skill_relpaths", return_value=[]):
@@ -495,6 +578,68 @@ class MaintenanceVerifierTests(unittest.TestCase):
         )
         with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
             self.assertEqual(tar.extractfile(member.archive_name).read(), b"frozen-evidence")
+
+    def test_supplied_maintenance_snapshot_rejects_duplicate_missing_and_forged_members(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        _fixture(self.root)
+        maintenance = archive.admit_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        member = maintenance.members[0]
+        bad_snapshots = (
+            archive.MaintenanceSnapshot(maintenance.members + (member,), maintenance.notification_required, maintenance.receipt_generated_date),
+            archive.MaintenanceSnapshot(maintenance.members[1:], maintenance.notification_required, maintenance.receipt_generated_date),
+            archive.MaintenanceSnapshot((archive.FrozenMaintenanceMember(member.archive_name, b"forged", member.sha256, member.source_mode, member.source_uid, member.source_gid), *maintenance.members[1:]), maintenance.notification_required, maintenance.receipt_generated_date),
+        )
+        for bad in bad_snapshots:
+            with self.subTest(snapshot=bad):
+                with self.assertRaisesRegex(ValueError, "snapshot|digest|duplicate|missing"):
+                    archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=bad)
+
+    def test_direct_archive_rejects_unadmitted_estimation_evidence(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        cases = ("malformed", "wrong-version", "stale", "hash-mismatch", "notification-optional")
+        for case in cases:
+            with self.subTest(case=case):
+                repo = self.root / case
+                plugin = repo / "plugins" / "agent-collab"
+                shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+                shutil.rmtree(repo / "plugins" / "agent-collab" / "project-estimation-data")
+                data = _fixture(repo, notification=case == "notification-optional", generated="2026-06-20" if case == "stale" else "2026-08-20")
+                if case == "malformed":
+                    receipt = json.loads((data / "maintenance-receipt.json").read_text()); receipt["unexpected"] = "x"; _write_json(data / "maintenance-receipt.json", receipt)
+                elif case == "wrong-version":
+                    receipt = json.loads((data / "maintenance-receipt.json").read_text()); receipt["version"] = "5.0.0"; _write_json(data / "maintenance-receipt.json", receipt)
+                elif case == "hash-mismatch":
+                    pricing = json.loads((data / "pricing-snapshot.json").read_text()); pricing["policy_version"] = "forged"; _write_json(data / "pricing-snapshot.json", pricing)
+                elif case == "notification-optional":
+                    receipt = json.loads((data / "maintenance-receipt.json").read_text()); receipt["notification_result"] = "not_required"; _write_json(data / "maintenance-receipt.json", receipt)
+                with self.assertRaises(ValueError):
+                    archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
+
+    def test_direct_archive_emits_bytes_frozen_before_source_mutation(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        repo = self.root / "mutation"
+        plugin = repo / "plugins" / "agent-collab"
+        shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+        shutil.rmtree(repo / "plugins" / "agent-collab" / "project-estimation-data")
+        data = _fixture(repo)
+        expected = (data / "aggregate-prior.json").read_bytes()
+        original_admit = archive.admit_maintenance
+        calls: list[bool] = []
+
+        def admit_and_mutate(*args: object, **kwargs: object):
+            snapshot = original_admit(*args, **kwargs)
+            calls.append(True)
+            (data / "aggregate-prior.json").write_bytes(b"mutated-after-admission")
+            return snapshot
+
+        with mock.patch.object(archive, "admit_maintenance", side_effect=admit_and_mutate):
+            archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
+        self.assertTrue(calls)
+        with tarfile.open(repo / "archive.tgz", mode="r:gz") as tar:
+            self.assertEqual(tar.extractfile("project-estimation-data/aggregate-prior.json").read(), expected)
 
 
 if __name__ == "__main__":

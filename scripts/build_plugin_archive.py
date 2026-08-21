@@ -644,6 +644,24 @@ def _runtime_dir_modes(
     return modes
 
 
+def _validated_frozen_members(maintenance: MaintenanceSnapshot) -> dict[str, FrozenMaintenanceMember]:
+    expected = {path.as_posix() for path in PUBLIC_ESTIMATION_MEMBERS}
+    if not maintenance.notification_required:
+        expected.discard("project-estimation-data/operator-notification.json")
+    members = tuple(maintenance.members)
+    names = [member.archive_name for member in members]
+    if names != sorted(names) or len(names) != len(set(names)) or set(names) != expected:
+        raise ValueError("maintenance snapshot has duplicate, missing, or undeclared archive members")
+    result: dict[str, FrozenMaintenanceMember] = {}
+    for member in members:
+        if type(member.payload) is not bytes:
+            raise ValueError(f"maintenance snapshot payload is not immutable bytes: {member.archive_name}")
+        if hashlib.sha256(member.payload).hexdigest() != member.sha256:
+            raise ValueError(f"maintenance snapshot digest does not match payload: {member.archive_name}")
+        result[member.archive_name] = member
+    return result
+
+
 def _member_plan(
     plugin_path: Path,
     *,
@@ -673,7 +691,7 @@ def _member_plan(
     estimation_relatives = list(PUBLIC_ESTIMATION_MEMBERS)
     if not maintenance.notification_required:
         estimation_relatives = [path for path in estimation_relatives if path.name != "operator-notification.json"]
-    frozen_members = {member.archive_name: member for member in maintenance.members}
+    frozen_members = _validated_frozen_members(maintenance)
     relatives = [
         *EXACT_MANIFEST_MEMBERS,
         *(Path(name) for name in REQUIRED_ROOTS if name not in {".claude-plugin", ".codex-plugin", "skills"}),

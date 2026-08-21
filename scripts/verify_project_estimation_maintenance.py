@@ -35,6 +35,12 @@ _MAX_DEPTH = 32
 _MAX_ARRAY = 10_000
 _SHA_HEX = set("0123456789abcdef")
 _VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+_NODE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_GREGORIAN_YEAR = r"(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})"
+_GREGORIAN_LEAP_YEAR = r"(?:(?:(?!0000)[0-9]{2}(?:0[48]|[2468][048]|[13579][26]))|(?:0[48]|[2468][048]|[13579][26])00)"
+_DATE_PATTERN = rf"(?:(?:{_GREGORIAN_YEAR}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:{_GREGORIAN_LEAP_YEAR}-02-29))"
+_UTC_DATE_RE = re.compile(rf"^{_DATE_PATTERN}$")
 
 
 @dataclass(frozen=True)
@@ -124,7 +130,7 @@ def _integer(value: object, *, field: str, minimum: int = 0, maximum: int = 1_00
 
 
 def _date(value: object, *, field: str) -> _datetime.date:
-    if type(value) is not str:
+    if type(value) is not str or _UTC_DATE_RE.fullmatch(value) is None:
         raise ValueError(f"{field} must be a canonical ISO date")
     try:
         parsed = _datetime.date.fromisoformat(value)
@@ -133,6 +139,18 @@ def _date(value: object, *, field: str) -> _datetime.date:
     if parsed.isoformat() != value:
         raise ValueError(f"{field} must be a canonical ISO date")
     return parsed
+
+
+def _identifier(value: object, *, field: str) -> str:
+    if type(value) is not str or _IDENTIFIER_RE.fullmatch(value) is None:
+        raise ValueError(f"{field} must be a bounded identifier")
+    return value
+
+
+def _node_identifier(value: object, *, field: str) -> str:
+    if type(value) is not str or _NODE_RE.fullmatch(value) is None:
+        raise ValueError(f"{field} must be a bounded hierarchy node")
+    return value
 
 
 def _mapping(value: object, *, field: str) -> Mapping[str, object]:
@@ -290,7 +308,10 @@ def _quantiles(value: object, *, field: str, category: str) -> None:
     for index, raw in enumerate(rows):
         row = _mapping(raw, field=f"{field}[{index}]")
         _exact(row, {category, "p50", "p80", "p95"}, field=f"{field}[{index}]")
-        identity = _string(row[category], field=f"{field}[{index}].{category}")
+        if category in {"token_class", "wait_class"}:
+            identity = _identifier(row[category], field=f"{field}[{index}].{category}")
+        else:
+            identity = _string(row[category], field=f"{field}[{index}].{category}")
         if category == "phase" and identity not in {"overall", "primary", "delegation", "review", "test", "release", "deployment", "rework"}:
             raise ValueError(f"{field} contains an unsupported phase")
         if category == "kind" and identity not in {"review", "rework"}:
@@ -366,11 +387,11 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
             raise ValueError("aggregate node generated date does not match receipt")
         if _date(node["source_cutoff_date"], field="aggregate.node.source_cutoff_date") != _date(receipt["source_cutoff_date"], field="receipt.source_cutoff_date"):
             raise ValueError("aggregate node source cutoff does not match receipt")
-        name = _string(node["hierarchy_node"], field="aggregate.hierarchy_node")
+        name = _node_identifier(node["hierarchy_node"], field="aggregate.hierarchy_node")
         names.append(name)
         parent = node.get("fallback_parent")
         if parent is not None:
-            parent = _string(parent, field="aggregate.fallback_parent")
+            parent = _node_identifier(parent, field="aggregate.fallback_parent")
         parents[name] = parent
         if _integer(node["sample_count"], field="aggregate.sample_count") < 20:
             raise ValueError("aggregate sample_count is below privacy floor")

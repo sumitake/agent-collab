@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -85,9 +86,9 @@ class PluginArchiveTests(unittest.TestCase):
         plugin = ROOT / "plugins" / "agent-collab"
         maintenance = archive.MaintenanceSnapshot(
             tuple(archive.FrozenMaintenanceMember(
-                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256="a" * 64,
+                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=hashlib.sha256(b"{}").hexdigest(),
                 source_mode=0o644, source_uid=0, source_gid=0,
-            ) for path in archive.PUBLIC_ESTIMATION_MEMBERS if path.name != "operator-notification.json"),
+            ) for path in sorted(archive.PUBLIC_ESTIMATION_MEMBERS) if path.name != "operator-notification.json"),
             False, date(2026, 8, 20),
         )
         with mock.patch.object(archive, "_safe_source"), \
