@@ -32,10 +32,21 @@ updates:
       time: "06:00"
       timezone: "America/Los_Angeles"
     open-pull-requests-limit: 5
+    # Group only patch + minor bumps into ONE auto-mergeable PR (the gate allows
+    # patch/minor); MAJOR bumps fall out to their own individual PRs, each HELD
+    # by the gate for manual review. This lets safe updates auto-merge routinely
+    # while majors still wait (operator direction 2026-08-19). On this PUBLIC
+    # repo, CodeRabbit also auto-reviews every PR and its findings block the
+    # merge via required review-thread resolution — a free semantic layer atop
+    # the deterministic gate.
     groups:
       actions:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "ci(deps)"
       include: "scope"
