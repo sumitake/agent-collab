@@ -36,9 +36,12 @@ updates:
     # patch/minor); MAJOR bumps fall out to their own individual PRs, each HELD
     # by the gate for manual review. This lets safe updates auto-merge routinely
     # while majors still wait (operator direction 2026-08-19). On this PUBLIC
-    # repo, CodeRabbit also auto-reviews every PR and its findings block the
-    # merge via required review-thread resolution — a free semantic layer atop
-    # the deterministic gate.
+    # repo, CodeRabbit is available as an additional free reviewer: on-demand
+    # via an `@coderabbitai review` comment, or automatically once enabled in
+    # CodeRabbit's org settings (its default auto-review skips repos under 10
+    # stars). Its findings block the merge via required review-thread
+    # resolution. It is a bonus semantic layer, never a dependency; the
+    # deterministic gate stands on its own.
     groups:
       actions:
         applies-to: version-updates
