@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -270,6 +271,13 @@ class ValidatorTests(unittest.TestCase):
         prior["nodes"][0]["uncertainty_floors"] = 7
         with self.assertRaises(module.EstimationError):
             module.validate_aggregate(prior)
+
+    def test_json_recursion_failure_is_a_typed_admission_error(self):
+        module = _load()
+        request = _json("request-enhancement.json")
+        with mock.patch.object(module.json, "dumps", side_effect=RecursionError("depth")):
+            with self.assertRaises(module.EstimationError):
+                module.validate_request(request)
 
     def test_estimate_rejects_snapshots_after_request_date(self):
         module = _load()

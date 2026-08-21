@@ -366,6 +366,8 @@ class MaintenanceVerifierTests(unittest.TestCase):
 
     def test_executable_public_member_is_rejected_by_source_mode_floor(self) -> None:
         data = _fixture(self.root)
+        # This deliberately unsafe fixture proves the verifier rejects executable public data.
+        # codeql[py/overly-permissive-file]
         os.chmod(data / "pricing-snapshot.json", 0o755)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
@@ -373,6 +375,8 @@ class MaintenanceVerifierTests(unittest.TestCase):
 
     def test_world_writable_public_member_is_rejected(self) -> None:
         data = _fixture(self.root)
+        # This deliberately unsafe fixture proves the verifier rejects world-writable data.
+        # codeql[py/overly-permissive-file]
         os.chmod(data / "pricing-snapshot.json", 0o666)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
@@ -404,6 +408,8 @@ class MaintenanceVerifierTests(unittest.TestCase):
 
     def test_group_writable_0664_public_member_is_admitted(self) -> None:
         data = _fixture(self.root)
+        # This fixture intentionally exercises the verifier's documented group-write allowance.
+        # codeql[py/overly-permissive-file]
         os.chmod(data / "pricing-snapshot.json", 0o664)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertTrue(ok, lines)
