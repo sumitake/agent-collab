@@ -540,7 +540,7 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
         generated = _date(receipt["generated_date"], field="receipt.generated_date")
         source = _date(receipt["source_cutoff_date"], field="receipt.source_cutoff_date")
         collection = _date(receipt["collection_cutoff_date"], field="receipt.collection_cutoff_date")
-        if collection > source or source > generated or generated > today or original > generated or (today - original).days > 60:
+        if collection > original or source > original or original > generated or generated > today or (today - original).days > 60:
             raise ValueError("calibration/source dates violate freshness policy")
         if receipt["calibration_status"] not in {"fresh", "last_good"} or (receipt["calibration_status"] == "fresh" and (original != generated or receipt["calibration_source_receipt_sha256"] is not None)) or (receipt["calibration_status"] == "last_good" and receipt["calibration_source_receipt_sha256"] is None):
             raise ValueError("calibration status is inconsistent")

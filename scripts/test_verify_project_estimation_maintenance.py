@@ -188,6 +188,21 @@ def _rebind_receipt(data: Path) -> None:
     _write_json(data / "maintenance-receipt.json", receipt)
 
 
+def _chronology_fixture(data: Path, *, collection: str, source: str, original: str, generated: str) -> None:
+    receipt = json.loads((data / "maintenance-receipt.json").read_text())
+    receipt.update({"collection_cutoff_date": collection, "source_cutoff_date": source, "original_calibration_date": original, "generated_date": generated})
+    if generated != original:
+        receipt["calibration_status"] = "last_good"
+        receipt["calibration_source_receipt_sha256"] = DIGEST
+    aggregate = json.loads((data / "aggregate-prior.json").read_text())
+    aggregate.update({"generated_date": original, "source_cutoff_date": source})
+    for node in aggregate["nodes"]:
+        node.update({"generated_date": original, "source_cutoff_date": source})
+    _write_json(data / "aggregate-prior.json", aggregate)
+    _write_json(data / "maintenance-receipt.json", receipt)
+    _rebind_receipt(data)
+
+
 class MaintenanceVerifierTests(unittest.TestCase):
     def setUp(self) -> None:
         self.verifier = _load_verifier()
@@ -244,6 +259,19 @@ class MaintenanceVerifierTests(unittest.TestCase):
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("release" in line or "receipt" in line for line in lines), lines)
+
+    def test_task3_chronology_allows_independent_collection_source_order(self) -> None:
+        data = _fixture(self.root, generated="2026-08-20")
+        _chronology_fixture(data, collection="2026-08-19", source="2026-08-18", original="2026-08-20", generated="2026-08-20")
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertTrue(ok, lines)
+
+    def test_task3_chronology_rejects_cutoffs_after_original_calibration(self) -> None:
+        data = _fixture(self.root, generated="2026-08-25")
+        _chronology_fixture(data, collection="2026-08-21", source="2026-08-21", original="2026-08-20", generated="2026-08-25")
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=date(2026, 8, 25))
+        self.assertFalse(ok)
+        self.assertTrue(any("chronology" in line or "date" in line for line in lines), lines)
 
     def test_snapshot_policy_identity_and_notification_coverage_are_bound(self) -> None:
         data = _fixture(self.root, notification=True)
