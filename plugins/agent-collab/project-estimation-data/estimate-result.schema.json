@@ -1,21 +1,33 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "estimate-result.schema.json",
-  "type": "object", "additionalProperties": false,
+  "type": "object",
+  "additionalProperties": false,
   "required": ["schema_version", "status", "scope_hash", "generated_date", "source_cutoff_date"],
   "properties": {
-    "schema_version": {"const": 1}, "request_id": {"$ref": "#/$defs/identifier"},
+    "schema_version": {"const": 1},
+    "request_id": {"$ref": "#/$defs/identifier"},
     "status": {"enum": ["available", "insufficient_scope", "unavailable", "reconciled"]},
-    "scope_hash": {"$ref": "#/$defs/sha256"}, "generated_date": {"$ref": "#/$defs/date"}, "source_cutoff_date": {"$ref": "#/$defs/date"},
-    "headline": {"$ref": "#/$defs/object"}, "detail": {"$ref": "#/$defs/object"}, "labels": {"$ref": "#/$defs/object"},
-    "estimate_unavailable": {"enum": ["insufficient_scope", "recursive_invocation", "stale_pricing", "unknown_quota", "privacy_blocked"]},
+    "scope_hash": {"$ref": "#/$defs/sha256"},
+    "generated_date": {"$ref": "#/$defs/date"},
+    "source_cutoff_date": {"$ref": "#/$defs/date"},
+    "estimator_method_version": {"$ref": "#/$defs/version"},
     "aggregate_sha256": {"$ref": "#/$defs/sha256"}, "pricing_sha256": {"$ref": "#/$defs/sha256"}, "quota_sha256": {"$ref": "#/$defs/sha256"},
-    "actual": {"$ref": "#/$defs/object"}, "reconcile": {"$ref": "#/$defs/object"}
+    "seed": {"type": "integer", "minimum": 0, "maximum": 2147483647}, "simulation_count": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "headline": {"$ref": "#/$defs/headline"}, "detail": {"$ref": "#/$defs/detail"}, "labels": {"$ref": "#/$defs/labels"}, "quantiles": {"$ref": "#/$defs/quantiles"},
+    "backoff_path": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/identifier"}}, "coverage": {"$ref": "#/$defs/coverage"},
+    "estimate_unavailable": {"enum": ["insufficient_scope", "recursive_invocation", "stale_pricing", "unknown_quota", "privacy_blocked"]},
+    "actual": {"$ref": "#/$defs/actual"}, "reconcile": {"$ref": "#/$defs/reconcile"}
   },
   "$defs": {
-    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
-    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "date": {"type": "string", "format": "date"},
-    "object": {"type": "object", "additionalProperties": false, "maxProperties": 100, "properties": {}}
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}, "version": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "date": {"type": "string", "format": "date"},
+    "strings": {"type": "array", "maxItems": 1000, "items": {"type": "string", "maxLength": 512}},
+    "headline": {"type": "object", "additionalProperties": false, "properties": {"scope_summary": {"type": "string", "maxLength": 512}, "completion_boundary": {"type": "string", "maxLength": 128}, "focused_agent_wall_clock_p50": {"type": "integer", "minimum": 0}, "focused_agent_wall_clock_p80": {"type": "integer", "minimum": 0}, "focused_agent_wall_clock_p95": {"type": "integer", "minimum": 0}, "calendar_elapsed_p50": {"type": "integer", "minimum": 0}, "calendar_elapsed_p80": {"type": "integer", "minimum": 0}, "calendar_elapsed_p95": {"type": "integer", "minimum": 0}, "api_equivalent_cost_current_p50": {"type": "integer", "minimum": 0}, "api_equivalent_cost_current_p80": {"type": "integer", "minimum": 0}, "api_equivalent_cost_current_p95": {"type": "integer", "minimum": 0}, "calibration_cohort": {"type": "string", "maxLength": 128}, "fallback_level": {"type": "string", "maxLength": 128}, "effective_sample_size": {"type": "integer", "minimum": 0}, "confidence": {"type": "string", "maxLength": 128}, "calibration_snapshot_age_days": {"type": "integer", "minimum": 0}, "pricing_status": {"type": "string", "maxLength": 64}, "last_successful_official_retrieval_date": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}, "assumptions": {"$ref": "#/$defs/strings"}, "critical_path": {"$ref": "#/$defs/strings"}, "planned_concurrency": {"type": "integer", "minimum": 1}, "uncertainty_drivers": {"$ref": "#/$defs/strings"}, "prerequisites": {"$ref": "#/$defs/strings"}, "evidence_coverage_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}, "unpriced_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}}},
+    "detail": {"type": "object", "additionalProperties": false, "properties": {"scenario_names": {"$ref": "#/$defs/strings"}, "phase_ids": {"$ref": "#/$defs/strings"}, "agent_roles": {"$ref": "#/$defs/strings"}, "model_names": {"$ref": "#/$defs/strings"}, "token_classes": {"$ref": "#/$defs/strings"}, "quota_summary": {"type": "string", "maxLength": 512}, "reconciliation_summary": {"type": "string", "maxLength": 512}}},
+    "labels": {"type": "object", "additionalProperties": false, "properties": {"api_equivalent": {"const": "not billed cash"}, "cash_basis": {"const": "separate_actual_charge"}, "scenario": {"$ref": "#/$defs/identifier"}, "pricing": {"$ref": "#/$defs/identifier"}}},
+    "quantiles": {"type": "object", "additionalProperties": false, "required": ["p50", "p80", "p95"], "properties": {"p50": {"type": "integer", "minimum": 0}, "p80": {"type": "integer", "minimum": 0}, "p95": {"type": "integer", "minimum": 0}}},
+    "coverage": {"type": "object", "additionalProperties": false, "properties": {"observed_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}, "unpriced_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}, "unobserved_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}}},
+    "actual": {"type": "object", "additionalProperties": false, "properties": {"duration_seconds": {"type": "integer", "minimum": 0}, "token_usage": {"type": "integer", "minimum": 0}, "cash_charge_microusd": {"type": "integer", "minimum": 0}}},
+    "reconcile": {"type": "object", "additionalProperties": false, "properties": {"duration_error_seconds": {"type": "integer"}, "token_error": {"type": "integer"}, "cash_charge_microusd": {"type": "integer", "minimum": 0}}}
   }
 }

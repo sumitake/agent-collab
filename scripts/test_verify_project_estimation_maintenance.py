@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -88,8 +90,8 @@ def _notification() -> dict[str, object]:
     return {"schema_version": 1, "generated_date": "2026-08-20", "unresolved": [{
         "provider": "provider-a", "kind": "pricing", "original_date": "2026-08-20",
         "failure_class": "refresh_failed", "decision": "estimated_stale",
-    }], "pricing_coverage_basis_points": 0, "quota_coverage_basis_points": 10000,
-            "decision": "unpriced_block"}
+    }], "pricing_coverage_basis_points": 10000, "quota_coverage_basis_points": 10000,
+            "decision": "stale_fallback"}
 
 
 def _receipt(*, notification: bool, generated: str, pricing: dict[str, object], quota: dict[str, object]) -> dict[str, object]:
@@ -124,6 +126,10 @@ def _fixture(root: Path, *, notification: bool = False, generated: str = "2026-0
     for source in DATA_SOURCE.glob("*.schema.json"):
         shutil.copy2(source, data / source.name)
     aggregate = _aggregate()
+    aggregate["generated_date"] = generated
+    aggregate["source_cutoff_date"] = generated
+    aggregate["nodes"][0]["generated_date"] = generated
+    aggregate["nodes"][0]["source_cutoff_date"] = generated
     pricing = _snapshot("pricing", "estimated_stale" if notification else "official")
     quota = _snapshot("quota")
     _write_json(data / "aggregate-prior.json", aggregate)
@@ -164,11 +170,29 @@ def _rebind(data: Path, *, provider_date: str) -> None:
     _write_json(data / "maintenance-receipt.json", receipt)
 
 
+def _rebind_receipt(data: Path) -> None:
+    receipt = json.loads((data / "maintenance-receipt.json").read_text())
+    for kind in ("pricing", "quota"):
+        snapshot = json.loads((data / f"{kind}-snapshot.json").read_text())
+        receipt[f"{kind}_result_sha256"] = _sha(snapshot)
+    receipt["release_manifest_sha256"] = _sha({key: value for key, value in receipt.items() if key not in {"release_manifest_sha256", "inventory", "receipt_sha256"}})
+    aggregate = json.loads((data / "aggregate-prior.json").read_text())
+    for node in aggregate["nodes"]:
+        node["release_manifest_sha256"] = receipt["release_manifest_sha256"]
+    _write_json(data / "aggregate-prior.json", aggregate)
+    for item in receipt["inventory"]:
+        payload = data / item["name"]
+        item["sha256"] = hashlib.sha256(payload.read_bytes()).hexdigest()
+        item["size"] = payload.stat().st_size
+    receipt["receipt_sha256"] = _sha({key: value for key, value in receipt.items() if key != "receipt_sha256"})
+    _write_json(data / "maintenance-receipt.json", receipt)
+
+
 class MaintenanceVerifierTests(unittest.TestCase):
     def setUp(self) -> None:
         self.verifier = _load_verifier()
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -196,6 +220,105 @@ class MaintenanceVerifierTests(unittest.TestCase):
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("stale" in line or "expired" in line or "90" in line for line in lines), lines)
+
+    def test_aggregate_identity_bindings_and_release_manifest_digest_are_verified(self) -> None:
+        data = _fixture(self.root)
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        aggregate["policy_version"] = "forged-policy"
+        _write_json(data / "aggregate-prior.json", aggregate)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("aggregate" in line or "identity" in line for line in lines), lines)
+
+        shutil.rmtree(self.root / "plugins")
+        data = _fixture(self.root)
+        receipt = json.loads((data / "maintenance-receipt.json").read_text())
+        forged = "f" * 64
+        receipt["release_manifest_sha256"] = forged
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        for node in aggregate["nodes"]:
+            node["release_manifest_sha256"] = forged
+        _write_json(data / "aggregate-prior.json", aggregate)
+        receipt["receipt_sha256"] = _sha({key: value for key, value in receipt.items() if key != "receipt_sha256"})
+        _write_json(data / "maintenance-receipt.json", receipt)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("release" in line or "receipt" in line for line in lines), lines)
+
+    def test_snapshot_policy_identity_and_notification_coverage_are_bound(self) -> None:
+        data = _fixture(self.root, notification=True)
+        pricing = json.loads((data / "pricing-snapshot.json").read_text())
+        pricing["policy_version"] = "forged-policy"
+        _write_json(data / "pricing-snapshot.json", pricing)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("policy" in line for line in lines), lines)
+
+        shutil.rmtree(self.root / "plugins")
+        data = _fixture(self.root, notification=True)
+        notice = json.loads((data / "operator-notification.json").read_text())
+        notice["pricing_coverage_basis_points"] = 0
+        _write_json(data / "operator-notification.json", notice)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("notification" in line or "coverage" in line for line in lines), lines)
+
+    def test_fifo_members_are_rejected_without_blocking(self) -> None:
+        data = _fixture(self.root)
+        os.unlink(data / "pricing-snapshot.json")
+        os.mkfifo(data / "pricing-snapshot.json")
+        command = [sys.executable, str(ROOT / "scripts" / "verify_project_estimation_maintenance.py"), "--root", str(self.root), "--expected-version", VERSION]
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=2)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("regular", completed.stdout + completed.stderr)
+
+    def test_caller_visible_intermediate_parent_symlink_is_rejected(self) -> None:
+        real_parent = self.root / "real-parent"
+        real_parent.mkdir()
+        source = _fixture(real_parent)
+        linked_parent = self.root / "linked-parent"
+        linked_parent.symlink_to(real_parent, target_is_directory=True)
+        ok, lines = self.verifier.verify_maintenance(linked_parent / "plugins", expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("root" in line or "symlink" in line for line in lines), lines)
+
+    def test_generated_data_must_use_canonical_bytes(self) -> None:
+        data = _fixture(self.root)
+        with (data / "aggregate-prior.json").open("ab") as stream:
+            stream.write(b"\n")
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("canonical" in line or "aggregate" in line for line in lines), lines)
+
+    def test_quota_subscription_windows_and_cooldown_are_strict(self) -> None:
+        with self.assertRaises(ValueError):
+            self.verifier._record({"record_id": "r", "model": "m", "modality": "text", "tier": "standard", "limit_kind": "subscription_5_hour", "limit_value": 1, "window_seconds": 60, "cooldown_seconds": 0, "modifiers": [], "approved_value_sha256": "a" * 64}, field="record", kind="quota")
+
+    def test_task5_public_schemas_have_nonempty_closed_request_and_result_shapes(self) -> None:
+        request = json.loads((DATA_SOURCE / "estimate-request.schema.json").read_text())
+        result = json.loads((DATA_SOURCE / "estimate-result.schema.json").read_text())
+        self.assertTrue({"artifact_kind", "invocation_source", "artifact_scope_hash", "auto_invocation_depth", "maturity", "phases", "dependency_edges"} <= set(request["properties"]))
+        self.assertTrue({"headline", "detail", "labels", "quantiles", "coverage"} <= set(result["properties"]))
+        self.assertTrue(result["$defs"]["headline"]["properties"])
+        self.assertTrue(result["$defs"]["detail"]["properties"])
+
+    def test_long_acyclic_fallback_chain_is_admitted(self) -> None:
+        data = _fixture(self.root)
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        nodes = []
+        for index in range(1200):
+            node = _node()
+            node["hierarchy_node"] = f"n{index:04d}"
+            node["fallback_parent"] = f"n{index - 1:04d}" if index else None
+            node["generated_date"] = aggregate["generated_date"]
+            node["source_cutoff_date"] = aggregate["source_cutoff_date"]
+            nodes.append(node)
+        aggregate["nodes"] = nodes
+        _write_json(data / "aggregate-prior.json", aggregate)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertTrue(ok, lines)
 
     def test_strict_receipt_and_extra_raw_private_linked_files_fail(self) -> None:
         data = _fixture(self.root)

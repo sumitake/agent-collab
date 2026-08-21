@@ -119,12 +119,20 @@ def _exact(value: Mapping[str, object], fields: set[str], *, required: set[str] 
 
 def _open_dir_chain(root: Path) -> int:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    raw = os.fspath(root)
+    if "\x00" in raw:
+        raise ValueError("project-estimation root contains NUL")
+    parts = list(root.parts)
+    if root.is_absolute():
+        fd = os.open(os.sep, flags)
+        parts = [part for part in parts if part not in {os.sep, ""}]
+    else:
+        if ".." in parts:
+            raise ValueError("relative project-estimation root may not contain ..")
+        fd = os.open(".", flags)
+        parts = [part for part in parts if part not in {"", "."}]
     try:
-        fd = os.open(os.fspath(root), flags)
-    except OSError as exc:
-        raise ValueError("project-estimation root is not an admitted directory") from exc
-    try:
-        for component in ("plugins", PLUGIN, "project-estimation-data"):
+        for component in (*parts, "plugins", PLUGIN, "project-estimation-data"):
             try:
                 next_fd = os.open(component, flags, dir_fd=fd)
             except OSError as exc:
@@ -159,7 +167,7 @@ def _names(directory_fd: int) -> set[str]:
 
 
 def _read(directory_fd: int, name: str) -> tuple[bytes, str, int]:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(name, flags, dir_fd=directory_fd)
     except OSError as exc:
@@ -169,20 +177,21 @@ def _read(directory_fd: int, name: str) -> tuple[bytes, str, int]:
         if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_BYTES:
             raise ValueError(f"public member is not a bounded regular file: {name}")
         remaining = before.st_size
-        chunks: list[bytes] = []
+        payload = bytearray()
+        digest = hashlib.sha256()
         while remaining:
             chunk = os.read(fd, min(65_536, remaining))
             if not chunk:
                 raise ValueError(f"public member was truncated: {name}")
-            chunks.append(chunk)
+            payload.extend(chunk)
+            digest.update(chunk)
             remaining -= len(chunk)
         if os.read(fd, 1):
             raise ValueError(f"public member grew during admission: {name}")
         after = os.fstat(fd)
         if (before.st_dev, before.st_ino, before.st_size) != (after.st_dev, after.st_ino, after.st_size):
             raise ValueError(f"public member changed during admission: {name}")
-        payload = b"".join(chunks)
-        return payload, hashlib.sha256(payload).hexdigest(), len(payload)
+        return bytes(payload), digest.hexdigest(), len(payload)
     except OSError as exc:
         raise ValueError(f"cannot read public member: {name}") from exc
     finally:
@@ -202,6 +211,10 @@ def _closed_schema(value: object, *, name: str) -> None:
                 raise ValueError(f"{name} contains unsupported schema keyword")
             if item.get("type") == "object" and item.get("additionalProperties") is not False:
                 raise ValueError(f"{name} contains an open object")
+            if item.get("type") == "object" and isinstance(item.get("required"), list) and isinstance(item.get("properties"), dict):
+                missing = sorted(set(item["required"]) - set(item["properties"]))
+                if missing:
+                    raise ValueError(f"{name} required field is not declared: {missing[0]}")
             stack.extend(item["properties"].values()) if isinstance(item.get("properties"), dict) else None
             stack.extend(item["patternProperties"].values()) if isinstance(item.get("patternProperties"), dict) else None
             stack.extend(item["$defs"].values()) if isinstance(item.get("$defs"), dict) else None
@@ -233,7 +246,7 @@ def _quantiles(value: object, *, field: str, category: str) -> None:
             raise ValueError(f"{field} quantiles are unordered")
 
 
-def _aggregate(value: object, *, release_hash: str, today: _datetime.date) -> None:
+def _aggregate(value: object, *, release_hash: str, today: _datetime.date, receipt: Mapping[str, object]) -> None:
     top = _mapping(value, field="aggregate-prior")
     fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "nodes"}
     _exact(top, fields, field="aggregate-prior")
@@ -243,6 +256,8 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date) -> No
     cutoff = _date(top["source_cutoff_date"], field="aggregate.source_cutoff_date")
     if cutoff > generated or generated > today:
         raise ValueError("aggregate dates are outside the release window")
+    if (top["estimator_method_version"], top["policy_version"], top["policy_sha256"], top["seed"], top["source_manifest_sha256"], top["generated_date"], top["source_cutoff_date"]) != (receipt["estimator_method_version"], receipt["calibration_policy_version"], receipt["calibration_policy_sha256"], receipt["seed"], receipt["source_manifest_sha256"], receipt["original_calibration_date"], receipt["source_cutoff_date"]):
+        raise ValueError("aggregate identity does not match receipt")
     _string(top["policy_version"], field="aggregate.policy_version")
     _sha(top["policy_sha256"], field="aggregate.policy_sha256")
     _integer(top["seed"], field="aggregate.seed", maximum=2_147_483_647)
@@ -257,11 +272,14 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date) -> No
         allowed = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "fallback_parent", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256", "source_eras", "phase_duration_quantiles", "token_class_quantiles", "rework_review_quantiles", "wait_class_quantiles", "calibration_quality", "drift_indicators", "uncertainty_floors", "pricing_snapshot"}
         required = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256"}
         _exact(node, allowed, required=required, field=f"aggregate.nodes[{index}]")
-        if node["schema_version"] != 1:
+        if node["schema_version"] != 1 or node["estimator_method_version"] != receipt["estimator_method_version"]:
             raise ValueError("aggregate node schema version is unsupported")
         _string(node["estimator_method_version"], field="aggregate.node.method")
-        _date(node["generated_date"], field="aggregate.node.generated_date")
-        _date(node["source_cutoff_date"], field="aggregate.node.source_cutoff_date")
+        original_date = _date(receipt["original_calibration_date"], field="receipt.original_calibration_date")
+        if _date(node["generated_date"], field="aggregate.node.generated_date") != original_date:
+            raise ValueError("aggregate node generated date does not match receipt")
+        if _date(node["source_cutoff_date"], field="aggregate.node.source_cutoff_date") != _date(receipt["source_cutoff_date"], field="receipt.source_cutoff_date"):
+            raise ValueError("aggregate node source cutoff does not match receipt")
         name = _string(node["hierarchy_node"], field="aggregate.hierarchy_node")
         names.append(name)
         parent = node.get("fallback_parent")
@@ -279,16 +297,26 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date) -> No
                 _quantiles(node[field], field=f"aggregate.{field}", category=category)
     if names != sorted(names) or len(names) != len(set(names)):
         raise ValueError("aggregate hierarchy nodes must be sorted and unique")
-    for name, parent in parents.items():
+    state: dict[str, int] = {}
+    for name in parents:
+        state.setdefault(name, 0)
+    for name in parents:
+        parent = parents[name]
         if parent is not None and parent not in parents:
             raise ValueError("aggregate fallback parent is absent")
-        seen: set[str] = set()
-        current: str | None = name
-        while current is not None:
-            if current in seen:
-                raise ValueError("aggregate fallback cycle detected")
-            seen.add(current)
+    for origin in parents:
+        if state[origin] != 0:
+            continue
+        path: list[str] = []
+        current: str | None = origin
+        while current is not None and state[current] == 0:
+            state[current] = 1
+            path.append(current)
             current = parents[current]
+        if current is not None and state[current] == 1:
+            raise ValueError("aggregate fallback cycle detected")
+        for item in reversed(path):
+            state[item] = 2
 
 
 def _record(value: object, *, field: str, kind: str) -> None:
@@ -306,6 +334,11 @@ def _record(value: object, *, field: str, kind: str) -> None:
         _string(row["limit_kind"], field=f"{field}.limit_kind", maximum=64)
         if row["limit_kind"] not in {"rpm", "tpm", "concurrency", "subscription_5_hour", "subscription_weekly", "subscription_monthly", "cooldown"}:
             raise ValueError(f"{field}.limit_kind is unsupported")
+        expected_window = {"subscription_5_hour": 18_000, "subscription_weekly": 604_800, "subscription_monthly": 2_592_000}
+        if row["limit_kind"] in expected_window and row["window_seconds"] != expected_window[row["limit_kind"]]:
+            raise ValueError(f"{field}.window_seconds does not match subscription window")
+        if row["limit_kind"] == "cooldown" and row["cooldown_seconds"] <= 0:
+            raise ValueError(f"{field}.cooldown_seconds must be positive for cooldown")
         if row["limit_kind"] in {"rpm", "tpm"} and row["window_seconds"] != 60:
             raise ValueError(f"{field}.window_seconds must be 60")
         if row["limit_kind"] == "concurrency" and row["window_seconds"] is not None:
@@ -443,6 +476,25 @@ def _notification(value: object, *, pricing: Mapping[str, object], quota: Mappin
         raise ValueError("operator notification unresolved rows must be sorted")
     if unresolved != expected:
         raise ValueError("operator notification does not cross-bind provider states")
+    pricing_rows = list(_mapping(pricing["providers"], field="pricing.providers").values())
+    quota_rows = list(_mapping(quota["providers"], field="quota.providers").values())
+    pricing_coverage = min(10_000, sum(int(item["material_share_basis_points"]) for item in pricing_rows if item["status"] in {"official", "estimated_stale"}))
+    quota_coverage = sum(item["status"] in {"official", "estimated_stale"} for item in quota_rows) * 10_000 // max(1, len(quota_rows))
+    if row["pricing_coverage_basis_points"] != pricing_coverage or row["quota_coverage_basis_points"] != quota_coverage:
+        raise ValueError("operator notification coverage does not cross-match provider results")
+    decisions = {str(item["decision"]) for item in expected}
+    if "review_required" in decisions:
+        expected_decision = "review_required_block"
+    elif "unpriced" in decisions:
+        expected_decision = "unpriced_block" if pricing.get("material_unpriced") is True else "unpriced_immaterial"
+    elif "unknown" in decisions and "estimated_stale" not in decisions:
+        expected_decision = "quota_unknown"
+    elif decisions == {"estimated_stale"}:
+        expected_decision = "stale_fallback"
+    else:
+        expected_decision = "mixed_fallback"
+    if row["decision"] != expected_decision:
+        raise ValueError("operator notification decision does not cross-match provider results")
 
 
 def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.date | None = None) -> tuple[bool, list[str]]:
@@ -452,6 +504,10 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
     try:
         fd = _open_dir_chain(root)
         actual = _names(fd)
+        allowed_names = set(SCHEMA_NAMES) | set(DATA_NAMES) | {OPTIONAL_DATA_NAME}
+        unexpected = sorted(actual - allowed_names)
+        if unexpected:
+            raise ValueError(f"maintenance inventory contains undeclared member: {unexpected[0]}")
         minimum = set(SCHEMA_NAMES) | set(DATA_NAMES)
         if not minimum <= actual:
             raise ValueError(f"maintenance inventory is missing {sorted(minimum - actual)[0]}")
@@ -469,21 +525,24 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
             _closed_schema(value, name=name)
             schemas[name] = value
         receipt = _mapping(_json(raw["maintenance-receipt.json"], name="maintenance-receipt.json"), field="maintenance-receipt")
+        if raw["maintenance-receipt.json"] != _canonical(receipt):
+            raise ValueError("maintenance-receipt.json is not canonical JSON")
         _exact(receipt, {"schema_version", "version", "estimator_method_version", "calibration_policy_version", "calibration_policy_sha256", "pricing_policy_version", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "pricing_material_unpriced_threshold_basis_points", "seed", "repository_sha256", "collection_cutoff_date", "collection_result_sha256", "linkage_manifest_sha256", "completion_evidence_scope", "source_cutoff_date", "generated_date", "calibration_status", "original_calibration_date", "source_manifest_sha256", "calibration_candidate_sha256", "calibration_source_receipt_sha256", "backtest_outcome", "pricing_result_sha256", "quota_result_sha256", "notification_result", "release_manifest_sha256", "inventory", "receipt_sha256"}, field="maintenance-receipt")
-        if receipt["schema_version"] != 2 or receipt["version"] != expected_version:
+        if receipt["schema_version"] != 2 or receipt["version"] != expected_version or receipt["estimator_method_version"] != "empirical-v2" or receipt["completion_evidence_scope"] != "github_merged_or_earlier":
             raise ValueError("maintenance receipt schema/version is invalid")
         for name in ("version", "estimator_method_version", "calibration_policy_version", "pricing_policy_version", "completion_evidence_scope"):
             _string(receipt[name], field=f"receipt.{name}", maximum=128)
         for name in ("calibration_policy_sha256", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "repository_sha256", "collection_result_sha256", "linkage_manifest_sha256", "source_manifest_sha256", "calibration_candidate_sha256", "pricing_result_sha256", "quota_result_sha256", "release_manifest_sha256", "receipt_sha256"):
             _sha(receipt[name], field=f"receipt.{name}")
-        threshold = _integer(receipt["pricing_material_unpriced_threshold_basis_points"], field="receipt.threshold", maximum=10_000)
+        threshold = _integer(receipt["pricing_material_unpriced_threshold_basis_points"], field="receipt.threshold", minimum=1, maximum=10_000)
+        _integer(receipt["seed"], field="receipt.seed", maximum=2_147_483_647)
         original = _date(receipt["original_calibration_date"], field="receipt.original_calibration_date")
         generated = _date(receipt["generated_date"], field="receipt.generated_date")
         source = _date(receipt["source_cutoff_date"], field="receipt.source_cutoff_date")
         collection = _date(receipt["collection_cutoff_date"], field="receipt.collection_cutoff_date")
         if collection > source or source > generated or generated > today or original > generated or (today - original).days > 60:
             raise ValueError("calibration/source dates violate freshness policy")
-        if receipt["calibration_status"] not in {"fresh", "last_good"} or (receipt["calibration_status"] == "fresh" and original != generated):
+        if receipt["calibration_status"] not in {"fresh", "last_good"} or (receipt["calibration_status"] == "fresh" and (original != generated or receipt["calibration_source_receipt_sha256"] is not None)) or (receipt["calibration_status"] == "last_good" and receipt["calibration_source_receipt_sha256"] is None):
             raise ValueError("calibration status is inconsistent")
         if receipt["calibration_source_receipt_sha256"] is not None:
             _sha(receipt["calibration_source_receipt_sha256"], field="receipt.calibration_source_receipt_sha256")
@@ -491,19 +550,33 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
         _exact(outcome, {"promotion_allowed", "baseline_duration_comparison", "baseline_token_comparison"}, field="receipt.backtest_outcome")
         if outcome["promotion_allowed"] is not True or outcome["baseline_duration_comparison"] not in {"performed", "not_applicable"} or outcome["baseline_token_comparison"] not in {"performed", "not_applicable", "no_shared_token_class"}:
             raise ValueError("receipt backtest outcome is invalid")
-        pricing, pricing_unresolved = _snapshot(_json(raw["pricing-snapshot.json"], name="pricing-snapshot.json"), kind="pricing", today=today, threshold=threshold)
-        quota, quota_unresolved = _snapshot(_json(raw["quota-snapshot.json"], name="quota-snapshot.json"), kind="quota", today=today, threshold=threshold)
+        pricing_document = _json(raw["pricing-snapshot.json"], name="pricing-snapshot.json")
+        quota_document = _json(raw["quota-snapshot.json"], name="quota-snapshot.json")
+        aggregate_document = _json(raw["aggregate-prior.json"], name="aggregate-prior.json")
+        for name, document in (("pricing-snapshot.json", pricing_document), ("quota-snapshot.json", quota_document), ("aggregate-prior.json", aggregate_document)):
+            if raw[name] != _canonical(document):
+                raise ValueError(f"{name} is not canonical JSON")
+        pricing, pricing_unresolved = _snapshot(pricing_document, kind="pricing", today=today, threshold=threshold)
+        quota, quota_unresolved = _snapshot(quota_document, kind="quota", today=today, threshold=threshold)
+        if pricing["policy_version"] != receipt["pricing_policy_version"] or pricing["policy_sha256"] != receipt["pricing_policy_sha256"] or quota["policy_version"] != receipt["pricing_policy_version"] or quota["policy_sha256"] != receipt["pricing_policy_sha256"]:
+            raise ValueError("snapshot policy identity does not match receipt")
         if receipt["pricing_result_sha256"] != hashlib.sha256(_canonical(pricing)).hexdigest() or receipt["quota_result_sha256"] != hashlib.sha256(_canonical(quota)).hexdigest():
             raise ValueError("receipt snapshot result hash does not match")
+        manifest_core = {key: value for key, value in receipt.items() if key not in {"release_manifest_sha256", "inventory", "receipt_sha256"}}
+        if receipt["release_manifest_sha256"] != hashlib.sha256(_canonical(manifest_core)).hexdigest():
+            raise ValueError("receipt release manifest digest is incorrect")
         release_hash = str(receipt["release_manifest_sha256"])
-        _aggregate(_json(raw["aggregate-prior.json"], name="aggregate-prior.json"), release_hash=release_hash, today=today)
+        _aggregate(aggregate_document, release_hash=release_hash, today=today, receipt=receipt)
         expected_notification = pricing_unresolved or quota_unresolved
         if receipt["notification_result"] not in {"not_required", "delivered"} or ((receipt["notification_result"] == "delivered") != expected_notification):
             raise ValueError("receipt notification result is inconsistent")
         if expected_notification:
             if OPTIONAL_DATA_NAME not in actual:
                 raise ValueError("operator notification is required")
-            _notification(_json(raw[OPTIONAL_DATA_NAME], name=OPTIONAL_DATA_NAME), pricing=pricing, quota=quota, today=today)
+            notification_document = _json(raw[OPTIONAL_DATA_NAME], name=OPTIONAL_DATA_NAME)
+            if raw[OPTIONAL_DATA_NAME] != _canonical(notification_document):
+                raise ValueError("operator-notification.json is not canonical JSON")
+            _notification(notification_document, pricing=pricing, quota=quota, today=today)
         elif OPTIONAL_DATA_NAME in actual:
             raise ValueError("operator notification is not permitted for an all-official snapshot")
         expected = set(SCHEMA_NAMES) | set(DATA_NAMES) | ({OPTIONAL_DATA_NAME} if expected_notification else set())
