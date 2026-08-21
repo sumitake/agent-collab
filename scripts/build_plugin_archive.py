@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import zlib
+from datetime import date
 from pathlib import Path, PurePosixPath
 
 try:
@@ -645,6 +646,10 @@ def _runtime_dir_modes(
 
 
 def _validated_frozen_members(maintenance: MaintenanceSnapshot) -> dict[str, FrozenMaintenanceMember]:
+    if type(maintenance.notification_required) is not bool:
+        raise ValueError("maintenance snapshot notification flag is not an exact bool")
+    if type(maintenance.receipt_generated_date) is not date:
+        raise ValueError("maintenance snapshot receipt date is not an exact date")
     expected = {path.as_posix() for path in PUBLIC_ESTIMATION_MEMBERS}
     if not maintenance.notification_required:
         expected.discard("project-estimation-data/operator-notification.json")

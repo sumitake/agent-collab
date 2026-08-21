@@ -301,7 +301,7 @@ def _closed_schema(value: object, *, name: str) -> None:
 
 
 def _quantiles(value: object, *, field: str, category: str) -> None:
-    rows = value if isinstance(value, list) else None
+    rows = value if type(value) is list else None
     if rows is None or len(rows) > _MAX_ARRAY:
         raise ValueError(f"{field} must be a bounded array")
     seen: set[str] = set()
@@ -327,7 +327,7 @@ def _quantiles(value: object, *, field: str, category: str) -> None:
 def _public_prior_optional(node: Mapping[str, object], *, field: str) -> None:
     if "source_eras" in node:
         eras = node["source_eras"]
-        if not isinstance(eras, list) or len(eras) > _MAX_ARRAY:
+        if type(eras) is not list or len(eras) > _MAX_ARRAY:
             raise ValueError(f"{field}.source_eras is invalid")
         for index, era in enumerate(eras):
             if type(era) is not str or _VERSION_RE.fullmatch(era) is None:

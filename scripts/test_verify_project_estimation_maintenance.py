@@ -432,6 +432,21 @@ class MaintenanceVerifierTests(unittest.TestCase):
                 ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
                 self.assertFalse(ok, lines)
 
+    def test_optional_arrays_require_exact_list_values(self) -> None:
+        class ListSubclass(list):
+            pass
+
+        with self.assertRaisesRegex(ValueError, "bounded array"):
+            self.verifier._quantiles(
+                ListSubclass([{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}]),
+                field="quantiles",
+                category="phase",
+            )
+        with self.assertRaisesRegex(ValueError, "source_eras"):
+            self.verifier._public_prior_optional(
+                {"source_eras": ListSubclass(["era-1"])}, field="node"
+            )
+
     def test_public_prior_schema_matches_task1_identifier_date_and_metric_bounds(self) -> None:
         schema = json.loads((DATA_SOURCE / "aggregate-prior.schema.json").read_text())
         defs = schema["$defs"]
@@ -439,6 +454,10 @@ class MaintenanceVerifierTests(unittest.TestCase):
         self.assertEqual(defs["wait_quantile"]["properties"]["wait_class"]["pattern"], self.verifier._IDENTIFIER_RE.pattern)
         self.assertEqual(defs["node"]["properties"]["hierarchy_node"]["pattern"], self.verifier._NODE_RE.pattern)
         self.assertEqual(defs["date"]["pattern"], rf"^{self.verifier._DATE_PATTERN}$")
+        self.assertEqual(
+            defs["phase_quantile"]["properties"]["phase"]["enum"],
+            ["overall", "primary", "delegation", "review", "test", "release", "deployment", "rework"],
+        )
         self.assertEqual(defs["calibration_quality"]["properties"]["p80_coverage_basis_points"]["maximum"], 1_000_000_000)
         self.assertEqual(defs["uncertainty_floors"]["properties"]["token_basis_points"]["maximum"], 1_000_000_000)
 
@@ -595,10 +614,24 @@ class MaintenanceVerifierTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "snapshot|digest|duplicate|missing"):
                     archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=bad)
 
+    def test_supplied_maintenance_snapshot_rejects_frozen_field_type_drift(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        _fixture(self.root)
+        maintenance = archive.admit_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        for bad in (
+            archive.MaintenanceSnapshot(maintenance.members, 1, maintenance.receipt_generated_date),
+            archive.MaintenanceSnapshot(maintenance.members, maintenance.notification_required, "2026-08-20"),
+        ):
+            with self.subTest(snapshot=bad):
+                with self.assertRaisesRegex(ValueError, "snapshot|notification|date"):
+                    archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=bad)
+
     def test_direct_archive_rejects_unadmitted_estimation_evidence(self) -> None:
         sys.path.insert(0, str(ROOT / "scripts"))
         import build_plugin_archive as archive
         cases = ("malformed", "wrong-version", "stale", "hash-mismatch", "notification-optional")
+        original_admit = archive.admit_maintenance
         for case in cases:
             with self.subTest(case=case):
                 repo = self.root / case
@@ -614,8 +647,17 @@ class MaintenanceVerifierTests(unittest.TestCase):
                     pricing = json.loads((data / "pricing-snapshot.json").read_text()); pricing["policy_version"] = "forged"; _write_json(data / "pricing-snapshot.json", pricing)
                 elif case == "notification-optional":
                     receipt = json.loads((data / "maintenance-receipt.json").read_text()); receipt["notification_result"] = "not_required"; _write_json(data / "maintenance-receipt.json", receipt)
-                with self.assertRaises(ValueError):
-                    archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
+                calls: list[object] = []
+
+                def admit_today(*args: object, **kwargs: object):
+                    kwargs["today"] = TODAY
+                    calls.append(kwargs["today"])
+                    return original_admit(*args, **kwargs)
+
+                with mock.patch.object(archive, "admit_maintenance", side_effect=admit_today):
+                    with self.assertRaises(ValueError):
+                        archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
+                self.assertEqual(calls, [TODAY])
 
     def test_direct_archive_emits_bytes_frozen_before_source_mutation(self) -> None:
         sys.path.insert(0, str(ROOT / "scripts"))
@@ -627,17 +669,19 @@ class MaintenanceVerifierTests(unittest.TestCase):
         data = _fixture(repo)
         expected = (data / "aggregate-prior.json").read_bytes()
         original_admit = archive.admit_maintenance
-        calls: list[bool] = []
+        calls: list[object] = []
 
         def admit_and_mutate(*args: object, **kwargs: object):
+            kwargs["today"] = TODAY
             snapshot = original_admit(*args, **kwargs)
-            calls.append(True)
+            calls.append(kwargs["today"])
             (data / "aggregate-prior.json").write_bytes(b"mutated-after-admission")
             return snapshot
 
         with mock.patch.object(archive, "admit_maintenance", side_effect=admit_and_mutate):
             archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
         self.assertTrue(calls)
+        self.assertEqual(calls, [TODAY])
         with tarfile.open(repo / "archive.tgz", mode="r:gz") as tar:
             self.assertEqual(tar.extractfile("project-estimation-data/aggregate-prior.json").read(), expected)
 
