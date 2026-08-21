@@ -6,16 +6,18 @@
 # Skills are markdown only — no skill-level deps to track. If a future skill
 # introduces a deps file, add an entry here.
 #
-# Workflow tie-in (operator decision 2026-08-17): Dependabot PRs auto-merge —
-# all update types — via .github/workflows/dependabot-automerge.yml (summon /
-# arm / retrigger only). The merge is held by the DEDICATED required context
-# .github/workflows/dependabot-gate.yml (pull_request_target + ref:main): for
-# dependabot[bot] PRs it hard-fails unless every commit is authentically
-# Dependabot's (author + web-flow committer + verified signature) and a clean
-# Codex response bound to the current head exists (scripts/dependabot_gate.py)
-# — Codex silence or findings keep the check red and the PR on the manual
-# path. validate-trace (compliance-trace.yml) merely exempts dependabot from
-# the trace. Agent-authored dependency changes remain Tier 2/3 under
+# Workflow tie-in (deterministic no-AI design 2026-08-19): Dependabot PRs
+# auto-merge via .github/workflows/dependabot-automerge.yml (arm only). The
+# merge is held by the DEDICATED required context
+# .github/workflows/dependabot-gate.yml (pull_request_target + ref:main), which
+# hard-fails unless ALL hold: (a) every commit is authentically Dependabot's
+# (author + web-flow committer + verified/valid signature); (b) every changed
+# path is within .github/workflows|actions and none touches the gate's control
+# plane; (c) EVERY dependency update is patch or minor via SHA-pinned
+# dependabot/fetch-metadata (majors held). No AI review (the former Codex path
+# was removed — no external-quota dependency). validate-trace
+# (compliance-trace.yml) merely exempts dependabot from the trace.
+# Agent-authored dependency changes remain Tier 2/3 under
 # docs/public-governance.md with an independent cross-family check.
 #
 # Rollback: delete this file (revert PR). Vulnerability-alerts and
