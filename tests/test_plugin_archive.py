@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -87,7 +88,7 @@ class PluginArchiveTests(unittest.TestCase):
         maintenance = archive.MaintenanceSnapshot(
             tuple(archive.FrozenMaintenanceMember(
                 archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=hashlib.sha256(b"{}").hexdigest(),
-                source_mode=0o644, source_uid=0, source_gid=0,
+                source_mode=0o644, source_uid=os.getuid(), source_gid=os.getgid(),
             ) for path in sorted(archive.PUBLIC_ESTIMATION_MEMBERS) if path.name != "operator-notification.json"),
             False, date(2026, 8, 20),
         )

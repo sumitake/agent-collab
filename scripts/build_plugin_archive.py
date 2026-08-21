@@ -646,6 +646,10 @@ def _runtime_dir_modes(
 
 
 def _validated_frozen_members(maintenance: MaintenanceSnapshot) -> dict[str, FrozenMaintenanceMember]:
+    if type(maintenance) is not MaintenanceSnapshot:
+        raise ValueError("maintenance snapshot has an unexpected type")
+    if type(maintenance.members) is not tuple:
+        raise ValueError("maintenance snapshot members must be an exact tuple")
     if type(maintenance.notification_required) is not bool:
         raise ValueError("maintenance snapshot notification flag is not an exact bool")
     if type(maintenance.receipt_generated_date) is not date:
@@ -654,13 +658,29 @@ def _validated_frozen_members(maintenance: MaintenanceSnapshot) -> dict[str, Fro
     if not maintenance.notification_required:
         expected.discard("project-estimation-data/operator-notification.json")
     members = tuple(maintenance.members)
+    if len(members) != len(expected):
+        raise ValueError("maintenance snapshot member count is invalid")
+    if any(type(member) is not FrozenMaintenanceMember for member in members):
+        raise ValueError("maintenance snapshot has an unexpected member type")
     names = [member.archive_name for member in members]
+    if any(type(name) is not str for name in names):
+        raise ValueError("maintenance snapshot member name is not an exact string")
     if names != sorted(names) or len(names) != len(set(names)) or set(names) != expected:
         raise ValueError("maintenance snapshot has duplicate, missing, or undeclared archive members")
     result: dict[str, FrozenMaintenanceMember] = {}
     for member in members:
+        if type(member.sha256) is not str:
+            raise ValueError(f"maintenance snapshot digest is not an exact string: {member.archive_name}")
+        if type(member.source_mode) is not int or not (member.source_mode & stat.S_IRUSR) or member.source_mode & ~0o777 or member.source_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH | stat.S_IWOTH):
+            raise ValueError(f"maintenance snapshot source mode is unsafe: {member.archive_name}")
+        if type(member.source_uid) is not int or member.source_uid != os.getuid():
+            raise ValueError(f"maintenance snapshot source owner is unsafe: {member.archive_name}")
+        if type(member.source_gid) is not int or member.source_gid < 0:
+            raise ValueError(f"maintenance snapshot source GID is unsafe: {member.archive_name}")
         if type(member.payload) is not bytes:
             raise ValueError(f"maintenance snapshot payload is not immutable bytes: {member.archive_name}")
+        if len(member.payload) > 1_048_576:
+            raise ValueError(f"maintenance snapshot payload exceeds byte bound: {member.archive_name}")
         if hashlib.sha256(member.payload).hexdigest() != member.sha256:
             raise ValueError(f"maintenance snapshot digest does not match payload: {member.archive_name}")
         result[member.archive_name] = member
@@ -995,7 +1015,32 @@ def verify_archive(
     *,
     mode: str,
     frozen_manifest: bytes | None = None,
-    maintenance: MaintenanceSnapshot | None = None,
+) -> None:
+    """Freshly admit checked-out evidence, then verify an archive against it."""
+
+    plugin_source = _safe_source(plugin_path)
+    if not stat.S_ISDIR(plugin_source.st_mode):
+        raise ValueError("plugin package root is not a directory")
+    plugin_path = plugin_path.resolve(strict=True)
+    maintenance = admit_maintenance(
+        plugin_path.parents[1], expected_version=_expected_plugin_version(plugin_path)
+    )
+    _verify_archive_against_snapshot(
+        plugin_path,
+        archive_path,
+        mode=mode,
+        frozen_manifest=frozen_manifest,
+        maintenance=maintenance,
+    )
+
+
+def _verify_archive_against_snapshot(
+    plugin_path: Path,
+    archive_path: Path,
+    *,
+    mode: str,
+    frozen_manifest: bytes | None = None,
+    maintenance: MaintenanceSnapshot,
 ) -> None:
     """Verify a built archive by REGENERATING the canonical tar and comparing.
 
@@ -1014,13 +1059,8 @@ def verify_archive(
     if not stat.S_ISDIR(plugin_source.st_mode):
         raise ValueError("plugin package root is not a directory")
     plugin_path = plugin_path.resolve(strict=True)
-    if maintenance is None:
-        maintenance = admit_maintenance(
-            plugin_path.parents[1], expected_version=_expected_plugin_version(plugin_path)
-        )
     # Freeze ONE manifest snapshot: mode classification, full shape validation,
-    # runtime records, and the embedded manifest member all derive from it (a
-    # caller-supplied snapshot from build_archive, or a single read here in CI).
+    # runtime records, and the embedded manifest member all derive from it.
     if frozen_manifest is None:
         frozen_manifest = _read_manifest_bytes(plugin_path)
     resolved_mode, bundles = _classify_from_manifest(plugin_path, frozen_manifest)
@@ -1393,7 +1433,7 @@ def build_archive(
         with os.fdopen(descriptor, "wb") as raw:
             with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
                 compressed.write(canonical_tar)
-        verify_archive(
+        _verify_archive_against_snapshot(
             plugin_path, temp_path, mode=mode, frozen_manifest=frozen_manifest,
             maintenance=maintenance,
         )

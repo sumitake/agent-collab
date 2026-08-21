@@ -123,6 +123,12 @@ def _string(value: object, *, field: str, maximum: int = 256) -> str:
     return value
 
 
+def _version(value: object, *, field: str) -> str:
+    if type(value) is not str or _VERSION_RE.fullmatch(value) is None:
+        raise ValueError(f"{field} must be a bounded version")
+    return value
+
+
 def _integer(value: object, *, field: str, minimum: int = 0, maximum: int = 1_000_000_000) -> int:
     if type(value) is not int or not minimum <= value <= maximum:
         raise ValueError(f"{field} must be an integer between {minimum} and {maximum}")
@@ -357,6 +363,8 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
     top = _mapping(value, field="aggregate-prior")
     fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "nodes"}
     _exact(top, fields, field="aggregate-prior")
+    _version(top["estimator_method_version"], field="aggregate.estimator_method_version")
+    _version(top["policy_version"], field="aggregate.policy_version")
     if top["schema_version"] != 1 or top["estimator_method_version"] != "empirical-v2":
         raise ValueError("aggregate-prior version is unsupported")
     generated = _date(top["generated_date"], field="aggregate.generated_date")
@@ -365,7 +373,6 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
         raise ValueError("aggregate dates are outside the release window")
     if (top["estimator_method_version"], top["policy_version"], top["policy_sha256"], top["seed"], top["source_manifest_sha256"], top["generated_date"], top["source_cutoff_date"]) != (receipt["estimator_method_version"], receipt["calibration_policy_version"], receipt["calibration_policy_sha256"], receipt["seed"], receipt["source_manifest_sha256"], receipt["original_calibration_date"], receipt["source_cutoff_date"]):
         raise ValueError("aggregate identity does not match receipt")
-    _string(top["policy_version"], field="aggregate.policy_version")
     _sha(top["policy_sha256"], field="aggregate.policy_sha256")
     _integer(top["seed"], field="aggregate.seed", maximum=2_147_483_647)
     _sha(top["source_manifest_sha256"], field="aggregate.source_manifest_sha256")
@@ -381,7 +388,7 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
         _exact(node, allowed, required=required, field=f"aggregate.nodes[{index}]")
         if node["schema_version"] != 1 or node["estimator_method_version"] != receipt["estimator_method_version"]:
             raise ValueError("aggregate node schema version is unsupported")
-        _string(node["estimator_method_version"], field="aggregate.node.method")
+        _version(node["estimator_method_version"], field="aggregate.node.method")
         original_date = _date(receipt["original_calibration_date"], field="receipt.original_calibration_date")
         if _date(node["generated_date"], field="aggregate.node.generated_date") != original_date:
             raise ValueError("aggregate node generated date does not match receipt")
@@ -471,7 +478,7 @@ def _snapshot(value: object, *, kind: str, today: _datetime.date, threshold: int
     _exact(result, fields, field=f"{kind}-snapshot")
     if result["schema_version"] != 1 or result["kind"] != kind:
         raise ValueError(f"{kind} snapshot version or kind is invalid")
-    _string(result["policy_version"], field=f"{kind}.policy_version")
+    _version(result["policy_version"], field=f"{kind}.policy_version")
     _sha(result["policy_sha256"], field=f"{kind}.policy_sha256")
     retrieved = _date(result["retrieved_date"], field=f"{kind}.retrieved_date")
     if retrieved > today:
@@ -645,8 +652,11 @@ def _verify_maintenance(
         _exact(receipt, {"schema_version", "version", "estimator_method_version", "calibration_policy_version", "calibration_policy_sha256", "pricing_policy_version", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "pricing_material_unpriced_threshold_basis_points", "seed", "repository_sha256", "collection_cutoff_date", "collection_result_sha256", "linkage_manifest_sha256", "completion_evidence_scope", "source_cutoff_date", "generated_date", "calibration_status", "original_calibration_date", "source_manifest_sha256", "calibration_candidate_sha256", "calibration_source_receipt_sha256", "backtest_outcome", "pricing_result_sha256", "quota_result_sha256", "notification_result", "release_manifest_sha256", "inventory", "receipt_sha256"}, field="maintenance-receipt")
         if receipt["schema_version"] != 2 or receipt["version"] != expected_version or receipt["estimator_method_version"] != "empirical-v2" or receipt["completion_evidence_scope"] != "github_merged_or_earlier":
             raise ValueError("maintenance receipt schema/version is invalid")
-        for name in ("version", "estimator_method_version", "calibration_policy_version", "pricing_policy_version", "completion_evidence_scope"):
-            _string(receipt[name], field=f"receipt.{name}", maximum=128)
+        _string(receipt["version"], field="receipt.version", maximum=128)
+        _version(receipt["estimator_method_version"], field="receipt.estimator_method_version")
+        _version(receipt["calibration_policy_version"], field="receipt.calibration_policy_version")
+        _version(receipt["pricing_policy_version"], field="receipt.pricing_policy_version")
+        _string(receipt["completion_evidence_scope"], field="receipt.completion_evidence_scope", maximum=128)
         for name in ("calibration_policy_sha256", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "repository_sha256", "collection_result_sha256", "linkage_manifest_sha256", "source_manifest_sha256", "calibration_candidate_sha256", "pricing_result_sha256", "quota_result_sha256", "release_manifest_sha256", "receipt_sha256"):
             _sha(receipt[name], field=f"receipt.{name}")
         threshold = _integer(receipt["pricing_material_unpriced_threshold_basis_points"], field="receipt.threshold", minimum=1, maximum=10_000)

@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import io
 import importlib.util
+import inspect
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -293,6 +295,42 @@ class MaintenanceVerifierTests(unittest.TestCase):
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("notification" in line or "coverage" in line for line in lines), lines)
+
+    def test_bad_version_rebound_fixtures_are_rejected_by_runtime_and_schema(self) -> None:
+        cases = (
+            ("aggregate", "aggregate-prior.json", "policy_version", "calibration_policy_version", "aggregate-prior.schema.json"),
+            ("pricing", "pricing-snapshot.json", "policy_version", "pricing_policy_version", "pricing-snapshot.schema.json"),
+            ("quota", "quota-snapshot.json", "policy_version", "pricing_policy_version", "quota-snapshot.schema.json"),
+        )
+        for kind, filename, document_field, receipt_field, schema_name in cases:
+            with self.subTest(kind=kind):
+                shutil.rmtree(self.root / "plugins", ignore_errors=True)
+                data = _fixture(self.root)
+                document = json.loads((data / filename).read_text())
+                document[document_field] = "bad version"
+                _write_json(data / filename, document)
+                receipt = json.loads((data / "maintenance-receipt.json").read_text())
+                receipt[receipt_field] = "bad version"
+                if kind == "aggregate":
+                    receipt["calibration_policy_sha256"] = DIGEST
+                _write_json(data / "maintenance-receipt.json", receipt)
+                _rebind_receipt(data)
+                ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+                self.assertFalse(ok, lines)
+                schema = json.loads((DATA_SOURCE / schema_name).read_text())
+                self.assertIsNone(re.fullmatch(schema["$defs"]["version"]["pattern"], "bad version"))
+                shutil.rmtree(self.root / "plugins")
+
+    def test_snapshot_date_schema_and_runtime_use_strict_gregorian_pattern(self) -> None:
+        for schema_name in ("pricing-snapshot.schema.json", "quota-snapshot.schema.json"):
+            schema = json.loads((DATA_SOURCE / schema_name).read_text())
+            date_schema = schema["$defs"]["date"]
+            self.assertEqual(date_schema.get("pattern"), rf"^{self.verifier._DATE_PATTERN}$")
+            self.assertNotIn("format", date_schema)
+        for value in ("2026-02-29", "2026-13-01", "2026-04-31"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self.verifier._date(value, field="date")
 
     def test_fifo_members_are_rejected_without_blocking(self) -> None:
         data = _fixture(self.root)
@@ -627,6 +665,80 @@ class MaintenanceVerifierTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "snapshot|notification|date"):
                     archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=bad)
 
+    def test_private_snapshot_validation_rejects_oversize_unsafe_and_duck_typed_members(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        _fixture(self.root)
+        maintenance = archive.admit_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        member = maintenance.members[0]
+
+        class MemberSubclass(archive.FrozenMaintenanceMember):
+            pass
+
+        class SnapshotDuck:
+            members = maintenance.members
+            notification_required = maintenance.notification_required
+            receipt_generated_date = maintenance.receipt_generated_date
+
+        valid_digest = hashlib.sha256(b"x").hexdigest()
+        bad_snapshots = (
+            archive.MaintenanceSnapshot(
+                tuple(archive.FrozenMaintenanceMember(
+                    item.archive_name,
+                    b"x" * 1_048_577 if item is member else item.payload,
+                    valid_digest if item is member else item.sha256,
+                    item.source_mode, item.source_uid, item.source_gid,
+                ) for item in maintenance.members),
+                maintenance.notification_required, maintenance.receipt_generated_date,
+            ),
+            archive.MaintenanceSnapshot(
+                tuple(archive.FrozenMaintenanceMember(
+                    item.archive_name, item.payload, item.sha256,
+                    0o777 if item is member else item.source_mode,
+                    item.source_uid + 1 if item is member else item.source_uid,
+                    "gid" if item is member else item.source_gid,
+                ) for item in maintenance.members),
+                maintenance.notification_required, maintenance.receipt_generated_date,
+            ),
+            archive.MaintenanceSnapshot(
+                [*maintenance.members], maintenance.notification_required, maintenance.receipt_generated_date,
+            ),
+            SnapshotDuck(),
+            archive.MaintenanceSnapshot(
+                (MemberSubclass(member.archive_name, member.payload, member.sha256, member.source_mode, member.source_uid, member.source_gid), *maintenance.members[1:]),
+                maintenance.notification_required, maintenance.receipt_generated_date,
+            ),
+        )
+        for bad in bad_snapshots:
+            with self.subTest(snapshot_type=type(bad).__name__):
+                with self.assertRaisesRegex(ValueError, "snapshot|member|bytes|size|mode|owner|GID|tuple|type"):
+                    archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=bad)
+
+    def test_public_verify_archive_rejects_maintenance_injection_keyword(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        self.assertNotIn("maintenance", inspect.signature(archive.verify_archive).parameters)
+
+    def test_public_verify_archive_freshly_admits_checked_out_tree(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        repo = self.root / "fresh-admission"
+        plugin = repo / "plugins" / "agent-collab"
+        shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+        shutil.rmtree(plugin / "project-estimation-data")
+        _fixture(repo)
+        original_admit = archive.admit_maintenance
+        calls: list[object] = []
+
+        def admit_fresh(*args: object, **kwargs: object):
+            calls.append(args[0])
+            return original_admit(*args, **kwargs)
+
+        with mock.patch.object(archive, "admit_maintenance", side_effect=admit_fresh):
+            with self.assertRaises(ValueError):
+                archive.verify_archive(plugin, repo / "missing.tgz", mode="policy-only")
+        self.assertEqual(calls, [repo])
+
     def test_direct_archive_rejects_unadmitted_estimation_evidence(self) -> None:
         sys.path.insert(0, str(ROOT / "scripts"))
         import build_plugin_archive as archive
@@ -678,7 +790,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
             (data / "aggregate-prior.json").write_bytes(b"mutated-after-admission")
             return snapshot
 
-        with mock.patch.object(archive, "admit_maintenance", side_effect=admit_and_mutate):
+        with mock.patch.object(archive, "admit_maintenance", side_effect=admit_and_mutate), mock.patch.object(archive, "verify_archive", side_effect=AssertionError("build must use private same-snapshot verification")):
             archive.build_archive(repo, plugin="agent-collab", output=repo / "archive.tgz")
         self.assertTrue(calls)
         self.assertEqual(calls, [TODAY])
