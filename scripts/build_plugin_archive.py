@@ -24,9 +24,19 @@ except ModuleNotFoundError:  # direct `python3 scripts/build_plugin_archive.py`
     from skill_structure import expected_skill_relpaths, skill_tree_differences
 
 try:
-    from scripts.verify_project_estimation_maintenance import PUBLIC_ESTIMATION_MEMBERS
+    from scripts.verify_project_estimation_maintenance import (
+        PUBLIC_ESTIMATION_MEMBERS,
+        FrozenMaintenanceMember,
+        MaintenanceSnapshot,
+        admit_maintenance,
+    )
 except ModuleNotFoundError:  # direct script execution from scripts/
-    from verify_project_estimation_maintenance import PUBLIC_ESTIMATION_MEMBERS
+    from verify_project_estimation_maintenance import (
+        PUBLIC_ESTIMATION_MEMBERS,
+        FrozenMaintenanceMember,
+        MaintenanceSnapshot,
+        admit_maintenance,
+    )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -212,15 +222,15 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
         described = os.fstat(descriptor)
         if not stat.S_ISREG(described.st_mode):
             raise ValueError("runtime-manifest.json is not a regular file")
-        chunks = []
+        payload = bytearray()
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 break
-            chunks.append(chunk)
-            if sum(len(part) for part in chunks) > runtime_bundle.MAX_MANIFEST_BYTES:
+            payload.extend(chunk)
+            if len(payload) > runtime_bundle.MAX_MANIFEST_BYTES:
                 raise ValueError("runtime manifest is unreasonably large")
-        return b"".join(chunks)
+        return bytes(payload)
     except OSError as exc:
         raise ValueError("runtime manifest is unreadable") from exc
     finally:
@@ -228,6 +238,68 @@ def _read_manifest_bytes(plugin_path: Path) -> bytes:
             os.close(descriptor)
         except OSError:
             pass
+
+
+def _read_plugin_version(plugin_path: Path, relative: Path) -> str:
+    """Read a plugin.json version through a bounded descriptor-relative chain."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    root_fd: int | None = None
+    directory_fd: int | None = None
+    file_fd: int | None = None
+    try:
+        root_fd = os.open(plugin_path, flags)
+        directory_fd = root_fd
+        for component in relative.parts[:-1]:
+            next_fd = os.open(component, flags, dir_fd=directory_fd)
+            if directory_fd != root_fd:
+                os.close(directory_fd)
+            directory_fd = next_fd
+        file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+        file_fd = os.open(relative.name, file_flags, dir_fd=directory_fd)
+        before = os.fstat(file_fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 1_048_576:
+            raise ValueError(f"plugin manifest is not a bounded regular file: {relative}")
+        remaining = before.st_size
+        payload = bytearray()
+        while remaining:
+            chunk = os.read(file_fd, min(65_536, remaining))
+            if not chunk:
+                raise ValueError(f"plugin manifest was truncated: {relative}")
+            payload.extend(chunk)
+            remaining -= len(chunk)
+        if os.read(file_fd, 1):
+            raise ValueError(f"plugin manifest grew during admission: {relative}")
+        after = os.fstat(file_fd)
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError(f"plugin manifest changed during admission: {relative}")
+        try:
+            document = json.loads(payload.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"plugin manifest is not valid JSON: {relative}") from exc
+        if not isinstance(document, dict) or type(document.get("version")) is not str or not document["version"] or len(document["version"]) > 64:
+            raise ValueError(f"plugin manifest version is invalid: {relative}")
+        return document["version"]
+    except OSError as exc:
+        raise ValueError(f"plugin manifest is unreadable: {relative}") from exc
+    finally:
+        closed: set[int] = set()
+        for descriptor in (file_fd, directory_fd, root_fd):
+            if descriptor is not None and descriptor not in closed:
+                closed.add(descriptor)
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+
+def _expected_plugin_version(plugin_path: Path) -> str:
+    versions = tuple(
+        _read_plugin_version(plugin_path, relative)
+        for relative in (Path(".claude-plugin") / "plugin.json", Path(".codex-plugin") / "plugin.json")
+    )
+    if versions[0] != versions[1]:
+        raise ValueError("Claude and Codex plugin versions do not match")
+    return versions[0]
 
 
 def _parse_manifest(data: bytes) -> dict[str, object]:
@@ -477,6 +549,9 @@ def _classify_from_manifest(
 
 
 def classify_package(plugin_path: Path) -> str:
+    plugin_source = _safe_source(plugin_path)
+    if not stat.S_ISDIR(plugin_source.st_mode):
+        raise ValueError("plugin package root is not a directory")
     plugin_path = plugin_path.resolve(strict=True)
     mode, _records = _classify_from_manifest(
         plugin_path, _read_manifest_bytes(plugin_path)
@@ -574,7 +649,8 @@ def _member_plan(
     *,
     mode: str,
     bundles: tuple[tuple[Path, tuple[dict[str, object], ...]], ...] = (),
-) -> list[tuple[str, Path | None]]:
+    maintenance: MaintenanceSnapshot,
+) -> list[tuple[str, Path | FrozenMaintenanceMember | None]]:
     """Return the canonical (archive name, source path) plan, sorted by name.
 
     Runtime members carry a ``None`` source: their archive metadata derives
@@ -595,19 +671,9 @@ def _member_plan(
     if differences:
         raise ValueError("skill tree is not canonical: " + ", ".join(differences))
     estimation_relatives = list(PUBLIC_ESTIMATION_MEMBERS)
-    # The allowed set is closed, while the notification data member is
-    # conditional on the already-admitted receipt.  A missing/malformed
-    # receipt intentionally leaves the optional member out; the mandatory
-    # receipt/data members then fail the normal source check and the release
-    # verifier remains the authoritative gate.
-    notification = plugin_path / "project-estimation-data" / "maintenance-receipt.json"
-    try:
-        _safe_source(notification)
-        receipt = json.loads(notification.read_text(encoding="utf-8"))
-        if receipt.get("notification_result") != "delivered":
-            estimation_relatives = [path for path in estimation_relatives if path.name != "operator-notification.json"]
-    except (OSError, ValueError, UnicodeError, json.JSONDecodeError, AttributeError):
+    if not maintenance.notification_required:
         estimation_relatives = [path for path in estimation_relatives if path.name != "operator-notification.json"]
+    frozen_members = {member.archive_name: member for member in maintenance.members}
     relatives = [
         *EXACT_MANIFEST_MEMBERS,
         *(Path(name) for name in REQUIRED_ROOTS if name not in {".claude-plugin", ".codex-plugin", "skills"}),
@@ -615,7 +681,7 @@ def _member_plan(
         *(Path("skills") / relative for relative in expected_skill_relpaths(SPECS_DIR)),
         *estimation_relatives,
     ]
-    members: dict[str, Path | None] = {}
+    members: dict[str, Path | FrozenMaintenanceMember | None] = {}
     if mode == "activation":
         _require_exact_third_party_notice_tree(plugin_path)
         relatives.extend(ACTIVATION_THIRD_PARTY_MEMBERS)
@@ -625,9 +691,14 @@ def _member_plan(
             for record in records:
                 members[(bundle / record["path"]).as_posix()] = None
     for relative in relatives:
-        source = plugin_path / relative
-        _safe_source(source)
         key = relative.as_posix()
+        if key.startswith("project-estimation-data/"):
+            source = frozen_members.get(key)
+            if source is None:
+                raise ValueError(f"maintenance snapshot is missing archive member: {key}")
+        else:
+            source = plugin_path / relative
+            _safe_source(source)
         # Explicit duplicate rejection (Codex #6): a tree member must never
         # silently overwrite a synthesized runtime member via dict assignment.
         if key in members:
@@ -694,7 +765,7 @@ def _finalize_tarinfo(info: tarfile.TarInfo) -> tarfile.TarInfo:
 
 
 def _emit_canonical_tar(
-    plan: list[tuple[str, Path | None]],
+    plan: list[tuple[str, Path | FrozenMaintenanceMember | None]],
     *,
     plugin_path: Path,
     frozen_manifest: bytes | None,
@@ -742,6 +813,12 @@ def _emit_canonical_tar(
                 header_offset = buffer.tell()
                 tar.addfile(info, io.BytesIO(payload))
                 ranges[name] = (header_offset + _USTAR_BLOCK, record["size"])
+                continue
+            if isinstance(source, FrozenMaintenanceMember):
+                info = _finalize_tarinfo(
+                    _synthesized_tarinfo(name, mode=0o644, size=len(source.payload))
+                )
+                tar.addfile(info, io.BytesIO(source.payload))
                 continue
             info = tar.gettarinfo(str(source), arcname=name)
             # git tracks ONLY the exec bit, but a working-tree checkout applies
@@ -895,6 +972,7 @@ def verify_archive(
     *,
     mode: str,
     frozen_manifest: bytes | None = None,
+    maintenance: MaintenanceSnapshot | None = None,
 ) -> None:
     """Verify a built archive by REGENERATING the canonical tar and comparing.
 
@@ -909,7 +987,14 @@ def verify_archive(
     reads the snapshot once from the signed-tag checkout.
     """
 
+    plugin_source = _safe_source(plugin_path)
+    if not stat.S_ISDIR(plugin_source.st_mode):
+        raise ValueError("plugin package root is not a directory")
     plugin_path = plugin_path.resolve(strict=True)
+    if maintenance is None:
+        maintenance = admit_maintenance(
+            plugin_path.parents[1], expected_version=_expected_plugin_version(plugin_path)
+        )
     # Freeze ONE manifest snapshot: mode classification, full shape validation,
     # runtime records, and the embedded manifest member all derive from it (a
     # caller-supplied snapshot from build_archive, or a single read here in CI).
@@ -918,7 +1003,7 @@ def verify_archive(
     resolved_mode, bundles = _classify_from_manifest(plugin_path, frozen_manifest)
     if resolved_mode != mode:
         raise ValueError("archive mode no longer matches the source package")
-    plan = _member_plan(plugin_path, mode=mode, bundles=bundles)
+    plan = _member_plan(plugin_path, mode=mode, bundles=bundles, maintenance=maintenance)
     record_by_name = {
         (bundle / record["path"]).as_posix(): record
         for bundle, records in bundles
@@ -1161,7 +1246,11 @@ def build_archive(
 ) -> str:
     if plugin != PLUGIN_NAME:
         raise ValueError("agent-collab is the only releaseable plugin")
-    plugin_path = (root / "plugins" / plugin).resolve(strict=True)
+    plugin_candidate = root / "plugins" / plugin
+    plugin_source = _safe_source(plugin_candidate)
+    if not stat.S_ISDIR(plugin_source.st_mode):
+        raise ValueError("plugin package root is not a directory")
+    plugin_path = plugin_candidate.resolve(strict=True)
     # Freeze the manifest ONCE: mode classification, full shape validation,
     # runtime records, the bundle-tree validation, the embedded manifest member,
     # and verify_archive ALL derive from this single snapshot, so a mid-build
@@ -1235,7 +1324,9 @@ def build_archive(
             raise ValueError(
                 "activation manifest requires a committed in-tree runtime or --bundle-source"
             )
-    plan = _member_plan(plugin_path, mode=mode, bundles=bundles)
+    expected_version = _expected_plugin_version(plugin_path)
+    maintenance = admit_maintenance(root, expected_version=expected_version)
+    plan = _member_plan(plugin_path, mode=mode, bundles=bundles, maintenance=maintenance)
     record_by_name = {
         (bundle / record["path"]).as_posix(): record
         for bundle, records in bundles
@@ -1280,7 +1371,8 @@ def build_archive(
             with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
                 compressed.write(canonical_tar)
         verify_archive(
-            plugin_path, temp_path, mode=mode, frozen_manifest=frozen_manifest
+            plugin_path, temp_path, mode=mode, frozen_manifest=frozen_manifest,
+            maintenance=maintenance,
         )
         os.replace(temp_path, output_resolved)
     except BaseException:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import importlib.util
 import json
 import os
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tarfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -304,12 +306,86 @@ class MaintenanceVerifierTests(unittest.TestCase):
     def test_caller_visible_intermediate_parent_symlink_is_rejected(self) -> None:
         real_parent = self.root / "real-parent"
         real_parent.mkdir()
-        source = _fixture(real_parent)
+        source = _fixture(real_parent / "child")
         linked_parent = self.root / "linked-parent"
         linked_parent.symlink_to(real_parent, target_is_directory=True)
-        ok, lines = self.verifier.verify_maintenance(linked_parent / "plugins", expected_version=VERSION, today=TODAY)
+        ok, lines = self.verifier.verify_maintenance(linked_parent / "child", expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("root" in line or "symlink" in line for line in lines), lines)
+
+    def test_executable_public_member_is_rejected_by_source_mode_floor(self) -> None:
+        data = _fixture(self.root)
+        os.chmod(data / "pricing-snapshot.json", 0o755)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("mode" in line or "regular" in line for line in lines), lines)
+
+    def test_hard_linked_public_member_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        external = self.root / "pricing-snapshot-copy.json"
+        external.write_bytes((data / "pricing-snapshot.json").read_bytes())
+        (data / "pricing-snapshot.json").unlink()
+        os.link(external, data / "pricing-snapshot.json")
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("link" in line or "identity" in line for line in lines), lines)
+
+    def test_notification_date_must_match_receipt_run(self) -> None:
+        data = _fixture(self.root, notification=True)
+        notification = json.loads((data / "operator-notification.json").read_text())
+        notification["generated_date"] = "2026-08-19"
+        _write_json(data / "operator-notification.json", notification)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("notification" in line or "generated" in line for line in lines), lines)
+
+    def test_malformed_optional_prior_family_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        aggregate["nodes"][0]["calibration_quality"] = "forged"
+        _write_json(data / "aggregate-prior.json", aggregate)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("calibration" in line or "aggregate" in line for line in lines), lines)
+
+    def test_category_confused_quantile_family_is_rejected(self) -> None:
+        data = _fixture(self.root)
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        aggregate["nodes"][0]["token_class_quantiles"] = [{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}]
+        _write_json(data / "aggregate-prior.json", aggregate)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        self.assertTrue(any("quant" in line or "token" in line or "aggregate" in line for line in lines), lines)
+
+    def test_all_public_prior_optional_families_have_strict_runtime_shapes(self) -> None:
+        data = _fixture(self.root)
+        aggregate = json.loads((data / "aggregate-prior.json").read_text())
+        node = aggregate["nodes"][0]
+        node.update({
+            "source_eras": ["era-1"],
+            "calibration_quality": {"holdout_count": 20, "p80_coverage_basis_points": 8000, "p95_coverage_basis_points": 9500},
+            "drift_indicators": {"duration_drift_basis_points": 1, "token_drift_basis_points": 2},
+            "uncertainty_floors": {"duration_basis_points": 3, "token_basis_points": 4},
+            "pricing_snapshot": {"sha256": DIGEST, "retrieved_date": "2026-08-20", "status": "official"},
+        })
+        _write_json(data / "aggregate-prior.json", aggregate)
+        _rebind_receipt(data)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertTrue(ok, lines)
+
+    def test_threshold_zero_is_rejected_by_schema_and_runtime(self) -> None:
+        data = _fixture(self.root)
+        receipt = json.loads((data / "maintenance-receipt.json").read_text())
+        receipt["pricing_material_unpriced_threshold_basis_points"] = 0
+        _write_json(data / "maintenance-receipt.json", receipt)
+        ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
+        self.assertFalse(ok)
+        schema = json.loads((DATA_SOURCE / "maintenance-receipt.schema.json").read_text())
+        threshold = schema["properties"]["pricing_material_unpriced_threshold_basis_points"]
+        self.assertEqual(threshold["minimum"], 1)
 
     def test_generated_data_must_use_canonical_bytes(self) -> None:
         data = _fixture(self.root)
@@ -391,12 +467,34 @@ class MaintenanceVerifierTests(unittest.TestCase):
     def test_archive_plan_is_closed_and_contains_actual_data_members(self) -> None:
         sys.path.insert(0, str(ROOT / "scripts"))
         import build_plugin_archive as archive
+        maintenance = archive.MaintenanceSnapshot(
+            tuple(archive.FrozenMaintenanceMember(
+                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=DIGEST,
+                source_mode=0o644, source_uid=os.getuid(), source_gid=os.getgid(),
+            ) for path in archive.PUBLIC_ESTIMATION_MEMBERS if path.name != "operator-notification.json"),
+            False, TODAY,
+        )
         with mock.patch.object(archive, "_safe_source"), mock.patch.object(archive, "_require_no_development_members"), mock.patch.object(archive, "_require_exact_manifest_trees"), mock.patch.object(archive, "skill_tree_differences", return_value=[]), mock.patch.object(archive, "expected_skill_relpaths", return_value=[]):
-            plan = archive._member_plan(DATA_SOURCE.parent, mode="policy-only")
+            plan = archive._member_plan(DATA_SOURCE.parent, mode="policy-only", maintenance=maintenance)
         names = {str(name) for name, _ in plan}
         for name in ("aggregate-prior.json", "pricing-snapshot.json", "quota-snapshot.json", "maintenance-receipt.json", "operator-notification.schema.json"):
             self.assertIn(f"project-estimation-data/{name}", names)
         self.assertNotIn("project-estimation-data/raw-observations.json", names)
+
+    def test_archive_emission_uses_frozen_maintenance_payload(self) -> None:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_plugin_archive as archive
+        member = archive.FrozenMaintenanceMember(
+            archive_name="project-estimation-data/aggregate-prior.json", payload=b"frozen-evidence",
+            sha256=hashlib.sha256(b"frozen-evidence").hexdigest(), source_mode=0o644,
+            source_uid=os.getuid(), source_gid=os.getgid(),
+        )
+        tar_bytes, _ = archive._emit_canonical_tar(
+            [(member.archive_name, member)], plugin_path=self.root,
+            frozen_manifest=None, record_by_name={}, runtime_payloads={}, runtime_dir_modes={},
+        )
+        with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
+            self.assertEqual(tar.extractfile(member.archive_name).read(), b"frozen-evidence")
 
 
 if __name__ == "__main__":

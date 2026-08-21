@@ -13,7 +13,9 @@ import datetime as _datetime
 import hashlib
 import json
 import os
+import re
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -32,6 +34,37 @@ _MAX_ENTRIES = 64
 _MAX_DEPTH = 32
 _MAX_ARRAY = 10_000
 _SHA_HEX = set("0123456789abcdef")
+_VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+@dataclass(frozen=True)
+class FrozenMaintenanceMember:
+    archive_name: str
+    payload: bytes
+    sha256: str
+    source_mode: int
+    source_uid: int
+    source_gid: int
+
+
+@dataclass(frozen=True)
+class MaintenanceSnapshot:
+    members: tuple[FrozenMaintenanceMember, ...]
+    notification_required: bool
+    receipt_generated_date: _datetime.date
+
+
+@dataclass(frozen=True)
+class _ReadIdentity:
+    dev: int
+    ino: int
+    mode: int
+    uid: int
+    gid: int
+    nlink: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
 
 
 class _DuplicateKey(ValueError):
@@ -166,7 +199,30 @@ def _names(directory_fd: int) -> set[str]:
     return found
 
 
-def _read(directory_fd: int, name: str) -> tuple[bytes, str, int]:
+def _identity(info: os.stat_result) -> _ReadIdentity:
+    return _ReadIdentity(
+        info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+        info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def _validate_source_identity(info: os.stat_result, *, name: str) -> None:
+    mode = stat.S_IMODE(info.st_mode)
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError(f"public member is not a bounded regular file: {name}")
+    if info.st_size > _MAX_BYTES:
+        raise ValueError(f"public member exceeds byte bound: {name}")
+    if info.st_uid != os.getuid():
+        raise ValueError(f"public member owner is not the current user: {name}")
+    if info.st_nlink != 1:
+        raise ValueError(f"public member has an unsafe link count: {name}")
+    if not (mode & stat.S_IRUSR) or mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+        raise ValueError(f"public member mode is unsafe: {name}")
+    if mode & (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX) or mode & stat.S_IWOTH:
+        raise ValueError(f"public member mode is unsafe: {name}")
+
+
+def _read(directory_fd: int, name: str) -> tuple[bytes, str, int, _ReadIdentity]:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(name, flags, dir_fd=directory_fd)
@@ -174,8 +230,8 @@ def _read(directory_fd: int, name: str) -> tuple[bytes, str, int]:
         raise ValueError(f"cannot open public member: {name}") from exc
     try:
         before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_BYTES:
-            raise ValueError(f"public member is not a bounded regular file: {name}")
+        _validate_source_identity(before, name=name)
+        before_identity = _identity(before)
         remaining = before.st_size
         payload = bytearray()
         digest = hashlib.sha256()
@@ -189,9 +245,10 @@ def _read(directory_fd: int, name: str) -> tuple[bytes, str, int]:
         if os.read(fd, 1):
             raise ValueError(f"public member grew during admission: {name}")
         after = os.fstat(fd)
-        if (before.st_dev, before.st_ino, before.st_size) != (after.st_dev, after.st_ino, after.st_size):
+        _validate_source_identity(after, name=name)
+        if before_identity != _identity(after):
             raise ValueError(f"public member changed during admission: {name}")
-        return bytes(payload), digest.hexdigest(), len(payload)
+        return bytes(payload), digest.hexdigest(), len(payload), before_identity
     except OSError as exc:
         raise ValueError(f"cannot read public member: {name}") from exc
     finally:
@@ -246,6 +303,35 @@ def _quantiles(value: object, *, field: str, category: str) -> None:
             raise ValueError(f"{field} quantiles are unordered")
 
 
+def _public_prior_optional(node: Mapping[str, object], *, field: str) -> None:
+    if "source_eras" in node:
+        eras = node["source_eras"]
+        if not isinstance(eras, list) or len(eras) > _MAX_ARRAY:
+            raise ValueError(f"{field}.source_eras is invalid")
+        for index, era in enumerate(eras):
+            if type(era) is not str or _VERSION_RE.fullmatch(era) is None:
+                raise ValueError(f"{field}.source_eras[{index}] is invalid")
+    metric_fields = {
+        "calibration_quality": {"holdout_count", "p80_coverage_basis_points", "p95_coverage_basis_points"},
+        "drift_indicators": {"duration_drift_basis_points", "token_drift_basis_points"},
+        "uncertainty_floors": {"duration_basis_points", "token_basis_points"},
+    }
+    for name, allowed in metric_fields.items():
+        if name not in node:
+            continue
+        metric = _mapping(node[name], field=f"{field}.{name}")
+        _exact(metric, allowed, required=set(metric), field=f"{field}.{name}")
+        for key, value in metric.items():
+            _integer(value, field=f"{field}.{name}.{key}")
+    if "pricing_snapshot" in node:
+        pricing = _mapping(node["pricing_snapshot"], field=f"{field}.pricing_snapshot")
+        _exact(pricing, {"sha256", "retrieved_date", "status"}, field=f"{field}.pricing_snapshot")
+        _sha(pricing["sha256"], field=f"{field}.pricing_snapshot.sha256")
+        _date(pricing["retrieved_date"], field=f"{field}.pricing_snapshot.retrieved_date")
+        if pricing["status"] not in {"official", "proxy", "estimated", "estimated_stale", "unpriced"}:
+            raise ValueError(f"{field}.pricing_snapshot.status is unsupported")
+
+
 def _aggregate(value: object, *, release_hash: str, today: _datetime.date, receipt: Mapping[str, object]) -> None:
     top = _mapping(value, field="aggregate-prior")
     fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "nodes"}
@@ -295,8 +381,11 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
         for field, category in (("phase_duration_quantiles", "phase"), ("token_class_quantiles", "token_class"), ("rework_review_quantiles", "kind"), ("wait_class_quantiles", "wait_class")):
             if field in node:
                 _quantiles(node[field], field=f"aggregate.{field}", category=category)
+        _public_prior_optional(node, field=f"aggregate.nodes[{index}]")
     if names != sorted(names) or len(names) != len(set(names)):
         raise ValueError("aggregate hierarchy nodes must be sorted and unique")
+    if not any(parent is None for parent in parents.values()):
+        raise ValueError("aggregate requires a fallback root")
     state: dict[str, int] = {}
     for name in parents:
         state.setdefault(name, 0)
@@ -445,11 +534,12 @@ def _snapshot(value: object, *, kind: str, today: _datetime.date, threshold: int
     return dict(result), unresolved
 
 
-def _notification(value: object, *, pricing: Mapping[str, object], quota: Mapping[str, object], today: _datetime.date) -> None:
+def _notification(value: object, *, pricing: Mapping[str, object], quota: Mapping[str, object], today: _datetime.date, receipt_generated: _datetime.date) -> None:
     row = _mapping(value, field="operator-notification")
     fields = {"schema_version", "generated_date", "unresolved", "pricing_coverage_basis_points", "quota_coverage_basis_points", "decision"}
     _exact(row, fields, field="operator-notification")
-    if row["schema_version"] != 1 or _date(row["generated_date"], field="notification.generated_date") > today:
+    notification_date = _date(row["generated_date"], field="notification.generated_date")
+    if row["schema_version"] != 1 or notification_date > today or notification_date != receipt_generated:
         raise ValueError("operator notification version/date is invalid")
     for name in ("pricing_coverage_basis_points", "quota_coverage_basis_points"):
         _integer(row[name], field=f"notification.{name}", maximum=10_000)
@@ -497,7 +587,9 @@ def _notification(value: object, *, pricing: Mapping[str, object], quota: Mappin
         raise ValueError("operator notification decision does not cross-match provider results")
 
 
-def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.date | None = None) -> tuple[bool, list[str]]:
+def _verify_maintenance(
+    root: Path, *, expected_version: str, today: _datetime.date | None = None
+) -> tuple[bool, list[str], MaintenanceSnapshot | None]:
     today = today or _datetime.date.today()
     errors: list[str] = []
     fd: int | None = None
@@ -514,11 +606,13 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
         raw: dict[str, bytes] = {}
         digests: dict[str, str] = {}
         sizes: dict[str, int] = {}
+        identities: dict[str, _ReadIdentity] = {}
         for name in sorted(actual):
             if name.lower().find("raw") >= 0 or name.lower().find("private") >= 0:
                 raise ValueError(f"forbidden public member: {name}")
-            payload, digest, size = _read(fd, name)
+            payload, digest, size, identity = _read(fd, name)
             raw[name], digests[name], sizes[name] = payload, digest, size
+            identities[name] = identity
         schemas: dict[str, object] = {}
         for name in SCHEMA_NAMES:
             value = _json(raw[name], name=name)
@@ -576,7 +670,7 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
             notification_document = _json(raw[OPTIONAL_DATA_NAME], name=OPTIONAL_DATA_NAME)
             if raw[OPTIONAL_DATA_NAME] != _canonical(notification_document):
                 raise ValueError("operator-notification.json is not canonical JSON")
-            _notification(notification_document, pricing=pricing, quota=quota, today=today)
+            _notification(notification_document, pricing=pricing, quota=quota, today=today, receipt_generated=generated)
         elif OPTIONAL_DATA_NAME in actual:
             raise ValueError("operator notification is not permitted for an all-official snapshot")
         expected = set(SCHEMA_NAMES) | set(DATA_NAMES) | ({OPTIONAL_DATA_NAME} if expected_notification else set())
@@ -610,7 +704,38 @@ def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.da
                 os.close(fd)
             except OSError:
                 pass
-    return not errors, [f"FAIL  {error}" for error in errors] if errors else ["PASS  project-estimation maintenance receipt and closed inventory"]
+    if errors:
+        return False, [f"FAIL  {error}" for error in errors], None
+    snapshot = MaintenanceSnapshot(
+        members=tuple(
+            FrozenMaintenanceMember(
+                archive_name=f"project-estimation-data/{name}",
+                payload=raw[name],
+                sha256=digests[name],
+                source_mode=stat.S_IMODE(identities[name].mode),
+                source_uid=identities[name].uid,
+                source_gid=identities[name].gid,
+            )
+            for name in sorted(actual)
+        ),
+        notification_required=expected_notification,
+        receipt_generated_date=generated,
+    )
+    return True, ["PASS  project-estimation maintenance receipt and closed inventory"], snapshot
+
+
+def admit_maintenance(
+    root: Path, *, expected_version: str, today: _datetime.date | None = None
+) -> MaintenanceSnapshot:
+    ok, lines, snapshot = _verify_maintenance(root, expected_version=expected_version, today=today)
+    if not ok or snapshot is None:
+        raise ValueError(lines[0] if lines else "project-estimation maintenance admission failed")
+    return snapshot
+
+
+def verify_maintenance(root: Path, *, expected_version: str, today: _datetime.date | None = None) -> tuple[bool, list[str]]:
+    ok, lines, _snapshot = _verify_maintenance(root, expected_version=expected_version, today=today)
+    return ok, lines
 
 
 def main(argv: list[str] | None = None) -> int:
