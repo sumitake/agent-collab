@@ -198,6 +198,34 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         response, _ = self._process(self._documents_request(logical_action=long_action))
         self.assertLessEqual(len(response["detail"]["given"]), 64)
 
+    def test_detail_never_reflects_c1_or_nonascii_input(self) -> None:
+        # A hostile key mixing a C1 control (U+009B CSI) and other Unicode must
+        # not survive into the echoed diagnostic.
+        hostile = "review .\U0001f4a3repo"
+        response, _ = self._process(self._documents_request(logical_action=hostile))
+        self.assertEqual(response["error_code"], "unknown_logical_action")
+        given = response["detail"]["given"]
+        self.assertTrue(all(0x20 <= ord(ch) < 0x7F for ch in given))
+
+    def test_generic_validation_fallback_is_inspect_not_fix_request(self) -> None:
+        # A malformed 'documents' payload raises a plain ValueError deep in
+        # validation; it must NOT be asserted as 'fix_request' (it could be
+        # environmental), only surfaced for inspection.
+        response, code = self._process(self._documents_request(documents=123))
+        self.assertEqual(code, 2)
+        self.assertEqual(response["status"], "invalid_request")
+        self.assertEqual(response["disposition"], "inspect")
+        self.assertIn("reason", response["detail"])
+
+    def test_unexpected_key_list_is_bounded(self) -> None:
+        request = self._documents_request()
+        request.update({f"extra{i}": 1 for i in range(40)})
+        response, _ = self._process(request)
+        self.assertEqual(response["error_code"], "request_not_closed")
+        unexpected = response["detail"]["unexpected"]
+        self.assertLessEqual(len(unexpected), 17)  # 16 items + one overflow marker
+        self.assertTrue(unexpected[-1].startswith("...(+"))
+
     def test_rejection_never_reaches_the_runtime(self) -> None:
         # result=None makes the invoke stub raise _Unreached if called.
         response, _ = self._process(self._documents_request(timeout_ms=900000), result=None)

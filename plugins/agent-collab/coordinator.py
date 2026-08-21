@@ -43,6 +43,7 @@ _READINESS_KEYS = {
 _QUALITY_PROFILES = ("economical", "standard", "frontier")
 _EFFORT_CLASSES = ("minimal", "standard", "maximum")
 _MAX_DETAIL_FIELD = 64
+_MAX_DETAIL_LIST = 16
 
 
 class _InvalidRequest(ValueError):
@@ -60,11 +61,29 @@ class _InvalidRequest(ValueError):
 
 
 def _field_name(value: object) -> str:
-    """Return a bounded, printable rendering of a request key for diagnostics."""
+    """Return a bounded ASCII-printable rendering of a request key for diagnostics.
+
+    Only ASCII printables (0x20-0x7E) survive, so a rejection can never reflect a
+    C1 control or arbitrary Unicode from an attacker-controlled key back to the
+    caller; the result is also length-bounded.
+    """
 
     text = value if type(value) is str else repr(value)
-    text = "".join(character for character in text if 0x20 <= ord(character) != 0x7F)
+    text = "".join(character for character in text if 0x20 <= ord(character) < 0x7F)
     return text[:_MAX_DETAIL_FIELD]
+
+
+def _bounded_key_list(keys: object) -> list[str]:
+    """Bounded, sorted, ASCII-printable key list for a 'detail' diagnostic.
+
+    Bounds both each key (length) and the list cardinality, so a request with a
+    huge or hostile key set cannot produce an oversized rejection payload.
+    """
+
+    names = sorted(_field_name(key) for key in keys)
+    if len(names) > _MAX_DETAIL_LIST:
+        return names[:_MAX_DETAIL_LIST] + [f"...(+{len(names) - _MAX_DETAIL_LIST} more)"]
+    return names
 
 
 def _bounded_scalar(value: object) -> object:
@@ -228,8 +247,8 @@ def _closure_error(
     detail: dict[str, object] = {
         "field": "request_keys",
         "action": action,
-        "missing": sorted(_field_name(key) for key in expected - keys),
-        "unexpected": sorted(_field_name(key) for key in keys - expected),
+        "missing": _bounded_key_list(expected - keys),
+        "unexpected": _bounded_key_list(keys - expected),
     }
     if primary_source is not None and primary_source not in keys:
         detail["required_source"] = primary_source
@@ -256,7 +275,7 @@ def validate_request(
     if not _COMMON_KEYS.issubset(document):
         raise _InvalidRequest(
             "missing_common_fields",
-            {"missing": sorted(_field_name(key) for key in _COMMON_KEYS - set(document))},
+            {"missing": _bounded_key_list(_COMMON_KEYS - set(document))},
         )
     action = document.get("logical_action")
     if type(action) is not str or action not in wire.logical_actions:
@@ -401,8 +420,8 @@ def validate_readiness_request(
             "readiness_not_closed",
             {
                 "field": "request_keys",
-                "missing": sorted(_field_name(key) for key in _READINESS_KEYS - keys),
-                "unexpected": sorted(_field_name(key) for key in keys - _READINESS_KEYS),
+                "missing": _bounded_key_list(_READINESS_KEYS - keys),
+                "unexpected": _bounded_key_list(keys - _READINESS_KEYS),
             },
         )
     if document.get("operation") != "readiness":
@@ -506,9 +525,13 @@ def _runtime_error_code(result: object) -> str:
 
 
 def _bounded_reason(text: str) -> str:
-    """Bound a fixed internal message for the 'detail.reason' diagnostic field."""
+    """Bound an internal message for the 'detail.reason' diagnostic field.
 
-    text = "".join(character for character in text if 0x20 <= ord(character) != 0x7F)
+    ASCII-printable and length-bounded, so even the last-resort fallback never
+    reflects a C1 control or arbitrary Unicode back to the caller.
+    """
+
+    text = "".join(character for character in text if 0x20 <= ord(character) < 0x7F)
     return text[:200]
 
 
@@ -552,8 +575,19 @@ def process(document: object) -> tuple[dict[str, Any], int]:
     except RuntimeError:
         return _failure_response(request_id, "unavailable", "host_identity_unavailable"), 0
     except (KeyError, TypeError, UnicodeError, ValueError) as exc:
-        return _failure_response(
-            request_id, "invalid_request", "invalid_request",
+        # Last-resort catch for validators (repo_root, documents) that still
+        # raise a plain ValueError. The cause may be request-shape OR
+        # environmental (e.g. an unavailable repo_root), so this is deliberately
+        # NOT asserted as 'fix_request'; the caller inspects detail.reason.
+        return _response(
+            request_id,
+            "invalid_request",
+            "invalid_request",
+            disposition="inspect",
+            recovery=(
+                "Inspect detail.reason. This rejection was not pre-classified and may be a "
+                "request-shape or an environmental problem (for example an unavailable repo_root)."
+            ),
             detail={"reason": _bounded_reason(str(exc))},
         ), 2
     result = (

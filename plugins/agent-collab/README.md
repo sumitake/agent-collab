@@ -159,10 +159,12 @@ A rejected request (`status: invalid_request`) additionally carries a specific
 `error_code` (e.g. `timeout_ms_over_cap`, `unknown_logical_action`,
 `quality_profile_invalid`, `request_not_closed`) and a bounded `detail` object
 naming the offending field, its constraint, and the admitted values or the
-required source, so the caller can correct it in place. `detail` never reflects
-unbounded or untrusted input back to the caller. The only in-place normalization
-is coercing an empty `target_agent` to `null` (recorded in a `normalized`
-field); nothing that changes cost, depth, or a security decision is rewritten.
+required source, so the caller can correct it in place. Echoed values in
+`detail` are ASCII-printable, length-bounded, and list-bounded, so a rejection
+never reflects unbounded or raw untrusted input back to the caller. The only
+in-place normalization is coercing an empty `target_agent` to `null` (recorded
+in a `normalized` field); nothing that changes cost, depth, or a security
+decision is rewritten.
 
 A success contains the descriptor-defined artifact, runtime-owned evidence,
 one provider-neutral execution receipt, and bounded diagnostics. Observed
