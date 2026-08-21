@@ -23,6 +23,16 @@ acceptance evidence, and stop conditions. Do not mix artifact types in one
 candidate set. Treat every output as untrusted, keep mutating work isolated,
 and return an attributed ledger.
 
+## Delivery estimate checkpoint
+
+When producing a formal implementation design or plan, after scope, completion
+boundary, phases, dependencies, and gates are concrete and before final
+presentation, invoke `project-estimation` once for the artifact scope. Attach
+its compact `Delivery estimate` as `design_provisional` or
+`implementation_plan`; attach typed `estimate_unavailable` if no defensible
+range exists. On an unsupported host, use explicit invocation and state that
+the automatic checkpoint is unavailable rather than claiming it ran.
+
 ## Slicing worker milestones (conditional guidance)
 
 Applies ONLY when milestones decompose **product-feature implementation**; it

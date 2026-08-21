@@ -1,5 +1,5 @@
 {
-  "description": "Unified collaboration package with semantic actions, source-grounded context, and a verified plugin-relative direct native runtime.",
+  "description": "Unified collaboration package with semantic actions, source-grounded context, empirical project estimation, and a verified plugin-relative direct native runtime.",
   "category": "ai-collaboration",
   "license": "LicenseRef-PolyForm-Strict-1.0.0",
   "tags": [
@@ -12,6 +12,7 @@
     "zhipu",
     "moonshot",
     "grok",
-    "gemini"
+    "gemini",
+    "project-estimation"
   ]
 }

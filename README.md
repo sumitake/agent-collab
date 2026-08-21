@@ -5,22 +5,14 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository distributes **agent-collab** (v6.2.0). The
-**v6.2.0 release** is a client-behavior update on the unchanged v6.1.1 signed
-provider runtime (`4.0.6`): the coordinator now returns actionable, bounded
-rejection detail and classifies every non-usable outcome into a closed
-disposition, so a caller corrects an invalid invocation in place and never
-misreads an attempt-local failure as a provider outage. The underlying
-**v6.1.1 release** advanced the provider runtime to `4.0.6` (routing
-hardening, lifecycle-diagnostics decoupling, worktree sealing, and
-failure-text salvage with an additively widened advisory response) and was
-the first tagged release to carry the v6.1.0 project-local skills:
-`project-knowledge` and `learning-loop`, each bundling a deterministic,
-stdlib-only CLI (`knowledge_tool.py`, `learning_ledger.py`) that runs
-offline inside the user's project. The
-**[v6.2.0 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**
-is the governed publication target for the signed runtime, archive, checksum,
-SPDX evidence, and installation proof described below.
+This public repository's current source distribution is **agent-collab**
+(v6.2.0). It combines actionable coordinator rejection and outcome handling
+with empirical project estimation, without changing provider routing, the
+signed native runtime, installation, or activation. The most recent tagged
+publication remains
+**[v6.1.1](https://github.com/sumitake/agent-collab/releases/tag/v6.1.1)**;
+v6.2.0 source is not yet a tag, archive, release, installation, or readiness
+claim.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -54,10 +46,17 @@ request or misreading a transient failure as an outage.
 - **Doc currency.** The documented `timeout_ms` bound now matches the enforced
   `1-600000` (Addressed: #125).
 
+- **Empirical project estimation.** Add `project-estimation`, a
+  read-only-by-default skill for scoped agent-led delivery estimates,
+  reconciliation, calibration, and audit. It keeps focused agent wall-clock,
+  calendar waits, API-equivalent cost, actual marginal cash, and quota capacity
+  distinct, and supplies a compact checkpoint for formal implementation
+  designs and plans where the host supports it.
+
 The signed provider runtime, the 12-action set, and every action's
 authority/artifact/evidence contract are unchanged from v6.1.1.
 
-## What's new - v6.1.1
+### Most recent tagged release: v6.1.1
 
 - Provider runtime advanced to `4.0.6`: agent-collaboration routing
   hardening, lifecycle diagnostics decoupled from authority, pinned

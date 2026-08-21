@@ -23,7 +23,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 DATA_SOURCE = ROOT / "plugins" / "agent-collab" / "project-estimation-data"
 TODAY = date(2026, 8, 20)
-VERSION = "6.1.1"
+VERSION = "6.2.0"
 DIGEST = "a" * 64
 
 

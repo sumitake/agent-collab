@@ -5,7 +5,12 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.0**
+Current: **6.2.0** (source only; not tagged, released, installed, or activated)
+
+Version 6.2.0 adds the public `project-estimation` skill. It provides
+read-only-by-default, structured estimates for agent-led work and a compact
+design/plan checkpoint; it does not alter provider routing or the co-packaged
+native runtime.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -207,7 +212,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 12/13/17 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches this same 6.1.1
+residue is reported separately. Runtime readiness launches this same 6.2.0
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.
 

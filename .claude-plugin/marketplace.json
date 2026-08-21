@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "agent-collab",
-      "description": "Unified collaboration package with semantic actions, source-grounded context, and a verified plugin-relative direct native runtime.",
+      "description": "Unified collaboration package with semantic actions, source-grounded context, empirical project estimation, and a verified plugin-relative direct native runtime.",
       "version": "6.2.0",
       "author": {
         "name": "John Osumi"
@@ -25,7 +25,8 @@
         "zhipu",
         "moonshot",
         "grok",
-        "gemini"
+        "gemini",
+        "project-estimation"
       ],
       "license": "LicenseRef-PolyForm-Strict-1.0.0",
       "source": "./plugins/agent-collab"
