@@ -61,7 +61,7 @@ def _aggregate(release_hash: str = DIGEST) -> dict[str, object]:
 
 def _record(kind: str = "pricing") -> dict[str, object]:
     if kind == "pricing":
-        value = {"record_id": "r1", "model": "m", "modality": "text", "tier": "standard", "token_class": "input", "currency": "USD", "unit": "token", "amount_microusd": 1, "amount_text": "0.000001", "modifiers": []}
+        value = {"record_id": "r1", "model": "m", "modality": "text", "tier": "standard", "token_class": "input", "currency": "USD", "unit": "per_million_tokens", "amount_microusd": 1, "amount_text": "0.000001", "modifiers": []}
     else:
         value = {"record_id": "r1", "model": "m", "modality": "text", "tier": "standard", "limit_kind": "rpm", "limit_value": 1, "window_seconds": 60, "cooldown_seconds": 0, "modifiers": []}
     value["approved_value_sha256"] = _sha(value)
@@ -525,10 +525,10 @@ class MaintenanceVerifierTests(unittest.TestCase):
     def test_task5_public_schemas_have_nonempty_closed_request_and_result_shapes(self) -> None:
         request = json.loads((DATA_SOURCE / "estimate-request.schema.json").read_text())
         result = json.loads((DATA_SOURCE / "estimate-result.schema.json").read_text())
-        self.assertTrue({"artifact_kind", "invocation_source", "artifact_scope_hash", "auto_invocation_depth", "maturity", "phases", "dependency_edges"} <= set(request["properties"]))
-        self.assertTrue({"headline", "detail", "labels", "quantiles", "coverage"} <= set(result["properties"]))
-        self.assertTrue(result["$defs"]["headline"]["properties"])
-        self.assertTrue(result["$defs"]["detail"]["properties"])
+        self.assertTrue({"as_of_date", "artifact_kind", "invocation_source", "artifact_scope_hash", "auto_invocation_depth", "project_maturity", "phases", "dependency_edges", "routes"} <= set(request["properties"]))
+        self.assertTrue({"headline", "detail", "labels", "estimate_unavailable"} <= set(result["properties"]))
+        self.assertFalse(request["additionalProperties"])
+        self.assertFalse(result["additionalProperties"])
 
     def test_long_acyclic_fallback_chain_is_admitted(self) -> None:
         data = _fixture(self.root)

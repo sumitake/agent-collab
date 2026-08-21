@@ -118,6 +118,7 @@ REQUIRED_ROOTS = (
     "runtime_bundle.py",
     "host_policy.py",
     "migration_doctor.py",
+    "project_estimation.py",
     "knowledge_tool.py",
     "learning_ledger.py",
     "signing_policy.py",

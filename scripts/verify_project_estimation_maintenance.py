@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime as _datetime
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -18,6 +19,14 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+
+
+_PUBLIC_ESTIMATOR_PATH = Path(__file__).resolve().parents[1] / "plugins" / "agent-collab" / "project_estimation.py"
+_PUBLIC_ESTIMATOR_SPEC = importlib.util.spec_from_file_location("_shipped_project_estimation", _PUBLIC_ESTIMATOR_PATH)
+if _PUBLIC_ESTIMATOR_SPEC is None or _PUBLIC_ESTIMATOR_SPEC.loader is None:
+    raise RuntimeError("shipped project-estimation validator is unavailable")
+_PUBLIC_ESTIMATOR = importlib.util.module_from_spec(_PUBLIC_ESTIMATOR_SPEC)
+_PUBLIC_ESTIMATOR_SPEC.loader.exec_module(_PUBLIC_ESTIMATOR)
 
 
 PLUGIN = "agent-collab"
@@ -683,6 +692,10 @@ def _verify_maintenance(
                 raise ValueError(f"{name} is not canonical JSON")
         pricing, pricing_unresolved = _snapshot(pricing_document, kind="pricing", today=today, threshold=threshold)
         quota, quota_unresolved = _snapshot(quota_document, kind="quota", today=today, threshold=threshold)
+        # The shipped module is the single owner of public JSON semantics.
+        # This release verifier retains only its snapshot/receipt binding work.
+        _PUBLIC_ESTIMATOR.validate_pricing(pricing_document)
+        _PUBLIC_ESTIMATOR.validate_quota(quota_document)
         if pricing["policy_version"] != receipt["pricing_policy_version"] or pricing["policy_sha256"] != receipt["pricing_policy_sha256"] or quota["policy_version"] != receipt["pricing_policy_version"] or quota["policy_sha256"] != receipt["pricing_policy_sha256"]:
             raise ValueError("snapshot policy identity does not match receipt")
         if receipt["pricing_result_sha256"] != hashlib.sha256(_canonical(pricing)).hexdigest() or receipt["quota_result_sha256"] != hashlib.sha256(_canonical(quota)).hexdigest():
@@ -692,6 +705,7 @@ def _verify_maintenance(
             raise ValueError("receipt release manifest digest is incorrect")
         release_hash = str(receipt["release_manifest_sha256"])
         _aggregate(aggregate_document, release_hash=release_hash, today=today, receipt=receipt)
+        _PUBLIC_ESTIMATOR.validate_aggregate(aggregate_document)
         expected_notification = pricing_unresolved or quota_unresolved
         if receipt["notification_result"] not in {"not_required", "delivered"} or ((receipt["notification_result"] == "delivered") != expected_notification):
             raise ValueError("receipt notification result is inconsistent")
