@@ -773,6 +773,97 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaises(module.EstimationError):
             module.validate_result(forged)
 
+    def test_reconciliation_cost_status_is_iff_and_bound_to_current_view(self):
+        module = _load()
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _json("quota-small.json"),
+        )
+        result = module.reconcile(prior_result, _actual(), _json("pricing-small.json"))
+
+        def make_incomparable(value: dict[str, object]) -> None:
+            error = value["cost_error_current"]
+            error["status"] = "incomparable_coverage"
+            for field in (
+                "signed_error_microusd", "absolute_error_microusd",
+                "log_ratio_millionths", "within_p50_p95",
+            ):
+                error[field] = None
+
+        forged = copy.deepcopy(result)
+        make_incomparable(forged)
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+        forged = copy.deepcopy(result)
+        make_incomparable(forged)
+        forged["cost_error_current"]["actual_known_basis_points"] = 9999
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+        forged = copy.deepcopy(result)
+        make_incomparable(forged)
+        forged["cost_error_current"]["actual_repriced_microusd"] = None
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+    def test_reconciliation_timeline_statuses_and_quota_coverage_are_cross_bound(self):
+        module = _load()
+        prior_result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _json("quota-small.json"),
+        )
+        complete = module.reconcile(prior_result, _actual(), _json("pricing-small.json"))
+
+        forged = copy.deepcopy(complete)
+        calendar = forged["duration_errors"]["calendar"]
+        calendar["status"] = "prior_unavailable"
+        for field in (
+            "planned_p50_seconds", "planned_p95_seconds", "signed_error_seconds",
+            "absolute_error_seconds", "log_ratio_millionths", "within_p50_p95",
+        ):
+            calendar[field] = None
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+        forged = copy.deepcopy(complete)
+        calendar = forged["duration_errors"]["calendar"]
+        calendar["status"] = "prior_unavailable"
+        for field in (
+            "planned_p50_seconds", "planned_p95_seconds", "signed_error_seconds",
+            "absolute_error_seconds", "log_ratio_millionths", "within_p50_p95",
+        ):
+            calendar[field] = None
+        for field in ("wait_errors", "quota_error"):
+            quota = forged[field]["quota"] if field == "wait_errors" else forged[field]
+            quota["status"] = "prior_unavailable"
+            for name in ("planned_p50_seconds", "signed_error_seconds", "absolute_error_seconds"):
+                quota[name] = None
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
+        unknown_prior = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _unknown_quota(),
+        )
+        forged = module.reconcile(unknown_prior, _actual(), _json("pricing-small.json"))
+        calendar = forged["duration_errors"]["calendar"]
+        calendar.update({
+            "status": "comparable", "planned_p50_seconds": 1,
+            "planned_p95_seconds": 1, "signed_error_seconds": 4999,
+            "absolute_error_seconds": 4999,
+            "log_ratio_millionths": module._log_ratio_millionths(5000, 1),
+            "within_p50_p95": False,
+        })
+        quota_wait = forged["wait_errors"]["quota"]
+        quota_wait.update({
+            "status": "comparable", "planned_p50_seconds": 0,
+            "signed_error_seconds": 1000, "absolute_error_seconds": 1000,
+        })
+        forged["quota_error"].update(quota_wait)
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+
     def test_unknown_quota_status_requires_resolution_driver_and_prerequisite(self):
         module = _load()
         result = module.estimate(
@@ -810,6 +901,21 @@ class ReconciliationTests(unittest.TestCase):
         invalid["detail"]["cohort"]["selected_node"] = "project_type.greenfield"
         with self.assertRaises(module.EstimationError):
             module.validate_result(invalid)
+
+    def test_estimate_evidence_coverage_is_bound_to_cost_and_quota_detail(self):
+        module = _load()
+        result = module.estimate(
+            _json("request-enhancement.json"), _json("prior-small.json"),
+            _json("pricing-small.json"), _json("quota-small.json"),
+        )
+        forged = copy.deepcopy(result)
+        forged["headline"]["evidence_coverage"]["quota_basis_points"] -= 1
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
+        forged = copy.deepcopy(result)
+        forged["headline"]["evidence_coverage"]["pricing_basis_points"] -= 1
+        with self.assertRaises(module.EstimationError):
+            module.validate_result(forged)
 
 
 if __name__ == "__main__":

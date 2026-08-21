@@ -1059,6 +1059,8 @@ def _validate_available_result(row: dict[str, object]) -> None:
     if type(quota["routes"]) is not list or len(quota["routes"]) > 32: raise EstimationError("result quota routes are invalid")
     for item in quota["routes"]:
         route = _exact(item, {"route_id", "provider", "delay_seconds", "coverage"}, "result.quota.route"); _identifier(route["route_id"], "result.quota.route_id"); _identifier(route["provider"], "result.quota.provider"); _integer(route["delay_seconds"], "result.quota.delay_seconds"); _enum(route["coverage"], {"known", "unknown"}, "result.quota.coverage")
+    if coverage["quota_basis_points"] != quota_coverage or coverage["pricing_basis_points"] != known:
+        raise EstimationError("result headline/detail evidence coverage is inconsistent")
     cohort = _exact(detail["cohort"], {"expected_path", "selected_node", "fallback_path", "backoff_levels"}, "result.detail.cohort")
     for field in ("expected_path", "fallback_path"):
         if type(cohort[field]) is not list or not cohort[field]: raise EstimationError(f"result cohort {field} is invalid")
@@ -1102,6 +1104,7 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
                 raise EstimationError("reconciliation duration derivation is inconsistent")
         elif name != "calendar" or any(error[field] is not None for field in (*derived, "within_p50_p95")):
             raise EstimationError("only calendar may carry null prior-unavailable duration evidence")
+    calendar_status = duration["calendar"]["status"]
     wait = _mapping(row["wait_errors"], "reconciliation.wait_errors")
     if set(wait) != {"operator", "vendor", "quota"}: raise EstimationError("reconciliation wait errors are invalid")
     for name, item in wait.items():
@@ -1128,6 +1131,11 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
     elif any(quota[field] is not None for field in ("planned_p50_seconds", "signed_error_seconds", "absolute_error_seconds")):
         raise EstimationError("prior-unavailable quota error must have null derived fields")
     if quota_status != wait["quota"]["status"]: raise EstimationError("quota error statuses are inconsistent")
+    quota_coverage = int(quota["coverage_basis_points"])
+    if calendar_status != quota_status:
+        raise EstimationError("calendar and quota reconciliation statuses are inconsistent")
+    if (quota_status == "comparable") is not (quota_coverage == 10_000):
+        raise EstimationError("quota reconciliation status and coverage are inconsistent")
     if {key: quota[key] for key in ("status", "planned_p50_seconds", "actual_seconds", "signed_error_seconds", "absolute_error_seconds")} != wait["quota"]:
         raise EstimationError("quota and wait error evidence are inconsistent")
     cohort = _exact(row["cohort"], {"selected_node", "fallback_path", "backoff_levels"}, "reconciliation.cohort")
@@ -1154,9 +1162,16 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
         if cost_error[field] is not None: _integer(cost_error[field], f"reconciliation.cost_error.{field}")
     planned_coverage = _integer(cost_error["planned_known_basis_points"], "reconciliation.cost_error.planned_coverage", 0, 10_000)
     actual_coverage = _integer(cost_error["actual_known_basis_points"], "reconciliation.cost_error.actual_coverage", 0, 10_000)
+    current_view = cost_views["current_api_equivalent"]
+    if actual_coverage != current_view["known_basis_points"] or cost_error["actual_repriced_microusd"] != current_view["known_microusd"]:
+        raise EstimationError("reconciliation cost error is not bound to the current cost view")
+    comparable = planned_coverage == 10_000 and actual_coverage == 10_000 and all(
+        cost_error[field] is not None
+        for field in ("planned_p50_microusd", "planned_p95_microusd", "actual_repriced_microusd")
+    )
+    if (status == "comparable_full") is not comparable:
+        raise EstimationError("reconciliation cost comparability status is inconsistent")
     if status == "comparable_full":
-        if planned_coverage != 10_000 or actual_coverage != 10_000 or any(cost_error[field] is None for field in ("planned_p50_microusd", "planned_p95_microusd", "actual_repriced_microusd")):
-            raise EstimationError("comparable cost error requires fully priced values")
         _integer(cost_error["signed_error_microusd"], "reconciliation.cost_error.signed", -1_000_000_000_000_000, 1_000_000_000_000_000)
         _integer(cost_error["absolute_error_microusd"], "reconciliation.cost_error.absolute")
         _integer(cost_error["log_ratio_millionths"], "reconciliation.cost_error.log", -1_000_000_000_000_000, 1_000_000_000_000_000)
