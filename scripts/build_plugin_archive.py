@@ -594,12 +594,26 @@ def _member_plan(
     differences = skill_tree_differences(plugin_path / "skills", SPECS_DIR)
     if differences:
         raise ValueError("skill tree is not canonical: " + ", ".join(differences))
+    estimation_relatives = list(PUBLIC_ESTIMATION_MEMBERS)
+    # The allowed set is closed, while the notification data member is
+    # conditional on the already-admitted receipt.  A missing/malformed
+    # receipt intentionally leaves the optional member out; the mandatory
+    # receipt/data members then fail the normal source check and the release
+    # verifier remains the authoritative gate.
+    notification = plugin_path / "project-estimation-data" / "maintenance-receipt.json"
+    try:
+        _safe_source(notification)
+        receipt = json.loads(notification.read_text(encoding="utf-8"))
+        if receipt.get("notification_result") != "delivered":
+            estimation_relatives = [path for path in estimation_relatives if path.name != "operator-notification.json"]
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError, AttributeError):
+        estimation_relatives = [path for path in estimation_relatives if path.name != "operator-notification.json"]
     relatives = [
         *EXACT_MANIFEST_MEMBERS,
         *(Path(name) for name in REQUIRED_ROOTS if name not in {".claude-plugin", ".codex-plugin", "skills"}),
         Path("skills"),
         *(Path("skills") / relative for relative in expected_skill_relpaths(SPECS_DIR)),
-        *PUBLIC_ESTIMATION_MEMBERS,
+        *estimation_relatives,
     ]
     members: dict[str, Path | None] = {}
     if mode == "activation":

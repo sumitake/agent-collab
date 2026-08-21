@@ -16,6 +16,6 @@
     "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "date": {"type": "string", "format": "date"},
-    "object": {"type": "object", "additionalProperties": true, "maxProperties": 100}
+    "object": {"type": "object", "additionalProperties": false, "maxProperties": 100, "properties": {}}
   }
 }
