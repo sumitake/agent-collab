@@ -23,6 +23,11 @@ try:
 except ModuleNotFoundError:  # direct `python3 scripts/build_plugin_archive.py`
     from skill_structure import expected_skill_relpaths, skill_tree_differences
 
+try:
+    from scripts.verify_project_estimation_maintenance import PUBLIC_ESTIMATION_MEMBERS
+except ModuleNotFoundError:  # direct script execution from scripts/
+    from verify_project_estimation_maintenance import PUBLIC_ESTIMATION_MEMBERS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = REPO_ROOT / "skill-specs"
@@ -594,6 +599,7 @@ def _member_plan(
         *(Path(name) for name in REQUIRED_ROOTS if name not in {".claude-plugin", ".codex-plugin", "skills"}),
         Path("skills"),
         *(Path("skills") / relative for relative in expected_skill_relpaths(SPECS_DIR)),
+        *PUBLIC_ESTIMATION_MEMBERS,
     ]
     members: dict[str, Path | None] = {}
     if mode == "activation":

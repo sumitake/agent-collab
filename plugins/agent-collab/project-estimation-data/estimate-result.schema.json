@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "estimate-result.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "status", "scope_hash", "generated_date", "source_cutoff_date"],
+  "properties": {
+    "schema_version": {"const": 1}, "request_id": {"$ref": "#/$defs/identifier"},
+    "status": {"enum": ["available", "insufficient_scope", "unavailable", "reconciled"]},
+    "scope_hash": {"$ref": "#/$defs/sha256"}, "generated_date": {"$ref": "#/$defs/date"}, "source_cutoff_date": {"$ref": "#/$defs/date"},
+    "headline": {"$ref": "#/$defs/object"}, "detail": {"$ref": "#/$defs/object"}, "labels": {"$ref": "#/$defs/object"},
+    "estimate_unavailable": {"enum": ["insufficient_scope", "recursive_invocation", "stale_pricing", "unknown_quota", "privacy_blocked"]},
+    "aggregate_sha256": {"$ref": "#/$defs/sha256"}, "pricing_sha256": {"$ref": "#/$defs/sha256"}, "quota_sha256": {"$ref": "#/$defs/sha256"},
+    "actual": {"$ref": "#/$defs/object"}, "reconcile": {"$ref": "#/$defs/object"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "date": {"type": "string", "format": "date"},
+    "object": {"type": "object", "additionalProperties": true, "maxProperties": 100}
+  }
+}

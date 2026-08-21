@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from tests.test_direct_runtime_public_contract import _wire_descriptor
 
@@ -77,6 +78,19 @@ class PluginArchiveTests(unittest.TestCase):
         oversized = b" " * (archive.runtime_bundle.MAX_MANIFEST_BYTES + 1) + encoded
         with self.assertRaises(ValueError):
             archive._parse_manifest(oversized)
+
+    def test_project_estimation_member_plan_is_closed_and_non_recursive(self) -> None:
+        archive = _load()
+        plugin = ROOT / "plugins" / "agent-collab"
+        with mock.patch.object(archive, "_safe_source"), \
+                mock.patch.object(archive, "_require_no_development_members"), \
+                mock.patch.object(archive, "_require_exact_manifest_trees"), \
+                mock.patch.object(archive, "skill_tree_differences", return_value=[]), \
+                mock.patch.object(archive, "expected_skill_relpaths", return_value=[]):
+            names = {name for name, _ in archive._member_plan(plugin, mode="policy-only")}
+        self.assertIn("project-estimation-data/estimate-request.schema.json", names)
+        self.assertIn("project-estimation-data/maintenance-receipt.json", names)
+        self.assertNotIn("project-estimation-data/raw-observations.json", names)
 
 
 if __name__ == "__main__":

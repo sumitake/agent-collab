@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "pricing-snapshot.schema.json", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "kind", "status", "retrieved_date", "last_successful_official_date", "original_last_good_date", "entries", "operator_notification_required", "failures", "material_unpriced", "uncertainty_basis_points"],
+  "properties": {"schema_version": {"const": 1}, "kind": {"const": "pricing"}, "status": {"enum": ["official", "proxy", "estimated", "estimated_stale", "unpriced"]}, "retrieved_date": {"$ref": "#/$defs/date_or_null"}, "last_successful_official_date": {"$ref": "#/$defs/date_or_null"}, "original_last_good_date": {"$ref": "#/$defs/date_or_null"}, "entries": {"type": "object", "maxProperties": 1000, "additionalProperties": true}, "operator_notification_required": {"type": "boolean"}, "failures": {"type": "array", "maxItems": 1000, "items": {"type": "string", "maxLength": 512}}, "material_unpriced": {"type": "boolean"}, "uncertainty_basis_points": {"type": "integer", "minimum": 0, "maximum": 100000}}
+  ,"$defs": {"date": {"type": "string", "format": "date"}, "date_or_null": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}}
+}

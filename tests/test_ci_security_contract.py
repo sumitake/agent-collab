@@ -144,6 +144,14 @@ class CiSecurityContractTests(unittest.TestCase):
         self.assertIn("printf 'archive_name=%s.v%s.plugin\\n'", text)
         self.assertNotIn("printf 'archive_name=%s v%s.plugin\\n'", text)
 
+    def test_release_verifies_project_estimation_before_archive(self) -> None:
+        text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        verify = text.index("scripts/verify_project_estimation_maintenance.py")
+        archive = text.index("scripts/build_plugin_archive.py", verify)
+        release = text.index("gh release create", archive)
+        self.assertLess(verify, archive)
+        self.assertLess(archive, release)
+
     def test_public_workflows_never_select_self_hosted_runners(self) -> None:
         for name, text in self._workflow_texts().items():
             with self.subTest(workflow=name):

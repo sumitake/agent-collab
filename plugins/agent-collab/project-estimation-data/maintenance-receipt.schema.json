@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "maintenance-receipt.schema.json", "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "source_manifest_sha256", "inventory", "admitted_sha256", "calibration_outcome", "pricing_outcome", "quota_outcome", "pricing_original_last_good_date", "quota_original_last_good_date", "operator_notification_required", "receipt_sha256"],
+  "properties": {
+    "schema_version": {"const": 1}, "version": {"$ref": "#/$defs/version"}, "estimator_method_version": {"$ref": "#/$defs/version"}, "generated_date": {"$ref": "#/$defs/date"}, "source_cutoff_date": {"$ref": "#/$defs/date"}, "policy_version": {"$ref": "#/$defs/version"}, "policy_sha256": {"$ref": "#/$defs/sha256"}, "source_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "inventory": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,127}\\.schema\\.json$"}}, "admitted_sha256": {"type": "object", "minProperties": 1, "maxProperties": 100, "additionalProperties": {"$ref": "#/$defs/sha256"}},
+    "calibration_outcome": {"enum": ["fresh", "last_good", "blocked"]}, "calibration_original_last_good_date": {"$ref": "#/$defs/date_or_null"}, "pricing_outcome": {"enum": ["official", "proxy", "estimated", "estimated_stale", "unpriced"]}, "quota_outcome": {"enum": ["official", "proxy", "estimated", "estimated_stale", "unknown"]}, "pricing_original_last_good_date": {"$ref": "#/$defs/date_or_null"}, "quota_original_last_good_date": {"$ref": "#/$defs/date_or_null"}, "operator_notification_required": {"type": "boolean"}, "receipt_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {"date": {"type": "string", "format": "date"}, "date_or_null": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "version": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"}}
+}
