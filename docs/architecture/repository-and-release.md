@@ -14,7 +14,7 @@ contributors do not need access to it.
 | `skill-specs/` | current | Editable source for collaboration skills. | Edit here; do not hand-edit generated copies. |
 | `plugins/agent-collab/skills/` | generated/current | Host-readable installed skill contracts. | Regenerate with `scripts/build_skills.py`. |
 | `plugins/agent-collab/` public Python modules | current | Coordinator, identity/authority policy, migration, runtime verification/management, and signing policy. | Keep the public module inventory closed. |
-| `plugins/agent-collab/project-estimation-data/` | repository-only contracts; release data pending | Strict request/result and maintenance schemas plus, after governed admission, privacy-safe aggregate/pricing/quota data and a version-bound receipt. | Never add raw evidence; admit only closed, receipt-declared members. |
+| `plugins/agent-collab/project-estimation-data/` | current bootstrap contracts and evidence | Strict request/result and maintenance schemas plus one privacy-safe aggregate/pricing/quota handoff and version-bound receipt. | Never add raw evidence; admit only closed, receipt-declared members. |
 | `plugins/agent-collab/.claude-plugin/` and `.codex-plugin/` | current | Host manifests for the same name and version. | Update together. |
 | `.claude-plugin/` and `.agents/plugins/` | generated/current | Claude-compatible and Codex marketplace views. | Regenerate with `scripts/build_marketplace.py`. |
 | `plugins/agent-collab/runtime-manifest.json` | current contract | Closed runtime artifact and route metadata. | Generated/reviewed release input; never use it to infer host activation. |
@@ -101,11 +101,12 @@ operator notification if still unsuccessful. Expired pricing becomes
 `unpriced`; expired quota becomes `unknown`. Structural, privacy, provenance,
 integrity, schema, and material-regression failures always block.
 
-The v6.2.0 development branch currently has the implementation and schemas but
-no promoted empirical aggregate, pricing/quota snapshots, or receipt because
-the initial governed promotion failed. Local and remote release gates must
-therefore reject it. No v6.2.0 tag, release, installation, activation, or
-loaded-version claim exists. See [Project estimation](project-estimation.md).
+The v6.2.0 development branch has admitted a governed bootstrap aggregate,
+pricing/quota snapshots, notification, and schema-3 receipt. The enhancement
+duration prior is descriptive; greenfield and unsupported metric families
+remain unavailable. The bootstrap is not promoted calibration. No v6.2.0 tag,
+release, installation, activation, or loaded-version claim exists. See
+[Project estimation](project-estimation.md).
 
 ### Policy-only
 

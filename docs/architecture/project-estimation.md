@@ -19,16 +19,15 @@ consents to an output path.
 ## Current status
 
 The skill, helper, schemas, planning checkpoints, and release-verification
-source are implemented on the v6.2.0 development branch. The initial governed
-empirical promotion did not complete, so this repository does **not** contain a
-production aggregate prior, pricing snapshot, quota snapshot, or maintenance
-receipt. Fixture data is test evidence only and must not be represented as a
-production calibration.
+source are implemented on the v6.2.0 development branch. A governed,
+content-addressed bootstrap handoff is admitted from the frozen producer. It
+contains a supported enhancement duration hierarchy but no greenfield root and
+no published token, wait, rework, quota-delay, or marginal-cash metrics.
 
-Consequently, v6.2.0 is not currently releasable from this branch. It has not
-been tagged, published, installed, activated, or observed as loaded. The most
-recent tagged release remains v6.1.1. A future governed release must first
-produce and admit a complete privacy-safe maintenance handoff.
+This is production maintenance evidence in the explicit `bootstrap` state, not
+a promoted calibration claim. Its estimates are descriptive and never high
+confidence. v6.2.0 has not been tagged, published, installed, activated, or
+observed as loaded; the most recent tagged release remains v6.1.1.
 
 ## Mental model
 
@@ -121,8 +120,10 @@ python3 "<plugin-root>/project_estimation.py" estimate \
   --quota QUOTA-SNAPSHOT.json
 ```
 
-No production artifact filenames are shown as packaged defaults because none
-are admitted in the current branch. `--out RESULT.json` is permitted only when
+The packaged bootstrap files are the corresponding lowercase
+`aggregate-prior.json`, `pricing-snapshot.json`, and `quota-snapshot.json`
+members under `project-estimation-data/`.
+`--out RESULT.json` is permitted only when
 the validated request has `persistence_consent: true`; otherwise JSON is
 written to stdout.
 
@@ -178,6 +179,15 @@ to today. Known and unpriced basis-point coverage prevents an unavailable rate
 from being treated as zero. Unknown quota leaves focused execution and cost
 coverage unchanged while making the quota-dependent calendar quantiles
 unavailable and retaining known calendar floors.
+
+The calibration block names `bootstrap` or `promoted`, its evidence-through
+date, metric-specific support, limitations, rounded exclusion-count floor, and
+confidence basis. Bootstrap is descriptive and cannot be `high`. When the
+token prior is absent, cost is `unavailable_no_token_prior`: P50/P80/P95 are
+null and both known and unpriced coverage are zero, because there is no token
+denominator to allocate. This is neither a zero-cost claim nor an estimator
+failure. A greenfield request against the current enhancement-only bootstrap
+returns `no_compatible_prior`.
 
 Detailed data is already present under `detail` in the result. A user can ask
 for a route, phase, token-class, quota, cash, or reconciliation breakdown; this
@@ -247,7 +257,8 @@ material regression failures always block regardless of age.
 The public repository then validates the receipt twice: locally through
 `scripts/check_release_consistency.py` before a release cut, and remotely in
 the release workflow before archive construction and publication. The current
-branch has no admitted receipt, so that gate must fail closed.
+branch's admitted bootstrap receipt passes that local consumer gate; release,
+tag, installation, and activation remain separate operations and evidence.
 
 Rollback selects the previous immutable, admitted aggregate and metadata only
 while their freshness and compatibility remain valid. It never mutates an old

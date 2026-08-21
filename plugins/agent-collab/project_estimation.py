@@ -46,6 +46,18 @@ _LABELS = {
     "api_equivalent": "not billed cash",
     "non_additivity": "current_execution_api_equivalent_and_actual_cash_are_non_additive",
 }
+_CALIBRATION_LIMITATIONS = {
+    "actual_marginal_cash_unavailable", "bootstrap_descriptive_only",
+    "enhancement_prior_unavailable", "git_event_fallback_only",
+    "greenfield_prior_unavailable", "holdout_unavailable",
+    "informational_backtest_below_policy", "quota_delay_prior_unavailable",
+    "rework_review_prior_unavailable", "token_prior_unavailable",
+    "wait_class_prior_unavailable",
+}
+_METRIC_FAMILIES = {
+    "actual_marginal_cash", "focused_duration", "quota_delay",
+    "rework_review", "token_usage", "wait_class",
+}
 
 
 class EstimationError(ValueError):
@@ -364,21 +376,30 @@ def _quantile_family(value: object, field: str, identity: str, choices: set[str]
 
 
 def validate_aggregate(value: object) -> dict[str, object]:
-    fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "nodes"}
+    fields = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "policy_version", "policy_sha256", "seed", "source_manifest_sha256", "calibration_state", "excluded_observation_count_floor", "exclusion_count_rounding", "limitations", "nodes"}
     row = _exact(_admit_document(value, "aggregate-prior"), fields, "aggregate-prior")
-    if type(row["schema_version"]) is not int or row["schema_version"] != 1 or row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate-prior version is unsupported")
+    if type(row["schema_version"]) is not int or row["schema_version"] != 2 or row["estimator_method_version"] != "empirical-v3": raise EstimationError("aggregate-prior version is unsupported")
     generated = _date(row["generated_date"], "aggregate.generated_date"); cutoff = _date(row["source_cutoff_date"], "aggregate.source_cutoff_date")
     if cutoff > generated: raise EstimationError("aggregate source cutoff follows generated date")
     _version(row["policy_version"], "aggregate.policy_version"); _sha(row["policy_sha256"], "aggregate.policy_sha256")
     _integer(row["seed"], "aggregate.seed", 0, 2_147_483_647); _sha(row["source_manifest_sha256"], "aggregate.source_manifest_sha256")
+    state = _enum(row["calibration_state"], {"bootstrap", "promoted"}, "aggregate.calibration_state")
+    excluded = _integer(row["excluded_observation_count_floor"], "aggregate.excluded_observation_count_floor")
+    if excluded % 20 or row["exclusion_count_rounding"] != "floor_to_public_k":
+        raise EstimationError("aggregate exclusion count is invalid")
+    limitations = _inert_strings(row["limitations"], "aggregate.limitations")
+    if limitations != sorted(set(limitations)) or not set(limitations) <= _CALIBRATION_LIMITATIONS:
+        raise EstimationError("aggregate limitations are invalid")
+    if (state == "bootstrap") != ("bootstrap_descriptive_only" in limitations):
+        raise EstimationError("aggregate calibration state and limitations disagree")
     if type(row["nodes"]) is not list or not row["nodes"] or len(row["nodes"]) > 10_000: raise EstimationError("aggregate nodes are invalid")
-    allowed = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "fallback_parent", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256", "source_eras", "phase_duration_quantiles", "token_class_quantiles", "rework_review_quantiles", "wait_class_quantiles", "calibration_quality", "drift_indicators", "uncertainty_floors", "pricing_snapshot"}
-    required = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256"}
+    allowed = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "fallback_parent", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256", "source_eras", "phase_duration_quantiles", "token_class_quantiles", "rework_review_quantiles", "wait_class_quantiles", "calibration_quality", "drift_indicators", "uncertainty_floors", "pricing_snapshot", "metric_support"}
+    required = {"schema_version", "estimator_method_version", "generated_date", "source_cutoff_date", "hierarchy_node", "sample_count", "effective_sample_size", "aggregate_sha256", "release_manifest_sha256", "metric_support"}
     names: list[str] = []; parents: dict[str, str | None] = {}
     metric_fields = {"calibration_quality": {"holdout_count", "p80_coverage_basis_points", "p95_coverage_basis_points"}, "drift_indicators": {"duration_drift_basis_points", "token_drift_basis_points"}, "uncertainty_floors": {"duration_basis_points", "token_basis_points"}}
     for index, item in enumerate(row["nodes"]):
         node_row = _exact(item, allowed, f"aggregate.nodes[{index}]", required)
-        if type(node_row["schema_version"]) is not int or node_row["schema_version"] != 1 or node_row["estimator_method_version"] != "empirical-v2": raise EstimationError("aggregate node version is unsupported")
+        if type(node_row["schema_version"]) is not int or node_row["schema_version"] != 1 or node_row["estimator_method_version"] != "empirical-v3": raise EstimationError("aggregate node version is unsupported")
         if _date(node_row["generated_date"], "aggregate.node.generated_date") != generated or _date(node_row["source_cutoff_date"], "aggregate.node.source_cutoff_date") != cutoff: raise EstimationError("aggregate node dates do not match aggregate")
         name = _node(node_row["hierarchy_node"], "aggregate.hierarchy_node")
         names.append(name); parent = node_row.get("fallback_parent")
@@ -391,6 +412,29 @@ def validate_aggregate(value: object) -> dict[str, object]:
         families = (("phase_duration_quantiles", "phase", _PHASE_PRIORS | {"overall"}), ("token_class_quantiles", "token_class", None), ("rework_review_quantiles", "kind", {"review", "rework"}), ("wait_class_quantiles", "wait_class", None))
         for field, identity, choices in families:
             if field in node_row: _quantile_family(node_row[field], f"aggregate.{field}", identity, choices)
+        support = _exact(node_row["metric_support"], _METRIC_FAMILIES, "aggregate.metric_support")
+        for metric, item2 in support.items():
+            record = _exact(item2, {"status", "eligible_count"}, f"aggregate.metric_support.{metric}")
+            status = _enum(record["status"], {"published", "suppressed_below_k", "unavailable"}, f"aggregate.metric_support.{metric}.status")
+            count = record["eligible_count"]
+            if status == "published":
+                _integer(count, f"aggregate.metric_support.{metric}.eligible_count", 20)
+            elif status == "unavailable":
+                if type(count) is not int or count != 0: raise EstimationError("unavailable metric support must have zero eligible count")
+            elif count is not None:
+                raise EstimationError("suppressed metric support must not expose eligible count")
+        if support["focused_duration"]["status"] != "published" or support["focused_duration"]["eligible_count"] != node_row["sample_count"]:
+            raise EstimationError("focused duration support must match sample count")
+        presence = {
+            "token_usage": bool(node_row.get("token_class_quantiles")),
+            "rework_review": bool(node_row.get("rework_review_quantiles")),
+            "wait_class": bool(node_row.get("wait_class_quantiles")),
+        }
+        for metric, present in presence.items():
+            if present != (support[metric]["status"] == "published"):
+                raise EstimationError(f"aggregate {metric} support disagrees with quantile presence")
+        if support["quota_delay"] != support["wait_class"]:
+            raise EstimationError("quota delay support must match wait class support")
         for field, permitted in metric_fields.items():
             if field in node_row:
                 metric_object = _mapping(node_row[field], f"aggregate.{field}")
@@ -791,7 +835,7 @@ def _split_rows(phases: Sequence[Mapping[str, object]], phase_samples: Mapping[s
 
 
 def _identities(request: Mapping[str, object], prior: Mapping[str, object], pricing: Mapping[str, object], quota: Mapping[str, object]) -> dict[str, object]:
-    return {"schema_version": 1, "result_kind": "estimate", "estimator_method_version": "empirical-sim-v1", "scope_hash": artifact_scope_hash(request), "prior_sha256": hashlib.sha256(_canonical(prior)).hexdigest(), "pricing_sha256": hashlib.sha256(_canonical(pricing)).hexdigest(), "quota_sha256": hashlib.sha256(_canonical(quota)).hexdigest(), "seed": request.get("seed", prior["seed"]), "simulation_count": SIMULATION_COUNT, "generated_date": request["as_of_date"], "source_cutoff_date": prior["source_cutoff_date"]}
+    return {"schema_version": 2, "result_kind": "estimate", "estimator_method_version": "empirical-sim-v2", "scope_hash": artifact_scope_hash(request), "prior_sha256": hashlib.sha256(_canonical(prior)).hexdigest(), "pricing_sha256": hashlib.sha256(_canonical(pricing)).hexdigest(), "quota_sha256": hashlib.sha256(_canonical(quota)).hexdigest(), "seed": request.get("seed", prior["seed"]), "simulation_count": SIMULATION_COUNT, "generated_date": request["as_of_date"], "source_cutoff_date": prior["source_cutoff_date"]}
 
 
 def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing: Mapping[str, object], quota: Mapping[str, object]) -> dict[str, object]:
@@ -876,7 +920,7 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
     total_wait_q = _q(total_wait_samples)
     total_tokens = sum(known_token_samples) + sum(unpriced_token_samples)
     known_basis = 0 if total_tokens == 0 else sum(known_token_samples) * 10_000 // total_tokens
-    unpriced_basis = 10_000 - known_basis
+    unpriced_basis = 0 if not token_rows else 10_000 - known_basis
     known_cost_q = {"p50": None, "p80": None, "p95": None} if not routes or not token_rows or sum(known_token_samples) == 0 else _q(cost_samples)
     if known_cost_q["p95"] is not None: known_cost_q["p95"] = _widen(int(known_cost_q["p95"]), token_floor)
     dag_makespans = [schedule.makespan for schedule in schedules]
@@ -922,8 +966,8 @@ def estimate(request: Mapping[str, object], prior: Mapping[str, object], pricing
             "focused_agent_wall_clock_hours": _hours_q(focused_q), "calendar_estimate_status": calendar_status,
             "calendar_elapsed_hours": full_calendar_hours, "calendar_known_floor_hours": _hours_q(calendar_q),
             "wait_decomposition_hours": {"operator": _hours_q(operator_q), "vendor": _hours_q(vendor_q), "quota": full_quota_hours, "total": full_total_wait_hours},
-            "api_equivalent_cost_current": {"known_microusd": known_cost_q, "known_basis_points": known_basis, "unpriced_basis_points": unpriced_basis},
-            "calibration": {"selected_node": node["hierarchy_node"], "path": path, "sample_count": node["sample_count"], "effective_sample_size": node["effective_sample_size"], "age_days": calibration_age, "confidence": "high" if not missing_levels and duration_floor < 1000 else "moderate" if duration_floor < 3000 else "low", "base_duration_uncertainty_basis_points": base_duration_floor, "base_token_uncertainty_basis_points": base_token_floor, "snapshot_pricing_uncertainty_basis_points": pricing2["uncertainty_basis_points"], "snapshot_quota_uncertainty_basis_points": quota2["uncertainty_basis_points"], "uncertainty_floor_basis_points": duration_floor, "token_uncertainty_floor_basis_points": token_floor, "backoff_penalty_basis_points": backoff_penalty},
+            "api_equivalent_cost_current": {"status": "unavailable_no_token_prior" if not token_rows else "available" if unpriced_basis == 0 else "partial_unpriced", "known_microusd": known_cost_q, "known_basis_points": known_basis, "unpriced_basis_points": unpriced_basis},
+            "calibration": {"state": prior2["calibration_state"], "evidence_through_date": prior2["source_cutoff_date"], "limitations": list(prior2["limitations"]), "confidence_basis": "bootstrap_descriptive" if prior2["calibration_state"] == "bootstrap" else "promoted_calibrated", "metric_support": dict(node["metric_support"]), "excluded_observation_count_floor": prior2["excluded_observation_count_floor"], "exclusion_count_rounding": prior2["exclusion_count_rounding"], "selected_node": node["hierarchy_node"], "path": path, "sample_count": node["sample_count"], "effective_sample_size": node["effective_sample_size"], "age_days": calibration_age, "confidence": "low" if prior2["calibration_state"] == "bootstrap" else "high" if not missing_levels and duration_floor < 1000 else "moderate" if duration_floor < 3000 else "low", "base_duration_uncertainty_basis_points": base_duration_floor, "base_token_uncertainty_basis_points": base_token_floor, "snapshot_pricing_uncertainty_basis_points": pricing2["uncertainty_basis_points"], "snapshot_quota_uncertainty_basis_points": quota2["uncertainty_basis_points"], "uncertainty_floor_basis_points": duration_floor, "token_uncertainty_floor_basis_points": token_floor, "backoff_penalty_basis_points": backoff_penalty},
             "pricing": {"aggregate_state": aggregate_pricing_state, "providers": pricing_providers},
             "assumptions": list(request2["assumptions"]), "critical_path": critical_path, "critical_path_basis": "dag_makespan_p80", "planned_concurrency": cap,
             "uncertainty_drivers": uncertainty_drivers, "prerequisites": ["resolve_unknown_quota"] if calendar_status != "complete" else [], "splits": splits,
@@ -983,17 +1027,46 @@ def _validate_available_result(row: dict[str, object]) -> None:
     for name in ("operator", "vendor"): _hours_quantiles(waits[name], f"result.headline.wait.{name}")
     quota_hours, quota_hours_numeric = _nullable_hours_quantiles(waits["quota"], "result.headline.wait.quota")
     total_hours, total_hours_numeric = _nullable_hours_quantiles(waits["total"], "result.headline.wait.total")
-    cost = _exact(headline["api_equivalent_cost_current"], {"known_microusd", "known_basis_points", "unpriced_basis_points"}, "result.headline.cost")
-    _validate_nullable_seconds_q(cost["known_microusd"], "result.headline.cost.known")
+    cost = _exact(headline["api_equivalent_cost_current"], {"status", "known_microusd", "known_basis_points", "unpriced_basis_points"}, "result.headline.cost")
+    cost_numeric = _validate_nullable_seconds_q(cost["known_microusd"], "result.headline.cost.known")[1]
+    cost_status = _enum(cost["status"], {"available", "partial_unpriced", "unavailable_no_token_prior"}, "result.headline.cost.status")
     known = _integer(cost["known_basis_points"], "result.headline.cost.known_basis_points", 0, 10_000); unpriced = _integer(cost["unpriced_basis_points"], "result.headline.cost.unpriced_basis_points", 0, 10_000)
-    if known + unpriced != 10_000: raise EstimationError("result cost coverage is inconsistent")
-    calibration_fields = {"selected_node", "path", "sample_count", "effective_sample_size", "age_days", "confidence", "base_duration_uncertainty_basis_points", "base_token_uncertainty_basis_points", "snapshot_pricing_uncertainty_basis_points", "snapshot_quota_uncertainty_basis_points", "uncertainty_floor_basis_points", "token_uncertainty_floor_basis_points", "backoff_penalty_basis_points"}
+    if cost_status == "unavailable_no_token_prior":
+        if cost_numeric or known != 0 or unpriced != 0: raise EstimationError("unavailable token cost must have null values and zero coverage")
+    elif known + unpriced != 10_000 or cost_numeric is not (known > 0) or (cost_status == "available") is not (unpriced == 0):
+        raise EstimationError("result cost coverage is inconsistent")
+    calibration_fields = {"state", "evidence_through_date", "limitations", "confidence_basis", "metric_support", "excluded_observation_count_floor", "exclusion_count_rounding", "selected_node", "path", "sample_count", "effective_sample_size", "age_days", "confidence", "base_duration_uncertainty_basis_points", "base_token_uncertainty_basis_points", "snapshot_pricing_uncertainty_basis_points", "snapshot_quota_uncertainty_basis_points", "uncertainty_floor_basis_points", "token_uncertainty_floor_basis_points", "backoff_penalty_basis_points"}
     calibration = _exact(headline["calibration"], calibration_fields, "result.headline.calibration")
+    state = _enum(calibration["state"], {"bootstrap", "promoted"}, "result.calibration.state")
+    _date(calibration["evidence_through_date"], "result.calibration.evidence_through_date")
+    limitations = _inert_strings(calibration["limitations"], "result.calibration.limitations")
+    if limitations != sorted(set(limitations)) or not set(limitations) <= _CALIBRATION_LIMITATIONS: raise EstimationError("result calibration limitations are invalid")
+    if (state == "bootstrap") != ("bootstrap_descriptive_only" in limitations): raise EstimationError("result calibration state and limitations disagree")
+    if calibration["evidence_through_date"] != row["source_cutoff_date"]: raise EstimationError("result calibration evidence-through date is inconsistent")
+    _enum(calibration["confidence_basis"], {"bootstrap_descriptive", "promoted_calibrated"}, "result.calibration.confidence_basis")
+    support = _exact(calibration["metric_support"], _METRIC_FAMILIES, "result.calibration.metric_support")
+    for metric, item in support.items():
+        record = _exact(item, {"status", "eligible_count"}, f"result.calibration.metric_support.{metric}")
+        status = _enum(record["status"], {"published", "suppressed_below_k", "unavailable"}, f"result.calibration.metric_support.{metric}.status")
+        if status == "published":
+            _integer(record["eligible_count"], f"result.calibration.metric_support.{metric}.eligible_count", 20)
+        elif status == "unavailable":
+            if type(record["eligible_count"]) is not int or record["eligible_count"] != 0: raise EstimationError("unavailable result metric support must have zero eligible count")
+        elif record["eligible_count"] is not None:
+            raise EstimationError("suppressed result metric support must not expose eligible count")
+    if support["quota_delay"] != support["wait_class"]:
+        raise EstimationError("result quota delay support must match wait class support")
+    excluded = _integer(calibration["excluded_observation_count_floor"], "result.calibration.excluded_observation_count_floor")
+    if excluded % 20 or calibration["exclusion_count_rounding"] != "floor_to_public_k": raise EstimationError("result calibration exclusion count is invalid")
     _node(calibration["selected_node"], "result.calibration.selected_node")
     if type(calibration["path"]) is not list or not calibration["path"]: raise EstimationError("result calibration path is invalid")
     for item in calibration["path"]: _node(item, "result.calibration.path")
-    for key in calibration_fields - {"selected_node", "path", "confidence"}: _integer(calibration[key], f"result.calibration.{key}")
+    for key in {"sample_count", "effective_sample_size", "age_days", "base_duration_uncertainty_basis_points", "base_token_uncertainty_basis_points", "snapshot_pricing_uncertainty_basis_points", "snapshot_quota_uncertainty_basis_points", "uncertainty_floor_basis_points", "token_uncertainty_floor_basis_points", "backoff_penalty_basis_points"}: _integer(calibration[key], f"result.calibration.{key}")
     _enum(calibration["confidence"], {"high", "moderate", "low"}, "result.calibration.confidence")
+    if (state == "bootstrap") != (calibration["confidence_basis"] == "bootstrap_descriptive") or (state == "bootstrap" and calibration["confidence"] == "high"):
+        raise EstimationError("result calibration confidence is inconsistent")
+    if (cost_status == "unavailable_no_token_prior") is not (support["token_usage"]["status"] != "published"):
+        raise EstimationError("result token cost status disagrees with calibration support")
     pricing = _exact(headline["pricing"], {"aggregate_state", "providers"}, "result.headline.pricing")
     _enum(pricing["aggregate_state"], {"official", "estimated_stale", "unpriced"}, "result.pricing.aggregate_state")
     if type(pricing["providers"]) is not list or len(pricing["providers"]) > 100: raise EstimationError("result pricing providers are invalid")
@@ -1019,6 +1092,8 @@ def _validate_available_result(row: dict[str, object]) -> None:
             names.add(name); _validate_seconds_q(split["duration_seconds"], f"result.splits.{field}.duration")
     coverage = _exact(headline["evidence_coverage"], {"duration_basis_points", "token_basis_points", "pricing_basis_points", "quota_basis_points"}, "result.headline.evidence_coverage")
     for key, value in coverage.items(): _integer(value, f"result.coverage.{key}", 0, 10_000)
+    if coverage["duration_basis_points"] != 10_000 or coverage["token_basis_points"] != (10_000 if support["token_usage"]["status"] == "published" else 0):
+        raise EstimationError("result metric support and evidence coverage disagree")
     detail_fields = {"focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_elapsed_seconds", "calendar_known_floor_seconds", "wait_decomposition_seconds", "allocated_overall_seconds", "phase_rows", "token_class_quantities", "route_costs", "quota", "cohort", "actual_marginal_cash_status"}
     detail = _exact(row["detail"], detail_fields, "result.detail")
     for field in ("focused_agent_wall_clock_seconds", "summed_agent_runtime_seconds", "calendar_known_floor_seconds", "allocated_overall_seconds"): _validate_seconds_q(detail[field], f"result.detail.{field}")
@@ -1186,7 +1261,7 @@ def _validate_reconciliation_result(row: dict[str, object]) -> None:
 def validate_result(value: object) -> dict[str, object]:
     row = _admit_document(value, "result")
     common = {"schema_version", "result_kind", "labels"}
-    if type(row.get("schema_version")) is not int or row.get("schema_version") != 1: raise EstimationError("result.schema_version is unsupported")
+    if type(row.get("schema_version")) is not int or row.get("schema_version") != 2: raise EstimationError("result.schema_version is unsupported")
     kind = _enum(row.get("result_kind"), {"estimate", "reconciliation"}, "result.result_kind")
     _validate_labels(row.get("labels"))
     if kind == "estimate":
@@ -1197,7 +1272,7 @@ def validate_result(value: object) -> dict[str, object]:
             _exact(row, unavailable_fields, "result"); _enum(row["estimate_unavailable"], {"insufficient_scope", "no_compatible_prior"}, "result.estimate_unavailable")
         else:
             _exact(row, available_fields, "result"); _validate_available_result(row)
-        if row["estimator_method_version"] != "empirical-sim-v1": raise EstimationError("result estimator method is unsupported")
+        if row["estimator_method_version"] != "empirical-sim-v2": raise EstimationError("result estimator method is unsupported")
         for name in ("scope_hash", "prior_sha256", "pricing_sha256", "quota_sha256"): _sha(row[name], f"result.{name}")
         _integer(row["seed"], "result.seed", 0, 2_147_483_647)
         if row["simulation_count"] != SIMULATION_COUNT: raise EstimationError("result simulation count is unsupported")
@@ -1274,7 +1349,7 @@ def reconcile(prior_result: Mapping[str, object], actual: Mapping[str, object], 
         signed = int(actual_cost) - int(planned_cost)
         cost_error = {"status": "comparable_full", "planned_p50_microusd": planned_cost, "planned_p95_microusd": planned_p95, "actual_repriced_microusd": actual_cost, "planned_known_basis_points": planned_coverage, "actual_known_basis_points": actual_coverage, "signed_error_microusd": signed, "absolute_error_microusd": abs(signed), "log_ratio_millionths": _log_ratio_millionths(int(actual_cost), int(planned_cost)), "within_p50_p95": int(planned_cost) <= int(actual_cost) <= int(planned_p95)}
     cohort = prior["detail"]["cohort"]
-    result = {"schema_version": 1, "result_kind": "reconciliation", "scope_hash": prior["scope_hash"], "prior_result_sha256": hashlib.sha256(_canonical(prior)).hexdigest(), "current_pricing_sha256": hashlib.sha256(_canonical(pricing2)).hexdigest(), "execution_pricing_sha256": hashlib.sha256(_canonical(execution)).hexdigest() if execution is not None else None, "completion_boundary": actual2["completion_boundary"], "duration_errors": duration_errors, "wait_errors": wait_errors, "concurrency_error": {"planned_concurrency": prior["headline"]["planned_concurrency"], "observed_peak_concurrency": None, "status": "unavailable"}, "quota_error": {**wait_errors["quota"], "coverage_basis_points": prior["detail"]["quota"]["coverage_basis_points"]}, "cohort": {"selected_node": cohort["selected_node"], "fallback_path": cohort["fallback_path"], "backoff_levels": cohort["backoff_levels"]}, "cost_views": {"current_api_equivalent": current_view, "execution_era_api_equivalent": execution_view, "actual_marginal_cash": dict(actual2["actual_marginal_cash"])}, "cost_error_current": cost_error, "labels": dict(_LABELS)}
+    result = {"schema_version": 2, "result_kind": "reconciliation", "scope_hash": prior["scope_hash"], "prior_result_sha256": hashlib.sha256(_canonical(prior)).hexdigest(), "current_pricing_sha256": hashlib.sha256(_canonical(pricing2)).hexdigest(), "execution_pricing_sha256": hashlib.sha256(_canonical(execution)).hexdigest() if execution is not None else None, "completion_boundary": actual2["completion_boundary"], "duration_errors": duration_errors, "wait_errors": wait_errors, "concurrency_error": {"planned_concurrency": prior["headline"]["planned_concurrency"], "observed_peak_concurrency": None, "status": "unavailable"}, "quota_error": {**wait_errors["quota"], "coverage_basis_points": prior["detail"]["quota"]["coverage_basis_points"]}, "cohort": {"selected_node": cohort["selected_node"], "fallback_path": cohort["fallback_path"], "backoff_levels": cohort["backoff_levels"]}, "cost_views": {"current_api_equivalent": current_view, "execution_era_api_equivalent": execution_view, "actual_marginal_cash": dict(actual2["actual_marginal_cash"])}, "cost_error_current": cost_error, "labels": dict(_LABELS)}
     return validate_result(result)
 
 

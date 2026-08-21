@@ -636,6 +636,7 @@ class CostQuotaTests(unittest.TestCase):
 
         no_tokens_prior = _json("prior-small.json")
         no_tokens_prior["nodes"][0]["token_class_quantiles"] = []
+        no_tokens_prior["nodes"][0]["metric_support"]["token_usage"] = {"status": "unavailable", "eligible_count": 0}
         tpm_request = _json("request-enhancement.json")
         tpm_request["routes"][0]["quota_usage"][0]["quantity"] = 2_000_000
         fallback = module.estimate(tpm_request, no_tokens_prior, _json("pricing-small.json"), _json("quota-small.json"))

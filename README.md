@@ -55,11 +55,12 @@ request or misreading a transient failure as an outage.
   [project-estimation architecture](docs/architecture/project-estimation.md)
   for public modes and examples.
 
-  The estimator source is implemented, but the initial governed empirical
-  promotion failed. No production aggregate, pricing/quota snapshot, or
-  maintenance receipt is present, so v6.2.0 remains release-blocked and has not
-  been tagged, installed, activated, or observed as loaded. Test fixtures are
-  not production calibration data.
+  A governed, content-addressed **bootstrap** handoff is now admitted: the
+  enhancement duration prior is descriptive, greenfield has no compatible
+  prior, and token, wait, rework, quota-delay, and marginal-cash omissions stay
+  typed and visible. This is not promoted calibration and never reports high
+  confidence. v6.2.0 still has not been tagged, released, installed, activated,
+  or observed as loaded.
 
 The signed provider runtime, the 12-action set, and every action's
 authority/artifact/evidence contract are unchanged from v6.1.1.

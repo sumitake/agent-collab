@@ -122,6 +122,14 @@ class ProjectEstimationSkillTests(unittest.TestCase):
                 self.assertIn("unsupported host", normalized)
                 self.assertIn("explicit invocation", normalized)
 
+    def test_package_planners_preserve_typed_unavailable_cost(self) -> None:
+        for name in PLANNERS:
+            with self.subTest(planner=name):
+                normalized = " ".join(read(ROOT / "skill-specs" / f"{name}.md").split())
+                self.assertIn("`unavailable_no_token_prior`", normalized)
+                self.assertIn("must remain visible", normalized)
+                self.assertIn("must not become zero or a workflow failure", normalized)
+
     def test_additive_version_is_consistent_across_canonical_distribution_surfaces(self) -> None:
         expected = "6.2.0"
         config = json.loads((ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8"))

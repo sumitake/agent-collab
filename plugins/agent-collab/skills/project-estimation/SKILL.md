@@ -87,6 +87,17 @@ bounded `estimated_stale` values into cost calculation and otherwise preserves
 the affected share as `unpriced`. Stale evidence retains its original
 successful retrieval date and widens uncertainty.
 
+The packaged calibration is explicitly staged. `bootstrap` publishes only
+descriptive metrics that satisfy the public cohort threshold; it never reports
+high confidence. `promoted` means the governed promotion gate and baseline
+binding passed. Always expose the evidence-through date, limitations, metric
+support, exclusion-count floor, and confidence basis. A missing token prior is
+`unavailable_no_token_prior`: cost quantiles are null and both known and
+unpriced coverage are zero. Do not convert that typed omission to zero cost or
+to an estimator/workflow failure. Likewise, absent wait, rework, quota-delay,
+or marginal-cash evidence remains explicitly unavailable. If the requested
+project type has no published hierarchy root, return `no_compatible_prior`.
+
 Ordinary estimation is read-only. Write `.project-estimation/` only when the
 operator explicitly requests persistence or the project already declares that
 directory as its estimation store. After verified completion, recommend a

@@ -10,11 +10,11 @@ Current: **6.2.0** (source only; not tagged, released, installed, or activated)
 Version 6.2.0 adds the public `project-estimation` skill. It provides
 read-only-by-default, structured estimates for agent-led work and a compact
 design/plan checkpoint; it does not alter provider routing or the co-packaged
-native runtime. Its source is implemented, but the initial governed empirical
-promotion failed: no production aggregate, pricing/quota snapshot, or
-maintenance receipt exists in this branch. Release verification therefore
-fails closed. v6.2.0 is not tagged, published, installed, activated, or
-observed as loaded.
+native runtime. A governed schema-2 `empirical-v3` bootstrap aggregate and its
+schema-3 receipt are admitted for descriptive enhancement-duration estimates.
+Greenfield and unpublished token, wait, rework, quota-delay, and cash metrics
+remain typed unavailable; bootstrap confidence is never high. v6.2.0 is not
+tagged, published, installed, activated, or observed as loaded.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -260,10 +260,10 @@ hosts; `architect`, `orchestrate`, and `teamwork` compose the checkpoint
 explicitly. Unsupported hosts use explicit invocation without claiming a
 lifecycle hook.
 
-The public schemas are in `project-estimation-data/`. Production aggregate,
-pricing, quota, and receipt files are intentionally absent until a governed,
-privacy-safe handoff passes release verification. Full semantics and examples
-are in the [project-estimation architecture](../../docs/architecture/project-estimation.md).
+The public schemas and one exact, receipt-declared bootstrap handoff are in
+`project-estimation-data/`. The handoff is production maintenance evidence but
+is explicitly descriptive, not promoted calibration. Full semantics and
+examples are in the [project-estimation architecture](../../docs/architecture/project-estimation.md).
 
 ## Distribution boundary
 

@@ -43,19 +43,29 @@ def _sha(value: object) -> str:
 
 def _node(release_hash: str = DIGEST) -> dict[str, object]:
     return {
-        "schema_version": 1, "estimator_method_version": "empirical-v2", "generated_date": "2026-08-20",
+        "schema_version": 1, "estimator_method_version": "empirical-v3", "generated_date": "2026-08-20",
         "source_cutoff_date": "2026-08-20", "hierarchy_node": "project_type.enhancement", "fallback_parent": None,
         "sample_count": 20, "effective_sample_size": 20, "aggregate_sha256": DIGEST,
         "release_manifest_sha256": release_hash,
+        "metric_support": {
+            "actual_marginal_cash": {"status": "unavailable", "eligible_count": 0},
+            "focused_duration": {"status": "published", "eligible_count": 20},
+            "quota_delay": {"status": "unavailable", "eligible_count": 0},
+            "rework_review": {"status": "unavailable", "eligible_count": 0},
+            "token_usage": {"status": "unavailable", "eligible_count": 0},
+            "wait_class": {"status": "unavailable", "eligible_count": 0},
+        },
         "phase_duration_quantiles": [{"phase": "overall", "p50": 1, "p80": 2, "p95": 3}],
     }
 
 
 def _aggregate(release_hash: str = DIGEST) -> dict[str, object]:
     return {
-        "schema_version": 1, "estimator_method_version": "empirical-v2", "generated_date": "2026-08-20",
+        "schema_version": 2, "estimator_method_version": "empirical-v3", "generated_date": "2026-08-20",
         "source_cutoff_date": "2026-08-20", "policy_version": "calibration-v1", "policy_sha256": DIGEST,
-        "seed": 1, "source_manifest_sha256": DIGEST, "nodes": [_node(release_hash)],
+        "seed": 1, "source_manifest_sha256": DIGEST, "calibration_state": "bootstrap",
+        "excluded_observation_count_floor": 0, "exclusion_count_rounding": "floor_to_public_k",
+        "limitations": ["bootstrap_descriptive_only"], "nodes": [_node(release_hash)],
     }
 
 
@@ -103,7 +113,7 @@ def _receipt(*, notification: bool, generated: str, pricing: dict[str, object], 
     if notification:
         files.append("operator-notification.json")
     return {
-        "schema_version": 2, "version": VERSION, "estimator_method_version": "empirical-v2",
+        "schema_version": 3, "version": VERSION, "estimator_method_version": "empirical-v3",
         "calibration_policy_version": "calibration-v1", "calibration_policy_sha256": DIGEST,
         "pricing_policy_version": "policy-v1", "pricing_policy_sha256": DIGEST,
         "pricing_registry_sha256": DIGEST, "quota_registry_sha256": DIGEST,
@@ -112,8 +122,9 @@ def _receipt(*, notification: bool, generated: str, pricing: dict[str, object], 
         "completion_evidence_scope": "github_merged_or_earlier", "source_cutoff_date": generated,
         "generated_date": generated, "calibration_status": "fresh", "original_calibration_date": generated,
         "source_manifest_sha256": DIGEST, "calibration_candidate_sha256": DIGEST,
-        "calibration_source_receipt_sha256": None,
-        "backtest_outcome": {"promotion_allowed": True, "baseline_duration_comparison": "not_applicable", "baseline_token_comparison": "not_applicable"},
+        "calibration_source_receipt_sha256": None, "calibration_state": "bootstrap",
+        "calibration_baseline_receipt_sha256": None,
+        "backtest_outcome": {"evaluation_mode": "informational", "policy_result": "not_required", "baseline_duration_comparison": "not_applicable", "baseline_token_comparison": "not_applicable", "warning_codes": []},
         "pricing_result_sha256": _sha(pricing), "quota_result_sha256": _sha(quota),
         "notification_result": "delivered" if notification else "not_required", "release_manifest_sha256": DIGEST,
         "inventory": files, "receipt_sha256": DIGEST,
@@ -368,7 +379,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
         data = _fixture(self.root)
         # This deliberately unsafe fixture proves the verifier rejects executable public data.
         # codeql[py/overly-permissive-file]
-        os.chmod(data / "pricing-snapshot.json", 0o755)
+        (data / "pricing-snapshot.json").chmod(0o755)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("mode" in line or "regular" in line for line in lines), lines)
@@ -377,7 +388,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
         data = _fixture(self.root)
         # This deliberately unsafe fixture proves the verifier rejects world-writable data.
         # codeql[py/overly-permissive-file]
-        os.chmod(data / "pricing-snapshot.json", 0o666)
+        (data / "pricing-snapshot.json").chmod(0o666)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertFalse(ok)
         self.assertTrue(any("mode" in line or "writable" in line for line in lines), lines)
@@ -410,7 +421,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
         data = _fixture(self.root)
         # This fixture intentionally exercises the verifier's documented group-write allowance.
         # codeql[py/overly-permissive-file]
-        os.chmod(data / "pricing-snapshot.json", 0o664)
+        (data / "pricing-snapshot.json").chmod(0o664)
         ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION, today=TODAY)
         self.assertTrue(ok, lines)
 

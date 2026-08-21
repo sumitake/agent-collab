@@ -123,6 +123,11 @@ the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
 semantics, and the current unreleased status.
 
+The packaged prior is currently an explicit bootstrap: enhancement duration is
+descriptive, bootstrap confidence cannot be high, and unsupported greenfield,
+token-cost, wait, rework, quota-delay, and cash metrics remain typed omissions
+rather than zeros or workflow failures.
+
 ### Large-context work
 
 Use `knowledge-compile` when multiple sources must become a durable cited

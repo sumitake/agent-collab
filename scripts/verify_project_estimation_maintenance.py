@@ -52,6 +52,14 @@ _GREGORIAN_YEAR = r"(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-9][0-9]{3})"
 _GREGORIAN_LEAP_YEAR = r"(?:(?:(?!0000)[0-9]{2}(?:0[48]|[2468][048]|[13579][26]))|(?:0[48]|[2468][048]|[13579][26])00)"
 _DATE_PATTERN = rf"(?:(?:{_GREGORIAN_YEAR}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))|(?:{_GREGORIAN_LEAP_YEAR}-02-29))"
 _UTC_DATE_RE = re.compile(rf"^{_DATE_PATTERN}$")
+_BACKTEST_WARNING_CODES = {
+    "baseline_token_no_shared_class", "duration_drift", "duration_regression", "empty_holdout",
+    "insufficient_complete_token_holdout:enhancement", "insufficient_complete_token_holdout:greenfield",
+    "insufficient_complete_token_training:enhancement", "insufficient_complete_token_training:greenfield",
+    "insufficient_duration_holdout:enhancement", "insufficient_duration_holdout:greenfield",
+    "missing_training_root:enhancement", "missing_training_root:greenfield", "p80_coverage", "p95_coverage",
+    "sparse_holdout:enhancement", "sparse_holdout:greenfield", "token_drift", "token_regression",
+}
 
 
 @dataclass(frozen=True)
@@ -294,7 +302,7 @@ def _closed_schema(value: object, *, name: str) -> None:
     schema = _mapping(value, field=name)
     if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
         raise ValueError(f"{name} must be a closed object schema")
-    allowed = {"$schema", "$id", "$ref", "type", "additionalProperties", "required", "properties", "patternProperties", "$defs", "const", "enum", "pattern", "format", "minimum", "maximum", "minItems", "maxItems", "minLength", "maxLength", "uniqueItems", "items", "anyOf", "minProperties", "maxProperties"}
+    allowed = {"$schema", "$id", "$ref", "type", "additionalProperties", "required", "properties", "patternProperties", "$defs", "const", "enum", "pattern", "format", "minimum", "maximum", "multipleOf", "minItems", "maxItems", "minLength", "maxLength", "uniqueItems", "items", "anyOf", "minProperties", "maxProperties"}
     stack: list[object] = [schema]
     while stack:
         item = stack.pop()
@@ -325,6 +333,8 @@ def _aggregate(value: object, *, release_hash: str, today: _datetime.date, recei
         raise ValueError("aggregate dates are outside the release window")
     if (top["estimator_method_version"], top["policy_version"], top["policy_sha256"], top["seed"], top["source_manifest_sha256"], top["generated_date"], top["source_cutoff_date"]) != (receipt["estimator_method_version"], receipt["calibration_policy_version"], receipt["calibration_policy_sha256"], receipt["seed"], receipt["source_manifest_sha256"], receipt["original_calibration_date"], receipt["source_cutoff_date"]):
         raise ValueError("aggregate identity does not match receipt")
+    if top["calibration_state"] != receipt["calibration_state"]:
+        raise ValueError("aggregate calibration state does not match receipt")
     for node in top["nodes"]:
         original_date = _date(receipt["original_calibration_date"], field="receipt.original_calibration_date")
         if _date(node["generated_date"], field="aggregate.node.generated_date") != original_date:
@@ -456,8 +466,8 @@ def _verify_maintenance(
         receipt = _mapping(_json(raw["maintenance-receipt.json"], name="maintenance-receipt.json"), field="maintenance-receipt")
         if raw["maintenance-receipt.json"] != _canonical(receipt):
             raise ValueError("maintenance-receipt.json is not canonical JSON")
-        _exact(receipt, {"schema_version", "version", "estimator_method_version", "calibration_policy_version", "calibration_policy_sha256", "pricing_policy_version", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "pricing_material_unpriced_threshold_basis_points", "seed", "repository_sha256", "collection_cutoff_date", "collection_result_sha256", "linkage_manifest_sha256", "completion_evidence_scope", "source_cutoff_date", "generated_date", "calibration_status", "original_calibration_date", "source_manifest_sha256", "calibration_candidate_sha256", "calibration_source_receipt_sha256", "backtest_outcome", "pricing_result_sha256", "quota_result_sha256", "notification_result", "release_manifest_sha256", "inventory", "receipt_sha256"}, field="maintenance-receipt")
-        if receipt["schema_version"] != 2 or receipt["version"] != expected_version or receipt["estimator_method_version"] != "empirical-v2" or receipt["completion_evidence_scope"] != "github_merged_or_earlier":
+        _exact(receipt, {"schema_version", "version", "estimator_method_version", "calibration_policy_version", "calibration_policy_sha256", "pricing_policy_version", "pricing_policy_sha256", "pricing_registry_sha256", "quota_registry_sha256", "pricing_material_unpriced_threshold_basis_points", "seed", "repository_sha256", "collection_cutoff_date", "collection_result_sha256", "linkage_manifest_sha256", "completion_evidence_scope", "source_cutoff_date", "generated_date", "calibration_status", "original_calibration_date", "source_manifest_sha256", "calibration_candidate_sha256", "calibration_source_receipt_sha256", "calibration_state", "calibration_baseline_receipt_sha256", "backtest_outcome", "pricing_result_sha256", "quota_result_sha256", "notification_result", "release_manifest_sha256", "inventory", "receipt_sha256"}, field="maintenance-receipt")
+        if receipt["schema_version"] != 3 or receipt["version"] != expected_version or receipt["estimator_method_version"] != "empirical-v3" or receipt["completion_evidence_scope"] != "github_merged_or_earlier":
             raise ValueError("maintenance receipt schema/version is invalid")
         _string(receipt["version"], field="receipt.version", maximum=128)
         _version(receipt["estimator_method_version"], field="receipt.estimator_method_version")
@@ -478,10 +488,27 @@ def _verify_maintenance(
             raise ValueError("calibration status is inconsistent")
         if receipt["calibration_source_receipt_sha256"] is not None:
             _sha(receipt["calibration_source_receipt_sha256"], field="receipt.calibration_source_receipt_sha256")
+        state = receipt["calibration_state"]
+        if state not in {"bootstrap", "promoted"}:
+            raise ValueError("receipt calibration state is invalid")
+        baseline = receipt["calibration_baseline_receipt_sha256"]
+        if baseline is not None: _sha(baseline, field="receipt.calibration_baseline_receipt_sha256")
+        if (state == "promoted") != (baseline is not None):
+            raise ValueError("receipt calibration baseline binding is invalid")
         outcome = _mapping(receipt["backtest_outcome"], field="receipt.backtest_outcome")
-        _exact(outcome, {"promotion_allowed", "baseline_duration_comparison", "baseline_token_comparison"}, field="receipt.backtest_outcome")
-        if outcome["promotion_allowed"] is not True or outcome["baseline_duration_comparison"] not in {"performed", "not_applicable"} or outcome["baseline_token_comparison"] not in {"performed", "not_applicable", "no_shared_token_class"}:
+        _exact(outcome, {"evaluation_mode", "policy_result", "baseline_duration_comparison", "baseline_token_comparison", "warning_codes"}, field="receipt.backtest_outcome")
+        expected_outcome = ("informational", "not_required") if state == "bootstrap" else ("promotion_gate", "passed")
+        duration_comparison = outcome["baseline_duration_comparison"]
+        token_comparison = outcome["baseline_token_comparison"]
+        warnings = outcome["warning_codes"]
+        if (outcome["evaluation_mode"], outcome["policy_result"]) != expected_outcome or duration_comparison not in {"performed", "not_applicable"} or token_comparison not in {"performed", "not_applicable", "no_shared_token_class"} or not isinstance(warnings, list) or warnings != sorted(set(warnings)) or not set(warnings) <= _BACKTEST_WARNING_CODES:
             raise ValueError("receipt backtest outcome is invalid")
+        if state == "bootstrap" and (
+            duration_comparison != "not_applicable" or token_comparison != "not_applicable"
+        ):
+            raise ValueError("bootstrap receipt cannot claim baseline comparisons")
+        if state == "promoted" and duration_comparison != "performed":
+            raise ValueError("promoted receipt requires a performed duration comparison")
         pricing_document = _json(raw["pricing-snapshot.json"], name="pricing-snapshot.json")
         quota_document = _json(raw["quota-snapshot.json"], name="quota-snapshot.json")
         aggregate_document = _json(raw["aggregate-prior.json"], name="aggregate-prior.json")

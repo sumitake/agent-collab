@@ -108,6 +108,14 @@ The primary should always:
 - keep merge, deployment, secret, and destructive decisions within the user's
   and repository's authority boundaries.
 
+`project-estimation` is offline and read-only by default. The packaged v6.2.0
+source contains an explicit bootstrap prior: enhancement duration is
+descriptive, greenfield may return `no_compatible_prior`, and absent token
+evidence returns `unavailable_no_token_prior` rather than zero. Persist an
+estimate only with the request's explicit consent, and do not interpret
+bootstrap presence as a release, installation, activation, or promoted
+calibration claim.
+
 ## Update
 
 ### Claude Code
