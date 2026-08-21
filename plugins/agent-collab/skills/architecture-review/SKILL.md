@@ -1,6 +1,6 @@
 ---
 name: architecture-review
-version: 6.1.1
+version: 6.2.0
 description: Self-executed sweep of a codebase for module-deepening opportunities — shallow interfaces, scattered locality, untestable seams — presented as a visual report the user picks a candidate from, then explored interactively. Unlike `architect` (routed consultation) and `code-review` (diff review), this skill is run by the active primary on the whole codebase. Use when the user says "architecture review," "find deepening opportunities," "where is this codebase getting muddy," "improve the architecture," or "/agent-collab:architecture-review." Also offer this proactively when repeated friction in a working session traces to shallow modules — bouncing between many files to follow one concept, or tests that cannot reach behavior through the current interfaces.
 ---
 

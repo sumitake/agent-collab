@@ -40,6 +40,99 @@ _READINESS_KEYS = {
     "effort_class",
     "timeout_ms",
 }
+_QUALITY_PROFILES = ("economical", "standard", "frontier")
+_EFFORT_CLASSES = ("minimal", "standard", "maximum")
+_MAX_DETAIL_FIELD = 64
+
+
+class _InvalidRequest(ValueError):
+    """A rejected request carrying an actionable, bounded reason.
+
+    ``detail`` is a small, closed mapping (field name plus scalar constraints or
+    a fixed admitted-value list) so a caller can correct the request in place
+    instead of re-deriving it. It never echoes unbounded or untrusted content.
+    """
+
+    def __init__(self, error_code: str, detail: dict[str, object]) -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
+        self.detail = detail
+
+
+def _field_name(value: object) -> str:
+    """Return a bounded, printable rendering of a request key for diagnostics."""
+
+    text = value if type(value) is str else repr(value)
+    text = "".join(character for character in text if 0x20 <= ord(character) != 0x7F)
+    return text[:_MAX_DETAIL_FIELD]
+
+
+def _bounded_scalar(value: object) -> object:
+    """Return a bounded, safe echo of a caller value for the 'detail.given' field.
+
+    Only small scalars pass through verbatim; anything unbounded, structured, or
+    malformed collapses to a type label so a rejection can never reflect an
+    arbitrary or oversized input payload back to the caller.
+    """
+
+    if value is None or type(value) is bool:
+        return value
+    if type(value) is int:
+        return value if -(10**15) <= value <= 10**15 else "int_out_of_range"
+    if type(value) is str:
+        return _field_name(value)
+    return type(value).__name__
+
+
+def _disposition(status: str) -> tuple[str, str]:
+    """Classify a non-usable outcome so a caller cannot misread it.
+
+    The single load-bearing invariant: an *attempt-local* outcome
+    (``provider_error``/``teardown_error``) and an *overloaded* one
+    (``protocol_error``) are never ``unavailable``; this matches the runtime
+    contract that they do not establish route or provider unavailability, and is
+    what stops a recoverable invocation error being reported as an outage.
+    """
+
+    if status in {"invalid_request", "capability_error", "output_limit"}:
+        return "fix_request", (
+            "The request as sent is not accepted (shape, target, action, effort, or size); "
+            "adjust it per any 'detail'. This is not a provider outage; do not retry it unchanged."
+        )
+    if status in {"provider_error", "teardown_error"}:
+        return "retry", (
+            "Attempt-local failure. Per the runtime contract this does NOT establish provider "
+            "unavailability; a fresh request may succeed. Do not report an outage from this alone."
+        )
+    if status in {"timeout", "cancelled"}:
+        return "retry", (
+            "The attempt did not finish. Retry with more time (raise timeout_ms toward the 600000ms "
+            "cap) or a smaller scope. This is not a route-down signal."
+        )
+    if status == "protocol_error":
+        return "inspect", (
+            "Overloaded outcome: a transient broker-exchange failure OR a deterministic contract "
+            "rejection. Inspect the specific diagnostic; do not assume an outage and do not blind-retry."
+        )
+    if status in {"auth_error", "quota_error"}:
+        return "unavailable", (
+            "Provider auth or quota is unavailable (operator action). Confirm with a direct probe "
+            "before declaring a sustained outage."
+        )
+    if status in {
+        "integrity_error",
+        "manifest_invalid",
+        "path_invalid",
+        "signature_error",
+        "platform_unsupported",
+    }:
+        return "unavailable", "Runtime integrity, identity, or platform is unavailable; not a request problem."
+    if status == "unavailable":
+        return "unavailable", (
+            "Runtime, host, or route is unavailable, OR the request is ineligible at the requested "
+            "depth. Check readiness for this action at effort_class=maximum before concluding an outage."
+        )
+    return "inspect", "Unrecognized outcome; inspect the diagnostic. Do not assume provider unavailability."
 
 
 def _reject_nonfinite(_value: str) -> None:
@@ -126,35 +219,75 @@ def _documents(value: object) -> list[dict[str, str]]:
     return result
 
 
-def validate_request(document: object, wire: object, host: object) -> dict[str, Any]:
-    """Convert the closed coordinator request to the descriptor's native request."""
+def _closure_error(
+    document: dict, expected: set, action: str, primary_source: str | None
+) -> _InvalidRequest:
+    """Build an actionable 'not closed' rejection naming missing/unexpected keys."""
+
+    keys = set(document)
+    detail: dict[str, object] = {
+        "field": "request_keys",
+        "action": action,
+        "missing": sorted(_field_name(key) for key in expected - keys),
+        "unexpected": sorted(_field_name(key) for key in keys - expected),
+    }
+    if primary_source is not None and primary_source not in keys:
+        detail["required_source"] = primary_source
+        detail["expected_source_mode"] = (
+            "repository" if primary_source == "repo_root" else "documents"
+        )
+    return _InvalidRequest("request_not_closed", detail)
+
+
+def validate_request(
+    document: object, wire: object, host: object, *, normalized: list | None = None
+) -> dict[str, Any]:
+    """Convert the closed coordinator request to the descriptor's native request.
+
+    Rejections raise ``_InvalidRequest`` with a bounded, actionable ``detail`` so
+    a caller can correct the request in place instead of re-deriving it. The one
+    silent recovery is coercing an empty ``target_agent`` to ``None`` (an empty
+    string already means "untargeted"), recorded in ``normalized``. Nothing that
+    would change cost, depth, or a security decision is ever rewritten.
+    """
 
     if type(document) is not dict:
-        raise ValueError("coordinator request is not an object")
+        raise _InvalidRequest("request_not_object", {"reason": "request must be a JSON object"})
     if not _COMMON_KEYS.issubset(document):
-        raise ValueError("coordinator request is not closed")
+        raise _InvalidRequest(
+            "missing_common_fields",
+            {"missing": sorted(_field_name(key) for key in _COMMON_KEYS - set(document))},
+        )
     action = document.get("logical_action")
     if type(action) is not str or action not in wire.logical_actions:
-        raise ValueError("logical_action is not admitted by the wire descriptor")
+        raise _InvalidRequest(
+            "unknown_logical_action",
+            {
+                "field": "logical_action",
+                "given": _bounded_scalar(action),
+                "admitted": sorted(wire.logical_actions),
+            },
+        )
     source_mode = wire.logical_action_source_modes[action]
     if source_mode == "repository":
         expected = _COMMON_KEYS | {"repo_root"}
         if set(document) != expected:
-            if "repo_root" not in document:
-                raise ValueError("repository action requires repo_root")
-            raise ValueError("coordinator request is not closed")
+            raise _closure_error(document, expected, action, "repo_root")
         source = {"mode": "repository", "repo_root": _canonical_repo_root(document["repo_root"])}
     elif source_mode == "documents":
         expected = _COMMON_KEYS | {"documents"}
         if set(document) != expected:
-            raise ValueError("coordinator request is not closed")
+            raise _closure_error(document, expected, action, "documents")
         source = {"mode": "documents", "documents": _documents(document["documents"])}
     elif source_mode == "conceptual_prompt":
         if set(document) != _COMMON_KEYS:
-            raise ValueError("coordinator request is not closed")
+            raise _closure_error(document, _COMMON_KEYS, action, None)
         source = {"mode": "conceptual_prompt"}
     else:
-        raise ValueError("logical_action has no supported source mode")
+        raise _InvalidRequest(
+            "unsupported_source_mode",
+            {"field": "logical_action", "given": _bounded_scalar(action)},
+        )
 
     request_id = document["request_id"]
     prompt = document["prompt"]
@@ -164,17 +297,70 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
     target_agent = document["target_agent"]
     author_lineage = getattr(host, "primary_family", "unknown")
     if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
-        raise ValueError("request_id is invalid")
+        raise _InvalidRequest(
+            "request_id_invalid",
+            {"field": "request_id", "constraint": "1-128 chars of A-Za-z0-9._:-"},
+        )
     if type(prompt) is not str or not prompt or len(prompt.encode("utf-8")) > MAX_PROMPT_BYTES:
-        raise ValueError("prompt is invalid")
-    if type(timeout_ms) is not int or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
-        raise ValueError("timeout_ms is invalid")
-    if quality_profile not in {"economical", "standard", "frontier"}:
-        raise ValueError("quality_profile is invalid")
-    if effort_class not in {"minimal", "standard", "maximum"}:
-        raise ValueError("effort_class is invalid")
-    if target_agent is not None and (type(target_agent) is not str or not target_agent):
-        raise ValueError("target_agent is invalid")
+        raise _InvalidRequest(
+            "prompt_invalid",
+            {"field": "prompt", "constraint": "non-empty UTF-8", "max_bytes": MAX_PROMPT_BYTES},
+        )
+    if type(timeout_ms) is not int or type(timeout_ms) is bool or timeout_ms <= 0:
+        raise _InvalidRequest(
+            "timeout_ms_invalid",
+            {
+                "field": "timeout_ms",
+                "constraint": "positive integer milliseconds",
+                "min": 1,
+                "max": MAX_TIMEOUT_MS,
+                "given": _bounded_scalar(timeout_ms),
+            },
+        )
+    if timeout_ms > MAX_TIMEOUT_MS:
+        raise _InvalidRequest(
+            "timeout_ms_over_cap",
+            {
+                "field": "timeout_ms",
+                "constraint": "max",
+                "max": MAX_TIMEOUT_MS,
+                "given": _bounded_scalar(timeout_ms),
+            },
+        )
+    if quality_profile not in _QUALITY_PROFILES:
+        raise _InvalidRequest(
+            "quality_profile_invalid",
+            {
+                "field": "quality_profile",
+                "given": _bounded_scalar(quality_profile),
+                "admitted": list(_QUALITY_PROFILES),
+            },
+        )
+    if effort_class not in _EFFORT_CLASSES:
+        raise _InvalidRequest(
+            "effort_class_invalid",
+            {
+                "field": "effort_class",
+                "given": _bounded_scalar(effort_class),
+                "admitted": list(_EFFORT_CLASSES),
+            },
+        )
+    if target_agent == "":
+        target_agent = None
+        if normalized is not None:
+            normalized.append(
+                {
+                    "field": "target_agent",
+                    "from": "",
+                    "to": None,
+                    "reason": "empty_target_is_untargeted",
+                }
+            )
+    elif target_agent is not None and type(target_agent) is not str:
+        raise _InvalidRequest(
+            "target_agent_invalid",
+            {"field": "target_agent", "constraint": "null or a non-empty logical agent name"},
+        )
     if getattr(host, "identity_conflict", False):
         author_lineage = None
     elif type(author_lineage) is not str or author_lineage == "unknown":
@@ -201,30 +387,77 @@ def validate_request(document: object, wire: object, host: object) -> dict[str, 
 
 
 def validate_readiness_request(
-    document: object, wire: object, host: object
+    document: object, wire: object, host: object, *, normalized: list | None = None
 ) -> dict[str, Any]:
-    """Add trusted host lineage to one closed all-action readiness request."""
+    """Add trusted host lineage to one closed all-action readiness request.
+
+    ``normalized`` is accepted for signature symmetry with ``validate_request``;
+    a readiness request carries no in-place-recoverable field.
+    """
 
     if type(document) is not dict or set(document) != _READINESS_KEYS:
-        raise ValueError("coordinator readiness request is not closed")
+        keys = set(document) if type(document) is dict else set()
+        raise _InvalidRequest(
+            "readiness_not_closed",
+            {
+                "field": "request_keys",
+                "missing": sorted(_field_name(key) for key in _READINESS_KEYS - keys),
+                "unexpected": sorted(_field_name(key) for key in keys - _READINESS_KEYS),
+            },
+        )
     if document.get("operation") != "readiness":
-        raise ValueError("coordinator readiness operation is invalid")
+        raise _InvalidRequest(
+            "readiness_operation_invalid",
+            {"field": "operation", "admitted": ["readiness"]},
+        )
     request_id = document.get("request_id")
     quality_profile = document.get("quality_profile")
     effort_class = document.get("effort_class")
     timeout_ms = document.get("timeout_ms")
     if type(request_id) is not str or _REQUEST_ID_RE.fullmatch(request_id) is None:
-        raise ValueError("request_id is invalid")
-    if (
-        type(timeout_ms) is not int
-        or type(timeout_ms) is bool
-        or not 1 <= timeout_ms <= 600_000
-    ):
-        raise ValueError("timeout_ms is invalid")
-    if quality_profile not in {"economical", "standard", "frontier"}:
-        raise ValueError("quality_profile is invalid")
-    if effort_class not in {"minimal", "standard", "maximum"}:
-        raise ValueError("effort_class is invalid")
+        raise _InvalidRequest(
+            "request_id_invalid",
+            {"field": "request_id", "constraint": "1-128 chars of A-Za-z0-9._:-"},
+        )
+    if type(timeout_ms) is not int or type(timeout_ms) is bool or timeout_ms <= 0:
+        raise _InvalidRequest(
+            "timeout_ms_invalid",
+            {
+                "field": "timeout_ms",
+                "constraint": "positive integer milliseconds",
+                "min": 1,
+                "max": MAX_TIMEOUT_MS,
+                "given": _bounded_scalar(timeout_ms),
+            },
+        )
+    if timeout_ms > MAX_TIMEOUT_MS:
+        raise _InvalidRequest(
+            "timeout_ms_over_cap",
+            {
+                "field": "timeout_ms",
+                "constraint": "max",
+                "max": MAX_TIMEOUT_MS,
+                "given": _bounded_scalar(timeout_ms),
+            },
+        )
+    if quality_profile not in _QUALITY_PROFILES:
+        raise _InvalidRequest(
+            "quality_profile_invalid",
+            {
+                "field": "quality_profile",
+                "given": _bounded_scalar(quality_profile),
+                "admitted": list(_QUALITY_PROFILES),
+            },
+        )
+    if effort_class not in _EFFORT_CLASSES:
+        raise _InvalidRequest(
+            "effort_class_invalid",
+            {
+                "field": "effort_class",
+                "given": _bounded_scalar(effort_class),
+                "admitted": list(_EFFORT_CLASSES),
+            },
+        )
     author_lineage = getattr(host, "primary_family", "unknown")
     if (
         getattr(host, "identity_conflict", False)
@@ -272,33 +505,57 @@ def _runtime_error_code(result: object) -> str:
     return "runtime_failure"
 
 
+def _bounded_reason(text: str) -> str:
+    """Bound a fixed internal message for the 'detail.reason' diagnostic field."""
+
+    text = "".join(character for character in text if 0x20 <= ord(character) != 0x7F)
+    return text[:200]
+
+
+def _failure_response(
+    request_id: object, status: str, error_code: str, **extra: object
+) -> dict[str, Any]:
+    """A non-usable response carrying its classified disposition and recovery hint."""
+
+    disposition, recovery = _disposition(status)
+    return _response(
+        request_id, status, error_code, disposition=disposition, recovery=recovery, **extra
+    )
+
+
 def process(document: object) -> tuple[dict[str, Any], int]:
     runtime = _load_runtime()
     wire, manifest_digest, descriptor_error = runtime.runtime_contract_snapshot()
+    request_id = document.get("request_id") if isinstance(document, Mapping) else None
     if wire is None:
-        request_id = document.get("request_id") if isinstance(document, Mapping) else None
-        return _response(
+        return _failure_response(
             request_id,
             "unavailable",
             "runtime_descriptor_unavailable",
             manifest_digest=manifest_digest,
         ), 0
+    normalized: list[dict[str, Any]] = []
     try:
         host = _load_host_policy().resolve_profile()
         readiness_requested = (
             type(document) is dict and document.get("operation") == "readiness"
         )
         envelope = (
-            validate_readiness_request(document, wire, host)
+            validate_readiness_request(document, wire, host, normalized=normalized)
             if readiness_requested
-            else validate_request(document, wire, host)
+            else validate_request(document, wire, host, normalized=normalized)
         )
-    except RuntimeError as exc:
-        request_id = document.get("request_id") if isinstance(document, Mapping) else None
-        return _response(request_id, "unavailable", "host_identity_unavailable"), 0
+    except _InvalidRequest as exc:
+        return _failure_response(
+            request_id, "invalid_request", exc.error_code, detail=exc.detail
+        ), 2
+    except RuntimeError:
+        return _failure_response(request_id, "unavailable", "host_identity_unavailable"), 0
     except (KeyError, TypeError, UnicodeError, ValueError) as exc:
-        request_id = document.get("request_id") if isinstance(document, Mapping) else None
-        return _response(request_id, "invalid_request", "invalid_request"), 2
+        return _failure_response(
+            request_id, "invalid_request", "invalid_request",
+            detail={"reason": _bounded_reason(str(exc))},
+        ), 2
     result = (
         runtime.readiness(envelope=envelope)
         if readiness_requested
@@ -308,11 +565,14 @@ def process(document: object) -> tuple[dict[str, Any], int]:
         runtime.RuntimeStatus.OK,
         runtime.RuntimeStatus.ADVISORY,
     }
-    response = _response(
-        envelope["request_id"],
-        result.status.value,
-        "" if usable else _runtime_error_code(result),
-    )
+    if usable:
+        response = _response(envelope["request_id"], result.status.value)
+        if normalized:
+            response["normalized"] = normalized
+    else:
+        response = _failure_response(
+            envelope["request_id"], result.status.value, _runtime_error_code(result)
+        )
     if result.result is not None:
         response["result"] = result.result
     if result.provenance is not None:
@@ -325,15 +585,21 @@ def process(document: object) -> tuple[dict[str, Any], int]:
 def main() -> int:
     raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
     if len(raw) > MAX_INPUT_BYTES:
-        response, code = _response(None, "invalid_request", "input_limit_exceeded"), 2
+        response, code = _failure_response(
+            None, "invalid_request", "input_limit_exceeded",
+            detail={"field": "request", "constraint": "max_bytes", "max": MAX_INPUT_BYTES},
+        ), 2
     else:
         try:
             document = _decode_request(raw)
             response, code = process(document)
         except (UnicodeError, ValueError, RecursionError):
-            response, code = _response(None, "invalid_request", "invalid_json_request"), 2
+            response, code = _failure_response(
+                None, "invalid_request", "invalid_json_request",
+                detail={"reason": "request body must be one closed UTF-8 JSON object"},
+            ), 2
         except (OSError, RuntimeError):
-            response, code = _response(None, "unavailable", "coordinator_unavailable"), 0
+            response, code = _failure_response(None, "unavailable", "coordinator_unavailable"), 0
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 

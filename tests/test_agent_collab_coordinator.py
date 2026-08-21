@@ -85,7 +85,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
         )
 
     def test_old_public_route_action_request_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "closed"):
+        with self.assertRaises(ValueError) as caught:
             self.coordinator.validate_request(
                 {
                     "request_id": "old-1",
@@ -97,9 +97,12 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 self.wire,
                 self.profile,
             )
+        # Still rejected fail-closed, now with an actionable code rather than an
+        # opaque "not closed" message.
+        self.assertEqual(caught.exception.error_code, "missing_common_fields")
 
     def test_repository_action_requires_repo_root(self) -> None:
-        with self.assertRaisesRegex(ValueError, "repo_root"):
+        with self.assertRaises(ValueError) as caught:
             self.coordinator.validate_request(
                 {
                     "request_id": "review-2",
@@ -116,6 +119,10 @@ class SemanticCoordinatorTests(unittest.TestCase):
                     governance_ready=True,
                 ),
             )
+        # The missing source is named actionably so the caller can supply it.
+        self.assertEqual(caught.exception.error_code, "request_not_closed")
+        self.assertEqual(caught.exception.detail["required_source"], "repo_root")
+        self.assertIn("repo_root", caught.exception.detail["missing"])
 
     def test_one_accepted_request_invokes_runtime_once_without_replay(self) -> None:
         calls: list[object] = []
@@ -181,14 +188,14 @@ class SemanticCoordinatorTests(unittest.TestCase):
             response, code = self.coordinator.process(request)
 
         self.assertEqual(code, 0)
-        self.assertEqual(
-            response,
-            {
-                "request_id": "context-private-error",
-                "status": "provider_error",
-                "error_code": "runtime_provider_error",
-            },
-        )
+        self.assertEqual(response["request_id"], "context-private-error")
+        self.assertEqual(response["status"], "provider_error")
+        self.assertEqual(response["error_code"], "runtime_provider_error")
+        # An attempt-local failure is classified 'retry', never 'unavailable':
+        # this is what stops a transient error being read as a provider outage.
+        self.assertEqual(response["disposition"], "retry")
+        self.assertIsInstance(response["recovery"], str)
+        self.assertTrue(response["recovery"])
 
     def test_attempt_local_failures_do_not_quarantine_later_request(self) -> None:
         request = {
@@ -471,12 +478,14 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(native["effort_class"], "standard")
 
         for field in ("quality_profile", "effort_class"):
-            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "closed"):
-                self.coordinator.validate_request(
-                    {key: value for key, value in base.items() if key != field},
-                    self.wire,
-                    self.profile,
-                )
+            with self.subTest(missing=field):
+                with self.assertRaises(ValueError) as caught:
+                    self.coordinator.validate_request(
+                        {key: value for key, value in base.items() if key != field},
+                        self.wire,
+                        self.profile,
+                    )
+                self.assertEqual(caught.exception.error_code, "missing_common_fields")
         for field, value in (
             ("quality_profile", "premium"),
             ("effort_class", "xhigh"),
