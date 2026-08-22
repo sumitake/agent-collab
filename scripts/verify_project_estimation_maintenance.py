@@ -370,8 +370,12 @@ def _snapshot(value: object, *, kind: str, today: _datetime.date, threshold: int
         if status in {"unpriced", "review_required"}:
             unresolved_share += share
     expected_material = kind == "pricing" and unresolved_share >= threshold and unresolved_share > 0
-    if result["material_unpriced"] is not expected_material or result["material_unpriced"]:
-        raise ValueError(f"{kind}.material_unpriced is inconsistent or material")
+    if result["material_unpriced"] is not expected_material:
+        raise ValueError(f"{kind}.material_unpriced is inconsistent with the receipt threshold")
+    # The producer emits and notifies on this state before refusing publication.
+    # The public consumer independently preserves that fail-closed release rule.
+    if result["material_unpriced"]:
+        raise ValueError("material pricing is unresolved")
     if any(row["status"] == "review_required" for row in providers.values()):
         raise ValueError(f"{kind} contains review_required evidence")
     if result["operator_notification_required"] is not unresolved or ((result["uncertainty_basis_points"] == 0) is unresolved):

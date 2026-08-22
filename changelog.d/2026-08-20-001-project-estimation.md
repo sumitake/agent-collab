@@ -12,3 +12,6 @@
   metric-specific typed omissions. Producer bytes, receipt state, archive
   inclusion, mutation rejection, and public privacy boundaries are tested
   end-to-end; no promoted-calibration claim is made.
+- Clarify that request scope hashes may be helper-derived, give micro-USD
+  quantiles their own schema name, and make the intentional material-pricing
+  release block explicit in the public maintenance verifier.

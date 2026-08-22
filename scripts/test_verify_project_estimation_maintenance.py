@@ -562,6 +562,17 @@ class MaintenanceVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "quota unresolved status"):
             self.verifier._snapshot(quota, kind="quota", today=TODAY, threshold=1000)
 
+    def test_material_unpriced_pricing_is_consistent_but_release_blocked(self) -> None:
+        pricing = _snapshot("pricing", status="unpriced")
+        pricing["material_unpriced"] = True
+        self.assertTrue(
+            self.verifier._PUBLIC_ESTIMATOR.validate_pricing(pricing)["material_unpriced"]
+        )
+        with self.assertRaisesRegex(ValueError, "material pricing is unresolved"):
+            self.verifier._snapshot(
+                pricing, kind="pricing", today=TODAY, threshold=1000
+            )
+
     def test_task5_public_schemas_have_nonempty_closed_request_and_result_shapes(self) -> None:
         request = json.loads((DATA_SOURCE / "estimate-request.schema.json").read_text())
         result = json.loads((DATA_SOURCE / "estimate-result.schema.json").read_text())

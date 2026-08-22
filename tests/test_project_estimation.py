@@ -115,8 +115,18 @@ class ValidatorTests(unittest.TestCase):
         )
         self.assertFalse(result_schema["additionalProperties"])
         self.assertEqual(set(result_schema["required"]), {"schema_version", "result_kind", "labels"})
+        self.assertNotIn("artifact_scope_hash", request_schema["required"])
         self.assertIn("nullable_seconds", result_schema["$defs"])
+        self.assertIn("nullable_microusd", result_schema["$defs"])
         self.assertIn("nullable_hours", result_schema["$defs"])
+        self.assertEqual(
+            result_schema["$defs"]["headline_cost"]["properties"]["known_microusd"],
+            {"$ref": "#/$defs/nullable_microusd"},
+        )
+        self.assertEqual(
+            result_schema["$defs"]["route_cost"]["properties"]["known_microusd"],
+            {"$ref": "#/$defs/nullable_microusd"},
+        )
         self.assertEqual(
             set(result_schema["$defs"]["route_cost"]["required"]),
             {"route_id", "provider", "model", "modality", "tier", "known_microusd",
