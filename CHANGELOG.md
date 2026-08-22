@@ -14,6 +14,18 @@ The public changelog intentionally records policy, compatibility, and migration 
 
 ### Changed
 
+- Replace the Dependabot auto-merge review gate with a deterministic, free,
+  no-AI design (GitHub Models, the intended free reviewer, was retired
+  2026-07-30). `dependabot-gate.yml` now hard-fails unless every commit is
+  authentically Dependabot's, every changed path is within
+  `.github/workflows|actions` with no control-plane file touched, and every
+  dependency update is patch or minor via SHA-pinned
+  `dependabot/fetch-metadata` (majors held). The Codex summon/retrigger/signal
+  machinery is removed; `dependabot-automerge.yml` is arm-only. CI/governance
+  only, no distributed content, no version bump.
+
+### Changed
+
 - Document the one-time bootstrap requirement in `dependabot-gate.yml`: the
   branch-protection preflight refuses to pin a context with no prior check-run,
   so the gate must run on at least one PR before `dependabot-gate` is pinned
@@ -52,6 +64,93 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.2.0 — 2026-08-22
+
+Provider runtime advanced to **4.1.0** (source `a5ec708d`, signed + notarized,
+all nine release-evidence gates true). This is a governance-pool widening
+generation: the runtime adds `opencode/governance.repository` (read-only,
+repository authority; identical invariants to the plan action — **no
+write-authority widening**) and lowest-priority governance edges for the
+`zhipu`, `moonshot`, `alibaba`, and `deepseek` lineages, widening the
+distinct-family governance pool so Tier-3 peer legs do not dead-end when
+frontier CLIs degrade. The Phase-1 governance gate is unchanged — it still
+requires a full `governance_verdict` / approved authority; a widened pool cannot
+lower the bar.
+
+**Wire-contract disclosure**: the descriptor digest advances
+`4de687b8…` → `e601a455…` as a compatible descriptor evolution — runtime
+protocol `4` is unchanged, the 12-action set and every action's
+authority/artifact/evidence contract and source-mode map are unchanged; the
+projections widen by exactly one `base_transport_action`
+(`opencode`/`governance`, 13 → 14) and one `valid_action_source_pair`
+(17 → 18). The co-packaged consumer contract (`runtime_client.py` cardinality,
+`runtime-manifest.schema.json` digest/version/count pins) moves in lockstep.
+
+**Carrier matrix**: no carrier moved transport in this release — Gemini (agy),
+Grok, Codex, and OpenCode carriers all remain on their existing native
+transports; the only routing change is the additive governance-authority
+widening above. Antigravity remains async/inbox-only and does not carry runtime
+traffic.
+
+This runtime advance ships under the existing, not-yet-tagged v6.2.0 package
+version (the project-estimation maintenance evidence is version-bound to 6.2.0),
+alongside the coordinator fault-tolerance client changes and the
+`project-estimation` skill.
+
+### agent-collab 6.2.0 - 2026-08-21
+
+Coordinator client-behavior changes for v6.2.0 (which also advances the signed
+provider runtime to `4.1.0` — see the runtime fragment). The coordinator
+boundary is made tolerant of imperfect invocation and self-describing about
+every outcome. Additive response fields only; existing consumers that key on
+`status`/`error_code` are unaffected, and the closed-request, fail-closed
+validation posture is unchanged.
+
+#### Fixed
+
+- A request over the enforced `timeout_ms` cap (and other invalid or
+  underspecified requests) no longer returns a bare `invalid_request` with no
+  reason. It now carries a specific `error_code` and a bounded `detail` object
+  naming the offending field, its constraint, and the admitted values or the
+  required source, so the caller can correct it in place. The documented
+  `timeout_ms` bound is corrected to match the enforced `1-600000`.
+
+Addressed: #125
+
+#### Added
+
+- Every non-usable coordinator response now carries a `disposition`
+  (`fix_request`, `retry`, `inspect`, or `unavailable`) plus a short `recovery`
+  hint, classified deterministically from the closed runtime status. By
+  construction `provider_error`, `teardown_error`, and `protocol_error` are
+  never `unavailable`, so an attempt-local or transient failure is no longer
+  read as a provider outage. `detail` never reflects unbounded or untrusted
+  input back to the caller.
+
+#### Changed
+
+- An empty `target_agent` is coerced to `null` (recorded in an additive
+  `normalized` response field), the one in-place recovery. Nothing that would
+  change cost, depth, or a security decision is rewritten.
+
+### agent-collab 6.2.0 — 2026-08-20
+
+#### Added
+
+- Add the `project-estimation` skill for transparent agent-led delivery
+  estimates, reconciliation, calibration, and audit. It distinguishes focused
+  agent wall-clock, delivery waits, API-equivalent cost, marginal cash, and
+  quota capacity; formal implementation designs and plans receive a compact,
+  honest checkpoint where the host supports it.
+- Admit the first governed staged bootstrap handoff with descriptive
+  enhancement-duration evidence, explicit unsupported greenfield behavior, and
+  metric-specific typed omissions. Producer bytes, receipt state, archive
+  inclusion, mutation rejection, and public privacy boundaries are tested
+  end-to-end; no promoted-calibration claim is made.
+- Clarify that request scope hashes may be helper-derived, give micro-USD
+  quantiles their own schema name, and make the intentional material-pricing
+  release block explicit in the public maintenance verifier.
+
 ### agent-collab 6.1.1 — 2026-08-19
 
 #### Changed
@@ -68,6 +167,28 @@ The public changelog intentionally records policy, compatibility, and migration 
   commercial licensing is administered by Osumi Consulting LLC. Operating
   guidance for agents remains in `AGENTS.md`. No licensing terms changed in
   this release.
+
+### Documentation
+
+- agent-collab 6.1.1: record the v6.1.1 release closeout snapshot and
+  determinations in `docs/architecture/status-and-evidence.md` (published
+  tag/run/assets evidence, dual-architecture runtime qualification, four-host
+  byte-exact activation, receipted post-install canary); the v6.0.6 snapshot
+  moves to the historical section.
+
+### Added
+
+- Add a release-time feedback-loop closeout: `scripts/resolve_addressed_issues.py`, run post-publish by `release.yml`, closes GitHub issues a release has fixed. A changelog fragment marks a fix with an own-line `Addressed: #N` (deliberately not GitHub's merge-time `Fixes #N` keyword), and the resolver diffs `CHANGELOG.md` + `changelog.d/` across the release's tag window, then for each open issue posts the version + release URL as evidence, applies the `resolved-in-release` label, and closes it. Explicit-marker only, open-issues only, idempotent, bounded, and non-fatal (a failure never fails the build); preview with `--target-rev HEAD --dry-run`.
+
+### Changed
+
+- GitHub Release notes are now generated from the release's own compiled
+  `CHANGELOG.md` section (via `scripts/extract_changelog_section.py`,
+  fail-closed: a missing or empty section blocks the release) instead of a
+  generic one-line boilerplate that had gone stale (the v6.1.1 notes still
+  said "Darwin-arm64" after the release went dual-architecture). Published
+  release notes for existing tags were backfilled to the same standard as
+  editable release metadata; tags and assets are untouched.
 
 ### agent-collab 6.0.6 — 2026-08-18
 
