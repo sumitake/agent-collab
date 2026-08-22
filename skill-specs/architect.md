@@ -23,3 +23,15 @@ Ask for the recommended architecture, invariants and threat boundaries,
 dependency-ordered implementation units, verification plan, and unresolved
 assumptions. The result is read-only advice. The primary owns edits, tests,
 integration, commits, merge/release/deploy, and secrets.
+
+## Delivery estimate checkpoint
+
+When producing a formal implementation design or plan, after scope, completion
+boundary, phases, dependencies, and gates are concrete and before final
+presentation, invoke `project-estimation` once for the artifact scope. Attach
+its compact `Delivery estimate` as `design_provisional` or
+`implementation_plan`; attach typed `estimate_unavailable` if no defensible
+range exists. A typed cost such as `unavailable_no_token_prior` must remain
+visible; it must not become zero or a workflow failure. On an unsupported host,
+use explicit invocation and state that
+the automatic checkpoint is unavailable rather than claiming it ran.

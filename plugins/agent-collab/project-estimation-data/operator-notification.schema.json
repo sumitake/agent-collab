@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "operator-notification.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_date", "unresolved", "pricing_coverage_basis_points", "quota_coverage_basis_points", "decision"],
+  "properties": {
+    "schema_version": {"const": 1}, "generated_date": {"type": "string", "format": "date"}, "unresolved": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/unresolved"}}, "pricing_coverage_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}, "quota_coverage_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000}, "decision": {"enum": ["stale_fallback", "unpriced_block", "unpriced_immaterial", "review_required_block", "quota_unknown", "mixed_fallback"]}
+  },
+  "$defs": {"unresolved": {"type": "object", "additionalProperties": false, "required": ["provider", "kind", "original_date", "failure_class", "decision"], "properties": {"provider": {"type": "string", "maxLength": 128}, "kind": {"enum": ["pricing", "quota"]}, "original_date": {"anyOf": [{"type": "string", "format": "date"}, {"type": "null"}]}, "failure_class": {"type": "string", "maxLength": 128}, "decision": {"enum": ["estimated_stale", "unpriced", "unknown", "review_required"]}}}}
+}

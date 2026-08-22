@@ -5,7 +5,16 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.0**
+Current: **6.2.0** (source only; not tagged, released, installed, or activated)
+
+Version 6.2.0 adds the public `project-estimation` skill. It provides
+read-only-by-default, structured estimates for agent-led work and a compact
+design/plan checkpoint; it does not alter provider routing or the co-packaged
+native runtime. A governed schema-2 `empirical-v3` bootstrap aggregate and its
+schema-3 receipt are admitted for descriptive enhancement-duration estimates.
+Greenfield and unpublished token, wait, rework, quota-delay, and cash metrics
+remain typed unavailable; bootstrap confidence is never high. v6.2.0 is not
+tagged, published, installed, activated, or observed as loaded.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -207,7 +216,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 12/13/17 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches this same 6.1.1
+residue is reported separately. Runtime readiness launches this same 6.2.0
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.
 
@@ -226,6 +235,35 @@ provenance-tracked `knowledge/` page layer; `learning_ledger.py` (the
 `learning-loop` skill) maintains a `.learnings/` lesson ledger. Both write
 only within the user-chosen `--root`, make no network calls, and launch no
 provider process.
+
+## Project estimation
+
+`project_estimation.py` is a deterministic, stdlib-only helper for the
+`project-estimation` skill. It consumes strict request, aggregate-prior,
+pricing, and quota JSON documents and has no provider or network dependency:
+
+```text
+python3 "<plugin-root>/project_estimation.py" estimate --request REQUEST.json --prior PRIOR.json --pricing PRICING.json --quota QUOTA.json
+python3 "<plugin-root>/project_estimation.py" reconcile --prior-result ESTIMATE.json --actual VERIFIED-ACTUAL.json --pricing PRICING.json
+```
+
+The estimate headline reports focused agent wall-clock, calendar elapsed and
+waits, and current API-equivalent token cost. Actual marginal cash and quota
+capacity remain detailed, separate, non-additive views. Pricing output includes
+state and the last successful official retrieval date; stale evidence keeps
+that historical date rather than claiming a fresh retrieval.
+
+Ordinary runs write canonical JSON to stdout. `--out` requires explicit
+persistence consent in the validated request or actual document. The skill is
+also auto-invocable for formal implementation designs and plans on supported
+hosts; `architect`, `orchestrate`, and `teamwork` compose the checkpoint
+explicitly. Unsupported hosts use explicit invocation without claiming a
+lifecycle hook.
+
+The public schemas and one exact, receipt-declared bootstrap handoff are in
+`project-estimation-data/`. The handoff is production maintenance evidence but
+is explicitly descriptive, not promoted calibration. Full semantics and
+examples are in the [project-estimation architecture](../../docs/architecture/project-estimation.md).
 
 ## Distribution boundary
 

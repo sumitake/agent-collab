@@ -97,6 +97,11 @@ class TestHostManifestConsistency(unittest.TestCase):
             lines,
         )
 
+    def test_release_consistency_requires_project_estimation_receipt(self):
+        ok, lines = crc.run_consistency(self.root)
+        self.assertFalse(ok)
+        self.assertTrue(any("project-estimation maintenance" in line for line in lines), lines)
+
 
 class TestLicenseContract(unittest.TestCase):
     def setUp(self):

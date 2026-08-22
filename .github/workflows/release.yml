@@ -159,6 +159,10 @@ jobs:
             printf 'version=%s\n' "$VER"
             printf 'archive_name=%s.v%s.plugin\n' "$PLUGIN" "$VER"
           } >> "$GITHUB_OUTPUT"
+      - name: Verify project-estimation maintenance evidence
+        run: >-
+          python3 scripts/verify_project_estimation_maintenance.py
+          --expected-version "${{ steps.meta.outputs.version }}"
       - name: Verify tag matches plugin.json, READMEs, and CHANGELOG
         run: python3 scripts/check_release_consistency.py --tag "${{ github.ref_name }}"
       - name: Re-run deterministic release gates

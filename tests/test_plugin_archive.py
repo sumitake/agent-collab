@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from datetime import date
+from unittest import mock
 
 from tests.test_direct_runtime_public_contract import _wire_descriptor
 
@@ -77,6 +81,30 @@ class PluginArchiveTests(unittest.TestCase):
         oversized = b" " * (archive.runtime_bundle.MAX_MANIFEST_BYTES + 1) + encoded
         with self.assertRaises(ValueError):
             archive._parse_manifest(oversized)
+
+    def test_project_estimation_member_plan_is_closed_and_non_recursive(self) -> None:
+        archive = _load()
+        plugin = ROOT / "plugins" / "agent-collab"
+        maintenance = archive.MaintenanceSnapshot(
+            tuple(archive.FrozenMaintenanceMember(
+                archive_name=f"project-estimation-data/{path.name}", payload=b"{}", sha256=hashlib.sha256(b"{}").hexdigest(),
+                source_mode=0o644, source_uid=os.getuid(), source_gid=os.getgid(),
+            ) for path in sorted(archive.PUBLIC_ESTIMATION_MEMBERS) if path.name != "operator-notification.json"),
+            False, date(2026, 8, 20),
+        )
+        with mock.patch.object(archive, "_safe_source"), \
+                mock.patch.object(archive, "_require_no_development_members"), \
+                mock.patch.object(archive, "_require_exact_manifest_trees"), \
+                mock.patch.object(archive, "skill_tree_differences", return_value=[]), \
+                mock.patch.object(archive, "expected_skill_relpaths", return_value=[]):
+            plan = archive._member_plan(plugin, mode="policy-only", maintenance=maintenance)
+            names = [name for name, _ in plan]
+        self.assertIn("project-estimation-data/estimate-request.schema.json", names)
+        self.assertIn("project_estimation.py", names)
+        self.assertEqual(archive.REQUIRED_ROOTS.count("project_estimation.py"), 1)
+        self.assertEqual(len(names), len(set(names)))
+        self.assertIn("project-estimation-data/maintenance-receipt.json", names)
+        self.assertNotIn("project-estimation-data/raw-observations.json", names)
 
 
 if __name__ == "__main__":

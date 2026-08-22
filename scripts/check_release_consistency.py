@@ -317,6 +317,24 @@ def run_consistency(root: Path) -> tuple[bool, list[str]]:
     lines = [f"source of truth: {_PLUGIN_JSON} version = {expected}"]
     ok = True
 
+    try:
+        from verify_project_estimation_maintenance import verify_maintenance
+        maintenance_ok, maintenance_lines = verify_maintenance(
+            root, expected_version=expected
+        )
+    except (ImportError, OSError, ValueError) as error:
+        maintenance_ok = False
+        maintenance_lines = [f"FAIL  project-estimation maintenance verifier unavailable: {error}"]
+    if maintenance_ok:
+        lines.extend(maintenance_lines)
+    else:
+        ok = False
+        lines.extend(
+            line if "project-estimation maintenance" in line
+            else f"FAIL  project-estimation maintenance: {line}"
+            for line in maintenance_lines
+        )
+
     licensing_errors = license_contract_errors(root, expected)
     if licensing_errors:
         ok = False

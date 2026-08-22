@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "producer_source_commit": "77ded2724ad520ac8e3fcd3f7c1c865ce4a5ce14",
+  "production_producer_commit": "bb673a7806850337258b253364b3a88eb92645e7",
+  "contracts": {
+    "aggregate_schema_version": 2,
+    "estimator_method_version": "empirical-v3",
+    "receipt_schema_version": 3,
+    "result_schema_version": 2,
+    "result_method_version": "empirical-sim-v2"
+  },
+  "fixtures": {
+    "bootstrap": {
+      "receipt_sha256": "9d104bacdbc251fd07a441b071b3111c6d274c07e1feddc18797ebf13eb22449",
+      "members": [
+        {"name": "aggregate-prior.json", "size": 11612, "sha256": "1d19079c1f6e2378b1e8ada9037065a4f53a0e7c1a06dd4af9e81860e0d3565f"},
+        {"name": "maintenance-receipt.json", "size": 2628, "sha256": "237d283599f86e568a122219edc3e9a988c7cf463678310b0181f703fb3c725a"},
+        {"name": "operator-notification.json", "size": 622, "sha256": "0b098d200ff237f201f2952b366a8d55af38a562c83819c13a403b98d88107b8"},
+        {"name": "pricing-snapshot.json", "size": 10988, "sha256": "fdc67cabb73c50098412f8385a09c01cffcd103c65b91267df47809d6e9e1d4c"},
+        {"name": "quota-snapshot.json", "size": 1726, "sha256": "cc0aabf0e0d2ad9206a9a5ca2768d59878cc81888f7b76a719911403ac5752e1"}
+      ]
+    },
+    "promoted": {
+      "receipt_sha256": "121d07ad39169ec8ff5f80b96a1766e2ca424f6a6f39fcddf1a8aa4bc6d776c3",
+      "members": [
+        {"name": "aggregate-prior.json", "size": 22341, "sha256": "51fb83e4f9ba96517fb19fb68829ade95ec0b25156d84e0e08199d3d039f408b"},
+        {"name": "maintenance-receipt.json", "size": 2419, "sha256": "d2d5352e3da549cc250550306d64c045f06ed6e4d999ca9b5e7567ea44cc6dea"},
+        {"name": "pricing-snapshot.json", "size": 4034, "sha256": "3771597afa9e2a87fca4f89f03bde447333d0cea45f749d639a4b59796c02e78"},
+        {"name": "quota-snapshot.json", "size": 3876, "sha256": "d93e09778c235204f58d4285fb55b62c56490ce3c04a507a14d4753574a958ac"}
+      ]
+    }
+  }
+}
