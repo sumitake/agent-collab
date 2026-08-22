@@ -58,6 +58,7 @@ TRANSPORT_ACTIONS = (
     ("grok", "governance"),
     ("opencode", "build"),
     ("opencode", "context"),
+    ("opencode", "governance"),
     ("opencode", "plan"),
 )
 
@@ -78,6 +79,7 @@ ACTION_SOURCE_PAIRS = (
     ("opencode", "build", "repository"),
     ("opencode", "context", "documents"),
     ("opencode", "context", "repository"),
+    ("opencode", "governance", "repository"),
     ("opencode", "plan", "repository"),
 )
 
@@ -345,7 +347,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.0.6"},
+            {"const": "4.1.0"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:

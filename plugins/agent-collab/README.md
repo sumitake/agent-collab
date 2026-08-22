@@ -95,7 +95,7 @@ returns every logical action in one zero-inference snapshot:
 ## Direct runtime boundary
 
 The workspace build emits one schema-4 manifest with a positive-integer wire schema
-revision, runtime protocol 4, native contract 4, and provider runtime `4.0.6`. The
+revision, runtime protocol 4, native contract 4, and provider runtime `4.1.0`. The
 wire revision records compatible descriptor evolution; runtime protocol 4 remains the
 executable compatibility boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.

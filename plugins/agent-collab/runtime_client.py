@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.0.6"
+PROVIDER_RUNTIME_VERSION = "4.1.0"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -338,7 +338,7 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor logical action sources are invalid")
     transports = _unique_rows(descriptor["base_transport_actions"], 2)
     pairs = _unique_rows(descriptor["valid_action_source_pairs"], 3)
-    if len(transports) != 13 or len(pairs) != 17:
+    if len(transports) != 14 or len(pairs) != 18:
         raise ValueError("wire descriptor projections have wrong cardinality")
     if any(row[:2] not in transports or row[2] not in _SOURCE_MODES for row in pairs):
         raise ValueError("wire descriptor source projection is inconsistent")

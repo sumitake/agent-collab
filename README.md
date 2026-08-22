@@ -6,10 +6,10 @@ co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
 This public repository's current source distribution is **agent-collab**
-(v6.2.0). It combines actionable coordinator rejection and outcome handling
-with empirical project estimation, without changing provider routing, the
-signed native runtime, installation, or activation. The most recent tagged
-publication remains
+(v6.2.0). It combines a governance-pool-widening provider runtime advance
+(`4.1.0`), actionable coordinator rejection and outcome handling, and empirical
+project estimation, without changing installation or activation. The most
+recent tagged publication remains
 **[v6.1.1](https://github.com/sumitake/agent-collab/releases/tag/v6.1.1)**;
 v6.2.0 source is not yet a tag, archive, release, installation, or readiness
 claim.
@@ -24,10 +24,21 @@ keeps repository, tag, release, installation, and readiness claims separate.
 
 ## What's new - v6.2.0
 
-Client-behavior release on the unchanged v6.1.1 signed runtime (`4.0.6`). The
-coordinator boundary is now tolerant of imperfect invocation and self-describing
-about every outcome, so a caller recovers in place instead of re-deriving a
-request or misreading a transient failure as an outage.
+This release advances the signed provider runtime to `4.1.0` (an additive
+governance-pool widening) and makes the coordinator boundary tolerant of
+imperfect invocation and self-describing about every outcome, so a caller
+recovers in place instead of re-deriving a request or misreading a transient
+failure as an outage.
+
+- **Provider runtime 4.1.0.** The signed, notarized runtime adds
+  `opencode/governance.repository` (read-only, repository authority; no
+  write-authority widening) and lowest-priority governance edges for the
+  `zhipu`, `moonshot`, `alibaba`, and `deepseek` lineages, so Tier-3 peer legs
+  do not dead-end when frontier CLIs degrade. The Phase-1 governance gate is
+  unchanged. Runtime protocol `4` is unchanged; the wire-contract descriptor
+  digest advances as a compatible evolution (`4de687b8…` → `e601a455…`),
+  widening the base transport actions 13 → 14 and the valid source pairs
+  17 → 18.
 
 - **Actionable rejections.** An invalid or underspecified request no longer
   collapses to a bare `invalid_request`. It carries a specific `error_code`
@@ -62,8 +73,9 @@ request or misreading a transient failure as an outage.
   confidence. v6.2.0 still has not been tagged, released, installed, activated,
   or observed as loaded.
 
-The signed provider runtime, the 12-action set, and every action's
-authority/artifact/evidence contract are unchanged from v6.1.1.
+The 12-action set and every action's authority/artifact/evidence contract are
+unchanged from v6.1.1; the signed provider runtime advances to `4.1.0` (the
+additive governance-pool widening described above).
 
 ### Most recent tagged release: v6.1.1
 
@@ -180,7 +192,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.0.6`;
+- provider runtime version `4.1.0`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.
