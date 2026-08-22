@@ -5,16 +5,18 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.0** (source only; not tagged, released, installed, or activated)
+Current: **6.2.0** (published as
+[`v6.2.0`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0) and
+activated on all four primary hosts)
 
-Version 6.2.0 adds the public `project-estimation` skill. It provides
-read-only-by-default, structured estimates for agent-led work and a compact
-design/plan checkpoint; it does not alter provider routing or the co-packaged
-native runtime. A governed schema-2 `empirical-v3` bootstrap aggregate and its
+Version 6.2.0 advances the co-packaged native runtime to `4.1.0` (a
+governance-pool widening) and adds the public `project-estimation` skill. The
+skill provides read-only-by-default, structured estimates for agent-led work and
+a compact design/plan checkpoint; the skill itself does not alter provider
+routing. A governed schema-2 `empirical-v3` bootstrap aggregate and its
 schema-3 receipt are admitted for descriptive enhancement-duration estimates.
 Greenfield and unpublished token, wait, rework, quota-delay, and cash metrics
-remain typed unavailable; bootstrap confidence is never high. v6.2.0 is not
-tagged, published, installed, activated, or observed as loaded.
+remain typed unavailable; bootstrap confidence is never high.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and

@@ -36,8 +36,8 @@ dated snapshot, not a permanent “latest version” badge.
 | Surface | Determination | Evidence |
 | --- | --- | --- |
 | `docs/architecture/` | **updated current** | This status snapshot records the v6.2.0 release, the dual-architecture runtime 4.1.0, the governance-pool widening, and four-host activation; the remaining handbook pages describe the direct-runtime lifecycle and boundaries in architecture-neutral terms unchanged by this release. |
-| Root `README.md` | **verified current** | The version, what's-new narrative (runtime 4.1.0 and the governance widening), and release link were refreshed in the distribution PR and verified by the release-cut consistency gates. |
-| `plugins/agent-collab/README.md` | **verified current** | The package reference describes runtime 4.1.0, the advanced wire descriptor, and host-keyed artifact selection across the two per-architecture bundles. |
+| Root `README.md` | **updated** | The current-source paragraph and the project-estimation what's-new note were updated in this closeout to state that v6.2.0 is published and activated on all four hosts (removing the pre-release "not yet tagged/released/installed" language); the runtime 4.1.0 / governance-widening narrative was set in the distribution PR. |
+| `plugins/agent-collab/README.md` | **updated** | The `Current:` line and the version-6.2.0 note were updated in this closeout to state the published + activated status and the runtime 4.1.0 advance (removing the "source only; not tagged/released/installed" language); the runtime facts were set in the distribution PR. |
 | Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v6.2.0 entry; this post-release closeout leaves generated history unchanged. |
 
 ## Historical v6.1.1 release closeout snapshot
