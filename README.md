@@ -6,12 +6,11 @@ co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
 This public repository's current source distribution is **agent-collab**
-(v6.2.0). It combines a governance-pool-widening provider runtime advance
-(`4.1.0`), actionable coordinator rejection and outcome handling, and empirical
-project estimation. It is published as
-**[v6.2.0](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)** and
-activated on all four primary hosts (Claude, Codex, Antigravity, Grok) with
-byte-exact installed trees and a consumed post-install canary each.
+(v6.2.1). It adds bounded request framing and identity-preserving invocation
+recovery on the unchanged signed provider runtime (`4.1.0`). Version 6.2.1 is
+source only: it is not yet tagged, released, installed, or activated. The
+current published release remains
+**[v6.2.0](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -21,7 +20,28 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.2.0
+## What's new - v6.2.1
+
+- **Bounded interactive framing.** A TTY accepts one newline-terminated JSON
+  request without waiting for EOF. Noninteractive stdin remains EOF-delimited
+  and still rejects trailing bytes, preserving the exact-one-object boundary.
+- **Identity-preserving recovery.** The coordinator canonicalizes only closed,
+  unambiguous representations: missing or empty target means untargeted; exact
+  semantic `action`/`route` field names map to their canonical names; exact
+  native source objects flatten to the public source; and ASCII presentation
+  differences normalize only when they land on an admitted token. Conflicts,
+  provider/model nicknames, missing action or effort, and authority-changing
+  guesses remain typed rejections with actionable criteria. One accepted
+  request still invokes the runtime exactly once, with no replay or fallback.
+- **Descriptor-gated criteria.** The client can consume the next signed wire
+  projection for logical agents, model lineages, action-compatible targets,
+  and effort floors. It never forwards those future request fields to the
+  current schema-6 runtime.
+
+The signed provider runtime, action set, and authority contracts are unchanged
+from v6.2.0.
+
+## Previous tagged release - v6.2.0
 
 This release advances the signed provider runtime to `4.1.0` (an additive
 governance-pool widening) and makes the coordinator boundary tolerant of

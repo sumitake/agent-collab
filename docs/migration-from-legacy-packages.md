@@ -10,8 +10,11 @@ not compatibility dependencies and must not remain active.
 - Replace every `long-context` or size-branded context command with
   `/agent-collab:context`.
 - `/agent-collab:ai-merge-resolve`, `/claude-collab:ai-merge-resolve`, `/codex-collab:ai-merge-resolve`, `/antigravity-collab:ai-merge-resolve` | `/agent-collab:merge-resolve`
-- Send a logical action and source to the coordinator. Do not translate old
-  provider `route`/`action` pairs; that wire has been removed.
+- Send a logical action and source to the coordinator. Exact `action` and
+  `route` field names are accepted only when their values already name a public
+  logical action and canonical logical agent. Old provider route/action pairs,
+  models, transport actions, and product aliases remain unsupported; that wire
+  has been removed.
 
 ## Verify
 

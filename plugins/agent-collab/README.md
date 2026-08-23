@@ -5,12 +5,15 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.0** (published as
-[`v6.2.0`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0) and
-activated on all four primary hosts)
+Current source: **6.2.1** (not yet tagged, released, installed, or activated)
 
-Version 6.2.0 advances the co-packaged native runtime to `4.1.0` (a
-governance-pool widening) and adds the public `project-estimation` skill. The
+Current published release: **6.2.0**
+([`v6.2.0`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0))
+
+Version 6.2.1 adds bounded TTY request framing and conservative invocation
+recovery on the unchanged `4.1.0` runtime. Version 6.2.0 advanced the
+co-packaged native runtime to `4.1.0` (a governance-pool widening) and added the
+public `project-estimation` skill. The
 skill provides read-only-by-default, structured estimates for agent-led work and
 a compact design/plan checkpoint; the skill itself does not alter provider
 routing. A governed schema-2 `empirical-v3` bootstrap aggregate and its
@@ -59,7 +62,13 @@ Send one JSON object on stdin to:
 python3 "<plugin-root>/coordinator.py"
 ```
 
-Every request contains exactly these common fields:
+For a noninteractive pipe or file, close stdin after the object; the exact body
+is EOF-delimited. On a TTY, terminate the single object with a newline; the
+coordinator responds without waiting for the terminal to close. In either mode,
+only one object is consumed and one accepted request starts at most one runtime
+attempt.
+
+The canonical request contains exactly these common fields:
 
 ```json
 {
@@ -111,9 +120,14 @@ governance.repository
 review.repository
 ```
 
-Old `route`, `action`, `row`, provider, model, native-effort,
-development-shadow, and artifact-proof request fields are rejected. There is
-no alias or translator.
+For caller compatibility, exact legacy field names `action` and `route` are
+accepted only when their values already name a public logical action and a
+canonical logical agent. The exact closed native `source` object, an exact
+`operation: "invoke"`, missing/empty target, and ASCII whitespace/case around
+an admitted token are also normalized and reported in `normalized`. Conflicting
+fields, provider/model/product aliases, transport actions, `row`, native effort,
+development-shadow, and artifact-proof fields remain rejected. There is no
+fuzzy, prompt-inferred, provider-branded, or cost-changing translator.
 
 Runtime status uses one separate closed request. It has no prompt or source and
 returns every logical action in one zero-inference snapshot:
@@ -126,8 +140,11 @@ returns every logical action in one zero-inference snapshot:
 
 The workspace build emits one schema-4 manifest with a positive-integer wire schema
 revision, runtime protocol 4, native contract 4, and provider runtime `4.1.0`. The
-wire revision records compatible descriptor evolution; runtime protocol 4 remains the
-executable compatibility boundary. The manifest carries one
+current signed descriptor is schema 6. The v6.2.1 client also validates the next
+schema-7 projections for logical agents, model lineages, action-compatible targets,
+and effort floors; it forwards schema-7-only context only when that signed descriptor
+is actually present. The wire revision records compatible descriptor evolution;
+runtime protocol 4 remains the executable compatibility boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
@@ -205,10 +222,9 @@ A rejected request (`status: invalid_request`) additionally carries a specific
 naming the offending field, its constraint, and the admitted values or the
 required source, so the caller can correct it in place. Echoed values in
 `detail` are ASCII-printable, length-bounded, and list-bounded, so a rejection
-never reflects unbounded or raw untrusted input back to the caller. The only
-in-place normalization is coercing an empty `target_agent` to `null` (recorded
-in a `normalized` field); nothing that changes cost, depth, or a security
-decision is rewritten.
+never reflects unbounded or raw untrusted input back to the caller. Every
+accepted compatibility normalization is recorded in `normalized`; nothing that
+changes cost, depth, family, authority, or a security decision is rewritten.
 
 A success contains the descriptor-defined artifact, runtime-owned evidence,
 one provider-neutral execution receipt, and bounded diagnostics. Observed
@@ -251,7 +267,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
 12/14/18 counts. Active retired packages block direct routing; cache-only
-residue is reported separately. Runtime readiness launches this same 6.2.0
+residue is reported separately. Runtime readiness launches the installed
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.
 

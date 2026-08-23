@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sys
 from typing import Any, Mapping
@@ -42,6 +42,15 @@ _READINESS_KEYS = {
 }
 _QUALITY_PROFILES = ("economical", "standard", "frontier")
 _EFFORT_CLASSES = ("minimal", "standard", "maximum")
+_EFFORT_RANK = {name: index for index, name in enumerate(_EFFORT_CLASSES)}
+_CANONICAL_LOGICAL_AGENTS = frozenset(
+    {"alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"}
+)
+_OPTIONAL_CONTEXT_KEYS = frozenset(
+    {"occupied_model_lineages", "evidence_anchors"}
+)
+_MAX_CONTEXT_ITEMS = 16
+_MAX_REPOSITORY_PATH_BYTES = 4096
 _MAX_DETAIL_FIELD = 64
 _MAX_DETAIL_LIST = 16
 
@@ -175,6 +184,269 @@ def _decode_request(raw: bytes) -> object:
     )
 
 
+def _record_normalization(
+    normalized: list | None,
+    *,
+    field: str,
+    before: object,
+    after: object,
+    reason: str,
+) -> None:
+    if normalized is not None:
+        normalized.append(
+            {
+                "field": field,
+                "from": _bounded_scalar(before),
+                "to": after,
+                "reason": reason,
+            }
+        )
+
+
+def _ascii_token(value: object, admitted: object) -> object:
+    """Normalize harmless ASCII presentation only when it lands exactly."""
+
+    if type(value) is not str or not value.isascii():
+        return value
+    candidate = value.strip(" \t\r\n").lower()
+    return candidate if candidate in admitted else value
+
+
+def _logical_agents(wire: object) -> frozenset[str]:
+    """Use the signed descriptor projection when present, else the v6 set."""
+
+    projected = getattr(wire, "logical_agents", frozenset())
+    return projected or _CANONICAL_LOGICAL_AGENTS
+
+
+def _merge_legacy_field(
+    document: dict[str, object],
+    *,
+    legacy: str,
+    canonical: str,
+    admitted: object,
+    normalized: list | None,
+) -> None:
+    if legacy not in document:
+        return
+    legacy_value = _ascii_token(document[legacy], admitted)
+    if canonical in document:
+        canonical_value = _ascii_token(document[canonical], admitted)
+        if canonical_value != legacy_value:
+            raise _InvalidRequest(
+                "conflicting_fields",
+                {"field": canonical, "conflicts_with": legacy},
+            )
+    else:
+        document[canonical] = legacy_value
+    document.pop(legacy)
+    _record_normalization(
+        normalized,
+        field=canonical,
+        before=f"legacy:{legacy}",
+        after=legacy_value,
+        reason="exact_legacy_semantic_field",
+    )
+
+
+def _flatten_source(
+    document: dict[str, object], *, normalized: list | None
+) -> None:
+    if "source" not in document:
+        return
+    source = document.pop("source")
+    if type(source) is not dict:
+        raise _InvalidRequest(
+            "source_invalid", {"field": "source", "constraint": "closed object"}
+        )
+    mode = _ascii_token(
+        source.get("mode"), {"conceptual_prompt", "documents", "repository"}
+    )
+    if mode == "repository" and set(source) == {"mode", "repo_root"}:
+        field, value = "repo_root", source["repo_root"]
+    elif mode == "documents" and set(source) == {"mode", "documents"}:
+        field, value = "documents", source["documents"]
+    elif mode == "conceptual_prompt" and set(source) == {"mode"}:
+        field, value = None, None
+    else:
+        raise _InvalidRequest(
+            "source_invalid",
+            {
+                "field": "source",
+                "constraint": "one exact repository, documents, or conceptual source",
+            },
+        )
+    if field is not None:
+        if field in document and document[field] != value:
+            raise _InvalidRequest(
+                "conflicting_fields", {"field": field, "conflicts_with": "source"}
+            )
+        document[field] = value
+    _record_normalization(
+        normalized,
+        field="source",
+        before="closed_source_object",
+        after=mode,
+        reason="flattened_public_source",
+    )
+
+
+def _canonicalize_request(
+    document: object, wire: object, *, normalized: list | None
+) -> dict[str, object]:
+    """Recover identity-preserving request representations before validation."""
+
+    if type(document) is not dict:
+        raise _InvalidRequest(
+            "request_not_object", {"reason": "request must be a JSON object"}
+        )
+    result = dict(document)
+    if result.get("operation") == "invoke":
+        result.pop("operation")
+        _record_normalization(
+            normalized,
+            field="operation",
+            before="invoke",
+            after=None,
+            reason="default_invoke_operation",
+        )
+    _merge_legacy_field(
+        result,
+        legacy="action",
+        canonical="logical_action",
+        admitted=wire.logical_actions,
+        normalized=normalized,
+    )
+    admitted_agents = _logical_agents(wire)
+    _merge_legacy_field(
+        result,
+        legacy="route",
+        canonical="target_agent",
+        admitted=admitted_agents,
+        normalized=normalized,
+    )
+    if "target_agent" not in result:
+        result["target_agent"] = None
+        _record_normalization(
+            normalized,
+            field="target_agent",
+            before="missing",
+            after=None,
+            reason="missing_target_is_untargeted",
+        )
+    for field, admitted in (
+        ("logical_action", wire.logical_actions),
+        ("quality_profile", _QUALITY_PROFILES),
+        ("effort_class", _EFFORT_CLASSES),
+        ("target_agent", admitted_agents),
+    ):
+        if field not in result:
+            continue
+        before = result[field]
+        after = _ascii_token(before, admitted)
+        if after != before:
+            result[field] = after
+            _record_normalization(
+                normalized,
+                field=field,
+                before=before,
+                after=after,
+                reason="ascii_token_matches_closed_value",
+            )
+    _flatten_source(result, normalized=normalized)
+    return result
+
+
+def _verification_context(
+    document: Mapping[str, object], wire: object, *, normalized: list | None
+) -> tuple[list[str], list[dict[str, str]]]:
+    occupied = document.get("occupied_model_lineages", [])
+    anchors = document.get("evidence_anchors", [])
+    if type(occupied) is not list or len(occupied) > _MAX_CONTEXT_ITEMS:
+        raise _InvalidRequest(
+            "occupied_model_lineages_invalid",
+            {"field": "occupied_model_lineages", "constraint": "bounded unique array"},
+        )
+    admitted_lineages = getattr(wire, "model_lineages", frozenset())
+    normalized_occupied: list[str] = []
+    for index, raw_value in enumerate(occupied):
+        value = _ascii_token(raw_value, admitted_lineages)
+        if type(value) is not str or value not in admitted_lineages:
+            if not admitted_lineages:
+                raise _InvalidRequest(
+                    "runtime_feature_unavailable",
+                    {"field": "occupied_model_lineages", "required_wire_schema": 7},
+                )
+            raise _InvalidRequest(
+                "occupied_model_lineages_invalid",
+                {
+                    "field": "occupied_model_lineages",
+                    "admitted": _bounded_key_list(admitted_lineages),
+                },
+            )
+        if value != raw_value:
+            _record_normalization(
+                normalized,
+                field=f"occupied_model_lineages[{index}]",
+                before=raw_value,
+                after=value,
+                reason="ascii_token_matches_closed_value",
+            )
+        if value in normalized_occupied:
+            raise _InvalidRequest(
+                "occupied_model_lineages_invalid",
+                {"field": "occupied_model_lineages", "constraint": "unique values"},
+            )
+        normalized_occupied.append(value)
+
+    if type(anchors) is not list or len(anchors) > _MAX_CONTEXT_ITEMS:
+        raise _InvalidRequest(
+            "evidence_anchors_invalid",
+            {"field": "evidence_anchors", "constraint": "bounded unique array"},
+        )
+    normalized_anchors: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    if anchors and not getattr(wire, "logical_agents", frozenset()):
+        raise _InvalidRequest(
+            "runtime_feature_unavailable",
+            {"field": "evidence_anchors", "required_wire_schema": 7},
+        )
+    for item in anchors:
+        if type(item) is not dict or set(item) != {"id", "path"}:
+            raise _InvalidRequest(
+                "evidence_anchors_invalid",
+                {"field": "evidence_anchors", "constraint": "closed id/path objects"},
+            )
+        anchor_id, path = item["id"], item["path"]
+        if (
+            type(anchor_id) is not str
+            or _REQUEST_ID_RE.fullmatch(anchor_id) is None
+            or anchor_id in seen_ids
+            or type(path) is not str
+            or not path
+            or not path.isascii()
+            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in path)
+            or len(path.encode("utf-8")) > _MAX_REPOSITORY_PATH_BYTES
+        ):
+            raise _InvalidRequest(
+                "evidence_anchors_invalid",
+                {"field": "evidence_anchors", "constraint": "unique id and safe relative path"},
+            )
+        relative = PurePosixPath(path)
+        if (
+            relative.is_absolute()
+            or relative.as_posix() != path
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise _InvalidRequest(
+                "evidence_anchors_invalid",
+                {"field": "evidence_anchors", "constraint": "safe relative path"},
+            )
+        seen_ids.add(anchor_id)
+        normalized_anchors.append({"id": anchor_id, "path": relative.as_posix()})
+    return normalized_occupied, normalized_anchors
+
+
 def _load(name: str, filename: str):
     existing = sys.modules.get(name)
     if existing is not None:
@@ -264,14 +536,13 @@ def validate_request(
     """Convert the closed coordinator request to the descriptor's native request.
 
     Rejections raise ``_InvalidRequest`` with a bounded, actionable ``detail`` so
-    a caller can correct the request in place instead of re-deriving it. The one
-    silent recovery is coercing an empty ``target_agent`` to ``None`` (an empty
-    string already means "untargeted"), recorded in ``normalized``. Nothing that
-    would change cost, depth, or a security decision is ever rewritten.
+    a caller can correct the request in place instead of re-deriving it.
+    Identity-preserving compatibility rewrites are recorded in ``normalized``.
+    Nothing that changes cost, depth, family, authority, or a security decision
+    is ever rewritten.
     """
 
-    if type(document) is not dict:
-        raise _InvalidRequest("request_not_object", {"reason": "request must be a JSON object"})
+    document = _canonicalize_request(document, wire, normalized=normalized)
     if not _COMMON_KEYS.issubset(document):
         raise _InvalidRequest(
             "missing_common_fields",
@@ -288,19 +559,21 @@ def validate_request(
             },
         )
     source_mode = wire.logical_action_source_modes[action]
+    optional = set(document) & _OPTIONAL_CONTEXT_KEYS
     if source_mode == "repository":
-        expected = _COMMON_KEYS | {"repo_root"}
+        expected = _COMMON_KEYS | {"repo_root"} | optional
         if set(document) != expected:
             raise _closure_error(document, expected, action, "repo_root")
         source = {"mode": "repository", "repo_root": _canonical_repo_root(document["repo_root"])}
     elif source_mode == "documents":
-        expected = _COMMON_KEYS | {"documents"}
+        expected = _COMMON_KEYS | {"documents"} | optional
         if set(document) != expected:
             raise _closure_error(document, expected, action, "documents")
         source = {"mode": "documents", "documents": _documents(document["documents"])}
     elif source_mode == "conceptual_prompt":
-        if set(document) != _COMMON_KEYS:
-            raise _closure_error(document, _COMMON_KEYS, action, None)
+        expected = _COMMON_KEYS | optional
+        if set(document) != expected:
+            raise _closure_error(document, expected, action, None)
         source = {"mode": "conceptual_prompt"}
     else:
         raise _InvalidRequest(
@@ -366,20 +639,58 @@ def validate_request(
         )
     if target_agent == "":
         target_agent = None
-        if normalized is not None:
-            normalized.append(
-                {
-                    "field": "target_agent",
-                    "from": "",
-                    "to": None,
-                    "reason": "empty_target_is_untargeted",
-                }
-            )
-    elif target_agent is not None and type(target_agent) is not str:
+        _record_normalization(
+            normalized,
+            field="target_agent",
+            before="",
+            after=None,
+            reason="empty_target_is_untargeted",
+        )
+    admitted_agents = _logical_agents(wire)
+    if (
+        target_agent is not None
+        and (
+            type(target_agent) is not str
+            or target_agent not in admitted_agents
+        )
+    ):
         raise _InvalidRequest(
             "target_agent_invalid",
-            {"field": "target_agent", "constraint": "null or a non-empty logical agent name"},
+            {
+                "field": "target_agent",
+                "constraint": "null or a canonical logical agent name",
+                "admitted": _bounded_key_list(admitted_agents),
+            },
         )
+    action_targets = getattr(wire, "logical_action_targets", {})
+    if target_agent is not None and action_targets:
+        compatible = list(action_targets[action])
+        if target_agent not in compatible:
+            raise _InvalidRequest(
+                "unsupported_target_action",
+                {
+                    "field": "target_agent",
+                    "logical_action": action,
+                    "given": target_agent,
+                    "admitted": _bounded_key_list(compatible),
+                },
+            )
+    effort_floors = getattr(wire, "logical_action_effort_floors", {})
+    if effort_floors:
+        required_effort = effort_floors[action]
+        if _EFFORT_RANK[effort_class] < _EFFORT_RANK[required_effort]:
+            raise _InvalidRequest(
+                "effort_below_floor",
+                {
+                    "field": "effort_class",
+                    "logical_action": action,
+                    "given": effort_class,
+                    "required": required_effort,
+                },
+            )
+    occupied_model_lineages, evidence_anchors = _verification_context(
+        document, wire, normalized=normalized
+    )
     if getattr(host, "identity_conflict", False):
         author_lineage = None
     elif type(author_lineage) is not str or author_lineage == "unknown":
@@ -400,6 +711,9 @@ def validate_request(
         "prompt": prompt,
         "source": source,
     }
+    if getattr(wire, "logical_agents", frozenset()):
+        native["occupied_model_lineages"] = occupied_model_lineages
+        native["evidence_anchors"] = evidence_anchors
     # The runtime client performs the descriptor-schema validation immediately
     # before launch.  This construction keeps the coordinator boundary smaller.
     return native
@@ -601,12 +915,12 @@ def process(document: object) -> tuple[dict[str, Any], int]:
     }
     if usable:
         response = _response(envelope["request_id"], result.status.value)
-        if normalized:
-            response["normalized"] = normalized
     else:
         response = _failure_response(
             envelope["request_id"], result.status.value, _runtime_error_code(result)
         )
+    if normalized:
+        response["normalized"] = normalized
     if result.result is not None:
         response["result"] = result.result
     if result.provenance is not None:
@@ -616,24 +930,50 @@ def process(document: object) -> tuple[dict[str, Any], int]:
     return response, 0
 
 
-def main() -> int:
-    raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
-    if len(raw) > MAX_INPUT_BYTES:
-        response, code = _failure_response(
-            None, "invalid_request", "input_limit_exceeded",
-            detail={"field": "request", "constraint": "max_bytes", "max": MAX_INPUT_BYTES},
-        ), 2
-    else:
+def _read_one_request(stream: object) -> bytes:
+    """Read one EOF-framed pipe request or one newline-framed TTY request."""
+
+    is_tty = False
+    probe = getattr(stream, "isatty", None)
+    if callable(probe):
         try:
-            document = _decode_request(raw)
-            response, code = process(document)
-        except (UnicodeError, ValueError, RecursionError):
+            is_tty = probe() is True
+        except (OSError, ValueError):
+            is_tty = False
+    reader = getattr(stream, "readline" if is_tty else "read", None)
+    if not callable(reader):
+        raise OSError("coordinator stdin is unreadable")
+    return reader(MAX_INPUT_BYTES + 1)
+
+
+def main() -> int:
+    try:
+        raw = _read_one_request(sys.stdin.buffer)
+    except (OSError, RuntimeError, ValueError):
+        response, code = _failure_response(
+            None, "unavailable", "coordinator_unavailable"
+        ), 0
+    else:
+        if len(raw) > MAX_INPUT_BYTES:
             response, code = _failure_response(
-                None, "invalid_request", "invalid_json_request",
-                detail={"reason": "request body must be one closed UTF-8 JSON object"},
+                None, "invalid_request", "input_limit_exceeded",
+                detail={"field": "request", "constraint": "max_bytes", "max": MAX_INPUT_BYTES},
             ), 2
-        except (OSError, RuntimeError):
-            response, code = _failure_response(None, "unavailable", "coordinator_unavailable"), 0
+        else:
+            try:
+                document = _decode_request(raw)
+            except (UnicodeError, ValueError, RecursionError):
+                response, code = _failure_response(
+                    None, "invalid_request", "invalid_json_request",
+                    detail={"reason": "request body must be one closed UTF-8 JSON object"},
+                ), 2
+            else:
+                try:
+                    response, code = process(document)
+                except (OSError, RuntimeError, ValueError):
+                    response, code = _failure_response(
+                        None, "unavailable", "coordinator_unavailable"
+                    ), 0
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 

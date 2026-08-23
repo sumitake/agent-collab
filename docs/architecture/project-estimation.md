@@ -26,7 +26,8 @@ wait, rework, quota-delay, or marginal-cash metrics.
 
 This is production maintenance evidence in the explicit `bootstrap` state, not
 a promoted calibration claim. Its estimates are descriptive and never high
-confidence. The maintenance evidence remains version-bound to 6.2.0.
+confidence. The unchanged maintenance evidence is rebound to the 6.2.1 source
+candidate; the current published evidence remains the v6.2.0 release snapshot.
 
 ## Mental model
 

@@ -108,12 +108,19 @@ def _notification() -> dict[str, object]:
             "decision": "stale_fallback"}
 
 
-def _receipt(*, notification: bool, generated: str, pricing: dict[str, object], quota: dict[str, object]) -> dict[str, object]:
+def _receipt(
+    *,
+    notification: bool,
+    generated: str,
+    pricing: dict[str, object],
+    quota: dict[str, object],
+    version: str = VERSION,
+) -> dict[str, object]:
     files = ["aggregate-prior.json", "pricing-snapshot.json", "quota-snapshot.json"]
     if notification:
         files.append("operator-notification.json")
     return {
-        "schema_version": 3, "version": VERSION, "estimator_method_version": "empirical-v3",
+        "schema_version": 3, "version": version, "estimator_method_version": "empirical-v3",
         "calibration_policy_version": "calibration-v1", "calibration_policy_sha256": DIGEST,
         "pricing_policy_version": "policy-v1", "pricing_policy_sha256": DIGEST,
         "pricing_registry_sha256": DIGEST, "quota_registry_sha256": DIGEST,
@@ -135,7 +142,13 @@ def _write_json(path: Path, value: object) -> None:
     path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode())
 
 
-def _fixture(root: Path, *, notification: bool = False, generated: str = "2026-08-20") -> Path:
+def _fixture(
+    root: Path,
+    *,
+    notification: bool = False,
+    generated: str = "2026-08-20",
+    version: str = VERSION,
+) -> Path:
     data = root / "plugins" / "agent-collab" / "project-estimation-data"
     data.mkdir(parents=True)
     for source in DATA_SOURCE.glob("*.schema.json"):
@@ -152,7 +165,13 @@ def _fixture(root: Path, *, notification: bool = False, generated: str = "2026-0
     _write_json(data / "quota-snapshot.json", quota)
     if notification:
         _write_json(data / "operator-notification.json", _notification())
-    receipt = _receipt(notification=notification, generated=generated, pricing=pricing, quota=quota)
+    receipt = _receipt(
+        notification=notification,
+        generated=generated,
+        pricing=pricing,
+        quota=quota,
+        version=version,
+    )
     receipt["inventory"] = [{"name": name, "sha256": hashlib.sha256((data / name).read_bytes()).hexdigest(), "size": (data / name).stat().st_size} for name in sorted(["aggregate-prior.json", "pricing-snapshot.json", "quota-snapshot.json"] + (["operator-notification.json"] if notification else []))]
     receipt["release_manifest_sha256"] = _sha({key: value for key, value in receipt.items() if key not in {"release_manifest_sha256", "inventory", "receipt_sha256"}})
     aggregate["nodes"][0]["release_manifest_sha256"] = receipt["release_manifest_sha256"]
@@ -829,7 +848,10 @@ class MaintenanceVerifierTests(unittest.TestCase):
         plugin = repo / "plugins" / "agent-collab"
         shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
         shutil.rmtree(repo / "plugins" / "agent-collab" / "project-estimation-data")
-        data = _fixture(repo)
+        plugin_version = json.loads(
+            (plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )["version"]
+        data = _fixture(repo, version=plugin_version)
         expected = (data / "aggregate-prior.json").read_bytes()
         original_admit = archive.admit_maintenance
         calls: list[object] = []
