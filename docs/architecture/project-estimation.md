@@ -19,15 +19,14 @@ consents to an output path.
 ## Current status
 
 The skill, helper, schemas, planning checkpoints, and release-verification
-source are implemented on the v6.2.0 development branch. A governed,
-content-addressed bootstrap handoff is admitted from the frozen producer. It
-contains a supported enhancement duration hierarchy but no greenfield root and
-no published token, wait, rework, quota-delay, or marginal-cash metrics.
+source ship in the published v6.2.0 release. A governed, content-addressed
+bootstrap handoff is admitted from the frozen producer. It contains a supported
+enhancement duration hierarchy but no greenfield root and no published token,
+wait, rework, quota-delay, or marginal-cash metrics.
 
 This is production maintenance evidence in the explicit `bootstrap` state, not
 a promoted calibration claim. Its estimates are descriptive and never high
-confidence. v6.2.0 has not been tagged, published, installed, activated, or
-observed as loaded; the most recent tagged release remains v6.1.1.
+confidence. The maintenance evidence remains version-bound to 6.2.0.
 
 ## Mental model
 

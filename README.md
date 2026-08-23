@@ -15,8 +15,8 @@ byte-exact installed trees and a consumed post-install canary each.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
-machine-operational contract for this release candidate. The mandatory final
-documentation closeout records the exact published artifact and installation
+machine-operational contract for this release. The final documentation closeout
+records the exact published artifact and installation
 evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
@@ -75,7 +75,7 @@ The 12-action set and every action's authority/artifact/evidence contract are
 unchanged from v6.1.1; the signed provider runtime advances to `4.1.0` (the
 additive governance-pool widening described above).
 
-### Most recent tagged release: v6.1.1
+### Previous tagged release: v6.1.1
 
 - Provider runtime advanced to `4.0.6`: agent-collaboration routing
   hardening, lifecycle diagnostics decoupled from authority, pinned
