@@ -13,6 +13,15 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 
 
 class UnifiedSkillRuntimeContractTests(unittest.TestCase):
+    def _section(self, text: str, heading: str) -> str:
+        section = text.split(f"## {heading}\n", 1)[1]
+        return section.split("\n## ", 1)[0]
+
+    def _assert_single_cardinality_claim(
+        self, section: str, pattern: str, expected: int
+    ) -> None:
+        self.assertEqual([str(expected)], re.findall(pattern, section))
+
     def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
             self.assertIn("\nversion: 6.2.0\n", path.read_text(encoding="utf-8"))
@@ -26,6 +35,43 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertIn("wire_contract_sha256", text)
         self.assertIn("12 logical actions", text)
         self.assertNotIn("runtime_setup.py", text)
+
+    def test_readmes_match_descriptor_cardinalities(self) -> None:
+        descriptor = json.loads(
+            (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["wire_contract"]
+        logical = len(descriptor["logical_actions"])
+        transports = len(descriptor["base_transport_actions"])
+        pairs = len(descriptor["valid_action_source_pairs"])
+        root_section = self._section(
+            (ROOT / "README.md").read_text(encoding="utf-8"), "Semantic actions"
+        )
+        package_section = self._section(
+            (PLUGIN / "README.md").read_text(encoding="utf-8"),
+            "Direct runtime boundary",
+        )
+
+        for section, claims in (
+            (
+                root_section,
+                (
+                    (r"\b(\d+) logical actions\b", logical),
+                    (r"\b(\d+)\s+transport actions\b", transports),
+                    (r"\b(\d+)\s+action/source pairs\b", pairs),
+                ),
+            ),
+            (
+                package_section,
+                (
+                    (r"\b(\d+) logical actions\b", logical),
+                    (r"\b(\d+) source-collapsed provider transport actions\b", transports),
+                    (r"\b(\d+) currently valid action/source pairs\b", pairs),
+                ),
+            ),
+        ):
+            for pattern, expected in claims:
+                with self.subTest(pattern=pattern, expected=expected):
+                    self._assert_single_cardinality_claim(section, pattern, expected)
 
     def test_review_skill_examples_are_accepted_closed_coordinator_requests(self) -> None:
         def load(name: str, path: Path):

@@ -21,7 +21,7 @@ organizes that inventory by user outcome.
 | Governance and assurance | `autonomy-readiness`, `code-review`, `governance-review`, `logic-check`, `qa-verify`, `red-team`, `untrusted-audit` | Test correctness, independence, security, provenance, and completion evidence. |
 | Deliberation and stakeholder lenses | `debate`, `simulate-user` | Expose conflicting arguments or test a proposal against a persona. |
 | Delegation and implementation | `delegate`, `dev-delegate`, `worker` | Return bounded research or output for the primary to integrate. |
-| Large-context and knowledge work | `knowledge-compile`, `long-context` | Extract or synthesize a bounded corpus with explicit provenance. |
+| Context and knowledge work | `context`, `knowledge-compile`, `project-knowledge` | Extract or synthesize bounded documents/repositories, or maintain an explicit project knowledge layer, with provenance. |
 | Reproducible workflows | `chain`, `chain-configurator`, `orchestrate` | Define and execute repeatable multi-step coordination. |
 | Integration and conflict handling | `merge-resolve` | Analyze and resolve a bounded merge conflict while preserving intent. |
 | Visual guidance | `ui-to-code`, `visual-review` | Guide primary-only visual work when typed image transport is absent; never invent a managed attachment path. |
@@ -42,11 +42,11 @@ in [Governance and authority](governance-and-authority.md).
 
 Current repository route contracts cover:
 
-- Gemini advisory, governance, and long-context work;
+- Gemini advisory, governance, and bounded context work;
 - Codex advisory and governance work;
 - OpenCode planning and output-only build work;
-- Grok read-only architecture, governance, and huge-context work; and
-- Composer-compatible output-only code generation.
+- Grok read-only architecture, governance, bounded context, and output-only
+  code generation.
 
 Codex build is recognized but typed unavailable in this repository generation.
 The route list is a **current repository contract**, not installed/active
@@ -121,7 +121,7 @@ workflows explicitly compose the checkpoint before final presentation. A host
 without contextual skill selection uses explicit invocation and reports that
 the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
-semantics, and the current unreleased status.
+semantics, and the published v6.2.0 bootstrap status.
 
 The packaged prior is currently an explicit bootstrap: enhancement duration is
 descriptive, bootstrap confidence cannot be high, and unsupported greenfield,
@@ -131,9 +131,10 @@ rather than zeros or workflow failures.
 ### Large-context work
 
 Use `knowledge-compile` when multiple sources must become a durable cited
-dossier. Use `long-context` when a managed large-context route is needed. The
-input remains bounded and source-specific; long-context transport does not
-grant governance or mutation authority.
+dossier. Use `context` for a bounded managed document or repository extraction
+or reasoning request, and `project-knowledge` for an explicit project-owned
+knowledge layer. Context transport does not grant governance or mutation
+authority.
 
 ## Host and package support
 

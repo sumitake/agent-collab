@@ -23,6 +23,34 @@ General users should start with the public
 [lifecycle guide](../../docs/architecture/lifecycle-and-operations.md). This
 file is the low-level package and coordinator reference.
 
+## Skills
+
+The package ships these 53 generated skills. Their `SKILL.md` files are the
+authoritative invocation contracts; the
+[capability map](../../docs/architecture/capabilities-and-workflows.md) groups
+them by user outcome.
+
+```text
+agent-readiness              agent-runtime-status       ai-writing-auditor
+architect                    architecture-review        autonomy-readiness
+brainstorm                    chain                      chain-configurator
+code-review                  compose-skills             context
+data-engineer                debate                     decision-map
+delegate                     dev-delegate               elixir-engineer
+eval-engineer                go-engineer                 governance-review
+hallucination-investigator   incident-responder         intent-check
+knowledge-compile            kubernetes-specialist      learning-loop
+llm-architect                logic-check                 merge-resolve
+migration-doctor             mlops-engineer              orchestrate
+postgres-engineer            project-estimation         project-knowledge
+prompt-regression-tester     prototype                   qa-verify
+red-team                     route                       rust-engineer
+second-opinion               simulate-user               sql-engineer
+sre-engineer                 start-inbox-monitor         teamwork
+terraform-engineer           ui-to-code                  untrusted-audit
+visual-review                worker
+```
+
 ## Coordinator request
 
 Send one JSON object on stdin to:
@@ -104,8 +132,8 @@ top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
 - the 12 logical actions;
-- the 13 source-collapsed provider transport actions;
-- the 17 currently valid action/source pairs;
+- the 14 source-collapsed provider transport actions;
+- the 18 currently valid action/source pairs;
 - semantic request and typed response schemas;
 - the four artifacts (`review_findings`, `governance_verdict`, `context_text`,
   and `private_patch`);
@@ -115,6 +143,11 @@ That descriptor is the only source for:
 
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
+
+Runtime 4.1.0 adds `opencode/governance.repository` and lowest-priority
+governance edges for Zhipu, Moonshot, Alibaba, and DeepSeek. These routes remain
+read-only, family-independence still applies, and the workspace Phase-1
+governance-verdict gate is unchanged.
 
 For each accepted request the public client:
 
@@ -217,7 +250,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
-12/13/17 counts. Active retired packages block direct routing; cache-only
+12/14/18 counts. Active retired packages block direct routing; cache-only
 residue is reported separately. Runtime readiness launches this same 6.2.0
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.

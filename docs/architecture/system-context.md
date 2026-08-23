@@ -26,8 +26,8 @@ to land the result.
   ineligible families, and seals route authority.
 - A verified client for an optional co-packaged native runtime.
 - A migration and safe-mode boundary for retiring older package generations.
-- A deterministic offline project-estimation component with staged,
-  privacy-safe aggregate evidence and no provider dependency.
+- A deterministic offline project-estimation component with a released,
+  privacy-safe bootstrap aggregate and no provider dependency.
 - A public contribution, CI, and release contract that can be applied without
   access to the private native producer.
 
@@ -72,7 +72,7 @@ flowchart LR
     Repo --> Coord
     Repo --> Client
     Repo --> Governance["Public review, CI, and release gates"]
-    Repo --> Estimate["Offline project estimator and staged public priors"]
+    Repo --> Estimate["Offline project estimator and released bootstrap prior"]
     Estimate --> Primary
     Governance --> Primary
 ```
