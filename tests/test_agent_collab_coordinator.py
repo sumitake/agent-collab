@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 import types
 import unittest
 from unittest import mock
@@ -84,22 +86,109 @@ class SemanticCoordinatorTests(unittest.TestCase):
             native["source"], {"mode": "repository", "repo_root": str(ROOT)}
         )
 
-    def test_old_public_route_action_request_is_rejected(self) -> None:
+    def test_exact_legacy_semantic_fields_are_canonicalized(self) -> None:
+        normalized: list[dict[str, object]] = []
+        native = self.coordinator.validate_request(
+            {
+                "operation": "invoke",
+                "request_id": "old-1",
+                "action": " architecture.repository ",
+                "quality_profile": " FRONTIER ",
+                "effort_class": " MAXIMUM ",
+                "route": " GROK ",
+                "timeout_ms": 5000,
+                "prompt": "Review architecture.",
+                "source": {"mode": "repository", "repo_root": str(ROOT)},
+            },
+            self.wire,
+            self.profile,
+            normalized=normalized,
+        )
+
+        self.assertEqual(native["logical_action"], "architecture.repository")
+        self.assertEqual(native["quality_profile"], "frontier")
+        self.assertEqual(native["effort_class"], "maximum")
+        self.assertEqual(native["target_agent"], "grok")
+        self.assertEqual(
+            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+        )
+        self.assertEqual(
+            normalized,
+            [
+                {
+                    "field": "operation",
+                    "from": "invoke",
+                    "to": None,
+                    "reason": "default_invoke_operation",
+                },
+                {
+                    "field": "logical_action",
+                    "from": "legacy:action",
+                    "to": "architecture.repository",
+                    "reason": "exact_legacy_semantic_field",
+                },
+                {
+                    "field": "target_agent",
+                    "from": "legacy:route",
+                    "to": "grok",
+                    "reason": "exact_legacy_semantic_field",
+                },
+                {
+                    "field": "quality_profile",
+                    "from": " FRONTIER ",
+                    "to": "frontier",
+                    "reason": "ascii_token_matches_closed_value",
+                },
+                {
+                    "field": "effort_class",
+                    "from": " MAXIMUM ",
+                    "to": "maximum",
+                    "reason": "ascii_token_matches_closed_value",
+                },
+                {
+                    "field": "source",
+                    "from": "closed_source_object",
+                    "to": "repository",
+                    "reason": "flattened_public_source",
+                },
+            ],
+        )
+
+    def test_product_nickname_is_not_silently_mapped_to_an_agent(self) -> None:
         with self.assertRaises(ValueError) as caught:
             self.coordinator.validate_request(
                 {
-                    "request_id": "old-1",
-                    "route": "grok",
-                    "action": "architecture",
+                    "request_id": "nickname-1",
+                    "action": "review.repository",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
+                    "route": "glm",
                     "timeout_ms": 5000,
-                    "prompt": "old wire",
+                    "prompt": "Review.",
+                    "repo_root": str(ROOT),
                 },
                 self.wire,
                 self.profile,
             )
-        # Still rejected fail-closed, now with an actionable code rather than an
-        # opaque "not closed" message.
-        self.assertEqual(caught.exception.error_code, "missing_common_fields")
+        self.assertEqual(caught.exception.error_code, "target_agent_invalid")
+        self.assertIn("zhipu", caught.exception.detail["admitted"])
+        self.assertNotIn("glm", caught.exception.detail["admitted"])
+
+    def test_conflicting_legacy_and_canonical_fields_fail_before_runtime(self) -> None:
+        request = {
+            "request_id": "conflict-1",
+            "logical_action": "review.repository",
+            "action": "governance.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Review.",
+            "repo_root": str(ROOT),
+        }
+        with self.assertRaises(ValueError) as caught:
+            self.coordinator.validate_request(request, self.wire, self.profile)
+        self.assertEqual(caught.exception.error_code, "conflicting_fields")
 
     def test_repository_action_requires_repo_root(self) -> None:
         with self.assertRaises(ValueError) as caught:
@@ -133,14 +222,18 @@ class SemanticCoordinatorTests(unittest.TestCase):
             or self.client.RuntimeResult(self.client.RuntimeStatus.UNAVAILABLE, error="busy"),
         )
         request = {
+            "operation": "invoke",
             "request_id": "context-1",
-            "logical_action": "context.documents.extract",
-            "quality_profile": "economical",
-            "effort_class": "minimal",
-            "target_agent": None,
+            "action": " CONTEXT.DOCUMENTS.EXTRACT ",
+            "quality_profile": " ECONOMICAL ",
+            "effort_class": " MINIMAL ",
+            "route": " GEMINI ",
             "timeout_ms": 5000,
             "prompt": "Extract facts.",
-            "documents": [{"label": "a", "content": "one"}],
+            "source": {
+                "mode": "documents",
+                "documents": [{"label": "a", "content": "one"}],
+            },
         }
         host = self.host_policy.HostProfile(
             "codex", "openai", "gpt-test", "codex", "session-1", False,
@@ -157,7 +250,10 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(response["status"], "unavailable")
         self.assertEqual(response["error_code"], "busy")
         self.assertNotIn("error", response)
+        self.assertEqual(len(response["normalized"]), 6)
         self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["logical_action"], "context.documents.extract")
+        self.assertEqual(calls[0]["target_agent"], "gemini")
         self.assertEqual(calls[0]["author_lineage"], "openai")
 
     def test_runtime_free_text_is_reduced_to_a_stable_public_error_code(self) -> None:
@@ -572,6 +668,76 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 self.assertEqual(response["status"], "invalid_request")
                 self.assertEqual(response["error_code"], "invalid_json_request")
                 self.assertNotIn("error", response)
+
+    def test_open_pty_request_completes_on_newline_without_eof(self) -> None:
+        """An interactive caller receives one response while its PTY stays open."""
+
+        master_fd, slave_fd = os.openpty()
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        try:
+            started = time.monotonic()
+            os.write(master_fd, b"{}\n")
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(stderr, b"")
+            response = json.loads(stdout)
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(response["status"], "invalid_request")
+            self.assertEqual(response["error_code"], "missing_common_fields")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+            os.close(master_fd)
+
+    def test_post_decode_failure_is_not_mislabeled_invalid_json(self) -> None:
+        stdin = types.SimpleNamespace(buffer=io.BytesIO(b"{}"))
+        stdout = io.StringIO()
+        with mock.patch.object(self.coordinator.sys, "stdin", stdin), mock.patch.object(
+            self.coordinator.sys, "stdout", stdout
+        ), mock.patch.object(
+            self.coordinator, "process", side_effect=ValueError("internal")
+        ):
+            code = self.coordinator.main()
+
+        response = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "unavailable")
+        self.assertEqual(response["error_code"], "coordinator_unavailable")
+
+    def test_non_tty_pipe_waits_for_eof_and_rejects_trailing_object(self) -> None:
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdin is not None
+        try:
+            process.stdin.write(b"{}\n")
+            process.stdin.flush()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                process.wait(timeout=0.5)
+
+            process.stdin.write(b"{}\n")
+            process.stdin.close()
+            process.stdin = None
+            stdout, stderr = process.communicate(timeout=5)
+            response = json.loads(stdout)
+            self.assertEqual(stderr, b"")
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(response["error_code"], "invalid_json_request")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
 
 
 

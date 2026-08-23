@@ -15,7 +15,10 @@ is never reached for a rejected request.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
@@ -69,6 +72,86 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         }
         request.update(overrides)
         return request
+
+    def _v7_descriptor(
+        self,
+        *,
+        review_targets: list[str] | None = None,
+        review_floor: str = "maximum",
+    ) -> dict:
+        descriptor, _digest = _wire_descriptor()
+        descriptor = copy.deepcopy(descriptor)
+        descriptor["schema_version"] = 7
+        agents = [
+            "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"
+        ]
+        descriptor["logical_agents"] = agents
+        descriptor["model_lineages"] = [
+            "alibaba", "deepseek", "google", "moonshot", "openai", "xai", "zhipu"
+        ]
+        descriptor["logical_action_targets"] = {
+            action: (
+                review_targets or ["gemini", "grok"]
+                if action == "review.repository"
+                else agents
+            )
+            for action in descriptor["logical_actions"]
+        }
+        descriptor["logical_action_effort_floors"] = {
+            action: (review_floor if action == "review.repository" else "minimal")
+            for action in descriptor["logical_actions"]
+        }
+        semantic = descriptor["semantic_request"]
+        semantic["properties"]["occupied_model_lineages"] = {
+            "type": "array",
+            "items": {"type": "string", "enum": descriptor["model_lineages"]},
+            "maxItems": 16,
+            "uniqueItems": True,
+        }
+        semantic["properties"]["evidence_anchors"] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "path"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    },
+                    "path": {
+                        "type": "string",
+                        "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                        "x-maxUtf8Bytes": 4096,
+                    },
+                },
+            },
+            "maxItems": 16,
+            "uniqueItems": True,
+        }
+        semantic["required"].extend(
+            ["occupied_model_lineages", "evidence_anchors"]
+        )
+        return descriptor
+
+    def _v7_wire(
+        self,
+        *,
+        review_targets: list[str] | None = None,
+        review_floor: str = "maximum",
+    ):
+        descriptor = self._v7_descriptor(
+            review_targets=review_targets, review_floor=review_floor
+        )
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        return self.client.validate_wire_descriptor(
+            descriptor, expected_sha256=digest
+        )
 
     def _process(self, request, *, result=None):
         """Run ``process`` with a stubbed runtime; reject-path never invokes it."""
@@ -231,6 +314,33 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         response, _ = self._process(self._documents_request(timeout_ms=900000), result=None)
         self.assertEqual(response["error_code"], "timeout_ms_over_cap")
 
+    def test_ambiguous_compatibility_requests_start_no_provider(self) -> None:
+        conflicting_route = self._documents_request(route="grok")
+        product_alias = self._documents_request(route="glm")
+        product_alias.pop("target_agent")
+        source_conflict = self._documents_request(
+            source={
+                "mode": "documents",
+                "documents": [{"label": "different", "content": "two"}],
+            }
+        )
+        missing_action = self._documents_request()
+        missing_action.pop("logical_action")
+        missing_effort = self._documents_request()
+        missing_effort.pop("effort_class")
+        cases = {
+            "conflicting_route": (conflicting_route, "conflicting_fields"),
+            "product_alias": (product_alias, "target_agent_invalid"),
+            "source_conflict": (source_conflict, "conflicting_fields"),
+            "missing_action": (missing_action, "missing_common_fields"),
+            "missing_effort": (missing_effort, "missing_common_fields"),
+        }
+        for name, (request, expected) in cases.items():
+            with self.subTest(name=name):
+                response, code = self._process(request, result=None)
+                self.assertEqual(code, 2)
+                self.assertEqual(response["error_code"], expected)
+
     # -- in-place recovery + clean happy path ------------------------------
     def test_empty_target_agent_is_recovered_in_place(self) -> None:
         normalized: list = []
@@ -240,6 +350,203 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         )
         self.assertIsNone(native["target_agent"])
         self.assertEqual(normalized[0]["field"], "target_agent")
+
+    def test_missing_target_agent_is_recovered_only_as_untargeted(self) -> None:
+        request = self._documents_request()
+        request.pop("target_agent")
+        normalized: list = []
+        native = self.coordinator.validate_request(
+            request, self.wire, self.profile, normalized=normalized
+        )
+        self.assertIsNone(native["target_agent"])
+        self.assertEqual(normalized[0]["reason"], "missing_target_is_untargeted")
+
+    def test_v6_runtime_rejects_nonempty_future_context_before_invoke(self) -> None:
+        request = self._documents_request(
+            occupied_model_lineages=["google"]
+        )
+        response, code = self._process(request)
+        self.assertEqual(code, 2)
+        self.assertEqual(response["error_code"], "runtime_feature_unavailable")
+        self.assertEqual(response["detail"]["field"], "occupied_model_lineages")
+
+        request = self._documents_request(
+            evidence_anchors=[{"id": "check", "path": "tests/check.py"}]
+        )
+        response, code = self._process(request)
+        self.assertEqual(code, 2)
+        self.assertEqual(response["error_code"], "runtime_feature_unavailable")
+        self.assertEqual(response["detail"]["field"], "evidence_anchors")
+
+    def test_v6_runtime_never_receives_empty_future_context(self) -> None:
+        request = self._documents_request(
+            occupied_model_lineages=[], evidence_anchors=[]
+        )
+        native = self.coordinator.validate_request(
+            request, self.wire, self.profile
+        )
+        self.assertNotIn("occupied_model_lineages", native)
+        self.assertNotIn("evidence_anchors", native)
+
+    def test_v7_descriptor_drives_target_and_effort_criteria(self) -> None:
+        wire = self._v7_wire()
+        request = {
+            "request_id": "review-v7",
+            "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "standard",
+            "target_agent": "gemini",
+            "timeout_ms": 5000,
+            "prompt": "Review.",
+            "repo_root": str(ROOT),
+        }
+        with self.assertRaises(self.coordinator._InvalidRequest) as caught:
+            self.coordinator.validate_request(request, wire, self.profile)
+        self.assertEqual(caught.exception.error_code, "effort_below_floor")
+        self.assertEqual(caught.exception.detail["required"], "maximum")
+
+        request["effort_class"] = "maximum"
+        request["target_agent"] = "zhipu"
+        with self.assertRaises(self.coordinator._InvalidRequest) as caught:
+            self.coordinator.validate_request(request, wire, self.profile)
+        self.assertEqual(caught.exception.error_code, "unsupported_target_action")
+        self.assertEqual(caught.exception.detail["admitted"], ["gemini", "grok"])
+
+        request["target_agent"] = "gemini"
+        native = self.coordinator.validate_request(request, wire, self.profile)
+        self.assertEqual(native["target_agent"], "gemini")
+        self.assertEqual(native["effort_class"], "maximum")
+        self.assertEqual(native["occupied_model_lineages"], [])
+        self.assertEqual(native["evidence_anchors"], [])
+        self.assertEqual(self.client._envelope_document(native, wire), native)
+
+    def test_v7_context_is_forwarded_only_when_descriptor_admits_it(self) -> None:
+        wire = self._v7_wire(
+            review_targets=[
+                "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"
+            ]
+        )
+        request = {
+            "request_id": "review-context-v7",
+            "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Review the disclosed blocker.",
+            "repo_root": str(ROOT),
+            "occupied_model_lineages": [" GOOGLE "],
+            "evidence_anchors": [
+                {"id": "tests", "path": "tests/test_agent_collab_coordinator.py"}
+            ],
+        }
+        normalized: list = []
+        native = self.coordinator.validate_request(
+            request, wire, self.profile, normalized=normalized
+        )
+        self.assertEqual(native["occupied_model_lineages"], ["google"])
+        self.assertEqual(
+            native["evidence_anchors"],
+            [{"id": "tests", "path": "tests/test_agent_collab_coordinator.py"}],
+        )
+        self.assertEqual(
+            normalized[0]["field"], "occupied_model_lineages[0]"
+        )
+
+    def test_v7_context_rejects_ambiguous_or_unsafe_values(self) -> None:
+        wire = self._v7_wire()
+        cases = {
+            "unknown_lineage": {"occupied_model_lineages": ["unknown"]},
+            "duplicate_lineage": {"occupied_model_lineages": ["google", "google"]},
+            "absolute_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "/tests/a.py"}]
+            },
+            "traversal_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "tests/../a.py"}]
+            },
+            "duplicate_anchor": {
+                "evidence_anchors": [
+                    {"id": "a", "path": "tests/a.py"},
+                    {"id": "a", "path": "tests/b.py"},
+                ]
+            },
+            "open_anchor": {
+                "evidence_anchors": [
+                    {"id": "a", "path": "tests/a.py", "extra": "x"}
+                ]
+            },
+            "newline_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "tests/a.py\nlog"}]
+            },
+            "nul_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "tests/a.py\x00log"}]
+            },
+            "tab_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "tests/a.py\tlog"}]
+            },
+            "del_anchor": {
+                "evidence_anchors": [{"id": "a", "path": "tests/a.py\x7flog"}]
+            },
+        }
+        for name, fields in cases.items():
+            request = {
+                "request_id": f"invalid-{name}",
+                "logical_action": "review.repository",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
+                "target_agent": "gemini",
+                "timeout_ms": 5000,
+                "prompt": "Review.",
+                "repo_root": str(ROOT),
+                **fields,
+            }
+            with self.subTest(name=name), self.assertRaises(
+                self.coordinator._InvalidRequest
+            ):
+                self.coordinator.validate_request(request, wire, self.profile)
+
+    def test_v7_descriptor_rejects_incompatible_schema_and_floor_types(self) -> None:
+        descriptor = self._v7_descriptor()
+        descriptor["semantic_request"]["properties"].pop("evidence_anchors")
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        with self.assertRaisesRegex(ValueError, "inconsistent with v7"):
+            self.client.validate_wire_descriptor(
+                descriptor, expected_sha256=digest
+            )
+
+        descriptor = self._v7_descriptor()
+        descriptor["logical_action_effort_floors"]["review.repository"] = []
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        with self.assertRaisesRegex(ValueError, "recovery projections"):
+            self.client.validate_wire_descriptor(
+                descriptor, expected_sha256=digest
+            )
+
+    def test_v7_descriptor_bounds_recovery_projection_cardinality(self) -> None:
+        descriptor = self._v7_descriptor()
+        descriptor["logical_agents"] = ["gemini", "grok"] + [
+            f"agent{i}" for i in range(63)
+        ]
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        with self.assertRaisesRegex(ValueError, "logical agents are invalid"):
+            self.client.validate_wire_descriptor(
+                descriptor, expected_sha256=digest
+            )
 
     def test_empty_target_recovery_recorded_on_success(self) -> None:
         result = self.client.RuntimeResult(

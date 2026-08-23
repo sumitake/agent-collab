@@ -1,6 +1,6 @@
 ---
 name: code-review
-version: 6.2.0
+version: 6.2.1
 defaults:
   quality_profile: frontier
   effort_class: maximum

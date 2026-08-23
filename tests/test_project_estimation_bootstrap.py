@@ -163,7 +163,7 @@ class ProducerByteContractTests(unittest.TestCase):
                 for member in MANIFEST["fixtures"]["bootstrap"]["members"]:
                     stored = archive.extractfile("project-estimation-data/" + member["name"])
                     self.assertIsNotNone(stored)
-                    self.assertEqual(stored.read(), (FIXTURE_ROOT / "bootstrap" / member["name"]).read_bytes())
+                    self.assertEqual(stored.read(), (DATA / member["name"]).read_bytes())
 
     def test_receipt_state_backtest_baseline_and_aggregate_state_are_cross_bound(self) -> None:
         mutations = (

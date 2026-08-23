@@ -66,7 +66,7 @@ _TEAM_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 _CODESIGN_TEAM_RE = re.compile(r"(?m)^TeamIdentifier=([A-Z0-9]{10})(?=\s|$)")
 _CODESIGN_FLAGS_RE = re.compile(r"\bflags=(0x[0-9a-f]+)(?:\([^)]*\))?", re.I)
 _CODESIGN_TIMESTAMP_RE = re.compile(r"(?m)^Timestamp=(.+)$")
-_WIRE_KEYS = frozenset(
+_WIRE_KEYS_V6 = frozenset(
     {
         "artifacts",
         "advisory_response",
@@ -85,6 +85,16 @@ _WIRE_KEYS = frozenset(
         "zero_inference_readiness",
     }
 )
+_WIRE_V7_KEYS = frozenset(
+    {
+        "logical_agents",
+        "model_lineages",
+        "logical_action_targets",
+        "logical_action_effort_floors",
+    }
+)
+_EFFORT_CLASSES = frozenset({"minimal", "standard", "maximum"})
+_MAX_DESCRIPTOR_IDENTITIES = 64
 _ARTIFACT_SCHEMAS = frozenset(
     {"review_findings", "governance_verdict", "context_text", "private_patch"}
 )
@@ -227,6 +237,10 @@ class WireDescriptorSnapshot:
     readiness_response: Mapping[str, Any]
     bounded_diagnostics: Mapping[str, Any]
     routing_source_sha256: str
+    logical_agents: frozenset[str]
+    model_lineages: frozenset[str]
+    logical_action_targets: Mapping[str, tuple[str, ...]]
+    logical_action_effort_floors: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -302,7 +316,17 @@ def validate_wire_descriptor(
 
     if type(expected_sha256) is not str or _SHA256_RE.fullmatch(expected_sha256) is None:
         raise ValueError("wire descriptor digest is invalid")
-    if type(descriptor) is not dict or frozenset(descriptor) != _WIRE_KEYS:
+    if type(descriptor) is not dict:
+        raise ValueError("wire descriptor is not closed")
+    schema_version = descriptor.get("schema_version")
+    if not _exact_int(schema_version) or schema_version < 1:
+        raise ValueError("wire descriptor schema version is invalid")
+    expected_keys = (
+        _WIRE_KEYS_V6 | _WIRE_V7_KEYS
+        if schema_version == 7
+        else _WIRE_KEYS_V6
+    )
+    if frozenset(descriptor) != expected_keys:
         raise ValueError("wire descriptor is not closed")
     try:
         encoded = _canonical_json(descriptor)
@@ -310,8 +334,6 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor is not canonical JSON") from exc
     if hashlib.sha256(encoded).hexdigest() != expected_sha256:
         raise ValueError("wire descriptor digest does not match")
-    if not _exact_int(descriptor["schema_version"]) or descriptor["schema_version"] < 1:
-        raise ValueError("wire descriptor schema version is invalid")
     if not _exact_int(descriptor["runtime_protocol_version"], PROTOCOL_VERSION):
         raise ValueError("wire descriptor runtime protocol is unsupported")
     routing_sha = descriptor["routing_source_sha256"]
@@ -343,6 +365,63 @@ def validate_wire_descriptor(
     if any(row[:2] not in transports or row[2] not in _SOURCE_MODES for row in pairs):
         raise ValueError("wire descriptor source projection is inconsistent")
 
+    logical_agents: frozenset[str] = frozenset()
+    model_lineages: frozenset[str] = frozenset()
+    action_targets: dict[str, tuple[str, ...]] = {}
+    effort_floors: dict[str, str] = {}
+    if schema_version == 7:
+        raw_agents = descriptor["logical_agents"]
+        raw_lineages = descriptor["model_lineages"]
+        if (
+            type(raw_agents) is not list
+            or not raw_agents
+            or len(raw_agents) > _MAX_DESCRIPTOR_IDENTITIES
+            or any(
+                type(item) is not str
+                or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", item) is None
+                for item in raw_agents
+            )
+            or len(raw_agents) != len(set(raw_agents))
+        ):
+            raise ValueError("wire descriptor logical agents are invalid")
+        if (
+            type(raw_lineages) is not list
+            or not raw_lineages
+            or len(raw_lineages) > _MAX_DESCRIPTOR_IDENTITIES
+            or any(
+                type(item) is not str
+                or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", item) is None
+                for item in raw_lineages
+            )
+            or len(raw_lineages) != len(set(raw_lineages))
+        ):
+            raise ValueError("wire descriptor model lineages are invalid")
+        logical_agents = frozenset(raw_agents)
+        model_lineages = frozenset(raw_lineages)
+        raw_targets = descriptor["logical_action_targets"]
+        raw_floors = descriptor["logical_action_effort_floors"]
+        if (
+            type(raw_targets) is not dict
+            or set(raw_targets) != set(actions_value)
+            or type(raw_floors) is not dict
+            or set(raw_floors) != set(actions_value)
+        ):
+            raise ValueError("wire descriptor action recovery projections are invalid")
+        for action in actions_value:
+            targets = raw_targets[action]
+            if (
+                type(targets) is not list
+                or not targets
+                or len(targets) > _MAX_DESCRIPTOR_IDENTITIES
+                or any(type(item) is not str or item not in logical_agents for item in targets)
+                or len(targets) != len(set(targets))
+                or type(raw_floors[action]) is not str
+                or raw_floors[action] not in _EFFORT_CLASSES
+            ):
+                raise ValueError("wire descriptor action recovery projections are invalid")
+            action_targets[action] = tuple(targets)
+            effort_floors[action] = raw_floors[action]
+
     artifacts = descriptor["artifacts"]
     if type(artifacts) is not dict or frozenset(artifacts) != _ARTIFACT_SCHEMAS:
         raise ValueError("wire descriptor artifact schemas are invalid")
@@ -362,6 +441,29 @@ def validate_wire_descriptor(
         _validate_schema_document(descriptor[name])
     for schema in artifacts.values():
         _validate_schema_document(schema)
+    if schema_version == 7:
+        try:
+            _validate_schema(
+                {
+                    "wire_contract_sha256": expected_sha256,
+                    "request_id": "descriptor-v7-probe",
+                    "logical_action": "review.repository",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
+                    "target_agent": None,
+                    "author_lineage": None,
+                    "timeout_ms": 1,
+                    "prompt": "Probe.",
+                    "source": {"mode": "repository", "repo_root": "/"},
+                    "occupied_model_lineages": [next(iter(model_lineages))],
+                    "evidence_anchors": [{"id": "probe", "path": "README.md"}],
+                },
+                descriptor["semantic_request"],
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "wire descriptor semantic request is inconsistent with v7 projections"
+            ) from exc
     readiness = descriptor["zero_inference_readiness"]
     if (
         type(readiness) is not dict
@@ -387,6 +489,10 @@ def validate_wire_descriptor(
         readiness_response=readiness["response"],
         bounded_diagnostics=descriptor["bounded_diagnostics"],
         routing_source_sha256=routing_sha,
+        logical_agents=logical_agents,
+        model_lineages=model_lineages,
+        logical_action_targets=action_targets,
+        logical_action_effort_floors=effort_floors,
     )
 
 
