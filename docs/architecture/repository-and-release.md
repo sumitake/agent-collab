@@ -203,7 +203,14 @@ Review and update these public surfaces together:
    examples, capabilities, counts, lifecycle links, and security boundaries
    aligned with the released version. Do not turn the README into a second
    protocol reference.
-3. **`CHANGELOG.md`:** verify that the release flow compiled the correct entry
+3. **Stale-state reconciliation:** derive version/runtime, logical-action,
+   transport-action, source-pair, architecture, and skill counts from the exact
+   released manifest or generated inventory. Search the README and handbook for
+   the previous version/runtime, superseded counts, retired current-state names,
+   and pre-release markers (`future`, `not released`, `implemented on branch`,
+   `staged`) attached to shipped features. Disposition every hit as `updated`,
+   `historical`, or `verified current`; a clean version grep is not completion.
+4. **`CHANGELOG.md`:** verify that the release flow compiled the correct entry
    for the exact tag and that it agrees with the release notes and assets. A
    later clarification uses a new `changelog.d/` fragment and the normal
    governed release path; never rewrite a signed tag or hand-edit generated

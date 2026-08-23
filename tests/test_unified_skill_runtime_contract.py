@@ -27,6 +27,28 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertIn("12 logical actions", text)
         self.assertNotIn("runtime_setup.py", text)
 
+    def test_readmes_match_descriptor_cardinalities(self) -> None:
+        descriptor = json.loads(
+            (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
+        )["wire_contract"]
+        logical = len(descriptor["logical_actions"])
+        transports = len(descriptor["base_transport_actions"])
+        pairs = len(descriptor["valid_action_source_pairs"])
+        root_text = (ROOT / "README.md").read_text(encoding="utf-8")
+        package_text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(f"{logical} logical actions", root_text)
+        self.assertRegex(
+            root_text,
+            rf"{transports}\s+transport actions and\s+{pairs}\s+action/source pairs",
+        )
+        self.assertIn(f"the {logical} logical actions", package_text)
+        self.assertIn(
+            f"the {transports} source-collapsed provider transport actions",
+            package_text,
+        )
+        self.assertIn(f"the {pairs} currently valid action/source pairs", package_text)
+
     def test_review_skill_examples_are_accepted_closed_coordinator_requests(self) -> None:
         def load(name: str, path: Path):
             spec = importlib.util.spec_from_file_location(name, path)

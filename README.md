@@ -113,8 +113,8 @@ additive governance-pool widening described above).
 - Provider-neutral host observations and migration reporting.
 - One schema-4 runtime manifest contract and public archive/release/export
   safety gates.
-- A final signed native standalone bundle only when produced by the separate
-  private build/sign workflow.
+- A final signed dual-architecture native standalone bundle set only when
+  produced by the separate private build/sign workflow.
 
 No provider executor source, provider invocation recipe, model pin,
 compatibility package, downloader, post-install hook, broker, socket, lane,
@@ -164,8 +164,8 @@ review.repository
 
 Repository actions require a canonical absolute `repo_root`. Document context
 uses bounded inline documents. Conceptual architecture uses prompt-only source.
-The runtime's workspace-generated wire descriptor derives the internal 13
-transport actions and 17 action/source pairs. Those projections are diagnostic
+The runtime's workspace-generated wire descriptor derives the internal 14
+transport actions and 18 action/source pairs. Those projections are diagnostic
 contract data, not a second public request surface.
 
 See `plugins/agent-collab/README.md` for the exact coordinator and runtime
