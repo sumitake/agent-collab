@@ -17,7 +17,30 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v6.1.1 release closeout snapshot
+## v6.2.0 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-22. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated [`v6.2.0` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0) identifies public commit `dcb161a08ac50aa4071c28f5ca72d0c13188b85a`. | published | The immutable source contains package version 6.2.0 and the provider runtime **4.1.0** dual-architecture bundle set (macOS arm64 and macOS x86_64), built from workspace source commit `29c41184`. This is a governance-pool-widening generation: the runtime adds `opencode/governance.repository` and lowest-priority governance edges for `zhipu`/`moonshot`/`alibaba`/`deepseek` (read-only; the Phase-1 governance-verdict gate is unchanged), advancing the wire-contract descriptor digest `4de687b8… → e601a455…` as a compatible evolution (protocol 4 unchanged). It also carries the coordinator fault-tolerance client changes and the `project-estimation` skill. |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/32602984579) completed successfully and the release is published, non-draft, and non-prerelease. | published | The signed tag and GitHub Release planes agree; neither repository state nor tag existence alone was used as publication proof. |
+| The release contains exactly `agent-collab.v6.2.0.plugin`, `agent-collab.v6.2.0.plugin.sha256`, and `agent-collab-v6.2.0.spdx.json`. Their SHA-256 values are `4f0c7687c8f7d1944b1eefbf250575d2868cb62e45c1847bb7e813b52c365f37`, `5469fe9611e4bc1b0552ed4dbdb7fc178f4089ace0ae4ca06581a5097709cb41`, and `211a7f296e177f5cd4315d7276c8a6a35e4653646b2f882d2e85578958e9caf7`. | verified release evidence | The archive, checksum, and SPDX assets were verified against the exact release object by `cut_release.py`. This does not by itself prove installation on a host. |
+| All four primary hosts (Claude, Codex, Antigravity, Grok) installed 6.2.0 through their supported plugin CLIs; each installed tree matched the released `agent-collab.v6.2.0.plugin` bytes (0 diffs, excluding host-generated files), and each host returned readiness `ok` (wire `e601a455…`) plus a consumed, content-correct post-install canary. | verified host activation | Byte-exact installation and executed post-install qualification on every primary host. Rollback snapshots of the prior 4.0.6 trees were captured before install; no rollback was needed. |
+| The generated `CHANGELOG.md` contains the compiled v6.2.0 entry, including the runtime 4.1.0 wire-contract disclosure (`4de687b8… → e601a455…`, +1 transport / +1 source pair) and the coordinator and project-estimation entries. | verified current | Generated release history agrees with the tag and package bytes; this closeout does not rewrite generated history or a signed release. |
+| The Tier-3 distribution PR was merged via the operator-required admin-merge escape for the transition-window receipt-deadlock. | recorded | The routing-policy digest advanced with the runtime, so receipts from the still-installed 4.0.6 runtime could not bind the post-change tree; a grounded distinct-family governance receipt was structurally unobtainable until the new runtime was installed. The escape and the attempted governance leg are recorded in the PR compliance trace. |
+
+### v6.2.0 closeout determinations
+
+| Surface | Determination | Evidence |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | This status snapshot records the v6.2.0 release, the dual-architecture runtime 4.1.0, the governance-pool widening, and four-host activation; the remaining handbook pages describe the direct-runtime lifecycle and boundaries in architecture-neutral terms unchanged by this release. |
+| Root `README.md` | **updated** | The current-source paragraph and the project-estimation what's-new note were updated in this closeout to state that v6.2.0 is published and activated on all four hosts (removing the pre-release "not yet tagged/released/installed" language); the runtime 4.1.0 / governance-widening narrative was set in the distribution PR. |
+| `plugins/agent-collab/README.md` | **updated** | The `Current:` line and the version-6.2.0 note were updated in this closeout to state the published + activated status and the runtime 4.1.0 advance (removing the "source only; not tagged/released/installed" language); the runtime facts were set in the distribution PR. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the v6.2.0 entry; this post-release closeout leaves generated history unchanged. |
+
+## Historical v6.1.1 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-19. It is a
 dated snapshot, not a permanent “latest version” badge.
