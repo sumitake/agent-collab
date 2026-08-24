@@ -64,6 +64,81 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.2.1 — 2026-08-24
+
+#### Changed
+
+- Advance the signed, notarized provider runtime to **4.2.0** from freshly
+  verified workspace source `6e4a9b84`. All four native carrier families move:
+  Codex gains precise readiness diagnostics, bounded schema-artifact rename
+  tolerance, and the operator-authorized network-on codegen profile while its
+  disposable-repository write boundary remains unchanged; Gemini/agy, Grok,
+  and OpenCode gain precise readiness diagnostics and identity-preserving
+  grounded-output tolerance.
+- Recover an untargeted request to the next eligible distinct route before
+  provider execution inside the original invocation. Explicit conflicts return
+  closed missing criteria. There is no provider replay, fallback invocation,
+  retired broker/package path, or authority substitution.
+- Advance the compatible wire descriptor from schema 6 to schema 7 and digest
+  `e601a455…` to `0c2cba3a…`, publishing request-bound occupied lineages,
+  evidence anchors, logical agents, model lineages, action-compatible targets,
+  and effort floors. The 12 logical actions, 14 transport actions, 18 valid
+  action/source pairs, runtime protocol 4, and action authority/artifact
+  contracts are unchanged.
+
+#### Fixed
+
+- Make the release importer report path-free expected/received runtime-version
+  mismatches and stable signature/notarization reason codes while continuing to
+  fail closed. A nonzero online notarization check is now reported neutrally as
+  `notarization_not_confirmed`, because managed sandboxes can produce the same
+  result as an artifact rejection; native verification remains mandatory.
+- Add a repository-owned Draft 2020-12 manifest-schema gate with a positive
+  validation and negative control. Its pinned dependency bootstraps through a
+  bounded `uv` subprocess with an isolated temporary cache, so Codex, Claude,
+  Grok, and other release executors use the same command and do not borrow an
+  unrelated plugin cache.
+
+### agent-collab 6.2.1 — 2026-08-23
+
+#### Fixed
+
+- Complete one newline-terminated TTY request without waiting for EOF while
+  preserving the exact EOF-delimited contract for noninteractive input.
+- Recover identity-preserving public request spellings within one invocation,
+  report each accepted normalization, and return bounded criteria for ambiguous
+  target, action, effort, or future-runtime requests without starting a provider.
+
+#### Changed
+
+- Consume signed schema-7 descriptor projections for logical agents, model
+  lineages, action-compatible targets, and effort floors without inventing a
+  route or forwarding context outside the signed semantic request contract.
+- Keep the unchanged project-estimation aggregate, pricing, and quota evidence
+  receipt-bound to the 6.2.1 source version.
+
+Addressed: #130
+
+### Changed
+- Reconciled the public README, package reference, and architecture handbook
+  with the v6.2.0/runtime 4.1.0 dual-architecture release.
+- Added the complete 53-skill package inventory and strengthened the final
+  release documentation closeout's stale-state reconciliation checklist.
+- Added a manifest-derived README cardinality regression check.
+
+### Fixed
+- Replaced stale 13/17 runtime counts, retired `long-context` and Composer
+  terminology, and pre-release project-estimation wording.
+
+### Documentation
+
+- agent-collab 6.2.0: record the v6.2.0 / runtime 4.1.0 release closeout snapshot
+  and determinations in `docs/architecture/status-and-evidence.md` (published
+  tag/run/asset evidence, four-host byte-exact activation with consumed
+  post-install canaries, the governance-pool-widening wire-descriptor
+  disclosure, and the Tier-3 transition-window receipt-deadlock admin-merge
+  escape). The v6.1.1 snapshot moves to the historical section.
+
 ### agent-collab 6.2.0 — 2026-08-22
 
 Provider runtime advanced to **4.1.0** (source `a5ec708d`, signed + notarized,
