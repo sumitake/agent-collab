@@ -160,6 +160,16 @@ class CiSecurityContractTests(unittest.TestCase):
         self.assertLess(validate, archive)
         self.assertLess(archive, release)
 
+    def test_release_provisions_pinned_uv_before_schema_validation(self) -> None:
+        text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        setup = text.index(
+            "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d"
+        )
+        version = text.index("version: '0.12.5'", setup)
+        validate = text.index("scripts/validate_runtime_manifest_schema.py", version)
+        self.assertLess(setup, version)
+        self.assertLess(version, validate)
+
     def test_public_workflows_never_select_self_hosted_runners(self) -> None:
         for name, text in self._workflow_texts().items():
             with self.subTest(workflow=name):

@@ -24,10 +24,10 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
 
     def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.2.1\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 6.2.2\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.2.1")
+            self.assertEqual(manifest["version"], "6.2.2")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -139,6 +139,29 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             },
         )
         self.assertRegex(text.lower(), r"do not issue one\s+request per action")
+
+    def test_lifecycle_guide_uses_the_closed_runtime_status_request(self) -> None:
+        skill = (
+            PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        skill_match = re.search(
+            r"```json coordinator-request\n(.+?)\n```", skill, re.S
+        )
+        self.assertIsNotNone(skill_match)
+
+        guide = (
+            ROOT / "docs" / "architecture" / "lifecycle-and-operations.md"
+        ).read_text(encoding="utf-8")
+        guide_match = re.search(
+            r"printf '%s\\n' '(\{.+?\})' \| python3 "
+            r'"<installed-plugin-root>/coordinator\.py"',
+            guide,
+        )
+        self.assertIsNotNone(guide_match)
+        self.assertEqual(
+            json.loads(guide_match.group(1)),
+            json.loads(skill_match.group(1)),
+        )
 
     def test_routed_skills_keep_provider_failures_attempt_local(self) -> None:
         """Invocation failures must never become an implicit route quarantine."""

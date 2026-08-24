@@ -6,11 +6,12 @@ co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
 This public repository's current source distribution is **agent-collab**
-(v6.2.1). It combines bounded request framing and identity-preserving
+(v6.2.2). It combines bounded request framing and identity-preserving
 invocation recovery with signed provider runtime `4.2.0`, including
-same-invocation route recovery and carrier-output hardening. Version 6.2.1 is
+same-invocation route recovery and carrier-output hardening. Version 6.2.2 is
 source only: it is not yet tagged, released, installed, or activated. The
-current published release remains
+immutable `v6.2.1` tag did not publish and has no GitHub Release; the current
+published release remains
 **[v6.2.0](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
@@ -21,8 +22,14 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.2.1
+## What's new - v6.2.2
 
+- **Portable release bootstrap.** The GitHub-hosted release job now provisions
+  an exact pinned `uv` toolchain before the mandatory Draft 2020-12 runtime
+  manifest-schema gate. This repairs the clean-runner dependency gap that
+  stopped `v6.2.1` before archive creation while preserving the immutable
+  failed tag and the same repository-owned validation command for any release
+  executor.
 - **Provider runtime 4.2.0.** All four native carrier families move in this
   generation. Codex gains precise readiness diagnostics, bounded tolerance for
   a renamed schema artifact, and the operator-authorized network-on codegen

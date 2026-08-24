@@ -19,7 +19,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["plugins"][0]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
-        self.assertEqual(versions, {"6.2.1"})
+        self.assertEqual(versions, {"6.2.2"})
 
     def test_marketplace_fragment_describes_the_direct_package(self) -> None:
         fragment = json.loads(
