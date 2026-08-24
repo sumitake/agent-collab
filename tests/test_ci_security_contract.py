@@ -152,6 +152,14 @@ class CiSecurityContractTests(unittest.TestCase):
         self.assertLess(verify, archive)
         self.assertLess(archive, release)
 
+    def test_release_validates_runtime_manifest_schema_before_archive(self) -> None:
+        text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        validate = text.index("scripts/validate_runtime_manifest_schema.py")
+        archive = text.index("scripts/build_plugin_archive.py", validate)
+        release = text.index("gh release create", archive)
+        self.assertLess(validate, archive)
+        self.assertLess(archive, release)
+
     def test_public_workflows_never_select_self_hosted_runners(self) -> None:
         for name, text in self._workflow_texts().items():
             with self.subTest(workflow=name):

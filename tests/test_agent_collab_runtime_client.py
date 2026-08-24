@@ -53,6 +53,8 @@ class DirectRuntimeClientTests(unittest.TestCase):
             "timeout_ms": timeout_ms,
             "prompt": "Think.",
             "source": {"mode": "conceptual_prompt"},
+            "occupied_model_lineages": [],
+            "evidence_anchors": [],
         }
 
     def _readiness_envelope(self, timeout_ms: int) -> dict[str, object]:
@@ -236,6 +238,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
                 "provider_processes": 1,
                 "provider_model_calls": 1,
                 "provider_turns": 1,
+                "selection_failure": None,
                 "failure_trace": {
                     "failure_phase": "artifact",
                     "adapter_code": "insufficient_evidence",
@@ -247,6 +250,14 @@ class DirectRuntimeClientTests(unittest.TestCase):
                     "outside_source_observed": False,
                     "native_envelope_sha256": "d" * 64,
                     "cleanup_confirmed": True,
+                    "containment_detail": None,
+                    "failed_operation_counts": {
+                        "repository_read": 0,
+                        "repository_search": 0,
+                        "repository_list": 0,
+                        "other_tool": 0,
+                        "unclassified": 0,
+                    },
                 },
             },
         }

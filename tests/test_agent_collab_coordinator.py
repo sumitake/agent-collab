@@ -493,7 +493,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "logical_action": "architecture.repository",
             "quality_profile": "frontier",
             "effort_class": "maximum",
-            "target_agent": "gemini",
+            "target_agent": "grok",
             "timeout_ms": 5000,
             "prompt": "Review architecture.",
             "repo_root": str(ROOT),
@@ -562,12 +562,13 @@ class SemanticCoordinatorTests(unittest.TestCase):
     def test_semantic_profiles_are_required_closed_and_provider_neutral(self) -> None:
         base = {
             "request_id": "profile-1",
-            "logical_action": "architecture.conceptual",
+            "logical_action": "context.documents.intent",
             "quality_profile": "standard",
             "effort_class": "standard",
             "target_agent": None,
             "timeout_ms": 5000,
             "prompt": "Think.",
+            "documents": [{"label": "request", "content": "Think."}],
         }
         native = self.coordinator.validate_request(base, self.wire, self.profile)
         self.assertEqual(native["quality_profile"], "standard")

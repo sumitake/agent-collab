@@ -129,10 +129,43 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             "maxItems": 16,
             "uniqueItems": True,
         }
-        semantic["required"].extend(
-            ["occupied_model_lineages", "evidence_anchors"]
-        )
+        for field in ("occupied_model_lineages", "evidence_anchors"):
+            if field not in semantic["required"]:
+                semantic["required"].append(field)
         return descriptor
+
+    def _v6_descriptor(self) -> dict:
+        descriptor, _digest = _wire_descriptor()
+        descriptor = copy.deepcopy(descriptor)
+        descriptor["schema_version"] = 6
+        for field in (
+            "logical_agents",
+            "model_lineages",
+            "logical_action_targets",
+            "logical_action_effort_floors",
+        ):
+            descriptor.pop(field, None)
+        semantic = descriptor["semantic_request"]
+        for field in ("occupied_model_lineages", "evidence_anchors"):
+            semantic["properties"].pop(field, None)
+        semantic["required"] = [
+            field
+            for field in semantic["required"]
+            if field not in {"occupied_model_lineages", "evidence_anchors"}
+        ]
+        return descriptor
+
+    def _v6_wire(self):
+        descriptor = self._v6_descriptor()
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        return self.client.validate_wire_descriptor(
+            descriptor, expected_sha256=digest
+        )
 
     def _v7_wire(
         self,
@@ -153,8 +186,10 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             descriptor, expected_sha256=digest
         )
 
-    def _process(self, request, *, result=None):
+    def _process(self, request, *, result=None, wire=None):
         """Run ``process`` with a stubbed runtime; reject-path never invokes it."""
+
+        active_wire = wire or self.wire
 
         def _invoke(**_kwargs):
             if result is None:
@@ -163,7 +198,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
 
         fake_client = types.SimpleNamespace(
             RuntimeStatus=self.client.RuntimeStatus,
-            runtime_contract_snapshot=lambda: (self.wire, "a" * 64, ""),
+            runtime_contract_snapshot=lambda: (active_wire, "a" * 64, ""),
             invoke=_invoke,
             readiness=_invoke,
         )
@@ -362,10 +397,11 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         self.assertEqual(normalized[0]["reason"], "missing_target_is_untargeted")
 
     def test_v6_runtime_rejects_nonempty_future_context_before_invoke(self) -> None:
+        wire = self._v6_wire()
         request = self._documents_request(
             occupied_model_lineages=["google"]
         )
-        response, code = self._process(request)
+        response, code = self._process(request, wire=wire)
         self.assertEqual(code, 2)
         self.assertEqual(response["error_code"], "runtime_feature_unavailable")
         self.assertEqual(response["detail"]["field"], "occupied_model_lineages")
@@ -373,17 +409,18 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         request = self._documents_request(
             evidence_anchors=[{"id": "check", "path": "tests/check.py"}]
         )
-        response, code = self._process(request)
+        response, code = self._process(request, wire=wire)
         self.assertEqual(code, 2)
         self.assertEqual(response["error_code"], "runtime_feature_unavailable")
         self.assertEqual(response["detail"]["field"], "evidence_anchors")
 
     def test_v6_runtime_never_receives_empty_future_context(self) -> None:
+        wire = self._v6_wire()
         request = self._documents_request(
             occupied_model_lineages=[], evidence_anchors=[]
         )
         native = self.coordinator.validate_request(
-            request, self.wire, self.profile
+            request, wire, self.profile
         )
         self.assertNotIn("occupied_model_lineages", native)
         self.assertNotIn("evidence_anchors", native)
@@ -508,6 +545,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
     def test_v7_descriptor_rejects_incompatible_schema_and_floor_types(self) -> None:
         descriptor = self._v7_descriptor()
         descriptor["semantic_request"]["properties"].pop("evidence_anchors")
+        descriptor["semantic_request"]["required"].remove("evidence_anchors")
         digest = hashlib.sha256(
             json.dumps(
                 descriptor, sort_keys=True, separators=(",", ":"),

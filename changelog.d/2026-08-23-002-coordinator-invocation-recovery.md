@@ -10,9 +10,9 @@
 
 #### Changed
 
-- Pre-admit the next signed descriptor projections for logical agents, model
-  lineages, action-compatible targets, and effort floors without forwarding
-  schema-7-only request context to the current schema-6 runtime.
+- Consume signed schema-7 descriptor projections for logical agents, model
+  lineages, action-compatible targets, and effort floors without inventing a
+  route or forwarding context outside the signed semantic request contract.
 - Keep the unchanged project-estimation aggregate, pricing, and quota evidence
   receipt-bound to the 6.2.1 source version.
 

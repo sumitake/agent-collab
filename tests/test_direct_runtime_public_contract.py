@@ -83,6 +83,80 @@ ACTION_SOURCE_PAIRS = (
     ("opencode", "plan", "repository"),
 )
 
+LOGICAL_AGENTS = (
+    "alibaba",
+    "codex",
+    "deepseek",
+    "gemini",
+    "grok",
+    "moonshot",
+    "zhipu",
+)
+
+MODEL_LINEAGES = (
+    "alibaba",
+    "deepseek",
+    "google",
+    "moonshot",
+    "openai",
+    "xai",
+    "zhipu",
+)
+
+LOGICAL_ACTION_TARGETS = {
+    "architecture.conceptual": ("grok",),
+    "architecture.repository": (
+        "alibaba", "codex", "deepseek", "grok", "moonshot", "zhipu",
+    ),
+    "codegen.repository": (
+        "alibaba", "codex", "deepseek", "grok", "moonshot", "zhipu",
+    ),
+    "context.documents.extract": (
+        "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "context.documents.intent": ("gemini", "grok"),
+    "context.documents.reason": (
+        "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "context.repository.extract": (
+        "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "context.repository.reason": (
+        "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "frontend_codegen.repository": (
+        "alibaba", "codex", "grok", "moonshot", "zhipu",
+    ),
+    "frontend_review.repository": (
+        "alibaba", "codex", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "governance.repository": (
+        "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+    "review.repository": (
+        "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu",
+    ),
+}
+
+LOGICAL_ACTION_EFFORT_FLOORS = {
+    "architecture.conceptual": "maximum",
+    "architecture.repository": "maximum",
+    "codegen.repository": "standard",
+    "context.documents.extract": "minimal",
+    "context.documents.intent": "standard",
+    "context.documents.reason": "maximum",
+    "context.repository.extract": "minimal",
+    "context.repository.reason": "maximum",
+    "frontend_codegen.repository": "standard",
+    "frontend_review.repository": "maximum",
+    "governance.repository": "maximum",
+    "review.repository": "maximum",
+}
+
+WIRE_CONTRACT_SHA256 = (
+    "0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51"
+)
+
 
 def _wire_descriptor() -> tuple[dict[str, object], str]:
     manifest = json.loads(
@@ -265,11 +339,28 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             snapshot.action_source_pairs,
             frozenset(ACTION_SOURCE_PAIRS),
         )
+        self.assertEqual(snapshot.logical_agents, frozenset(LOGICAL_AGENTS))
+        self.assertEqual(snapshot.model_lineages, frozenset(MODEL_LINEAGES))
+        self.assertEqual(
+            dict(snapshot.logical_action_targets),
+            LOGICAL_ACTION_TARGETS,
+        )
+        self.assertEqual(
+            dict(snapshot.logical_action_effort_floors),
+            LOGICAL_ACTION_EFFORT_FLOORS,
+        )
 
-    def test_public_client_accepts_a_positive_wire_schema_revision(self) -> None:
+    def test_public_client_accepts_the_previous_positive_wire_schema_revision(self) -> None:
         client = _load("positive_wire_revision_runtime_client", PLUGIN / "runtime_client.py")
         descriptor, _digest = _wire_descriptor()
-        descriptor["schema_version"] = 5
+        descriptor["schema_version"] = 6
+        for key in (
+            "logical_agents",
+            "model_lineages",
+            "logical_action_targets",
+            "logical_action_effort_floors",
+        ):
+            descriptor.pop(key)
 
         snapshot = client.validate_wire_descriptor(
             descriptor, expected_sha256=_descriptor_sha256(descriptor)
@@ -335,19 +426,74 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         artifact = properties["artifacts"]["items"]
         self.assertNotIn("contracts", artifact["properties"])
         self.assertNotIn("route_contract_version", artifact["properties"])
-        self.assertEqual(
-            properties["wire_contract"]["properties"]["schema_version"],
-            {"type": "integer", "minimum": 1},
-        )
+        wire_schema = properties["wire_contract"]
+        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 7})
         self.assertIn(
             "advisory_response",
-            properties["wire_contract"]["required"],
+            wire_schema["required"],
+        )
+        for field in (
+            "logical_agents",
+            "model_lineages",
+            "logical_action_targets",
+            "logical_action_effort_floors",
+        ):
+            self.assertIn(field, wire_schema["required"])
+        self.assertEqual(
+            wire_schema["properties"]["logical_agents"],
+            {
+                "type": "array",
+                "minItems": len(LOGICAL_AGENTS),
+                "maxItems": len(LOGICAL_AGENTS),
+                "uniqueItems": True,
+                "items": {"enum": list(LOGICAL_AGENTS)},
+            },
+        )
+        self.assertEqual(
+            wire_schema["properties"]["model_lineages"],
+            {
+                "type": "array",
+                "minItems": len(MODEL_LINEAGES),
+                "maxItems": len(MODEL_LINEAGES),
+                "uniqueItems": True,
+                "items": {"enum": list(MODEL_LINEAGES)},
+            },
+        )
+        target_schema = wire_schema["properties"]["logical_action_targets"]
+        self.assertFalse(target_schema["additionalProperties"])
+        self.assertEqual(target_schema["required"], list(LOGICAL_ACTIONS))
+        for action, targets in LOGICAL_ACTION_TARGETS.items():
+            with self.subTest(action=action):
+                self.assertEqual(
+                    target_schema["properties"][action],
+                    {
+                        "type": "array",
+                        "minItems": len(targets),
+                        "maxItems": len(targets),
+                        "uniqueItems": True,
+                        "items": {"enum": list(targets)},
+                    },
+                )
+        floor_schema = wire_schema["properties"]["logical_action_effort_floors"]
+        self.assertFalse(floor_schema["additionalProperties"])
+        self.assertEqual(floor_schema["required"], list(LOGICAL_ACTIONS))
+        self.assertEqual(
+            floor_schema["properties"],
+            {
+                action: {"const": floor}
+                for action, floor in LOGICAL_ACTION_EFFORT_FLOORS.items()
+            },
+        )
+        self.assertEqual(properties["wire_contract_sha256"], {"const": WIRE_CONTRACT_SHA256})
+        self.assertEqual(
+            properties["artifacts"]["items"]["properties"]["wire_contract_sha256"],
+            {"const": WIRE_CONTRACT_SHA256},
         )
         self.assertEqual(
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.1.0"},
+            {"const": "4.2.0"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -395,7 +541,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
         self.assertGreater(descriptor["schema_version"], 0)
-        self.assertEqual(descriptor["schema_version"], 6)
+        self.assertEqual(descriptor["schema_version"], 7)
         self.assertEqual(descriptor["runtime_protocol_version"], 4)
         encoded = json.dumps(
             descriptor,
@@ -408,6 +554,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             hashlib.sha256(encoded).hexdigest(),
             manifest["wire_contract_sha256"],
         )
+        self.assertEqual(manifest["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
         self.assertEqual(descriptor["logical_actions"], list(LOGICAL_ACTIONS))
         self.assertEqual(
             descriptor["base_transport_actions"],
@@ -417,11 +564,24 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             descriptor["valid_action_source_pairs"],
             [list(row) for row in ACTION_SOURCE_PAIRS],
         )
+        self.assertEqual(descriptor["logical_agents"], list(LOGICAL_AGENTS))
+        self.assertEqual(descriptor["model_lineages"], list(MODEL_LINEAGES))
+        self.assertEqual(
+            descriptor["logical_action_targets"],
+            {key: list(value) for key, value in LOGICAL_ACTION_TARGETS.items()},
+        )
+        self.assertEqual(
+            descriptor["logical_action_effort_floors"],
+            LOGICAL_ACTION_EFFORT_FLOORS,
+        )
         for result in descriptor["success_response"]["properties"]["result"]["oneOf"][2:]:
             evidence = result["properties"]["evidence"]["properties"]
             with self.subTest(artifact=result["properties"]["artifact_type"]):
                 self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
                 self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
+        for artifact in manifest["artifacts"]:
+            self.assertEqual(artifact["provider_runtime_version"], "4.2.0")
+            self.assertEqual(artifact["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:
         client = _load("direct_runtime_client_no_broker", PLUGIN / "runtime_client.py")

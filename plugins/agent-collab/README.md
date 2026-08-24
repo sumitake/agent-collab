@@ -10,8 +10,12 @@ Current source: **6.2.1** (not yet tagged, released, installed, or activated)
 Current published release: **6.2.0**
 ([`v6.2.0`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0))
 
-Version 6.2.1 adds bounded TTY request framing and conservative invocation
-recovery on the unchanged `4.1.0` runtime. Version 6.2.0 advanced the
+Version 6.2.1 adds bounded TTY request framing, conservative invocation
+recovery, and signed provider runtime `4.2.0`. Runtime 4.2.0 recovers an
+eligible distinct route within the original invocation, publishes exact
+schema-7 recovery criteria, hardens grounded carrier-output interpretation,
+and adds per-class readiness diagnostics across Codex, Gemini/agy, Grok, and
+OpenCode. It never replays a provider request. Version 6.2.0 advanced the
 co-packaged native runtime to `4.1.0` (a governance-pool widening) and added the
 public `project-estimation` skill. The
 skill provides read-only-by-default, structured estimates for agent-led work and
@@ -138,12 +142,11 @@ returns every logical action in one zero-inference snapshot:
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with a positive-integer wire schema
-revision, runtime protocol 4, native contract 4, and provider runtime `4.1.0`. The
-current signed descriptor is schema 6. The v6.2.1 client also validates the next
-schema-7 projections for logical agents, model lineages, action-compatible targets,
-and effort floors; it forwards schema-7-only context only when that signed descriptor
-is actually present. The wire revision records compatible descriptor evolution;
+The workspace build emits one schema-4 manifest with wire schema 7, runtime
+protocol 4, native contract 4, and provider runtime `4.2.0`. Schema 7 publishes
+logical agents, model lineages, action-compatible targets, and effort floors;
+request-bound occupied lineages and evidence anchors remain closed and
+runtime-adjudicated. The wire revision records compatible descriptor evolution;
 runtime protocol 4 remains the executable compatibility boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
@@ -161,10 +164,15 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-Runtime 4.1.0 adds `opencode/governance.repository` and lowest-priority
-governance edges for Zhipu, Moonshot, Alibaba, and DeepSeek. These routes remain
-read-only, family-independence still applies, and the workspace Phase-1
-governance-verdict gate is unchanged.
+Runtime 4.2.0 retains the v4.1.0 governance-pool widening and advances all four
+native carrier families. Codex gains precise readiness diagnostics, bounded
+schema-artifact rename tolerance, and the operator-authorized network-on
+codegen profile without widening its disposable-repository write boundary.
+Gemini/agy, Grok, and OpenCode gain precise readiness diagnostics and
+identity-preserving grounded-output tolerance. Untargeted selection may move to
+the next eligible distinct route before provider execution, inside the same
+invocation; there is no provider replay, fallback invocation, or authority
+substitution.
 
 For each accepted request the public client:
 

@@ -61,7 +61,7 @@ def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.1.0",
+            "provider_runtime_version": "4.2.0",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -130,7 +130,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "4.1.0",
+                "provider_runtime_version": "4.2.0",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -353,7 +353,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
                     (staged_plugin / "signing_policy.py").read_bytes(),
                     (ROOT / PLUGIN_REL / "signing_policy.py").read_bytes(),
                 )
-                return False, {}, ["runtime is not notarized"]
+                return False, {}, ["notarization_not_confirmed"]
 
             with (
                 mock.patch.object(
@@ -361,11 +361,68 @@ class StageRuntimeHandoffTests(unittest.TestCase):
                     "verify_release",
                     side_effect=reject_staged,
                 ) as verifier,
-                self.assertRaisesRegex(ValueError, "signature or notarization"),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "runtime handoff verification failed: notarization_not_confirmed",
+                ),
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 
             verifier.assert_called_once()
+            self.assertEqual(_snapshot_tree(plugin), destination_before)
+
+    def test_import_reports_expected_and_received_provider_version(self) -> None:
+        importer = _load_importer()
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            repo, plugin, _old_manifest = _make_repo(parent)
+            handoff, _manifest = _make_handoff(
+                parent, "handoff", b"signed-runtime"
+            )
+            manifest_path = handoff / "runtime-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["artifacts"][0]["provider_runtime_version"] = "9.9.9"
+            manifest_path.chmod(0o600)
+            manifest_path.write_text(
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+            manifest_path.chmod(0o400)
+            source_before = _snapshot_tree(handoff)
+            destination_before = _snapshot_tree(plugin)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "provider version mismatch: expected 4\\.2\\.0, received 9\\.9\\.9",
+            ):
+                importer.stage_runtime_handoff(handoff, repo_root=repo)
+
+            self.assertEqual(_snapshot_tree(handoff), source_before)
+            self.assertEqual(_snapshot_tree(plugin), destination_before)
+
+    def test_import_reports_verification_tool_unavailability(self) -> None:
+        importer = _load_importer()
+        with tempfile.TemporaryDirectory() as raw:
+            parent = Path(raw)
+            repo, plugin, _old_manifest = _make_repo(parent)
+            handoff, _manifest = _make_handoff(
+                parent, "handoff", b"signed-runtime"
+            )
+            destination_before = _snapshot_tree(plugin)
+
+            with (
+                mock.patch.object(
+                    importer.release_verifier,
+                    "verify_release",
+                    return_value=(False, {}, ["notarization_check_unavailable"]),
+                ),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "runtime handoff verification failed: notarization_check_unavailable",
+                ),
+            ):
+                importer.stage_runtime_handoff(handoff, repo_root=repo)
+
             self.assertEqual(_snapshot_tree(plugin), destination_before)
 
     def test_interrupted_manifest_publish_restores_prior_unit_byte_for_byte(self) -> None:
