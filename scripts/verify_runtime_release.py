@@ -249,10 +249,12 @@ def _verify_member_signature(
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
-        return {}, ["macOS code-signing verification tool failed"]
+        return {}, [
+            "codesign_check_unavailable: macOS code-signing verification tool failed"
+        ]
     detail_output = detail.stdout + detail.stderr
     if verify.returncode != 0 or detail.returncode != 0:
-        errors.append("macOS code-signing verification failed")
+        errors.append("codesign_rejected: macOS code-signing verification failed")
     if _CODESIGN_TEAM_RE.findall(detail_output) != [signing["team_id"]]:
         errors.append("runtime signing team does not match the pinned operator identity")
     authorities = _CODESIGN_AUTHORITY_RE.findall(detail_output)
@@ -322,13 +324,17 @@ def _verify_member_signature(
                 timeout=30,
             )
         except (OSError, subprocess.SubprocessError):
-            errors.append("macOS notarization verification tool failed")
+            errors.append(
+                "notarization_check_unavailable: "
+                "macOS notarization verification tool failed"
+            )
         else:
             if assessment.returncode == 0:
                 spctl_source = "Notarized Developer ID"
             else:
                 errors.append(
-                    "runtime is not notarized: codesign '=notarized' requirement failed"
+                    "notarization_not_confirmed: codesign '=notarized' "
+                    "requirement did not confirm notarization"
                 )
     return {
         "codesign_timestamp": timestamp,
@@ -535,7 +541,9 @@ def verify_release(
         errors.extend(f"{bundle_rel}: {message}" for message in item_errors)
 
     if platform.system().lower() != "darwin":
-        errors.append("signing verification must run on Darwin")
+        errors.append(
+            "verification_host_unsupported: signing verification must run on Darwin"
+        )
     evidence = {
         "schema_version": 3,
         "git_sha": git_sha,

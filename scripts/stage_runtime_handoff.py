@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import sys
@@ -32,6 +33,14 @@ SOURCE_DIRECTORY_MODE = 0o755
 SOURCE_FILE_MODE = 0o755
 SOURCE_MANIFEST_MODE = 0o644
 SEALED_MANIFEST_MODE = 0o400
+_SAFE_VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,2}$")
+_VERIFICATION_REASON_CODES = (
+    "verification_host_unsupported",
+    "codesign_check_unavailable",
+    "notarization_check_unavailable",
+    "codesign_rejected",
+    "notarization_not_confirmed",
+)
 
 
 class StageRuntimeHandoffError(ValueError):
@@ -156,6 +165,59 @@ def _validate_handoff_tree(
         _raise("runtime handoff membership or modes are invalid")
 
 
+def _parse_handoff_manifest(data: bytes) -> dict[str, object]:
+    """Preserve strict parsing while diagnosing the one release-order skew."""
+
+    try:
+        return archive_builder._parse_manifest(data)
+    except ValueError as exc:
+        try:
+            document = archive_builder.runtime_bundle.load_closed_json_object(
+                data,
+                max_bytes=archive_builder.runtime_client.MAX_MANIFEST_BYTES,
+            )
+        except (ValueError, UnicodeError, RecursionError):
+            raise StageRuntimeHandoffError(
+                "runtime handoff manifest is unreadable"
+            ) from exc
+        artifacts = document.get("artifacts") if isinstance(document, dict) else None
+        versions = (
+            [item.get("provider_runtime_version") for item in artifacts]
+            if isinstance(artifacts, list)
+            and artifacts
+            and all(isinstance(item, dict) for item in artifacts)
+            else []
+        )
+        expected = archive_builder.runtime_client.PROVIDER_RUNTIME_VERSION
+        if (
+            versions
+            and all(
+                isinstance(version, str)
+                and _SAFE_VERSION_RE.fullmatch(version) is not None
+                for version in versions
+            )
+            and any(version != expected for version in versions)
+        ):
+            received = sorted(set(versions))
+            received_text = received[0] if len(received) == 1 else "multiple"
+            raise StageRuntimeHandoffError(
+                "runtime handoff provider version mismatch: "
+                f"expected {expected}, received {received_text}"
+            ) from exc
+        raise StageRuntimeHandoffError("runtime handoff manifest is invalid") from exc
+
+
+def _verification_failure(errors: list[str]) -> str:
+    codes = tuple(
+        code
+        for code in _VERIFICATION_REASON_CODES
+        if any(code in error for error in errors)
+    )
+    if not codes:
+        return "runtime handoff verification failed"
+    return f"runtime handoff verification failed: {','.join(codes)}"
+
+
 def _load_handoff(
     root: Path,
 ) -> tuple[
@@ -164,7 +226,7 @@ def _load_handoff(
     dict[str, bytes],
 ]:
     manifest_bytes = archive_builder._read_manifest_bytes(root)
-    manifest = archive_builder._parse_manifest(manifest_bytes)
+    manifest = _parse_handoff_manifest(manifest_bytes)
     artifacts = manifest.get("artifacts")
     if manifest.get("channel") != "production" or not isinstance(artifacts, list):
         _raise("runtime handoff manifest is not production activation")
@@ -282,11 +344,11 @@ def _stage_transaction(
     _fsync_directory(staged_runtime)
     _fsync_directory(verification_plugin)
     _fsync_directory(verification_root)
-    ok, _evidence, _errors = release_verifier.verify_release(
+    ok, _evidence, errors = release_verifier.verify_release(
         verification_root, git_sha="runtime-handoff-import"
     )
     if not ok:
-        _raise("runtime handoff signature or notarization verification failed")
+        _raise(_verification_failure(errors))
     return staged_runtime, staged_manifest, backup_manifest
 
 

@@ -6,8 +6,9 @@ co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
 This public repository's current source distribution is **agent-collab**
-(v6.2.1). It adds bounded request framing and identity-preserving invocation
-recovery on the unchanged signed provider runtime (`4.1.0`). Version 6.2.1 is
+(v6.2.1). It combines bounded request framing and identity-preserving
+invocation recovery with signed provider runtime `4.2.0`, including
+same-invocation route recovery and carrier-output hardening. Version 6.2.1 is
 source only: it is not yet tagged, released, installed, or activated. The
 current published release remains
 **[v6.2.0](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**.
@@ -22,6 +23,15 @@ keeps repository, tag, release, installation, and readiness claims separate.
 
 ## What's new - v6.2.1
 
+- **Provider runtime 4.2.0.** All four native carrier families move in this
+  generation. Codex gains precise readiness diagnostics, bounded tolerance for
+  a renamed schema artifact, and the operator-authorized network-on codegen
+  profile while retaining its existing disposable-repository write boundary.
+  Gemini/agy, Grok, and OpenCode gain precise readiness diagnostics; their
+  grounded output handling also tolerates only identity-preserving terminal,
+  lifecycle, and path spellings. Untargeted requests may select the next
+  eligible distinct route inside the same runtime invocation, without replay,
+  provider fallback, or authority substitution.
 - **Bounded interactive framing.** A TTY accepts one newline-terminated JSON
   request without waiting for EOF. Noninteractive stdin remains EOF-delimited
   and still rejects trailing bytes, preserving the exact-one-object boundary.
@@ -33,13 +43,16 @@ keeps repository, tag, release, installation, and readiness claims separate.
   provider/model nicknames, missing action or effort, and authority-changing
   guesses remain typed rejections with actionable criteria. One accepted
   request still invokes the runtime exactly once, with no replay or fallback.
-- **Descriptor-gated criteria.** The client can consume the next signed wire
-  projection for logical agents, model lineages, action-compatible targets,
-  and effort floors. It never forwards those future request fields to the
-  current schema-6 runtime.
+- **Descriptor-gated criteria.** Signed wire schema 7 publishes logical agents,
+  model lineages, action-compatible targets, and effort floors, so the
+  coordinator can recover or return the exact missing criteria without
+  inventing a route. Request-bound occupied lineages and evidence anchors stay
+  closed and runtime-adjudicated.
 
-The signed provider runtime, action set, and authority contracts are unchanged
-from v6.2.0.
+The 12-action set, 14 transport actions, 18 valid action/source pairs, and each
+action's authority/artifact contract are unchanged from v6.2.0. The signed
+provider runtime advances to `4.2.0`; wire schema advances 6 → 7 and the
+descriptor digest advances `e601a455…` → `0c2cba3a…`.
 
 ## Previous tagged release - v6.2.0
 
@@ -210,7 +223,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.1.0`;
+- provider runtime version `4.2.0`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.
