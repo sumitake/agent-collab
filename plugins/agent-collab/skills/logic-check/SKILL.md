@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 6.2.1
+version: 6.2.2
 defaults:
   quality_profile: frontier
   effort_class: maximum

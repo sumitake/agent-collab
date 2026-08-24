@@ -80,7 +80,7 @@ snapshot:
 
 ```text
 python3 "<installed-plugin-root>/migration_doctor.py" --json
-printf '%s\n' '{"operation":"readiness","request_id":"runtime-status-1","timeout_ms":120000}' | python3 "<installed-plugin-root>/coordinator.py"
+printf '%s\n' '{"operation":"readiness","request_id":"runtime-status-1","quality_profile":"frontier","effort_class":"maximum","timeout_ms":120000}' | python3 "<installed-plugin-root>/coordinator.py"
 ```
 
 Use the exact installed plugin root supplied by the host or migration doctor.
