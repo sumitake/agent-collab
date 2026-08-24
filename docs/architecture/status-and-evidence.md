@@ -17,7 +17,32 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v6.2.0 release closeout snapshot
+## v6.2.2 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-24. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The verified signed annotated [`v6.2.2` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2) identifies public commit `abe24eefe42734187ae781c5b83b7b36f8f634b8`. | published | The immutable source contains package 6.2.2 and signed/notarized provider runtime **4.2.0** for macOS arm64 and x86_64, imported from runtime source `6e4a9b84`. Runtime protocol 4 remains unchanged; wire schema advances 6 → 7 with digest `0c2cba3a…`. The immutable `v6.2.1` tag remains unchanged and has no GitHub Release. |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/32756279670) completed successfully and the release is published, non-draft, and non-prerelease. | published | The clean macOS job verified both Developer ID, hardened, timestamped, notarized bundles. The Ubuntu publication job provisioned pinned `uv`, validated the Draft 2020-12 manifest schema, rebound the commit-specific runtime evidence, and reran the required suites before publication. |
+| The release contains exactly `agent-collab.v6.2.2.plugin`, `agent-collab.v6.2.2.plugin.sha256`, and `agent-collab-v6.2.2.spdx.json`. Their SHA-256 values are `d2d69e35ae1641ca04d3d8db2f17c6ef581722de952281496baba54bef11ca7e`, `4652e9daff37e43cbec29eb3bb5e3d75de8c4dffc46ea50d967c62b0f95bf590`, and `44b504cdf9b94c0b47ea2032f5bd0d23c67231e9422f8339cedd93169cb9f396`. | verified release evidence | The downloaded archive matched its checksum and GitHub digest; the SBOM matched its GitHub digest. The extracted manifest SHA-256 is `63f3fc257df1665912ad992d1abe0e470ff06d0013422d25a6d40fb3dc16a8b6`; its arm64 and x86_64 bundle digests are `e4fa16b1…` and `d6fba3e4…`. |
+| Claude, Codex, Antigravity, and Grok each report or resolve package version 6.2.2 through their supported host plugin state. Every released archive member matched the corresponding host-resolved root; only host-generated cache/import metadata was excluded. | verified host installation | Claude and Codex report the package enabled; Antigravity's imported manifest reports 6.2.2; Grok's pinned registry binds `v6.2.2` and commit `abe24eef…`. Installation evidence is host-specific and does not by itself prove a future provider call. |
+| Provider-free readiness executed from all four host-resolved roots and returned top-level `ok`, 12 logical actions, manifest `63f3fc25…`, wire `0c2cba3a…`, and cleanup confirmed for every candidate. | verified loaded runtime bytes | The native arm64 bundle selected and executed from each installed tree. Locally unqualified Codex candidates remained typed unavailable/temporarily unavailable while the overall snapshot retained valid routes; no model call or false provider-outage claim was introduced. |
+| One newline-terminated invocation completed while its PTY remained open. The intentionally underspecified request returned `fix_request`, named only the missing `effort_class`, started no provider, and said not to retry unchanged. | verified invocation recovery | This directly exercises bounded interactive framing and actionable missing-criteria behavior from the installed 6.2.2 coordinator. It is not a governance review or provider-quality canary. |
+| The generated `CHANGELOG.md` contains both the unpublished-tag 6.2.1 coordinator/runtime entries and the 6.2.2 clean-runner recovery entry. | verified current | Generated history truthfully preserves the failed immutable 6.2.1 tag while the published 6.2.2 release carries those prepared coordinator/runtime bytes plus the release-runner correction. |
+
+### v6.2.2 closeout determinations
+
+| Surface | Determination | Evidence |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | This snapshot records the exact tag, run, assets, four-host installation/readiness, and invocation-recovery canary. Project-estimation status now identifies the receipt-bound 6.2.2 evidence while retaining v6.2.0 as its historical introduction. |
+| Root `README.md` | **updated** | The pre-release/source-only language and v6.2.0 current-release link were replaced with the verified v6.2.2 publication and four-host readiness state. |
+| `plugins/agent-collab/README.md` | **updated** | The package reference now identifies 6.2.2 as both current source and current published release without collapsing installation into publication. |
+| Lifecycle/runbook | **updated** | The update guide records Antigravity import verification, safe pinned-tag replacement for Grok, and the fail-closed trust-service requirement for local notarization preflight. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the 6.2.1 and 6.2.2 entries; this post-release closeout leaves generated history and signed tags unchanged. |
+
+## Historical v6.2.0 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-22. It is a
 dated snapshot, not a permanent “latest version” badge.

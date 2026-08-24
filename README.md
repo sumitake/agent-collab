@@ -8,11 +8,11 @@ effort profiles, current-portfolio routing, and truthful advisory degradation.
 This public repository's current source distribution is **agent-collab**
 (v6.2.2). It combines bounded request framing and identity-preserving
 invocation recovery with signed provider runtime `4.2.0`, including
-same-invocation route recovery and carrier-output hardening. Version 6.2.2 is
-source only: it is not yet tagged, released, installed, or activated. The
-immutable `v6.2.1` tag did not publish and has no GitHub Release; the current
-published release remains
-**[v6.2.0](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0)**.
+same-invocation route recovery and carrier-output hardening. The signed
+**[v6.2.2](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2)**
+release is published, and its exact package members and provider-free runtime
+readiness were verified on Claude, Codex, Antigravity, and Grok. The immutable
+`v6.2.1` tag remains unchanged and has no GitHub Release.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -61,7 +61,7 @@ action's authority/artifact contract are unchanged from v6.2.0. The signed
 provider runtime advances to `4.2.0`; wire schema advances 6 → 7 and the
 descriptor digest advances `e601a455…` → `0c2cba3a…`.
 
-## Previous tagged release - v6.2.0
+## Previous published release - v6.2.0
 
 This release advances the signed provider runtime to `4.1.0` (an additive
 governance-pool widening) and makes the coordinator boundary tolerant of

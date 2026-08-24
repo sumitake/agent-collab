@@ -108,7 +108,7 @@ The primary should always:
 - keep merge, deployment, secret, and destructive decisions within the user's
   and repository's authority boundaries.
 
-`project-estimation` is offline and read-only by default. The packaged v6.2.0
+`project-estimation` is offline and read-only by default. The packaged v6.2.2
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
@@ -150,6 +150,38 @@ codex plugin add agent-collab@agent-collab --json
 ```
 
 Then start a new task and re-run migration doctor and runtime status.
+
+### Antigravity
+
+Import the exact host-resolved Claude package root, verify the imported
+manifest version, and start a fresh Antigravity session:
+
+```text
+agy plugin install "<absolute-Claude-plugin-root>"
+agy plugin list --json
+```
+
+The import inventory identifies the package but does not currently report its
+version. Read `.claude-plugin/plugin.json` beneath the host-resolved
+Antigravity import root and require the intended version before running
+migration doctor and runtime status.
+
+### Grok
+
+An install pinned to a release tag remains pinned: `grok plugin update` reports
+that fact and does not advance it. Preserve plugin data while replacing only
+the pinned package code, then verify the new inventory and start a fresh Grok
+session:
+
+```text
+grok plugin uninstall agent-collab --confirm --keep-data
+grok plugin install "sumitake/agent-collab@vX.Y.Z#plugins/agent-collab" --trust
+grok plugin list --json
+```
+
+Require the registry's `git_ref`, resolved commit, and package version to match
+the signed release tag. Do not convert a pinned install into an unreviewed
+moving branch merely to make the generic update command advance it.
 
 ### Co-packaged runtime during update
 
@@ -196,6 +228,14 @@ between packages, or reinstall a retired package. Publish a signed revocation
 when required and a higher patch release for corrected bytes. Until then,
 leave the affected semantic action unused or remove the package through the
 host manager.
+
+Local activation-release preflight also needs macOS code-signing trust-service
+access. A managed execution sandbox can make the same notarized bytes return
+`notarization_not_confirmed`; that result is neither artifact rejection nor
+permission to proceed. Keep the verified tree and tag state unchanged, then
+run the complete preflight with authorized trust-service access. Only a full
+pass permits creation of the immutable tag; never weaken the notarization gate
+or substitute a hand-run partial check.
 
 ## Remove
 

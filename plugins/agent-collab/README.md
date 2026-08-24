@@ -5,10 +5,12 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current source: **6.2.2** (not yet tagged, released, installed, or activated)
+Current source: **6.2.2**
 
-Current published release: **6.2.0**
-([`v6.2.0`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.0))
+Current published release: **6.2.2**
+([`v6.2.2`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2));
+the exact package members and provider-free runtime readiness were verified on
+Claude, Codex, Antigravity, and Grok.
 
 The immutable `v6.2.1` tag failed before publication and has no GitHub Release.
 Version 6.2.2 adds a pinned clean-runner bootstrap for the mandatory runtime

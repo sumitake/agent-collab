@@ -19,15 +19,16 @@ consents to an output path.
 ## Current status
 
 The skill, helper, schemas, planning checkpoints, and release-verification
-source ship in the published v6.2.0 release. A governed, content-addressed
+source ship in the published v6.2.2 release. A governed, content-addressed
 bootstrap handoff is admitted from the frozen producer. It contains a supported
 enhancement duration hierarchy but no greenfield root and no published token,
 wait, rework, quota-delay, or marginal-cash metrics.
 
 This is production maintenance evidence in the explicit `bootstrap` state, not
 a promoted calibration claim. Its estimates are descriptive and never high
-confidence. The unchanged maintenance evidence is rebound to the 6.2.2 source
-candidate; the current published evidence remains the v6.2.0 release snapshot.
+confidence. The unchanged maintenance evidence is receipt-bound to the
+published 6.2.2 source; v6.2.0 remains the historical release that introduced
+the bootstrap.
 
 ## Mental model
 
