@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import builtins
 import importlib.util
 import json
 from pathlib import Path
@@ -48,6 +49,22 @@ class _PassingValidator:
 
 
 class RuntimeManifestSchemaValidationTests(unittest.TestCase):
+    def test_incompatible_installed_jsonschema_bootstraps(self) -> None:
+        module = _load_module()
+        original_import = builtins.__import__
+
+        def incompatible_jsonschema(name, *args, **kwargs):
+            if name == "jsonschema":
+                raise ImportError("cannot import name 'Draft202012Validator'")
+            return original_import(name, *args, **kwargs)
+
+        with (
+            mock.patch("builtins.__import__", side_effect=incompatible_jsonschema),
+            mock.patch.object(module, "_bootstrap", return_value=17) as bootstrap,
+        ):
+            self.assertEqual(module.main([]), 17)
+        bootstrap.assert_called_once_with([])
+
     def test_duplicate_keys_fail_before_schema_validation(self) -> None:
         module = _load_module()
         with tempfile.TemporaryDirectory() as raw:

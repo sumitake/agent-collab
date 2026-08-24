@@ -132,6 +132,8 @@ jobs:
         with:
           name: runtime-verification
           path: /tmp/runtime-verification
+      - name: Validate runtime manifest against release schema
+        run: python3 scripts/validate_runtime_manifest_schema.py
       - name: Bind macOS evidence to this commit and packaged bytes
         if: needs.classify-release.outputs.mode == 'activation'
         run: >-

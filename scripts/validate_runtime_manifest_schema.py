@@ -62,7 +62,7 @@ def _load_document(path: Path, *, label: str) -> Any:
 def _load_draft_validator():
     try:
         from jsonschema import Draft202012Validator
-    except ModuleNotFoundError as exc:
+    except ImportError as exc:
         raise SchemaValidationError("Draft 2020-12 validator dependency is unavailable") from exc
     return Draft202012Validator
 
