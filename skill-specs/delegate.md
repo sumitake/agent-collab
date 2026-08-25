@@ -50,8 +50,9 @@ Pick a structured output format that both halves will share:
 Submit the sealed delegate role through `{{ mcp_tool_ask }}`. Use
 {{ delegate_call_params_flash }} for bulk extraction and
 {{ delegate_call_params_pro }} for judgment-heavy items. Central policy
-resolves the eligible worker after family exclusion; Claude/Anthropic remains
-async inbox-only.
+resolves the eligible worker after family exclusion. Claude/Anthropic is
+ineligible for delegation and other worker actions; its only managed route is
+read-only document intent, and host-owned async coordination is separate.
 
 **Grok delegation is native-runtime-only.** The standalone worker plugin and
 its raw CLI recipe are retired. Do not invoke `grok` directly, reconstruct the

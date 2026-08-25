@@ -7,8 +7,10 @@ import io
 import json
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
+import termios
 import time
 import types
 import unittest
@@ -28,6 +30,39 @@ def _load(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _configurable_terminal_settings(settings: list[object]) -> list[object]:
+    """Exclude the kernel-maintained pending-input status bit from comparisons."""
+
+    normalized = list(settings)
+    normalized[6] = list(settings[6])
+    normalized[3] &= ~getattr(termios, "PENDIN", 0)
+    return normalized
+
+
+def _write_all_with_deadline(
+    descriptor: int, payload: bytes, *, timeout_seconds: float = 5.0
+) -> None:
+    """Write a PTY frame without letting a regression hang the test process."""
+
+    view = memoryview(payload)
+    written = 0
+    deadline = time.monotonic() + timeout_seconds
+    while written < len(view):
+        try:
+            count = os.write(descriptor, view[written:])
+        except BlockingIOError:
+            count = 0
+        if count > 0:
+            written += count
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError("PTY writer exceeded its deadline")
+        _, writable, _ = select.select([], [descriptor], [], remaining)
+        if not writable:
+            raise AssertionError("PTY writer exceeded its deadline")
 
 
 class SemanticCoordinatorTests(unittest.TestCase):
@@ -697,6 +732,129 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 process.kill()
                 process.communicate(timeout=5)
             os.close(master_fd)
+
+    def test_open_pty_long_request_bypasses_canonical_buffer_and_restores_tty(
+        self,
+    ) -> None:
+        """A long newline frame completes while its PTY stays open and unchanged."""
+
+        master_fd, slave_fd = os.openpty()
+        observer_fd = os.dup(slave_fd)
+        original = termios.tcgetattr(observer_fd)
+        without_echo = list(original)
+        without_echo[6] = list(original[6])
+        without_echo[3] &= ~(termios.ECHO | getattr(termios, "ECHONL", 0))
+        termios.tcsetattr(observer_fd, termios.TCSANOW, without_echo)
+        expected = termios.tcgetattr(observer_fd)
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        payload = json.dumps({"padding": "x" * (64 * 1024)}).encode("utf-8") + b"\n"
+        try:
+            started = time.monotonic()
+            ready_deadline = started + 2
+            while termios.tcgetattr(observer_fd)[3] & termios.ICANON:
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic(), ready_deadline)
+                time.sleep(0.001)
+            os.set_blocking(master_fd, False)
+            _write_all_with_deadline(master_fd, payload)
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(stderr, b"")
+            response = json.loads(stdout)
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(response["status"], "invalid_request")
+            self.assertEqual(response["error_code"], "missing_common_fields")
+            self.assertEqual(
+                _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
+                _configurable_terminal_settings(expected),
+            )
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+            termios.tcsetattr(observer_fd, termios.TCSANOW, original)
+            os.close(observer_fd)
+            os.close(master_fd)
+
+    def test_open_pty_valid_slow_frame_is_not_an_incomplete_false_failure(
+        self,
+    ) -> None:
+        """A valid frame may pause beyond the retired inter-chunk heuristic."""
+
+        master_fd, slave_fd = os.openpty()
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        try:
+            started = time.monotonic()
+            ready_deadline = started + 2
+            while termios.tcgetattr(master_fd)[3] & termios.ICANON:
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic(), ready_deadline)
+                time.sleep(0.001)
+            os.write(master_fd, b"{")
+            time.sleep(2.2)
+            os.write(master_fd, b"}\n")
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(stderr, b"")
+            response = json.loads(stdout)
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(response["status"], "invalid_request")
+            self.assertEqual(response["error_code"], "missing_common_fields")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+            os.close(master_fd)
+
+    def test_tty_deadline_restores_terminal_and_maps_to_typed_error(self) -> None:
+        master_fd, slave_fd = os.openpty()
+        observer_fd = os.dup(slave_fd)
+        stream = os.fdopen(os.dup(slave_fd), "rb", buffering=0)
+        original = termios.tcgetattr(observer_fd)
+        os.write(master_fd, b'{"request_id":"truncated"')
+        descriptor = stream.fileno()
+        with mock.patch.object(
+            self.coordinator.select,
+            "select",
+            side_effect=[([descriptor], [], []), ([], [], [])],
+        ):
+            with self.assertRaises(self.coordinator._IncompleteTTYFrame):
+                self.coordinator._read_tty_request(stream)
+        self.assertEqual(
+            _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
+            _configurable_terminal_settings(original),
+        )
+        with (
+            mock.patch.object(
+                self.coordinator,
+                "_read_one_request",
+                side_effect=self.coordinator._IncompleteTTYFrame,
+            ),
+            mock.patch.object(self.coordinator.sys, "stdout", io.StringIO()) as output,
+        ):
+            result = self.coordinator.main()
+        response = json.loads(output.getvalue())
+        self.assertEqual(result, 2)
+        self.assertEqual(response["status"], "invalid_request")
+        self.assertEqual(response["error_code"], "tty_frame_incomplete")
+        self.assertEqual(response["detail"]["max_wait_ms"], 120000)
+        stream.close()
+        os.close(observer_fd)
+        os.close(slave_fd)
+        os.close(master_fd)
 
     def test_post_decode_failure_is_not_mislabeled_invalid_json(self) -> None:
         stdin = types.SimpleNamespace(buffer=io.BytesIO(b"{}"))

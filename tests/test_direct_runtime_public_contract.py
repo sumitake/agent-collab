@@ -46,6 +46,7 @@ LOGICAL_ACTION_SOURCE_MODES = {
 }
 
 TRANSPORT_ACTIONS = (
+    ("claude", "context"),
     ("codex", "advisory"),
     ("codex", "codegen"),
     ("codex", "governance"),
@@ -63,6 +64,7 @@ TRANSPORT_ACTIONS = (
 )
 
 ACTION_SOURCE_PAIRS = (
+    ("claude", "context", "documents"),
     ("codex", "advisory", "repository"),
     ("codex", "codegen", "repository"),
     ("codex", "governance", "repository"),
@@ -85,6 +87,7 @@ ACTION_SOURCE_PAIRS = (
 
 LOGICAL_AGENTS = (
     "alibaba",
+    "claude",
     "codex",
     "deepseek",
     "gemini",
@@ -95,6 +98,7 @@ LOGICAL_AGENTS = (
 
 MODEL_LINEAGES = (
     "alibaba",
+    "anthropic",
     "deepseek",
     "google",
     "moonshot",
@@ -114,7 +118,7 @@ LOGICAL_ACTION_TARGETS = {
     "context.documents.extract": (
         "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
     ),
-    "context.documents.intent": ("gemini", "grok"),
+    "context.documents.intent": ("claude", "gemini", "grok"),
     "context.documents.reason": (
         "alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu",
     ),
@@ -154,7 +158,7 @@ LOGICAL_ACTION_EFFORT_FLOORS = {
 }
 
 WIRE_CONTRACT_SHA256 = (
-    "0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51"
+    "774067d0a2a640b2eac27cace99f6cf812649169e03aab2ec8fcf77a2c3fe2a9"
 )
 
 
@@ -317,9 +321,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.2.3")
-        self.assertEqual(codex["version"], "6.2.3")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.2.3")
+        self.assertEqual(plugin["version"], "6.2.4")
+        self.assertEqual(codex["version"], "6.2.4")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.2.4")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):

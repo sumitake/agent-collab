@@ -42,6 +42,8 @@ in [Governance and authority](governance-and-authority.md).
 
 Current repository route contracts cover:
 
+- Claude read-only document-intent work through the official structured CLI,
+  cost-last after eligible Gemini and Grok routes;
 - Gemini advisory, governance, and bounded context work;
 - Codex advisory and governance work;
 - OpenCode planning and output-only build work;
@@ -62,13 +64,13 @@ tests, or user approval; “primary-executed” is not “unchecked.”
 
 ### Async coordination
 
-Claude and Antigravity participation can use host-owned asynchronous inbox
-transport after the exact target identity, family, session, and current
-readiness are observed. The public coordinator exposes readiness only. It does
-not send, does not create a synchronous Claude route, and does not treat an
-async reply as independent governance merely because it arrived.
-[Claude participation](claude-participation.md) explains why no synchronous
-Claude route exists.
+Claude and Antigravity participation can use host-owned asynchronous transport
+after the exact target identity, family, session, and current readiness are
+observed. For that surface, the public coordinator exposes readiness only and
+does not send. Async coordination is separate from Claude's narrow managed
+`context.documents.intent` route, and an async reply is not independent
+governance merely because it arrived. [Claude participation](claude-participation.md)
+explains the action-scoped boundary.
 
 ### Reproducible composition
 
@@ -140,7 +142,7 @@ authority.
 
 | Surface | Public package evidence | User expectation |
 | --- | --- | --- |
-| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. Claude model participation remains async-only (see [Claude participation](claude-participation.md)). |
+| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official structured CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
 | Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |

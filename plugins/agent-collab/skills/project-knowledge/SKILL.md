@@ -1,6 +1,6 @@
 ---
 name: project-knowledge
-version: 6.2.3
+version: 6.2.4
 description: Build and maintain a durable, project-local knowledge base with provenance-tracked sources, injection-linted pages, and a generated index, using the bundled deterministic knowledge_tool.py CLI. Use when the user says "build a project knowledge base", "set up a knowledge layer", "register this source", "draft a knowledge page", "lint the knowledge pages", "regenerate the knowledge index", "export a knowledge bundle", or "/agent-collab:project-knowledge." Also offer this proactively when agent memory limits truncate project context across sessions, or when the same sources keep being re-read and re-synthesized because no durable, citable project-local record exists.
 ---
 

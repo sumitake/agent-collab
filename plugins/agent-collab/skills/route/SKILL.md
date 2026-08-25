@@ -1,6 +1,6 @@
 ---
 name: route
-version: 6.2.3
+version: 6.2.4
 description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs primary-family exclusion or a truthful typed availability decision.
 ---
 

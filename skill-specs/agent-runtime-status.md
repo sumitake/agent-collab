@@ -32,7 +32,8 @@ Preserve the runtime's typed status (`ok`, `unavailable`, `auth_error`,
 coordinator delivery failure and do not invoke a provider as a readiness probe.
 
 Report all 12 logical actions, their eligible agent set, and readiness source.
-The 13 provider transport actions and source-qualified pairs are diagnostics
+The 15 provider transport actions and 19 source-qualified pairs are diagnostics
 derived from the co-packaged wire descriptor, not a second public routing
-surface. Claude remains host-owned asynchronous coordination and is never
-invented as a headless provider route.
+surface. Claude is reported as a managed candidate only for
+`context.documents.intent` with document source; its host-owned asynchronous
+coordination remains separate and is never inferred as another native route.

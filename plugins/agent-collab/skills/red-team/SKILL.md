@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 6.2.3
+version: 6.2.4
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -46,7 +46,9 @@ recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
 OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is async inbox-only.
+may proceed only with an independence warning. Claude is ineligible for these
+review and governance routes; its only managed route is document intent, and
+host-owned async coordination is separate.
 <!-- verifier-independence:end -->
 
 ## Procedure
