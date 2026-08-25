@@ -5,20 +5,20 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source distribution is **agent-collab**
-(v6.2.3), a release candidate with signed provider runtime `4.2.1`. It adds
-bounded correction of uniquely identifiable closed invocation tokens and
-provider-neutral carrier reliability repairs. The current published release is
-**[v6.2.2](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2)**;
-its exact package members and provider-free runtime readiness were verified on
-Claude, Codex, Antigravity, and Grok. Publication and host activation of v6.2.3
-remain separate post-merge steps.
+This public repository's current source and published distribution is
+**agent-collab** (v6.2.3), with signed provider runtime `4.2.1`. It adds bounded
+correction of uniquely identifiable closed invocation tokens and
+provider-neutral carrier reliability repairs. The verified
+**[v6.2.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3)**,
+exact package members, and provider-free runtime readiness were checked
+separately; Claude, Codex, Antigravity, and Grok each resolve the released bytes
+on the observed host.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
-machine-operational contract for this release. The final documentation closeout
-records the exact published artifact and installation
-evidence after release. The dated
+machine-operational contract for this release. This documentation closeout
+records the exact published artifact and observed installation evidence. The
+dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
@@ -249,7 +249,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.2.0`;
+- provider runtime version `4.2.1`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.

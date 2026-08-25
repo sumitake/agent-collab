@@ -17,7 +17,33 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## v6.2.2 release closeout snapshot
+## v6.2.3 release closeout snapshot
+
+The following public and host evidence was reconciled on 2026-08-25. It is a
+dated snapshot, not a permanent “latest version” badge.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The verified signed annotated [`v6.2.3` tag](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3) identifies public commit `bbbfa8c989e9c8b01c33e0f636891c474e9443a1`. | published | The immutable source contains package 6.2.3 and signed/notarized provider runtime **4.2.1** for macOS arm64 and x86_64. Runtime protocol 4, native contract 4, and wire schema 7 remain unchanged; the wire digest is `0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51`. |
+| The exact-tag [`release.yml` run](https://github.com/sumitake/agent-collab/actions/runs/32802795398) completed successfully and the release is published, non-draft, and non-prerelease. | published | The release cutter verified clean latest `main`, the signed tag target, deterministic archive/evidence, both Developer ID hardened/timestamped/notarized runtime bundles, the exact workflow, and the downloaded public assets before returning success. |
+| The release contains exactly `agent-collab.v6.2.3.plugin`, `agent-collab.v6.2.3.plugin.sha256`, and `agent-collab-v6.2.3.spdx.json`. Their SHA-256 values are `9b8263f9b889f0beedc4ccba62d20a25eded095ec932797c0bdc5928cb4381a8`, `c8b91a17515717fbc825003da97dbb4aafa1a1df28c891b10dbe41af29b42c67`, and `4fb7621d390aaef6501131333551a3ad51d3f966b298232c315763b77f5b9352`. | verified release evidence | The downloaded archive matched its checksum and GitHub digest; the SBOM matched its GitHub digest. The extracted manifest SHA-256 is `a50f9c82aca2af54d764e03a5f00f7c38cd139249146a2edade97d602bf44964`; its arm64 and x86_64 bundle digests are `023679b0a590a88b2e8eb80c6fe180a61793a37ad09ea75ef62b915697d5250c` and `54f1badd1f60466f2039b568e8cd51b293c71fbfdc576d93fb46531917fa8b72`. |
+| Claude, Codex, Antigravity, and Grok each report or resolve package version 6.2.3 through their supported host plugin state. All 170 released members matched every host-resolved root byte-for-byte; only host-generated extra files were outside that comparison. | verified host installation | Claude and Codex report the package enabled; Antigravity's imported Claude and Codex manifests report 6.2.3; Grok's pinned registry binds `v6.2.3` and commit `bbbfa8c…`. Installation evidence is host-specific and does not by itself prove a future provider call. |
+| Provider-free readiness executed from all four host-resolved roots and returned top-level `ok`, 12 logical actions, 61 of 61 candidates ready, manifest `a50f9c82…`, wire `0c2cba3a…`, cleanup confirmed, and zero model calls. | verified loaded runtime bytes | The native arm64 bundle selected and executed from each installed tree. The active Codex CLI 0.149.1 executable (`f0d8762236594359b60cfbe17f4c7e945a3ce8d1c91e74778838c968d250fb6c`) was admitted automatically under both released compatibility profiles; normal CLI currency imposed no governance or functionality downgrade. |
+| Pre-publication qualification completed one Gemini repository read through the permission-capable route and one signed x86_64 Grok Rosetta canary through the supervised ACP route. | release qualified | Both attempts returned grounded artifacts with cleanup confirmed: the Gemini path did not hit the earlier `git rev-parse` denial, and the Grok path did not cancel. These bounded canaries were not replayed after installation and do not promise future provider availability. |
+| Release publication closed [#154](https://github.com/sumitake/agent-collab/issues/154), [#155](https://github.com/sumitake/agent-collab/issues/155), [#156](https://github.com/sumitake/agent-collab/issues/156), and [#158](https://github.com/sumitake/agent-collab/issues/158). | released fixes | The broader coordinator-line PTY limit [#148](https://github.com/sumitake/agent-collab/issues/148) and repeatable Intel evidence-extraction documentation [#157](https://github.com/sumitake/agent-collab/issues/157) remain explicit follow-ups; neither was silently folded into this release. |
+| The generated `CHANGELOG.md` contains the compiled 6.2.3 coordinator/runtime and maintenance entries. | verified current | Generated release history agrees with the signed tag and published assets; this post-release closeout leaves generated history and the immutable tag unchanged. |
+
+### v6.2.3 closeout determinations
+
+| Surface | Determination | Evidence |
+| --- | --- | --- |
+| `docs/architecture/` | **updated current** | This snapshot records the exact tag, workflow, assets, runtime identities, four-host installation/readiness, bounded Gemini/Grok qualification, and explicit residuals. Project-estimation status identifies the refreshed receipt-bound 6.2.3 evidence while retaining v6.2.0 as its historical introduction. |
+| Root `README.md` | **updated** | Release-candidate and pending-activation language was replaced with the verified v6.2.3 publication and observed four-host readiness state. |
+| `plugins/agent-collab/README.md` | **updated** | The package reference identifies 6.2.3 as both current source and current published release without collapsing installation into publication. |
+| Lifecycle/runbook | **updated** | Provider CLI refresh is build-time and automatic for the published profile; a normal covered vendor auto-update is not treated as a governance or functionality downgrade. Host-specific update and verification commands remain executor-neutral. |
+| Generated `CHANGELOG.md` | **verified current** | The release flow compiled the 6.2.3 entry; this post-release closeout leaves generated history and signed tags unchanged. |
+
+## Historical v6.2.2 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-24. It is a
 dated snapshot, not a permanent “latest version” badge.

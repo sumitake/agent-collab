@@ -5,10 +5,10 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.3** (release candidate)
+Current: **6.2.3**
 
-Current published release: **6.2.2**
-([`v6.2.2`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2));
+Current published release: **6.2.3**
+([`v6.2.3`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
@@ -18,9 +18,9 @@ spelling errors in closed invocation tokens and ships signed provider runtime
 and Grok cancellation reliability repairs. It never corrects open prose,
 aliases, or ambiguous values, and it never replays a provider request. Version
 6.2.2 added a pinned clean-runner bootstrap for the mandatory runtime
-manifest-schema gate, then ships the bounded TTY request framing, conservative
-invocation recovery, and signed provider runtime `4.2.0` prepared for 6.2.1.
-Runtime 4.2.0 recovers an
+manifest-schema gate and published the bounded TTY request framing,
+conservative invocation recovery, and signed provider runtime `4.2.0` that had
+been prepared for 6.2.1. Runtime 4.2.0 recovers an
 eligible distinct route within the original invocation, publishes exact
 schema-7 recovery criteria, hardens grounded carrier-output interpretation,
 and adds per-class readiness diagnostics across Codex, Gemini/agy, Grok, and
