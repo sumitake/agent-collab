@@ -16,6 +16,7 @@ is never reached for a rejected request.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import hashlib
 import importlib.util
 import json
@@ -375,6 +376,87 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
                 response, code = self._process(request, result=None)
                 self.assertEqual(code, 2)
                 self.assertEqual(response["error_code"], expected)
+
+    def test_one_edit_operation_is_recovered_in_place(self) -> None:
+        result = self.client.RuntimeResult(
+            self.client.RuntimeStatus.OK, result={"artifact": "ok"}
+        )
+        response, code = self._process(
+            self._documents_request(operation="invok"), result=result
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(response["status"], "ok")
+        self.assertIn(
+            {
+                "field": "operation",
+                "from": "invok",
+                "to": None,
+                "reason": "unique_one_edit_closed_value",
+            },
+            response["normalized"],
+        )
+
+    def test_one_edit_closed_invocation_tokens_recover_without_touching_prose(self) -> None:
+        request = self._documents_request(
+            operation="invok",
+            action="context.documents.extarct",
+            quality_profile="standrad",
+            effort_class="minimla",
+            route="gmeini",
+            prompt="Extrcat facts exactly as written.",
+            source={
+                "mode": "docuemnts",
+                "documents": [{"label": "a", "content": "one"}],
+            },
+        )
+        request.pop("logical_action")
+        request.pop("target_agent")
+        request.pop("documents")
+        normalized: list = []
+        native = self.coordinator.validate_request(
+            request, self.wire, self.profile, normalized=normalized
+        )
+
+        self.assertEqual(native["logical_action"], "context.documents.extract")
+        self.assertEqual(native["quality_profile"], "standard")
+        self.assertEqual(native["effort_class"], "minimal")
+        self.assertEqual(native["target_agent"], "gemini")
+        self.assertEqual(native["prompt"], "Extrcat facts exactly as written.")
+        corrected_fields = {
+            item["field"]
+            for item in normalized
+            if item["reason"] == "unique_one_edit_closed_value"
+        }
+        self.assertEqual(
+            corrected_fields,
+            {
+                "operation",
+                "logical_action",
+                "quality_profile",
+                "effort_class",
+                "target_agent",
+                "source.mode",
+            },
+        )
+        self.assertNotIn("prompt", {item["field"] for item in normalized})
+
+    def test_ambiguous_one_edit_token_is_rejected_before_provider_start(self) -> None:
+        wire = replace(
+            self.wire,
+            logical_actions=frozenset({"review.a", "review.b"}),
+            logical_action_source_modes={
+                "review.a": "documents",
+                "review.b": "documents",
+            },
+        )
+        response, code = self._process(
+            self._documents_request(logical_action="review.x"),
+            result=None,
+            wire=wire,
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(response["error_code"], "unknown_logical_action")
+        self.assertEqual(response["detail"]["given"], "review.x")
 
     # -- in-place recovery + clean happy path ------------------------------
     def test_empty_target_agent_is_recovered_in_place(self) -> None:

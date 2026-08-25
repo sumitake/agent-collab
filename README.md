@@ -6,13 +6,13 @@ co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
 This public repository's current source distribution is **agent-collab**
-(v6.2.2). It combines bounded request framing and identity-preserving
-invocation recovery with signed provider runtime `4.2.0`, including
-same-invocation route recovery and carrier-output hardening. The signed
-**[v6.2.2](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2)**
-release is published, and its exact package members and provider-free runtime
-readiness were verified on Claude, Codex, Antigravity, and Grok. The immutable
-`v6.2.1` tag remains unchanged and has no GitHub Release.
+(v6.2.3), a release candidate with signed provider runtime `4.2.1`. It adds
+bounded correction of uniquely identifiable closed invocation tokens and
+provider-neutral carrier reliability repairs. The current published release is
+**[v6.2.2](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2)**;
+its exact package members and provider-free runtime readiness were verified on
+Claude, Codex, Antigravity, and Grok. Publication and host activation of v6.2.3
+remain separate post-merge steps.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -22,7 +22,26 @@ evidence after release. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 keeps repository, tag, release, installation, and readiness claims separate.
 
-## What's new - v6.2.2
+## What's new - v6.2.3
+
+- **Bounded invocation correction.** Operation, logical action, quality,
+  effort, logical target, and source-mode spelling errors recover only when one
+  canonical closed value is exactly one typing edit away. Ambiguous or unknown
+  values remain actionable rejections before provider launch; prompts,
+  documents, paths, evidence, aliases, and authority are never rewritten.
+- **Provider-neutral runtime reliability.** Runtime 4.2.1 refreshes and binds
+  current supported CLI releases during the release build, admits advertised
+  effort through provider-default resolution where a native CLI lacks an exact
+  knob, and tolerates grounded terminal/lifecycle presentation differences.
+  Gemini repository reads use the permission-capable route, while Grok uses its
+  supervised ACP route; a cancelled attempt remains retryable rather than an
+  outage or route quarantine. No request is replayed.
+- **Fresh maintenance evidence.** The version-bound project-estimation handoff
+  was regenerated through the governed workspace pipeline for 6.2.3. Pricing
+  coverage is reviewed and complete; unavailable numeric subscription quota
+  remains explicitly `unknown` and receipt-bound.
+
+## Previous published release - v6.2.2
 
 - **Portable release bootstrap.** The GitHub-hosted release job now provisions
   an exact pinned `uv` toolchain before the mandatory Draft 2020-12 runtime
@@ -61,7 +80,7 @@ action's authority/artifact contract are unchanged from v6.2.0. The signed
 provider runtime advances to `4.2.0`; wire schema advances 6 → 7 and the
 descriptor digest advances `e601a455…` → `0c2cba3a…`.
 
-## Previous published release - v6.2.0
+## Earlier published release - v6.2.0
 
 This release advances the signed provider runtime to `4.1.0` (an additive
 governance-pool widening) and makes the coordinator boundary tolerant of

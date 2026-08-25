@@ -61,7 +61,7 @@ def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "4.2.0",
+            "provider_runtime_version": "4.2.1",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -130,7 +130,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "4.2.0",
+                "provider_runtime_version": "4.2.1",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -393,7 +393,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-                "provider version mismatch: expected 4\\.2\\.0, received 9\\.9\\.9",
+                "provider version mismatch: expected 4\\.2\\.1, received 9\\.9\\.9",
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 

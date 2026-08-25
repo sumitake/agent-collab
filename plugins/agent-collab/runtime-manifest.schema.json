@@ -346,7 +346,7 @@
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"const": "4.2.0"},
+          "provider_runtime_version": {"const": "4.2.1"},
           "wire_contract_sha256": {"const": "0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51"},
           "files": {
             "type": "array",

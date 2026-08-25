@@ -788,6 +788,46 @@ class DirectRuntimeClientTests(unittest.TestCase):
         self.assertEqual(len(result.result["actions"]), 12)
         self.assertNotIn("execution_receipt", result.provenance)
 
+    def test_readiness_accepts_catalog_resolved_native_cli_candidate(self) -> None:
+        response = _readiness_response(self.wire.sha256)
+        group = next(
+            item
+            for item in response["result"]["actions"]
+            if item["logical_action"] == "architecture.repository"
+        )
+        group["candidates"] = [
+            {
+                "logical_agent": "codex",
+                "provider_surface": "native_cli",
+                "model_lineage": "openai",
+                "shared_resource": "codex_cli_pool",
+                "activation": "active",
+                "status": "ready",
+                "implementation_fingerprint": "a" * 64,
+                "executable_content_sha256": "b" * 64,
+                "adapter_wire_sha256": "c" * 64,
+                "observed_model": "current-default",
+                "catalog_digest": "d" * 64,
+                "model_resolution_method": "provider_catalog",
+                "effective_effort": "standard",
+                "metadata_process_count": 1,
+                "diagnostic_code": None,
+                "compatibility_profile": "app_server_v2_minimum",
+                "capability_digest": "e" * 64,
+                "metadata_zero_model_calls_proven": True,
+                "cleanup_confirmed": True,
+            }
+        ]
+
+        validated = self.client.validate_readiness_response(
+            response,
+            self.wire,
+            request_id="runtime-status-1",
+            author_lineage="openai",
+        )
+
+        self.assertEqual(validated, response)
+
     def test_valid_response_between_one_and_four_mib_is_accepted(self) -> None:
         success_schema = {
             "type": "object",
@@ -926,6 +966,12 @@ class DirectRuntimeClientTests(unittest.TestCase):
                 "(trap '' TERM; exec >/dev/null 2>/dev/null; "
                 f"while :; do printf x >> {str(heartbeat)!r}; sleep 0.02; done) &\n"
                 f"printf %s $! > {str(pid_record)!r}\n"
+                "attempt=0\n"
+                f"while [ ! -s {str(heartbeat)!r} ]; do\n"
+                "  attempt=$((attempt + 1))\n"
+                "  [ \"$attempt\" -lt 20 ] || exit 11\n"
+                "  sleep 0.01\n"
+                "done\n"
                 "exit 0\n",
                 encoding="utf-8",
             )
