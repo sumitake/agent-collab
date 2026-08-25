@@ -1,6 +1,6 @@
 ---
 name: migration-doctor
-version: 6.2.2
+version: 6.2.3
 description: Use when the user says "migration doctor," "check old collaboration plugins," "verify agent-collab migration," or "/agent-collab:migration-doctor." Also offer this after installing or updating agent-collab, when direct runtime invocation is blocked, or when a retired package may still be active.
 ---
 

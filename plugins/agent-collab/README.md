@@ -5,15 +5,19 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current source: **6.2.2**
+Current: **6.2.3** (release candidate)
 
 Current published release: **6.2.2**
 ([`v6.2.2`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.2));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
-The immutable `v6.2.1` tag failed before publication and has no GitHub Release.
-Version 6.2.2 adds a pinned clean-runner bootstrap for the mandatory runtime
+Version 6.2.3 adds bounded correction for uniquely identifiable one-edit
+spelling errors in closed invocation tokens and ships signed provider runtime
+`4.2.1` with provider-neutral CLI currency, effort, output, Gemini repository,
+and Grok cancellation reliability repairs. It never corrects open prose,
+aliases, or ambiguous values, and it never replays a provider request. Version
+6.2.2 added a pinned clean-runner bootstrap for the mandatory runtime
 manifest-schema gate, then ships the bounded TTY request framing, conservative
 invocation recovery, and signed provider runtime `4.2.0` prepared for 6.2.1.
 Runtime 4.2.0 recovers an
@@ -129,14 +133,15 @@ governance.repository
 review.repository
 ```
 
-For caller compatibility, exact legacy field names `action` and `route` are
-accepted only when their values already name a public logical action and a
-canonical logical agent. The exact closed native `source` object, an exact
-`operation: "invoke"`, missing/empty target, and ASCII whitespace/case around
-an admitted token are also normalized and reported in `normalized`. Conflicting
-fields, provider/model/product aliases, transport actions, `row`, native effort,
-development-shadow, and artifact-proof fields remain rejected. There is no
-fuzzy, prompt-inferred, provider-branded, or cost-changing translator.
+For caller compatibility, legacy field names `action` and `route`, the closed
+native `source` object, `operation: "invoke"`, missing/empty target, and ASCII
+whitespace/case around an admitted token are normalized and reported in
+`normalized`. A spelling error in an invocation-only closed token is corrected
+only when exactly one canonical value is one substitution, insertion, deletion,
+or adjacent transposition away. Zero or multiple matches remain typed
+rejections before provider launch. Prompts, documents, paths, evidence,
+provider/model/product aliases, transport actions, authority, and arbitrary
+prose are never inferred or rewritten.
 
 Runtime status uses one separate closed request. It has no prompt or source and
 returns every logical action in one zero-inference snapshot:
@@ -148,7 +153,7 @@ returns every logical action in one zero-inference snapshot:
 ## Direct runtime boundary
 
 The workspace build emits one schema-4 manifest with wire schema 7, runtime
-protocol 4, native contract 4, and provider runtime `4.2.0`. Schema 7 publishes
+protocol 4, native contract 4, and provider runtime `4.2.1`. Schema 7 publishes
 logical agents, model lineages, action-compatible targets, and effort floors;
 request-bound occupied lineages and evidence anchors remain closed and
 runtime-adjudicated. The wire revision records compatible descriptor evolution;
@@ -169,15 +174,15 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-Runtime 4.2.0 retains the v4.1.0 governance-pool widening and advances all four
-native carrier families. Codex gains precise readiness diagnostics, bounded
-schema-artifact rename tolerance, and the operator-authorized network-on
-codegen profile without widening its disposable-repository write boundary.
-Gemini/agy, Grok, and OpenCode gain precise readiness diagnostics and
-identity-preserving grounded-output tolerance. Untargeted selection may move to
-the next eligible distinct route before provider execution, inside the same
-invocation; there is no provider replay, fallback invocation, or authority
-substitution.
+Runtime 4.2.1 retains the v4.2.0 routing and authority contract while refreshing
+supported CLI currency at build time and applying the same grounded-output
+tolerance across all four native carrier families. Codex uses provider-default
+effort when its native interface has no exact advertised tier. Gemini repository
+reads use the permission-capable route, and Grok uses the supervised ACP route;
+cancelled attempts remain retryable and never quarantine the route. Untargeted
+selection may move to the next eligible distinct route before provider
+execution, inside the same invocation; there is no provider replay, fallback
+invocation, or authority substitution.
 
 For each accepted request the public client:
 

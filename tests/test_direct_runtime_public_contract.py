@@ -317,9 +317,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.2.2")
-        self.assertEqual(codex["version"], "6.2.2")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.2.2")
+        self.assertEqual(plugin["version"], "6.2.3")
+        self.assertEqual(codex["version"], "6.2.3")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.2.3")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -493,7 +493,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.2.0"},
+            {"const": "4.2.1"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -580,7 +580,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
                 self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
                 self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
         for artifact in manifest["artifacts"]:
-            self.assertEqual(artifact["provider_runtime_version"], "4.2.0")
+            self.assertEqual(artifact["provider_runtime_version"], "4.2.1")
             self.assertEqual(artifact["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:

@@ -273,6 +273,31 @@ class MaintenanceVerifierTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("60" in line or "calibration" in line for line in lines), lines)
 
+    def test_default_clock_uses_utc_at_negative_offset_day_boundary(self) -> None:
+        _fixture(self.root, generated="2026-08-25")
+        real_date = self.verifier._datetime.date
+        real_datetime = self.verifier._datetime.datetime
+        utc = self.verifier._datetime.timezone.utc
+
+        class PriorLocalDate(real_date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 8, 24)
+
+        class FixedUtcDateTime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                if tz is not utc:
+                    raise AssertionError("maintenance verifier did not request UTC")
+                return cls(2026, 8, 25, 0, 30, tzinfo=utc)
+
+        with (
+            mock.patch.object(self.verifier._datetime, "date", PriorLocalDate),
+            mock.patch.object(self.verifier._datetime, "datetime", FixedUtcDateTime),
+        ):
+            ok, lines = self.verifier.verify_maintenance(self.root, expected_version=VERSION)
+        self.assertTrue(ok, lines)
+
     def test_provider_day_90_passes_and_day_91_fails(self) -> None:
         data = _fixture(self.root)
         _rebind(data, provider_date="2026-05-22")

@@ -439,7 +439,7 @@ def _notification(value: object, *, pricing: Mapping[str, object], quota: Mappin
 def _verify_maintenance(
     root: Path, *, expected_version: str, today: _datetime.date | None = None
 ) -> tuple[bool, list[str], MaintenanceSnapshot | None]:
-    today = today or _datetime.date.today()
+    today = today or _datetime.datetime.now(_datetime.timezone.utc).date()
     errors: list[str] = []
     fd: int | None = None
     try:

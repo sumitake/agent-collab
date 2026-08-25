@@ -1,6 +1,6 @@
 ---
 name: visual-review
-version: 6.2.2
+version: 6.2.3
 defaults:
   quality_profile: frontier
   effort_class: maximum

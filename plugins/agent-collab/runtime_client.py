@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.2.0"
+PROVIDER_RUNTIME_VERSION = "4.2.1"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -1176,11 +1176,20 @@ def validate_readiness_response(
                 or candidate["diagnostic_code"] is not None
             ):
                 raise ValueError("ready runtime identity is incomplete")
-            opencode = candidate["provider_surface"] == "opencode_go"
-            if opencode != (
-                candidate["observed_model"] is not None
-                and candidate["catalog_digest"] is not None
-            ):
+            resolution_method = candidate["model_resolution_method"]
+            if resolution_method == "provider_catalog":
+                catalog_identity_valid = (
+                    candidate["observed_model"] is not None
+                    and candidate["catalog_digest"] is not None
+                )
+            elif resolution_method == "provider_default":
+                # Provider-default routes may still bind the provider's
+                # observed catalog bytes (Gemini does) without selecting a
+                # model from that catalog.  The model must remain unclaimed.
+                catalog_identity_valid = candidate["observed_model"] is None
+            else:
+                catalog_identity_valid = False
+            if not catalog_identity_valid:
                 raise ValueError("runtime catalog identity is inconsistent")
     return dict(value)
 

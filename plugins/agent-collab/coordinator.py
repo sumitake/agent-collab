@@ -212,6 +212,75 @@ def _ascii_token(value: object, admitted: object) -> object:
     return candidate if candidate in admitted else value
 
 
+def _is_one_edit_apart(left: str, right: str) -> bool:
+    """Return whether two ASCII tokens differ by one bounded typing edit."""
+
+    if left == right or abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) == len(right):
+        differences: list[int] = []
+        for index, (left_character, right_character) in enumerate(zip(left, right)):
+            if left_character != right_character:
+                differences.append(index)
+                if len(differences) > 2:
+                    return False
+        if len(differences) == 1:
+            return True
+        if len(differences) != 2:
+            return False
+        first, second = differences
+        return (
+            second == first + 1
+            and left[first] == right[second]
+            and left[second] == right[first]
+        )
+
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    short_index = long_index = 0
+    skipped = False
+    while short_index < len(shorter) and long_index < len(longer):
+        if shorter[short_index] == longer[long_index]:
+            short_index += 1
+            long_index += 1
+            continue
+        if skipped:
+            return False
+        skipped = True
+        long_index += 1
+    return True
+
+
+def _invocation_token(
+    value: object, admitted: object
+) -> tuple[object, str | None]:
+    """Normalize a closed invocation token only when its meaning is unique."""
+
+    if type(value) is not str or not value.isascii():
+        return value, None
+    candidate = value.strip(" \t\r\n").lower()
+    if candidate in admitted:
+        reason = None if candidate == value else "ascii_token_matches_closed_value"
+        return candidate, reason
+
+    canonical_values = tuple(
+        token for token in admitted if type(token) is str and token.isascii()
+    )
+    if not canonical_values:
+        return value, None
+    shortest = min(len(token) for token in canonical_values)
+    longest = max(len(token) for token in canonical_values)
+    if len(candidate) < shortest - 1 or len(candidate) > longest + 1:
+        return value, None
+    matches = [
+        token
+        for token in canonical_values
+        if _is_one_edit_apart(candidate, token)
+    ]
+    if len(matches) == 1:
+        return matches[0], "unique_one_edit_closed_value"
+    return value, None
+
+
 def _logical_agents(wire: object) -> frozenset[str]:
     """Use the signed descriptor projection when present, else the v6 set."""
 
@@ -229,9 +298,12 @@ def _merge_legacy_field(
 ) -> None:
     if legacy not in document:
         return
-    legacy_value = _ascii_token(document[legacy], admitted)
+    legacy_raw = document[legacy]
+    legacy_value, legacy_reason = _invocation_token(legacy_raw, admitted)
     if canonical in document:
-        canonical_value = _ascii_token(document[canonical], admitted)
+        canonical_value, _canonical_reason = _invocation_token(
+            document[canonical], admitted
+        )
         if canonical_value != legacy_value:
             raise _InvalidRequest(
                 "conflicting_fields",
@@ -243,9 +315,17 @@ def _merge_legacy_field(
     _record_normalization(
         normalized,
         field=canonical,
-        before=f"legacy:{legacy}",
+        before=(
+            legacy_raw
+            if legacy_reason == "unique_one_edit_closed_value"
+            else f"legacy:{legacy}"
+        ),
         after=legacy_value,
-        reason="exact_legacy_semantic_field",
+        reason=(
+            legacy_reason
+            if legacy_reason == "unique_one_edit_closed_value"
+            else "exact_legacy_semantic_field"
+        ),
     )
 
 
@@ -259,9 +339,18 @@ def _flatten_source(
         raise _InvalidRequest(
             "source_invalid", {"field": "source", "constraint": "closed object"}
         )
-    mode = _ascii_token(
-        source.get("mode"), {"conceptual_prompt", "documents", "repository"}
+    raw_mode = source.get("mode")
+    mode, mode_reason = _invocation_token(
+        raw_mode, {"conceptual_prompt", "documents", "repository"}
     )
+    if mode_reason == "unique_one_edit_closed_value":
+        _record_normalization(
+            normalized,
+            field="source.mode",
+            before=raw_mode,
+            after=mode,
+            reason=mode_reason,
+        )
     if mode == "repository" and set(source) == {"mode", "repo_root"}:
         field, value = "repo_root", source["repo_root"]
     elif mode == "documents" and set(source) == {"mode", "documents"}:
@@ -301,14 +390,16 @@ def _canonicalize_request(
             "request_not_object", {"reason": "request must be a JSON object"}
         )
     result = dict(document)
-    if result.get("operation") == "invoke":
+    operation_before = result.get("operation")
+    operation, operation_reason = _invocation_token(operation_before, {"invoke"})
+    if operation == "invoke":
         result.pop("operation")
         _record_normalization(
             normalized,
             field="operation",
-            before="invoke",
+            before=operation_before,
             after=None,
-            reason="default_invoke_operation",
+            reason=operation_reason or "default_invoke_operation",
         )
     _merge_legacy_field(
         result,
@@ -343,7 +434,7 @@ def _canonicalize_request(
         if field not in result:
             continue
         before = result[field]
-        after = _ascii_token(before, admitted)
+        after, reason = _invocation_token(before, admitted)
         if after != before:
             result[field] = after
             _record_normalization(
@@ -351,7 +442,7 @@ def _canonicalize_request(
                 field=field,
                 before=before,
                 after=after,
-                reason="ascii_token_matches_closed_value",
+                reason=reason or "ascii_token_matches_closed_value",
             )
     _flatten_source(result, normalized=normalized)
     return result
@@ -538,8 +629,9 @@ def validate_request(
     Rejections raise ``_InvalidRequest`` with a bounded, actionable ``detail`` so
     a caller can correct the request in place instead of re-deriving it.
     Identity-preserving compatibility rewrites are recorded in ``normalized``.
-    Nothing that changes cost, depth, family, authority, or a security decision
-    is ever rewritten.
+    Only an exact or uniquely one-edit-identifiable closed invocation value is
+    rewritten. Open content, ambiguous values, aliases, authority, and security
+    decisions are never guessed.
     """
 
     document = _canonicalize_request(document, wire, normalized=normalized)
