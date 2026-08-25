@@ -108,7 +108,7 @@ The primary should always:
 - keep merge, deployment, secret, and destructive decisions within the user's
   and repository's authority boundaries.
 
-`project-estimation` is offline and read-only by default. The packaged v6.2.2
+`project-estimation` is offline and read-only by default. The packaged v6.2.3
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
@@ -189,6 +189,16 @@ Version 6 has no separately installed broker, daemon, socket, selector, lane,
 or setup lifecycle. The signed runtime bundle and its manifest are members of
 the plugin package. Updating the package therefore updates one closed unit;
 readiness verifies that unit before any semantic request.
+
+The governed release build refreshes the supported provider CLI catalog and
+compatibility evidence before signing, even when the verification host has not
+yet auto-updated. A normal vendor-managed CLI update covered by that release is
+admitted automatically. Qualification selects a compatibility profile; it is
+not a governance label for the vendor binary and must not reduce caller
+authority or functionality. If a later executable falls outside the published
+evidence, record the typed readiness result and refresh the next plugin build;
+do not call the vendor release defective, roll it back merely to match a stale
+profile, or substitute a raw binary.
 
 If an update is incomplete or incompatible, keep the typed unavailable or
 protocol result, inspect the package inventory and migration doctor, and start
