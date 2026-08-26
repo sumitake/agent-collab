@@ -17,7 +17,9 @@ coordinator failures after the response is complete. It excludes prompts,
 source paths/content, commands, raw provider streams, provider prose,
 artifacts, credentials, and environment data. Capture failure cannot change
 the response, provider authority, or no-replay contract; external filing is a
-separately governed workspace operation. Version 6.2.4 adds a managed native Claude route through the
+separately governed workspace operation. Invocation selectors are included
+only after admission through the closed coordinator wire contract; rejected
+raw request values are omitted. Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or

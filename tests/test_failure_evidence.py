@@ -90,6 +90,7 @@ class FailureEvidenceTests(unittest.TestCase):
             path = self.capture.capture_terminal_failure(
                 surface="plugin_coordinator",
                 response=self._response(),
+                request_trusted=True,
                 request={
                     "logical_action": "codegen.repository",
                     "target_agent": "grok",
@@ -128,6 +129,27 @@ class FailureEvidenceTests(unittest.TestCase):
             self.assertRegex(event["fingerprint"], r"^[0-9a-f]{64}$")
             self.assertEqual(stat.S_IMODE(Path(path).stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE((Path(td) / "pending").stat().st_mode), 0o700)
+
+    def test_untrusted_invocation_values_are_omitted_even_when_code_shaped(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(
+            os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}
+        ):
+            path = self.capture.capture_terminal_failure(
+                surface="plugin_coordinator",
+                response={
+                    "request_id": "private-request-name",
+                    "status": "invalid_request",
+                    "error_code": "unsupported_logical_action",
+                },
+                request={
+                    "logical_action": "secret.token-shaped-value",
+                    "target_agent": "secret-agent-shaped-value",
+                },
+            )
+
+            event = json.loads(Path(path).read_text(encoding="utf-8"))
+            self.assertNotIn("invocation", event)
+            self.assertNotIn("secret", json.dumps(event, sort_keys=True))
 
     def test_success_and_advisory_do_not_create_events(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(

@@ -9,5 +9,9 @@
   issue filing remains a separately governed workspace operation. The capture
   module is included in the closed release archive, and even a broken stderr
   warning channel cannot suppress the already-formed typed response.
+- Admit invocation selectors into failure evidence only after the coordinator
+  has validated them against its closed wire contract. Rejected raw request
+  values are omitted even when they resemble syntactically valid control
+  tokens.
 
-Addressed: #171
+Addressed: #171, #173, #174

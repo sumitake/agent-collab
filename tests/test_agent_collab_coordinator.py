@@ -443,10 +443,22 @@ class SemanticCoordinatorTests(unittest.TestCase):
         }
         recorder = mock.Mock()
         stdout = io.StringIO()
+
+        def process_with_admitted_invocation(_document, *, trusted_invocation):
+            trusted_invocation.update(
+                {
+                    "logical_action": "review.repository",
+                    "target_agent": "codex",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
+                }
+            )
+            return response, 0
+
         with mock.patch.object(
             self.coordinator, "_read_one_request", return_value=json.dumps(document).encode()
         ), mock.patch.object(
-            self.coordinator, "process", return_value=(response, 0)
+            self.coordinator, "process", side_effect=process_with_admitted_invocation
         ), mock.patch.object(
             self.coordinator,
             "_load_failure_evidence",
@@ -459,7 +471,15 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(rendered["status"], response["status"])
         self.assertEqual(rendered["error_code"], response["error_code"])
         recorder.assert_called_once_with(
-            surface="plugin_coordinator", response=response, request=document
+            surface="plugin_coordinator",
+            response=response,
+            request={
+                "logical_action": "review.repository",
+                "target_agent": "codex",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
+            },
+            request_trusted=True,
         )
 
     def test_main_capture_error_preserves_response_and_exit_code(self) -> None:

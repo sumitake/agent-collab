@@ -27,8 +27,10 @@ installation, and readiness claims separate.
   produce an allowlist-only host-local event after the response is complete.
   Prompts, source paths/content, commands, raw provider streams, provider
   prose, artifacts, credentials, and environment data are excluded. Capture
-  failure cannot change the original response or authorize replay; GitHub
-  filing remains a separately governed workspace operation.
+  failure cannot change the original response or authorize replay. Invocation
+  selectors are recorded only after closed-contract admission; rejected raw
+  request values are omitted. GitHub filing remains a separately governed
+  workspace operation.
 
 ## Current published release - v6.2.4
 

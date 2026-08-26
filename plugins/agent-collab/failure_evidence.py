@@ -163,6 +163,7 @@ def build_event(
     surface: str,
     response: object,
     request: object = None,
+    request_trusted: bool = False,
     event_id: str | None = None,
     occurred_at: str | None = None,
 ) -> dict[str, object] | None:
@@ -186,7 +187,9 @@ def build_event(
     error_code = _safe_code(response.get("error_code"))
     if error_code is not None:
         stable["error_code"] = error_code
-    invocation = _safe_invocation(request)
+    if type(request_trusted) is not bool:
+        raise ValueError("request_trusted must be a boolean")
+    invocation = _safe_invocation(request) if request_trusted else {}
     if invocation:
         stable["invocation"] = invocation
     diagnostics = _safe_diagnostics(response)
@@ -287,11 +290,20 @@ def _publish_event(event: Mapping[str, object], root: Path) -> Path:
 
 
 def capture_terminal_failure(
-    *, surface: str, response: object, request: object = None
+    *,
+    surface: str,
+    response: object,
+    request: object = None,
+    request_trusted: bool = False,
 ) -> Path | None:
     """Atomically publish a sanitized event without interpreting its outcome."""
 
-    event = build_event(surface=surface, response=response, request=request)
+    event = build_event(
+        surface=surface,
+        response=response,
+        request=request,
+        request_trusted=request_trusted,
+    )
     if event is None:
         return None
     configured = os.environ.get("AGENT_COLLAB_FAILURE_EVIDENCE_ROOT")
