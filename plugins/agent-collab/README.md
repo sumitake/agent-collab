@@ -19,9 +19,10 @@ artifacts, credentials, and environment data. Capture failure cannot change
 the response, provider authority, or no-replay contract; external filing is a
 separately governed workspace operation. Invocation selectors are included
 only after admission through the closed coordinator wire contract; rejected
-raw request values are omitted. A private capture lock serializes capacity
-checks with publication across concurrent coordinator processes, preserving the
-10,000-event hard bound. Version 6.2.4 adds a managed native Claude route through the
+raw request values are omitted. A private capture lock waits under a fixed
+deadline and serializes capacity checks with publication across concurrent
+coordinator processes, preserving ordinary concurrent evidence and the 10,000
+unresolved-event hard bound. Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or

@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+import time
 from typing import Mapping
 import uuid
 
@@ -49,8 +50,10 @@ _CODE_KEYS = (
 )
 _TRACE_CODE_KEYS = ("failure_phase", "adapter_code", "terminal_state")
 _TRACE_COUNT_MAPS = ("tool_outcomes", "failed_operation_counts")
-_EVENT_STATES = ("pending", "held", "sending", "uncertain", "accepted")
+_EVENT_STATES = ("pending", "held", "sending", "uncertain")
 _MAX_EVENT_FILES = 10_000
+_CAPTURE_LOCK_TIMEOUT_SECONDS = 5.0
+_CAPTURE_LOCK_POLL_SECONDS = 0.01
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -262,13 +265,23 @@ def _open_capture_lock(path: Path):
         raise
 
 
+def _acquire_capture_lock(lock) -> None:
+    deadline = time.monotonic() + _CAPTURE_LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError as exc:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise OSError("failure-evidence capture lock timed out") from exc
+            time.sleep(min(_CAPTURE_LOCK_POLL_SECONDS, remaining))
+
+
 def _publish_event(event: Mapping[str, object], root: Path) -> Path:
     _private_directory(root)
     with _open_capture_lock(root / ".capture.lock") as lock:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise OSError("failure-evidence capture is busy") from exc
+        _acquire_capture_lock(lock)
         pending = root / "pending"
         _private_directory(pending)
         event_files = 0

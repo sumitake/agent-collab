@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -225,19 +224,36 @@ class FailureEvidenceTests(unittest.TestCase):
                 )
             self.assertEqual(len(list((Path(td) / "pending").glob("*.json"))), 1)
 
-    def test_capture_lock_serializes_capacity_check_and_publish(self) -> None:
+    def test_capture_lock_waits_for_brief_contention(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(
             os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}
-        ):
-            root = Path(td)
-            self.capture._private_directory(root)
-            with self.capture._open_capture_lock(root / ".capture.lock") as lock:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                with self.assertRaisesRegex(OSError, "capture is busy"):
-                    self.capture.capture_terminal_failure(
-                        surface="plugin_coordinator", response=self._response()
-                    )
-            self.assertEqual(list((root / "pending").glob("*.json")), [])
+        ), mock.patch.object(
+            self.capture.fcntl,
+            "flock",
+            side_effect=[BlockingIOError(), None],
+        ) as flock, mock.patch.object(self.capture.time, "sleep") as sleep:
+            path = self.capture.capture_terminal_failure(
+                surface="plugin_coordinator", response=self._response()
+            )
+            self.assertTrue(Path(path).is_file())
+            self.assertEqual(flock.call_count, 2)
+            sleep.assert_called_once()
+
+    def test_accepted_history_does_not_consume_active_capture_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(
+            os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}
+        ), mock.patch.object(self.capture, "_MAX_EVENT_FILES", 1):
+            accepted = Path(td) / "accepted"
+            accepted.mkdir(mode=0o700)
+            historical = accepted / "historical.json"
+            historical.write_text("{}", encoding="utf-8")
+            historical.chmod(0o600)
+
+            path = self.capture.capture_terminal_failure(
+                surface="plugin_coordinator", response=self._response()
+            )
+
+            self.assertTrue(Path(path).is_file())
 
 
 if __name__ == "__main__":

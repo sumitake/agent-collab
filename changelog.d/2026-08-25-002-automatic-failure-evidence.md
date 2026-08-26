@@ -14,6 +14,8 @@
   values are omitted even when they resemble syntactically valid control
   tokens.
 - Serialize the host-local capacity check with atomic publication across
-  concurrent coordinator processes so the 10,000-event bound remains hard.
+  concurrent coordinator processes under a bounded lock wait, preserving
+  ordinary concurrent evidence while keeping the 10,000 unresolved-event bound
+  hard; locally accepted history does not consume that active limit.
 
 Addressed: #171, #173, #174
