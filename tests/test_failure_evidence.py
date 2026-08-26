@@ -181,6 +181,24 @@ class FailureEvidenceTests(unittest.TestCase):
         self.assertNotIn("error_code", event)
         self.assertNotIn("sk_live_secret", json.dumps(event, sort_keys=True))
 
+    def test_readiness_probe_crash_code_retains_only_hashed_class_identity(self) -> None:
+        raw_class = "unboundlocalerror"
+        event = self.capture.build_event(
+            surface="plugin_coordinator",
+            response={
+                "status": "temporarily_unavailable",
+                "error_code": f"no_eligible_route_readiness_probe_crashed_{raw_class}",
+            },
+            event_id="e" * 32,
+            occurred_at="2026-08-25T12:00:00Z",
+        )
+        expected = (
+            "no_eligible_route_readiness_probe_crashed_class_sha256_"
+            + hashlib.sha256(raw_class.encode("ascii")).hexdigest()[:16]
+        )
+        self.assertEqual(event["error_code"], expected)
+        self.assertNotIn(raw_class, json.dumps(event, sort_keys=True))
+
     def test_plugin_identity_and_closed_request_shape_are_captured(self) -> None:
         response = {
             "status": "invalid_request",

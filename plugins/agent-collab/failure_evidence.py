@@ -25,6 +25,12 @@ import uuid
 SCHEMA = "agent-collab.failure-evidence/v1"
 _DEFAULT_ROOT = Path.home() / ".agent-collab" / "failure-evidence"
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,127}$")
+_READINESS_CRASH_CODE_RE = re.compile(
+    r"^no_eligible_route_readiness_probe_crashed_([a-z0-9_]+)$"
+)
+_PROJECTED_READINESS_CRASH_CODE_RE = re.compile(
+    r"^no_eligible_route_readiness_probe_crashed_class_sha256_[0-9a-f]{16}$"
+)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _PLUGIN_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 _SAFE_SURFACES = frozenset({"plugin_coordinator", "grok_build_delegate"})
@@ -144,6 +150,23 @@ _MAX_EVENT_FILES = 10_000
 _CAPTURE_TEMP_RE = re.compile(r"^\.[0-9a-f]{32}\.[A-Za-z0-9_-]{1,64}\.tmp$")
 _CAPTURE_LOCK_TIMEOUT_SECONDS = 5.0
 _CAPTURE_LOCK_POLL_SECONDS = 0.01
+
+
+def _safe_error_code(value: object) -> str | None:
+    """Close dynamic readiness-crash codes without retaining their raw suffix."""
+
+    if type(value) is not str or _CODE_RE.fullmatch(value) is None:
+        return None
+    if (
+        value in _SAFE_ERROR_CODES
+        or _PROJECTED_READINESS_CRASH_CODE_RE.fullmatch(value)
+    ):
+        return value
+    matched = _READINESS_CRASH_CODE_RE.fullmatch(value)
+    if matched is None:
+        return None
+    class_digest = hashlib.sha256(matched.group(1).encode("ascii")).hexdigest()[:16]
+    return "no_eligible_route_readiness_probe_crashed_class_sha256_" + class_digest
 _PUBLIC_REQUEST_FIELDS = frozenset(
     {
         "operation",
@@ -397,8 +420,8 @@ def build_event(
         "surface": surface,
         "status": status,
     }
-    error_code = _safe_code(response.get("error_code"))
-    if error_code in _SAFE_ERROR_CODES:
+    error_code = _safe_error_code(response.get("error_code"))
+    if error_code is not None:
         stable["error_code"] = error_code
     if type(request_trusted) is not bool:
         raise ValueError("request_trusted must be a boolean")
