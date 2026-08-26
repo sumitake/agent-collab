@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import select
+import signal
 import subprocess
 import sys
 import termios
@@ -819,6 +820,75 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 process.communicate(timeout=5)
             os.close(master_fd)
 
+    def test_open_pty_sigterm_restores_tty_before_terminating(self) -> None:
+        master_fd, slave_fd = os.openpty()
+        observer_fd = os.dup(slave_fd)
+        original = termios.tcgetattr(observer_fd)
+        without_echo = list(original)
+        without_echo[6] = list(original[6])
+        without_echo[3] &= ~(termios.ECHO | getattr(termios, "ECHONL", 0))
+        termios.tcsetattr(observer_fd, termios.TCSANOW, without_echo)
+        expected = termios.tcgetattr(observer_fd)
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        try:
+            ready_deadline = time.monotonic() + 2
+            while termios.tcgetattr(observer_fd)[3] & termios.ICANON:
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic(), ready_deadline)
+                time.sleep(0.001)
+            process.terminate()
+            process.communicate(timeout=5)
+            self.assertEqual(process.returncode, -signal.SIGTERM)
+            self.assertEqual(
+                _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
+                _configurable_terminal_settings(expected),
+            )
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+            termios.tcsetattr(observer_fd, termios.TCSANOW, original)
+            os.close(observer_fd)
+            os.close(master_fd)
+
+    def test_open_pty_disconnect_returns_typed_incomplete_frame(self) -> None:
+        master_fd, slave_fd = os.openpty()
+        process = subprocess.Popen(
+            [sys.executable, str(PLUGIN / "coordinator.py")],
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        try:
+            ready_deadline = time.monotonic() + 2
+            while termios.tcgetattr(master_fd)[3] & termios.ICANON:
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic(), ready_deadline)
+                time.sleep(0.001)
+            os.close(master_fd)
+            master_fd = -1
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(stderr, b"")
+            response = json.loads(stdout)
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(response["status"], "invalid_request")
+            self.assertEqual(response["error_code"], "tty_frame_incomplete")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+            if master_fd >= 0:
+                os.close(master_fd)
+
     def test_tty_deadline_restores_terminal_and_maps_to_typed_error(self) -> None:
         master_fd, slave_fd = os.openpty()
         observer_fd = os.dup(slave_fd)
@@ -855,6 +925,31 @@ class SemanticCoordinatorTests(unittest.TestCase):
         os.close(observer_fd)
         os.close(slave_fd)
         os.close(master_fd)
+
+    def test_tty_restore_failure_does_not_mask_incomplete_frame(self) -> None:
+        master_fd, slave_fd = os.openpty()
+        stream = os.fdopen(os.dup(slave_fd), "rb", buffering=0)
+        descriptor = stream.fileno()
+        try:
+            with (
+                mock.patch.object(
+                    self.coordinator.select,
+                    "select",
+                    return_value=([descriptor], [], []),
+                ),
+                mock.patch.object(self.coordinator.os, "read", return_value=b""),
+                mock.patch.object(
+                    self.coordinator.termios,
+                    "tcsetattr",
+                    side_effect=[None, termios.error(5, "disconnected")],
+                ),
+            ):
+                with self.assertRaises(self.coordinator._IncompleteTTYFrame):
+                    self.coordinator._read_tty_request(stream)
+        finally:
+            stream.close()
+            os.close(slave_fd)
+            os.close(master_fd)
 
     def test_post_decode_failure_is_not_mislabeled_invalid_json(self) -> None:
         stdin = types.SimpleNamespace(buffer=io.BytesIO(b"{}"))

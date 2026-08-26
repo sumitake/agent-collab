@@ -8,12 +8,14 @@ attempt-local failure cannot suppress a later caller-authorized request.
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import select
+import signal
 import sys
 import termios
 import time
@@ -86,6 +88,10 @@ class _InvalidRequest(ValueError):
 
 class _IncompleteTTYFrame(RuntimeError):
     """The terminal frame reached EOF or its total deadline before newline."""
+
+
+class _TTYRestoreFailure(RuntimeError):
+    """The terminal could not be restored after reading a complete frame."""
 
 
 def _field_name(value: object) -> str:
@@ -1056,8 +1062,29 @@ def _read_tty_request(stream: object) -> bytes:
     )
     configured[6][termios.VMIN] = 1
     configured[6][termios.VTIME] = 0
-    termios.tcsetattr(descriptor, termios.TCSANOW, configured)
+    prior_handlers: dict[int, object] = {}
+    configured_applied = False
+    read_failed = False
+
+    def restore_terminal() -> None:
+        termios.tcsetattr(descriptor, termios.TCSANOW, original)
+
+    def terminate_after_restore(signum: int, _frame: object) -> None:
+        signal.signal(signum, signal.SIG_DFL)
+        try:
+            restore_terminal()
+        except (OSError, termios.error):
+            pass
+        os.kill(os.getpid(), signum)
+
     try:
+        for signum in (signal.SIGHUP, signal.SIGQUIT, signal.SIGTERM):
+            prior_handler = signal.getsignal(signum)
+            if prior_handler == signal.SIG_DFL:
+                signal.signal(signum, terminate_after_restore)
+                prior_handlers[signum] = prior_handler
+        termios.tcsetattr(descriptor, termios.TCSANOW, configured)
+        configured_applied = True
         frame = bytearray()
         deadline = time.monotonic() + _TTY_FRAME_TIMEOUT_SECONDS
         while len(frame) <= MAX_INPUT_BYTES:
@@ -1068,19 +1095,36 @@ def _read_tty_request(stream: object) -> bytes:
             if not readable:
                 raise _IncompleteTTYFrame
             remaining = MAX_INPUT_BYTES + 1 - len(frame)
-            chunk = os.read(descriptor, min(_TTY_READ_CHUNK_BYTES, remaining))
+            try:
+                chunk = os.read(
+                    descriptor, min(_TTY_READ_CHUNK_BYTES, remaining)
+                )
+            except OSError as exc:
+                if exc.errno == errno.EIO:
+                    raise _IncompleteTTYFrame from exc
+                raise
             if not chunk:
-                if frame:
-                    raise _IncompleteTTYFrame
-                break
+                raise _IncompleteTTYFrame
             newline = chunk.find(b"\n")
             if newline >= 0:
                 frame.extend(chunk[: newline + 1])
                 break
             frame.extend(chunk)
         return bytes(frame)
+    except BaseException:
+        read_failed = True
+        raise
     finally:
-        termios.tcsetattr(descriptor, termios.TCSANOW, original)
+        restore_error: BaseException | None = None
+        if configured_applied:
+            try:
+                restore_terminal()
+            except (OSError, termios.error) as exc:
+                restore_error = exc
+        for signum, prior_handler in prior_handlers.items():
+            signal.signal(signum, prior_handler)
+        if restore_error is not None and not read_failed:
+            raise _TTYRestoreFailure from restore_error
 
 
 def _read_one_request(stream: object) -> bytes:
