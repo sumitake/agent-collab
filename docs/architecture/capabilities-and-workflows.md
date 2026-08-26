@@ -123,7 +123,7 @@ workflows explicitly compose the checkpoint before final presentation. A host
 without contextual skill selection uses explicit invocation and reports that
 the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
-semantics, and the published v6.2.3 maintenance evidence.
+semantics, and the published v6.2.4 maintenance evidence.
 
 The packaged prior is currently an explicit bootstrap: enhancement duration is
 descriptive, bootstrap confidence cannot be high, and unsupported greenfield,

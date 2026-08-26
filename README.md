@@ -5,25 +5,22 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source is **agent-collab** (v6.2.4), with signed
-provider runtime `4.2.1`. The source adds one action-scoped native Claude route
-for document intent while retaining bounded invocation correction and
-provider-neutral carrier reliability. It is repository source until the
-release process publishes and activates it. The current published distribution
-remains the verified
-**[v6.2.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3)**;
-its exact package members, provider-free readiness, and observed host bytes are
-recorded separately.
+This public repository's current source and published distribution are
+**agent-collab** (v6.2.4), with signed provider runtime `4.2.1`. The
+**[v6.2.4 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4)**
+adds one action-scoped native Claude route for document intent while retaining
+bounded invocation correction and provider-neutral carrier reliability. Its
+exact package members, provider-free readiness, observed host bytes, and the
+environmentally unavailable Claude inference canary are recorded separately.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
-machine-operational contract for the repository source; it does not declare
-v6.2.4 published or active. The dated
+machine-operational contract for the repository source. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
-preserves the last completed publication and keeps repository, tag, release,
+records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v6.2.4 repository source
+## What's new - v6.2.4
 
 - **Action-scoped native Claude routing.** The official structured Claude CLI
   is a managed native carrier only for `context.documents.intent`, returning
@@ -40,7 +37,7 @@ installation, and readiness claims separate.
   for noncanonical readiness before sending; official skill and release paths
   use closed noninteractive stdin.
 
-## Current published release - v6.2.3
+## Previous published release - v6.2.3
 
 - **Bounded invocation correction.** Operation, logical action, quality,
   effort, logical target, and source-mode spelling errors recover only when one
@@ -55,11 +52,13 @@ installation, and readiness claims separate.
   supervised ACP route; a cancelled attempt remains retryable rather than an
   outage or route quarantine. No request is replayed.
 - **Fresh maintenance evidence.** The version-bound project-estimation handoff
-  was regenerated through the governed workspace pipeline for 6.2.3. Pricing
+  was regenerated through the governed workspace pipeline for 6.2.3. That
+  evidence remains historical; the published 6.2.4 package carries a freshly
+  version-bound maintenance receipt. Pricing
   coverage is reviewed and complete; unavailable numeric subscription quota
   remains explicitly `unknown` and receipt-bound.
 
-## Previous published release - v6.2.2
+## Earlier published release - v6.2.2
 
 - **Portable release bootstrap.** The GitHub-hosted release job now provisions
   an exact pinned `uv` toolchain before the mandatory Draft 2020-12 runtime
