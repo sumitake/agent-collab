@@ -7,19 +7,21 @@ binary, socket, lane, or lifecycle command.
 
 Current repository source: **6.2.4**
 
-Current published release: **6.2.3**
-([`v6.2.3`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3));
+Current published release: **6.2.4**
+([`v6.2.4`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
-Version 6.2.4 repository source adds a managed native Claude route through the
+Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or
 code-generation actions. Host-owned asynchronous coordination remains a
 separate surface. The signed descriptor retains 12 public logical actions and
 now derives 15 transport actions and 19 valid action/source pairs across five
-native carrier families. This source is not a publication or activation claim.
+native carrier families. The released archive and all four installed roots were
+verified byte-for-byte; readiness is provider-free and does not imply future
+provider authentication or availability.
 
 Version 6.2.3 adds bounded correction for uniquely identifiable one-edit
 spelling errors in closed invocation tokens and ships signed provider runtime
@@ -187,7 +189,7 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-The staged runtime 4.2.1 build adds the action-scoped Claude edge while
+The released runtime 4.2.1 build adds the action-scoped Claude edge while
 preserving protocol 4 and the closed authority model. It refreshes supported
 CLI currency at build time and applies the same grounded-output tolerance
 across all five native carrier families. Codex uses provider-default effort
@@ -303,7 +305,7 @@ python3 "<plugin-root>/migration_doctor.py" --json
 
 The doctor is provider-free. It reports active/installed/cached legacy package
 observations, host identity, manifest/descriptor state, and descriptor-derived
-12/14/18 counts. Active retired packages block direct routing; cache-only
+12/15/19 counts. Active retired packages block direct routing; cache-only
 residue is reported separately. Runtime readiness launches the installed
 package's signed one-shot runtime, performs no model inference, and may use one
 bounded catalog metadata process for each OpenCode lineage.

@@ -99,7 +99,7 @@ not a public issue or pull request.
 | --- | --- | --- |
 | What does the package install? | [System context](system-context.md) | Host manifests, generated marketplaces, package tree, and distribution tests. |
 | Which workflows exist? | [Capabilities and workflows](capabilities-and-workflows.md) | `skill-specs/`, generated skills, package reference, and skill-contract tests. |
-| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v6.2.3 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
+| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v6.2.4 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
 | Who may review, write, or merge? | [Governance and authority](governance-and-authority.md) | Host policy, coordinator, public governance contract, PR template, and compliance checks. |
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
 | How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |
