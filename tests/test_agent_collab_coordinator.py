@@ -480,7 +480,48 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 "effort_class": "maximum",
             },
             request_trusted=True,
+            request_shape=document,
         )
+
+    def test_main_flushes_response_before_failure_evidence_capture(self) -> None:
+        document = {"request_id": "private-id"}
+        response = {
+            "request_id": "private-id",
+            "status": "unavailable",
+            "error_code": "coordinator_unavailable",
+        }
+
+        class RecordingStdout(io.StringIO):
+            def __init__(self):
+                super().__init__()
+                self.was_flushed = False
+
+            def flush(self):
+                self.was_flushed = True
+                return super().flush()
+
+        stdout = RecordingStdout()
+
+        def capture_after_flush(**_kwargs):
+            self.assertTrue(stdout.was_flushed)
+            self.assertEqual(json.loads(stdout.getvalue()), response)
+
+        with mock.patch.object(
+            self.coordinator,
+            "_read_one_request",
+            return_value=json.dumps(document).encode(),
+        ), mock.patch.object(
+            self.coordinator, "process", return_value=(response, 0)
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=capture_after_flush
+            ),
+        ), mock.patch.object(sys, "stdout", stdout):
+            code = self.coordinator.main()
+
+        self.assertEqual(code, 0)
 
     def test_main_capture_error_preserves_response_and_exit_code(self) -> None:
         response = {

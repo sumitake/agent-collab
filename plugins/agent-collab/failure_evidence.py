@@ -26,6 +26,7 @@ SCHEMA = "agent-collab.failure-evidence/v1"
 _DEFAULT_ROOT = Path.home() / ".agent-collab" / "failure-evidence"
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_PLUGIN_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 _SAFE_SURFACES = frozenset({"plugin_coordinator", "grok_build_delegate"})
 _SAFE_QUALITY = frozenset({"economical", "standard", "frontier"})
 _SAFE_EFFORT = frozenset({"minimal", "standard", "maximum"})
@@ -54,6 +55,29 @@ _EVENT_STATES = ("pending", "held", "sending", "uncertain")
 _MAX_EVENT_FILES = 10_000
 _CAPTURE_LOCK_TIMEOUT_SECONDS = 5.0
 _CAPTURE_LOCK_POLL_SECONDS = 0.01
+_PUBLIC_REQUEST_FIELDS = frozenset(
+    {
+        "operation",
+        "request_id",
+        "logical_action",
+        "action",
+        "quality_profile",
+        "effort_class",
+        "target_agent",
+        "route",
+        "timeout_ms",
+        "prompt",
+        "repo_root",
+        "documents",
+        "source",
+        "occupied_model_lineages",
+        "evidence_anchors",
+    }
+)
+_PUBLIC_DETAIL_FIELDS = _PUBLIC_REQUEST_FIELDS | frozenset(
+    {"request", "request_keys", "source.mode"}
+)
+_SOURCE_MODES = frozenset({"repository", "documents", "conceptual_prompt"})
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -89,6 +113,97 @@ def _copy_count_map(value: object) -> dict[str, int] | None:
             continue
         copied[safe_key] = safe_value
     return copied or None
+
+
+def _regular_bytes(path: Path, *, maximum: int) -> bytes | None:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or not 0 <= metadata.st_size <= maximum:
+            return None
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            data = stream.read(maximum + 1)
+        return data if len(data) <= maximum else None
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+
+
+def _plugin_identity() -> tuple[str | None, str | None]:
+    """Return bounded public distribution identity, never request content."""
+
+    root = Path(__file__).resolve().parent
+    version: str | None = None
+    descriptor = _regular_bytes(
+        root / ".claude-plugin" / "plugin.json", maximum=64 * 1024
+    )
+    if descriptor is not None:
+        try:
+            value = json.loads(descriptor)
+        except (UnicodeError, json.JSONDecodeError):
+            value = None
+        candidate = value.get("version") if isinstance(value, Mapping) else None
+        if type(candidate) is str and _PLUGIN_VERSION_RE.fullmatch(candidate):
+            version = candidate
+    manifest = _regular_bytes(root / "runtime-manifest.json", maximum=1024 * 1024)
+    digest = hashlib.sha256(manifest).hexdigest() if manifest is not None else None
+    return version, digest
+
+
+def _safe_field_list(value: object) -> list[str]:
+    if type(value) is not list:
+        return []
+    return sorted(
+        {
+            item
+            for item in value
+            if type(item) is str and item in _PUBLIC_REQUEST_FIELDS
+        }
+    )
+
+
+def _safe_request_shape(request: object, response: Mapping[str, object]) -> dict[str, object]:
+    result: dict[str, object] = {
+        "kind": "object" if isinstance(request, Mapping) else "non_object"
+    }
+    if isinstance(request, Mapping):
+        keys = list(request)
+        result["present_fields"] = sorted(
+            key
+            for key in keys
+            if type(key) is str and key in _PUBLIC_REQUEST_FIELDS
+        )
+        result["unknown_field_count"] = sum(
+            type(key) is not str or key not in _PUBLIC_REQUEST_FIELDS for key in keys
+        )
+    detail = response.get("detail")
+    if not isinstance(detail, Mapping):
+        return result
+    difference: dict[str, object] = {}
+    for key in ("field", "conflicts_with", "required_source"):
+        value = detail.get(key)
+        if type(value) is str and value in _PUBLIC_DETAIL_FIELDS:
+            difference[key] = value
+    missing = _safe_field_list(detail.get("missing"))
+    if missing:
+        difference["missing_fields"] = missing
+    unexpected_raw = detail.get("unexpected")
+    unexpected = _safe_field_list(unexpected_raw)
+    if unexpected:
+        difference["unexpected_fields"] = unexpected
+    if type(unexpected_raw) is list:
+        difference["unexpected_field_count"] = len(unexpected_raw)
+    source_mode = detail.get("expected_source_mode")
+    if source_mode in _SOURCE_MODES:
+        difference["expected_source_mode"] = source_mode
+    if difference:
+        result["difference"] = difference
+    return result
 
 
 def _diagnostics(response: Mapping[str, object]) -> Mapping[str, object]:
@@ -168,6 +283,7 @@ def build_event(
     response: object,
     request: object = None,
     request_trusted: bool = False,
+    request_shape: object = None,
     event_id: str | None = None,
     occurred_at: str | None = None,
 ) -> dict[str, object] | None:
@@ -196,10 +312,17 @@ def build_event(
     invocation = _safe_invocation(request) if request_trusted else {}
     if invocation:
         stable["invocation"] = invocation
+    installed_version: str | None = None
+    installed_manifest: str | None = None
+    if surface == "plugin_coordinator":
+        installed_version, installed_manifest = _plugin_identity()
+        if installed_version is not None:
+            stable["plugin_version"] = installed_version
+        stable["request_shape"] = _safe_request_shape(request_shape, response)
     diagnostics = _safe_diagnostics(response)
     if diagnostics:
         stable["diagnostics"] = diagnostics
-    manifest_digest = _safe_hash(response.get("manifest_digest"))
+    manifest_digest = _safe_hash(response.get("manifest_digest")) or installed_manifest
     if manifest_digest is not None:
         stable["manifest_digest"] = manifest_digest
     wire_digest = _safe_hash(response.get("wire_contract_sha256"))
@@ -343,6 +466,7 @@ def capture_terminal_failure(
     response: object,
     request: object = None,
     request_trusted: bool = False,
+    request_shape: object = None,
 ) -> Path | None:
     """Atomically publish a sanitized event without interpreting its outcome."""
 
@@ -351,6 +475,7 @@ def capture_terminal_failure(
         response=response,
         request=request,
         request_trusted=request_trusted,
+        request_shape=request_shape,
     )
     if event is None:
         return None

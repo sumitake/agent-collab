@@ -19,5 +19,9 @@
   hard; locally accepted history does not consume that active limit.
 - Omit the request-identifier digest when a malformed identifier cannot encode
   as UTF-8, preserving the typed failure event without retaining raw input.
+- Flush the typed coordinator response before observer storage work, and add
+  public plugin version, manifest digest, recognized request-field shape, and
+  closed validation differences without copying request values or unknown
+  field names.
 
 Addressed: #171, #173, #174

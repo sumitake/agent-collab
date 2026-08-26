@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -150,6 +151,88 @@ class FailureEvidenceTests(unittest.TestCase):
             event = json.loads(Path(path).read_text(encoding="utf-8"))
             self.assertNotIn("invocation", event)
             self.assertNotIn("secret", json.dumps(event, sort_keys=True))
+
+    def test_plugin_identity_and_closed_request_shape_are_captured(self) -> None:
+        response = {
+            "status": "invalid_request",
+            "error_code": "request_not_closed",
+            "detail": {
+                "field": "request_keys",
+                "missing": ["repo_root"],
+                "unexpected": ["documents", "secret-field-name"],
+                "required_source": "repo_root",
+                "expected_source_mode": "repository",
+            },
+        }
+        with mock.patch.object(
+            self.capture,
+            "_plugin_identity",
+            return_value=("6.3.0", "a" * 64),
+        ):
+            event = self.capture.build_event(
+                surface="plugin_coordinator",
+                response=response,
+                request_shape={
+                    "request_id": "private-id",
+                    "logical_action": "review.repository",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
+                    "target_agent": None,
+                    "timeout_ms": 5000,
+                    "prompt": "private prompt",
+                    "documents": [],
+                    "secret-field-name": "must-not-cross",
+                },
+                event_id="c" * 32,
+                occurred_at="2026-08-25T12:00:00Z",
+            )
+
+        self.assertEqual(event["plugin_version"], "6.3.0")
+        self.assertEqual(event["manifest_digest"], "a" * 64)
+        self.assertEqual(
+            event["request_shape"]["present_fields"],
+            [
+                "documents",
+                "effort_class",
+                "logical_action",
+                "prompt",
+                "quality_profile",
+                "request_id",
+                "target_agent",
+                "timeout_ms",
+            ],
+        )
+        self.assertEqual(event["request_shape"]["unknown_field_count"], 1)
+        self.assertEqual(
+            event["request_shape"]["difference"]["missing_fields"],
+            ["repo_root"],
+        )
+        self.assertEqual(
+            event["request_shape"]["difference"]["unexpected_fields"],
+            ["documents"],
+        )
+        rendered = json.dumps(event, sort_keys=True)
+        self.assertNotIn("secret-field-name", rendered)
+        self.assertNotIn("must-not-cross", rendered)
+        self.assertNotIn("private prompt", rendered)
+
+    def test_installed_public_identity_is_read_from_packaged_metadata(self) -> None:
+        event = self.capture.build_event(
+            surface="plugin_coordinator",
+            response={
+                "status": "unavailable",
+                "error_code": "runtime_descriptor_unavailable",
+            },
+            request_shape={},
+            event_id="d" * 32,
+            occurred_at="2026-08-25T12:00:00Z",
+        )
+
+        manifest = (MODULE_PATH.parent / "runtime-manifest.json").read_bytes()
+        self.assertEqual(event["plugin_version"], "6.3.0")
+        self.assertEqual(
+            event["manifest_digest"], hashlib.sha256(manifest).hexdigest()
+        )
 
     def test_unencodable_request_id_does_not_suppress_failure_event(self) -> None:
         event = self.capture.build_event(

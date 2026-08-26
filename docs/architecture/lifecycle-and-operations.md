@@ -112,12 +112,14 @@ The primary should always:
 
 The public coordinator contains a fail-soft observer for typed terminal
 failures. It writes one allowlist-built event to a private host-local outbox
-after the response has been formed. It does not capture `ok` or `advisory`
+after the response has been written and flushed. It does not capture `ok` or `advisory`
 outcomes and cannot change the response, exit status, route, provider
 lifecycle, or replay policy. Captured events exclude prompts, source content
 and paths, commands, raw provider streams, provider prose, artifacts,
 credentials, and environment data; request identifiers are stored only as
-SHA-256 digests.
+SHA-256 digests. Public plugin version, runtime-manifest digest, recognized
+request-field names, unknown-field count, and closed validator differences are
+admitted; request values and unknown field names are not.
 
 The package does not itself post to GitHub or install a scheduler. A separately
 governed workspace one-shot filer may aggregate sanitized events and file

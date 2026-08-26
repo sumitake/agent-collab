@@ -85,7 +85,7 @@ eligible documented alternative or record an explicit operator-authorized path
 honestly; never fabricate reviewer convergence.
 
 Supported coordinator failures are also eligible for private, allowlist-only
-host-local capture after the typed response is complete. Capture and any later
+host-local capture after the typed response is written and flushed. Capture and any later
 GitHub filing are diagnostic planes separate from invocation and governance:
 capture failure does not change the response, and a filed comment is never an
 approval or retry instruction. Prompts, source paths/content, commands, raw

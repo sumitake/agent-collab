@@ -1214,16 +1214,18 @@ def main() -> int:
                     response, code = _failure_response(
                         None, "unavailable", "coordinator_unavailable"
                     ), 0
+    sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
     try:
         _load_failure_evidence().capture_terminal_failure(
             surface="plugin_coordinator",
             response=response,
             request=trusted_invocation,
             request_trusted=bool(trusted_invocation),
+            request_shape=document,
         )
     except Exception:
         _warn_failure_evidence_unavailable()
-    sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 
 

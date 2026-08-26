@@ -13,7 +13,7 @@ the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
 Version 6.3.0 adds private allowlist-only capture of typed terminal
-coordinator failures after the response is complete. It excludes prompts,
+coordinator failures after the response is written and flushed. It excludes prompts,
 source paths/content, commands, raw provider streams, provider prose,
 artifacts, credentials, and environment data. Capture failure cannot change
 the response, provider authority, or no-replay contract; external filing is a
@@ -24,6 +24,10 @@ deadline and serializes capacity checks with publication across concurrent
 coordinator processes, preserving ordinary concurrent evidence and the 10,000
 unresolved-event hard bound. Malformed request identifiers that cannot encode
 as UTF-8 omit their optional digest without suppressing the failure event.
+Plugin identity and request diagnostics are closed as well: the public plugin
+version, runtime-manifest digest, recognized request-field names, unknown-field
+count, and allowlisted validation difference may be retained, but no request
+value or unknown field name is copied.
 Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
