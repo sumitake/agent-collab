@@ -168,6 +168,19 @@ class FailureEvidenceTests(unittest.TestCase):
                 self.assertNotIn(key, event.get("diagnostics", {}))
                 self.assertNotIn("sk-live-secret", json.dumps(event, sort_keys=True))
 
+    def test_unclosed_error_code_is_omitted(self) -> None:
+        event = self.capture.build_event(
+            surface="plugin_coordinator",
+            response={
+                "status": "provider_error",
+                "error_code": "sk_live_secret",
+            },
+            event_id="f" * 32,
+            occurred_at="2026-08-25T12:00:00Z",
+        )
+        self.assertNotIn("error_code", event)
+        self.assertNotIn("sk_live_secret", json.dumps(event, sort_keys=True))
+
     def test_plugin_identity_and_closed_request_shape_are_captured(self) -> None:
         response = {
             "status": "invalid_request",
