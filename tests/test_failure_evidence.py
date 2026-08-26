@@ -338,6 +338,26 @@ class FailureEvidenceTests(unittest.TestCase):
                 )
             self.assertEqual(len(list((Path(td) / "pending").glob("*.json"))), 1)
 
+    def test_abandoned_capture_temporary_is_cleaned_under_store_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            pending = Path(td) / "pending"
+            pending.mkdir(mode=0o700)
+            abandoned = pending / f".{('a' * 32)}.fixture.tmp"
+            abandoned.write_bytes(b"partial sensitive payload")
+            abandoned.chmod(0o600)
+            foreign = pending / ".foreign.tmp"
+            foreign.write_bytes(b"not owned by capture")
+            foreign.chmod(0o600)
+            with mock.patch.dict(
+                os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}
+            ), mock.patch.object(self.capture, "_MAX_EVENT_FILES", 2):
+                path = self.capture.capture_terminal_failure(
+                    surface="plugin_coordinator", response=self._response()
+                )
+            self.assertTrue(Path(path).is_file())
+            self.assertFalse(abandoned.exists())
+            self.assertTrue(foreign.is_file())
+
     def test_capture_lock_waits_for_brief_contention(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(
             os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}

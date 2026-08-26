@@ -64,6 +64,7 @@ _TRACE_CODE_KEYS = ("failure_phase", "adapter_code", "terminal_state")
 _TRACE_COUNT_MAPS = ("tool_outcomes", "failed_operation_counts")
 _EVENT_STATES = ("pending", "held", "sending", "uncertain")
 _MAX_EVENT_FILES = 10_000
+_CAPTURE_TEMP_RE = re.compile(r"^\.[0-9a-f]{32}\.[A-Za-z0-9_-]{1,64}\.tmp$")
 _CAPTURE_LOCK_TIMEOUT_SECONDS = 5.0
 _CAPTURE_LOCK_POLL_SECONDS = 0.01
 _PUBLIC_REQUEST_FIELDS = frozenset(
@@ -454,13 +455,28 @@ def _acquire_capture_lock(lock) -> None:
             time.sleep(min(_CAPTURE_LOCK_POLL_SECONDS, remaining))
 
 
+def _remove_abandoned_capture_temporaries(pending: Path) -> None:
+    removed = False
+    with os.scandir(pending) as entries:
+        for entry in entries:
+            if not _CAPTURE_TEMP_RE.fullmatch(entry.name):
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            os.unlink(entry.path)
+            removed = True
+    if removed:
+        _fsync_directory(pending)
+
+
 def _publish_event(event: Mapping[str, object], root: Path) -> Path:
     _private_directory(root)
     with _open_capture_lock(root / ".capture.lock") as lock:
         _acquire_capture_lock(lock)
         pending = root / "pending"
         _private_directory(pending)
-        event_files = 0
+        _remove_abandoned_capture_temporaries(pending)
+        store_entries = 0
         for state in _EVENT_STATES:
             directory = root / state
             if not directory.exists():
@@ -473,13 +489,10 @@ def _publish_event(event: Mapping[str, object], root: Path) -> Path:
             ):
                 raise OSError("failure-evidence state directory is unsafe")
             with os.scandir(directory) as entries:
-                for entry in entries:
-                    if entry.name.endswith(".json") and entry.is_file(
-                        follow_symlinks=False
-                    ):
-                        event_files += 1
-                        if event_files >= _MAX_EVENT_FILES:
-                            raise OSError("failure-evidence local store is full")
+                for _entry in entries:
+                    store_entries += 1
+                    if store_entries >= _MAX_EVENT_FILES:
+                        raise OSError("failure-evidence local store is full")
         payload = _canonical_bytes(event) + b"\n"
         final = pending / f"{event['event_id']}.json"
         descriptor, temporary = tempfile.mkstemp(
