@@ -64,6 +64,33 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 6.2.4 — 2026-08-25
+
+#### Added
+
+- Add an official structured Claude CLI carrier for read-only
+  `context.documents.intent`, cost-last after eligible Gemini and Grok routes
+  and ineligible for review, governance, repository, and code-generation work.
+
+#### Fixed
+
+- Consume valid newline-terminated coordinator requests larger than the
+  platform terminal's canonical input buffer, while preserving the public
+  request-size bound, typed framing failures, and terminal settings. Terminal
+  state is now also restored before default termination signals, and PTY
+  disconnects retain the typed incomplete-frame result even when restoration
+  itself is no longer possible.
+- Requalify current provider CLI bytes and supported effort automatically
+  during the signed runtime build, keeping auto-updated binaries fully usable
+  without version-based governance or feature restrictions.
+
+### Documentation
+
+- Record the published agent-collab 6.2.3 / provider-runtime 4.2.1 release,
+  verified public assets, four-host byte identity and readiness, automatic
+  current-CLI qualification, bounded Gemini and Grok recovery evidence, and
+  the two explicit follow-up issues.
+
 ### agent-collab 6.2.3 — 2026-08-25
 
 #### Fixed
