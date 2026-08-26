@@ -28,9 +28,9 @@ silently treating them as the same thing.
    public package, generated sources, validation, and release flow.
 7. [Status and evidence](status-and-evidence.md) defines the binding lifecycle
    labels and records the dated evidence snapshot used by this documentation.
-8. [Claude participation](claude-participation.md) explains why Claude is a
-   fully supported host and resident primary but not a synchronously routed
-   managed agent, and what would change that.
+8. [Claude participation](claude-participation.md) explains Claude's three
+   distinct roles: fully supported host and resident primary, optional async
+   participant, and action-scoped managed document-intent carrier.
 
 Historical and design material is indexed separately in
 [`docs/design/README.md`](../design/README.md). It is not automatically the
@@ -104,7 +104,7 @@ not a public issue or pull request.
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
 | How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |
 | How is a release produced? | [Repository and release architecture](repository-and-release.md) | Release scripts, workflows, signed-tag contract, archive checks, and release evidence. |
-| Why is Claude participation async-only? | [Claude participation](claude-participation.md) | Provider subscription-authentication policy plus the async coordination and host-support statements in this handbook. |
+| Where may Claude participate? | [Claude participation](claude-participation.md) | Signed action/source targeting, official structured-CLI boundary, async coordination, and host-support statements in this handbook. |
 
 ## Maintenance rule
 

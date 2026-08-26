@@ -1,6 +1,6 @@
 ---
 name: qa-verify
-version: 6.2.3
+version: 6.2.4
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -45,7 +45,9 @@ recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
 OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is async inbox-only.
+may proceed only with an independence warning. Claude is ineligible for these
+review and governance routes; its only managed route is document intent, and
+host-owned async coordination is separate.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -64,7 +66,8 @@ If any of the three is missing, gather it before invoking. A QA pass on incomple
 
 Submit the sealed QA role through `python3 "<plugin-root>/coordinator.py"` with
 `quality_profile='economical'` and `effort_class='minimal'` (the skill default; raise the closed quality and effort profiles only for subtle correctness constraints). Central policy selects
-an independent eligible reviewer; Claude/Anthropic remains async inbox-only.
+an independent eligible reviewer; Claude/Anthropic is ineligible for this
+review action, and its document-intent route is not a substitute.
 
 Use this prompt template — the VERDICT format is a functional contract; downstream tooling (chain runners, audit logs, CI gates) keys on the `VERDICT: PASS` / `VERDICT: FAIL` line:
 

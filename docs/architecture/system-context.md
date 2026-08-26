@@ -93,7 +93,7 @@ bundle and the metadata needed to verify it may cross into the public package.
 | Public coordinator and policy | Resolve current identity, family eligibility, route/action pairing, and typed preflight results. | No raw provider, binary, credential, or arbitrary tool selection. |
 | Managed reviewer | Returns bounded read-only critique or governance evidence. | No source mutation, merge, deployment, or self-approval. |
 | Managed worker | Returns bounded output under its declared authority. | No hidden promotion from output-only to caller-workspace mutation. |
-| Async target | Participates through a host-owned, explicitly addressed handoff after readiness is observed. | The public coordinator does not send messages or create a synchronous Claude route. |
+| Async target | Participates through a host-owned, explicitly addressed handoff after readiness is observed. | The public coordinator does not send async messages; this surface is separate from action-scoped managed routes such as Claude document intent. |
 | Native runtime | Executes the manifest-selected managed contract and returns typed output. | Cannot advertise contracts absent from the closed manifest. |
 | Repository governance | Requires trace, review, CI, ownership, and release evidence. | Does not prove that quoted review prose is genuine or replace implementation tests. |
 | Operator | Retains reserved merge, release, activation, security, and recovery authority defined by policy. | Is not silently bypassed by agent consensus or green CI. |

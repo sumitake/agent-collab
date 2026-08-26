@@ -8,11 +8,17 @@ attempt-local failure cannot suppress a later caller-authorized request.
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import select
+import signal
 import sys
+import termios
+import time
 from typing import Any, Mapping
 
 
@@ -22,6 +28,8 @@ MAX_DOCUMENTS = 64
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
 MAX_PROMPT_BYTES = 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
+_TTY_READ_CHUNK_BYTES = 64 * 1024
+_TTY_FRAME_TIMEOUT_SECONDS = 120.0
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _ERROR_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _COMMON_KEYS = {
@@ -44,7 +52,16 @@ _QUALITY_PROFILES = ("economical", "standard", "frontier")
 _EFFORT_CLASSES = ("minimal", "standard", "maximum")
 _EFFORT_RANK = {name: index for index, name in enumerate(_EFFORT_CLASSES)}
 _CANONICAL_LOGICAL_AGENTS = frozenset(
-    {"alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"}
+    {
+        "alibaba",
+        "claude",
+        "codex",
+        "deepseek",
+        "gemini",
+        "grok",
+        "moonshot",
+        "zhipu",
+    }
 )
 _OPTIONAL_CONTEXT_KEYS = frozenset(
     {"occupied_model_lineages", "evidence_anchors"}
@@ -67,6 +84,14 @@ class _InvalidRequest(ValueError):
         super().__init__(error_code)
         self.error_code = error_code
         self.detail = detail
+
+
+class _IncompleteTTYFrame(RuntimeError):
+    """The terminal frame reached EOF or its total deadline before newline."""
+
+
+class _TTYRestoreFailure(RuntimeError):
+    """The terminal could not be restored after reading a complete frame."""
 
 
 def _field_name(value: object) -> str:
@@ -1022,6 +1047,86 @@ def process(document: object) -> tuple[dict[str, Any], int]:
     return response, 0
 
 
+def _read_tty_request(stream: object) -> bytes:
+    """Read one bounded newline frame without a terminal canonical-buffer limit."""
+
+    fileno = getattr(stream, "fileno", None)
+    if not callable(fileno):
+        raise OSError("coordinator TTY is unreadable")
+    descriptor = fileno()
+    original = termios.tcgetattr(descriptor)
+    configured = list(original)
+    configured[6] = list(original[6])
+    configured[3] &= ~(
+        termios.ICANON | termios.ECHO | getattr(termios, "ECHONL", 0)
+    )
+    configured[6][termios.VMIN] = 1
+    configured[6][termios.VTIME] = 0
+    prior_handlers: dict[int, object] = {}
+    configured_applied = False
+    read_failed = False
+
+    def restore_terminal() -> None:
+        termios.tcsetattr(descriptor, termios.TCSANOW, original)
+
+    def terminate_after_restore(signum: int, _frame: object) -> None:
+        signal.signal(signum, signal.SIG_DFL)
+        try:
+            restore_terminal()
+        except (OSError, termios.error):
+            pass
+        os.kill(os.getpid(), signum)
+
+    try:
+        for signum in (signal.SIGHUP, signal.SIGQUIT, signal.SIGTERM):
+            prior_handler = signal.getsignal(signum)
+            if prior_handler == signal.SIG_DFL:
+                signal.signal(signum, terminate_after_restore)
+                prior_handlers[signum] = prior_handler
+        termios.tcsetattr(descriptor, termios.TCSANOW, configured)
+        configured_applied = True
+        frame = bytearray()
+        deadline = time.monotonic() + _TTY_FRAME_TIMEOUT_SECONDS
+        while len(frame) <= MAX_INPUT_BYTES:
+            wait_seconds = deadline - time.monotonic()
+            if wait_seconds <= 0:
+                raise _IncompleteTTYFrame
+            readable, _, _ = select.select([descriptor], [], [], wait_seconds)
+            if not readable:
+                raise _IncompleteTTYFrame
+            remaining = MAX_INPUT_BYTES + 1 - len(frame)
+            try:
+                chunk = os.read(
+                    descriptor, min(_TTY_READ_CHUNK_BYTES, remaining)
+                )
+            except OSError as exc:
+                if exc.errno == errno.EIO:
+                    raise _IncompleteTTYFrame from exc
+                raise
+            if not chunk:
+                raise _IncompleteTTYFrame
+            newline = chunk.find(b"\n")
+            if newline >= 0:
+                frame.extend(chunk[: newline + 1])
+                break
+            frame.extend(chunk)
+        return bytes(frame)
+    except BaseException:
+        read_failed = True
+        raise
+    finally:
+        restore_error: BaseException | None = None
+        if configured_applied:
+            try:
+                restore_terminal()
+            except (OSError, termios.error) as exc:
+                restore_error = exc
+        for signum, prior_handler in prior_handlers.items():
+            signal.signal(signum, prior_handler)
+        if restore_error is not None and not read_failed:
+            raise _TTYRestoreFailure from restore_error
+
+
 def _read_one_request(stream: object) -> bytes:
     """Read one EOF-framed pipe request or one newline-framed TTY request."""
 
@@ -1032,7 +1137,9 @@ def _read_one_request(stream: object) -> bytes:
             is_tty = probe() is True
         except (OSError, ValueError):
             is_tty = False
-    reader = getattr(stream, "readline" if is_tty else "read", None)
+    if is_tty:
+        return _read_tty_request(stream)
+    reader = getattr(stream, "read", None)
     if not callable(reader):
         raise OSError("coordinator stdin is unreadable")
     return reader(MAX_INPUT_BYTES + 1)
@@ -1041,6 +1148,17 @@ def _read_one_request(stream: object) -> bytes:
 def main() -> int:
     try:
         raw = _read_one_request(sys.stdin.buffer)
+    except _IncompleteTTYFrame:
+        response, code = _failure_response(
+            None,
+            "invalid_request",
+            "tty_frame_incomplete",
+            detail={
+                "field": "request",
+                "constraint": "newline_terminated_tty_frame",
+                "max_wait_ms": int(_TTY_FRAME_TIMEOUT_SECONDS * 1000),
+            },
+        ), 2
     except (OSError, RuntimeError, ValueError):
         response, code = _failure_response(
             None, "unavailable", "coordinator_unavailable"

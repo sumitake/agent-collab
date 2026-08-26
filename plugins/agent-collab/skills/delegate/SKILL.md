@@ -1,6 +1,6 @@
 ---
 name: delegate
-version: 6.2.3
+version: 6.2.4
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -57,8 +57,9 @@ Pick a structured output format that both halves will share:
 Submit the sealed delegate role through `python3 "<plugin-root>/coordinator.py"`. Use
 economical-quality, minimal-effort advisory rows for bulk extraction and
 frontier-quality, maximum-effort advisory rows for judgment-heavy items. Central policy
-resolves the eligible worker after family exclusion; Claude/Anthropic remains
-async inbox-only.
+resolves the eligible worker after family exclusion. Claude/Anthropic is
+ineligible for delegation and other worker actions; its only managed route is
+read-only document intent, and host-owned async coordination is separate.
 
 **Grok delegation is native-runtime-only.** The standalone worker plugin and
 its raw CLI recipe are retired. Do not invoke `grok` directly, reconstruct the

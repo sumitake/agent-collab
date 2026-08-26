@@ -5,24 +5,42 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source and published distribution is
-**agent-collab** (v6.2.3), with signed provider runtime `4.2.1`. It adds bounded
-correction of uniquely identifiable closed invocation tokens and
-provider-neutral carrier reliability repairs. The verified
-**[v6.2.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3)**,
-exact package members, and provider-free runtime readiness were checked
-separately; Claude, Codex, Antigravity, and Grok each resolve the released bytes
-on the observed host.
+This public repository's current source is **agent-collab** (v6.2.4), with signed
+provider runtime `4.2.1`. The source adds one action-scoped native Claude route
+for document intent while retaining bounded invocation correction and
+provider-neutral carrier reliability. It is repository source until the
+release process publishes and activates it. The current published distribution
+remains the verified
+**[v6.2.3 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3)**;
+its exact package members, provider-free readiness, and observed host bytes are
+recorded separately.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
-machine-operational contract for this release. This documentation closeout
-records the exact published artifact and observed installation evidence. The
-dated
+machine-operational contract for the repository source; it does not declare
+v6.2.4 published or active. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
-keeps repository, tag, release, installation, and readiness claims separate.
+preserves the last completed publication and keeps repository, tag, release,
+installation, and readiness claims separate.
 
-## What's new - v6.2.3
+## What's new - v6.2.4 repository source
+
+- **Action-scoped native Claude routing.** The official structured Claude CLI
+  is a managed native carrier only for `context.documents.intent`, returning
+  read-only document intent under the existing `context_text` contract. It is
+  cost-last after eligible Gemini and Grok routes. Claude remains ineligible
+  for review, governance, repository, and code-generation actions; host-owned
+  asynchronous coordination is a separate surface.
+- **Descriptor-derived projections.** The public action set remains 12 while
+  the signed descriptor now derives 15 transport actions and 19 valid
+  action/source pairs across five native carrier families.
+- **Reliable PTY framing.** TTY requests use one 120-second total newline-frame
+  bound instead of an inter-chunk cutoff, so valid pauses do not become false
+  failures and oversized frames terminate promptly. Automated PTY owners wait
+  for noncanonical readiness before sending; official skill and release paths
+  use closed noninteractive stdin.
+
+## Current published release - v6.2.3
 
 - **Bounded invocation correction.** Operation, logical action, quality,
   effort, logical target, and source-mode spelling errors recover only when one
@@ -223,8 +241,8 @@ review.repository
 
 Repository actions require a canonical absolute `repo_root`. Document context
 uses bounded inline documents. Conceptual architecture uses prompt-only source.
-The runtime's workspace-generated wire descriptor derives the internal 14
-transport actions and 18 action/source pairs. Those projections are diagnostic
+The runtime's workspace-generated wire descriptor derives the internal 15
+transport actions and 19 action/source pairs. Those projections are diagnostic
 contract data, not a second public request surface.
 
 See `plugins/agent-collab/README.md` for the exact coordinator and runtime

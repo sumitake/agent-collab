@@ -36,7 +36,9 @@ recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
 OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is async inbox-only.
+may proceed only with an independence warning. Claude is ineligible for these
+review and governance routes; its only managed route is document intent, and
+host-owned async coordination is separate.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -61,19 +63,22 @@ Send the **same** framed request (the four-section template below) to **every av
 The panel is **every eligible managed advisory route whose observed family
 differs from both snapshots**. A raw binary or legacy plugin is never a route.
 An absent signed route is typed unavailable and reported from current
-readiness, not from a fixed inventory in this skill. Claude/Anthropic has no
-synchronous route. An Anthropic governance peer review may occur only through
-a separately configured host-owned async transport after its readiness is
-observed; the public coordinator neither sends nor accepts governance over
-`inbox/async`. It is therefore a supplementary async view, never a live
-synchronous panelist, and must never use `claude -p`.
+readiness, not from a fixed inventory in this skill. Claude/Anthropic is not
+eligible for the review action: its only managed route is read-only document
+intent, whose authority and evidence cannot satisfy this panel. An Anthropic
+governance peer review may occur only through a separately configured
+host-owned async transport after its readiness is observed; the public
+coordinator neither sends nor accepts governance over `inbox/async`. It is
+therefore a supplementary async view, never a managed review panelist. Callers
+must not bypass the coordinator with a raw `claude -p` invocation.
 
 Per-panelist invocation is centralized: submit the sealed review role through
 the managed runtime, exclude the active primary and artifact-author families,
-and use only preflight-eligible routes. Claude/Anthropic is async inbox-only.
-An absent native route is typed unavailable and omitted; never restore a
-retired package or provider command. Hold one eligible independent reviewer as
-the tiebreaker rather than including it in the first wave.
+and use only preflight-eligible routes. Claude/Anthropic is ineligible for this
+review action; its document-intent route is not a substitute. An absent native
+route is typed unavailable and omitted; never restore a retired package or
+provider command. Hold one eligible independent reviewer as the tiebreaker
+rather than including it in the first wave.
 
 Use the documented closed coordinator request for each panelist. Frontmatter
 Use the closed provider-neutral request fields `quality_profile="frontier"` and

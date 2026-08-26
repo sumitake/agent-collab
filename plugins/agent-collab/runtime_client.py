@@ -360,7 +360,7 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor logical action sources are invalid")
     transports = _unique_rows(descriptor["base_transport_actions"], 2)
     pairs = _unique_rows(descriptor["valid_action_source_pairs"], 3)
-    if len(transports) != 14 or len(pairs) != 18:
+    if len(transports) != 15 or len(pairs) != 19:
         raise ValueError("wire descriptor projections have wrong cardinality")
     if any(row[:2] not in transports or row[2] not in _SOURCE_MODES for row in pairs):
         raise ValueError("wire descriptor source projection is inconsistent")

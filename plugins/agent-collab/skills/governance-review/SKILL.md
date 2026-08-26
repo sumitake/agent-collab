@@ -1,6 +1,6 @@
 ---
 name: governance-review
-version: 6.2.3
+version: 6.2.4
 description: Use when the operator says "governance review," "high-stakes review," "authoritative verdict," or "tiebreaker." Also offer this when reviewer-family independence and an exact repository-grounded verdict must be enforced.
 ---
 

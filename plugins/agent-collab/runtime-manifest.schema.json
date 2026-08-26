@@ -18,7 +18,7 @@
     "protocol_version": {"const": 4},
     "contract_version": {"const": 4},
     "wire_contract_sha256": {
-      "const": "0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51"
+      "const": "774067d0a2a640b2eac27cace99f6cf812649169e03aab2ec8fcf77a2c3fe2a9"
     },
     "wire_contract": {
       "type": "object",
@@ -60,20 +60,20 @@
         },
         "logical_agents": {
           "type": "array",
-          "minItems": 7,
-          "maxItems": 7,
+          "minItems": 8,
+          "maxItems": 8,
           "uniqueItems": true,
           "items": {
-            "enum": ["alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"]
+            "enum": ["alibaba", "claude", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"]
           }
         },
         "model_lineages": {
           "type": "array",
-          "minItems": 7,
-          "maxItems": 7,
+          "minItems": 8,
+          "maxItems": 8,
           "uniqueItems": true,
           "items": {
-            "enum": ["alibaba", "deepseek", "google", "moonshot", "openai", "xai", "zhipu"]
+            "enum": ["alibaba", "anthropic", "deepseek", "google", "moonshot", "openai", "xai", "zhipu"]
           }
         },
         "logical_action_targets": {
@@ -111,8 +111,8 @@
               "items": {"enum": ["alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
             },
             "context.documents.intent": {
-              "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
-              "items": {"enum": ["gemini", "grok"]}
+              "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+              "items": {"enum": ["claude", "gemini", "grok"]}
             },
             "context.documents.reason": {
               "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
@@ -210,8 +210,8 @@
         },
         "base_transport_actions": {
           "type": "array",
-          "minItems": 14,
-          "maxItems": 14,
+          "minItems": 15,
+          "maxItems": 15,
           "uniqueItems": true,
           "items": {
             "type": "array",
@@ -226,8 +226,8 @@
         },
         "valid_action_source_pairs": {
           "type": "array",
-          "minItems": 18,
-          "maxItems": 18,
+          "minItems": 19,
+          "maxItems": 19,
           "uniqueItems": true,
           "items": {
             "type": "array",
@@ -347,7 +347,7 @@
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "provider_runtime_version": {"const": "4.2.1"},
-          "wire_contract_sha256": {"const": "0c2cba3ab79f0217b1ae4de83ec9723412e46809b98b4f11f8997a8599125a51"},
+          "wire_contract_sha256": {"const": "774067d0a2a640b2eac27cace99f6cf812649169e03aab2ec8fcf77a2c3fe2a9"},
           "files": {
             "type": "array",
             "minItems": 1,

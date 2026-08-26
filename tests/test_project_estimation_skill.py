@@ -131,7 +131,7 @@ class ProjectEstimationSkillTests(unittest.TestCase):
                 self.assertIn("must not become zero or a workflow failure", normalized)
 
     def test_additive_version_is_consistent_across_canonical_distribution_surfaces(self) -> None:
-        expected = "6.2.3"
+        expected = "6.2.4"
         config = json.loads((ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8"))
         self.assertEqual(config["agent-collab"]["skill_version"], expected)
         for manifest in (

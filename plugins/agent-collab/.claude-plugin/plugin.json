@@ -1,6 +1,6 @@
 {
   "name": "agent-collab",
-  "version": "6.2.3",
+  "version": "6.2.4",
   "description": "Unified collaboration package with semantic agent actions, source-grounded context, and a verified plugin-relative direct native runtime.",
   "author": {
     "name": "John Osumi"

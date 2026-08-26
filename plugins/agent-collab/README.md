@@ -5,12 +5,21 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current: **6.2.3**
+Current repository source: **6.2.4**
 
 Current published release: **6.2.3**
 ([`v6.2.3`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.3));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
+
+Version 6.2.4 repository source adds a managed native Claude route through the
+official structured CLI for `context.documents.intent` only. It returns
+read-only document intent, is cost-last after eligible Gemini and Grok routes,
+and does not make Claude eligible for review, governance, repository, or
+code-generation actions. Host-owned asynchronous coordination remains a
+separate surface. The signed descriptor retains 12 public logical actions and
+now derives 15 transport actions and 19 valid action/source pairs across five
+native carrier families. This source is not a publication or activation claim.
 
 Version 6.2.3 adds bounded correction for uniquely identifiable one-edit
 spelling errors in closed invocation tokens and ships signed provider runtime
@@ -76,10 +85,14 @@ python3 "<plugin-root>/coordinator.py"
 ```
 
 For a noninteractive pipe or file, close stdin after the object; the exact body
-is EOF-delimited. On a TTY, terminate the single object with a newline; the
-coordinator responds without waiting for the terminal to close. In either mode,
-only one object is consumed and one accepted request starts at most one runtime
-attempt.
+is EOF-delimited. On a TTY, terminate the single object with a newline within
+the bounded 120-second frame window; the coordinator responds without waiting
+for the terminal to close. An automated PTY owner must wait until the slave has
+entered noncanonical mode before transmitting, because bytes sent before the
+Python process starts are still governed by the platform's canonical line
+buffer. In either mode, only one object is consumed and one accepted request
+starts at most one runtime attempt. Official skill and release invocations use
+closed noninteractive stdin and have no PTY startup race.
 
 The canonical request contains exactly these common fields:
 
@@ -162,8 +175,8 @@ top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
 - the 12 logical actions;
-- the 14 source-collapsed provider transport actions;
-- the 18 currently valid action/source pairs;
+- the 15 source-collapsed provider transport actions;
+- the 19 currently valid action/source pairs;
 - semantic request and typed response schemas;
 - the four artifacts (`review_findings`, `governance_verdict`, `context_text`,
   and `private_patch`);
@@ -174,15 +187,21 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-Runtime 4.2.1 retains the v4.2.0 routing and authority contract while refreshing
-supported CLI currency at build time and applying the same grounded-output
-tolerance across all four native carrier families. Codex uses provider-default
-effort when its native interface has no exact advertised tier. Gemini repository
-reads use the permission-capable route, and Grok uses the supervised ACP route;
+The staged runtime 4.2.1 build adds the action-scoped Claude edge while
+preserving protocol 4 and the closed authority model. It refreshes supported
+CLI currency at build time and applies the same grounded-output tolerance
+across all five native carrier families. Codex uses provider-default effort
+when its native interface has no exact advertised tier. Gemini repository reads
+use the permission-capable route, and Grok uses the supervised ACP route;
 cancelled attempts remain retryable and never quarantine the route. Untargeted
 selection may move to the next eligible distinct route before provider
 execution, inside the same invocation; there is no provider replay, fallback
 invocation, or authority substitution.
+
+Claude uses the official structured CLI only for document-intent requests. The
+route is read-only, source-bound to documents, and cost-last after Gemini and
+Grok. It does not satisfy review, governance, repository, or code-generation
+contracts and is therefore never selected for those actions.
 
 For each accepted request the public client:
 
