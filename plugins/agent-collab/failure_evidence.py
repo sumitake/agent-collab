@@ -212,10 +212,15 @@ def build_event(
 
     event = dict(stable)
     request_id = response.get("request_id")
-    if type(request_id) is str and 0 < len(request_id.encode("utf-8")) <= 4096:
-        event["request_id_sha256"] = hashlib.sha256(
-            request_id.encode("utf-8")
-        ).hexdigest()
+    if type(request_id) is str:
+        try:
+            encoded_request_id = request_id.encode("utf-8")
+        except UnicodeEncodeError:
+            encoded_request_id = b""
+        if 0 < len(encoded_request_id) <= 4096:
+            event["request_id_sha256"] = hashlib.sha256(
+                encoded_request_id
+            ).hexdigest()
     identifier = event_id or uuid.uuid4().hex
     if re.fullmatch(r"^[0-9a-f]{32}$", identifier) is None:
         raise ValueError("failure-evidence event identifier is invalid")

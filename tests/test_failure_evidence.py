@@ -151,6 +151,21 @@ class FailureEvidenceTests(unittest.TestCase):
             self.assertNotIn("invocation", event)
             self.assertNotIn("secret", json.dumps(event, sort_keys=True))
 
+    def test_unencodable_request_id_does_not_suppress_failure_event(self) -> None:
+        event = self.capture.build_event(
+            surface="plugin_coordinator",
+            response={
+                "request_id": "\ud800",
+                "status": "invalid_request",
+                "error_code": "request_id_invalid",
+            },
+            event_id="b" * 32,
+            occurred_at="2026-08-25T12:00:00Z",
+        )
+
+        self.assertEqual(event["error_code"], "request_id_invalid")
+        self.assertNotIn("request_id_sha256", event)
+
     def test_success_and_advisory_do_not_create_events(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(
             os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}

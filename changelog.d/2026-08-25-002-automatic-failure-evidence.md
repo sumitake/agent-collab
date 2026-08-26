@@ -17,5 +17,7 @@
   concurrent coordinator processes under a bounded lock wait, preserving
   ordinary concurrent evidence while keeping the 10,000 unresolved-event bound
   hard; locally accepted history does not consume that active limit.
+- Omit the request-identifier digest when a malformed identifier cannot encode
+  as UTF-8, preserving the typed failure event without retaining raw input.
 
 Addressed: #171, #173, #174

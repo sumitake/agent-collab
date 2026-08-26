@@ -22,7 +22,9 @@ only after admission through the closed coordinator wire contract; rejected
 raw request values are omitted. A private capture lock waits under a fixed
 deadline and serializes capacity checks with publication across concurrent
 coordinator processes, preserving ordinary concurrent evidence and the 10,000
-unresolved-event hard bound. Version 6.2.4 adds a managed native Claude route through the
+unresolved-event hard bound. Malformed request identifiers that cannot encode
+as UTF-8 omit their optional digest without suppressing the failure event.
+Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or
