@@ -30,6 +30,20 @@ _PLUGIN_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 _SAFE_SURFACES = frozenset({"plugin_coordinator", "grok_build_delegate"})
 _SAFE_QUALITY = frozenset({"economical", "standard", "frontier"})
 _SAFE_EFFORT = frozenset({"minimal", "standard", "maximum"})
+_SAFE_LOGICAL_AGENTS = frozenset(
+    {"alibaba", "claude", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"}
+)
+_SAFE_PROVIDER_SURFACES = frozenset(
+    {"agy", "codex", "grok", "native_cli", "opencode_go"}
+)
+_SAFE_MODEL_LINEAGES = frozenset(
+    {"alibaba", "anthropic", "deepseek", "google", "moonshot", "openai", "xai", "zhipu"}
+)
+_CLOSED_DIAGNOSTIC_VALUES = {
+    "logical_agent": _SAFE_LOGICAL_AGENTS,
+    "provider_surface": _SAFE_PROVIDER_SURFACES,
+    "model_lineage": _SAFE_MODEL_LINEAGES,
+}
 _COUNT_KEYS = (
     "metadata_process_count",
     "provider_processes",
@@ -43,9 +57,6 @@ _HASH_KEYS = (
     "catalog_digest",
 )
 _CODE_KEYS = (
-    "logical_agent",
-    "provider_surface",
-    "model_lineage",
     "model_resolution_method",
     "effective_effort",
 )
@@ -221,6 +232,10 @@ def _diagnostics(response: Mapping[str, object]) -> Mapping[str, object]:
 def _safe_diagnostics(response: Mapping[str, object]) -> dict[str, object]:
     source = _diagnostics(response)
     result: dict[str, object] = {}
+    for key, allowed in _CLOSED_DIAGNOSTIC_VALUES.items():
+        value = source.get(key)
+        if value in allowed:
+            result[key] = value
     for key in _CODE_KEYS:
         value = _safe_code(source.get(key))
         if value is not None:

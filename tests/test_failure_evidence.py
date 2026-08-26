@@ -152,6 +152,22 @@ class FailureEvidenceTests(unittest.TestCase):
             self.assertNotIn("invocation", event)
             self.assertNotIn("secret", json.dumps(event, sort_keys=True))
 
+    def test_unclosed_identity_diagnostics_are_omitted(self) -> None:
+        for key in ("logical_agent", "provider_surface", "model_lineage"):
+            with self.subTest(key=key):
+                event = self.capture.build_event(
+                    surface="plugin_coordinator",
+                    response={
+                        "status": "provider_error",
+                        "error_code": "missing_terminal",
+                        "diagnostics": {key: "sk-live-secret"},
+                    },
+                    event_id="e" * 32,
+                    occurred_at="2026-08-25T12:00:00Z",
+                )
+                self.assertNotIn(key, event.get("diagnostics", {}))
+                self.assertNotIn("sk-live-secret", json.dumps(event, sort_keys=True))
+
     def test_plugin_identity_and_closed_request_shape_are_captured(self) -> None:
         response = {
             "status": "invalid_request",
