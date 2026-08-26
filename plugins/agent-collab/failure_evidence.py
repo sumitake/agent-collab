@@ -355,13 +355,7 @@ def build_event(
     return event
 
 
-def _private_directory(path: Path) -> None:
-    if path.is_symlink():
-        raise OSError("failure-evidence directory cannot be a symlink")
-    try:
-        path.mkdir(mode=0o700, parents=True, exist_ok=False)
-    except FileExistsError:
-        pass
+def _validate_private_directory(path: Path) -> None:
     metadata = path.lstat()
     if (
         not stat.S_ISDIR(metadata.st_mode)
@@ -369,6 +363,45 @@ def _private_directory(path: Path) -> None:
         or stat.S_IMODE(metadata.st_mode) != 0o700
     ):
         raise OSError("failure-evidence directory identity is unsafe")
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _private_directory(path: Path) -> None:
+    missing: list[Path] = []
+    current = path
+    while True:
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            missing.append(current)
+            parent = current.parent
+            if parent == current:
+                raise OSError("failure-evidence directory parent is unavailable")
+            current = parent
+            continue
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise OSError("failure-evidence directory parent is unsafe")
+        break
+    for directory in reversed(missing):
+        try:
+            directory.mkdir(mode=0o700, exist_ok=False)
+        except FileExistsError:
+            pass
+        _validate_private_directory(directory)
+        _fsync_directory(directory.parent)
+    _validate_private_directory(path)
 
 
 def _open_capture_lock(path: Path):
@@ -445,11 +478,7 @@ def _publish_event(event: Mapping[str, object], root: Path) -> Path:
                 os.fsync(stream.fileno())
             descriptor = -1
             os.replace(temporary, final)
-            directory_descriptor = os.open(pending, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
+            _fsync_directory(pending)
         finally:
             if descriptor >= 0:
                 os.close(descriptor)

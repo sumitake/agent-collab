@@ -337,6 +337,25 @@ class FailureEvidenceTests(unittest.TestCase):
             self.assertEqual(flock.call_count, 2)
             sleep.assert_called_once()
 
+    def test_first_capture_fsyncs_each_created_directory_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "new-parent" / "failure-evidence"
+            fsynced: list[Path] = []
+            with mock.patch.dict(
+                os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": str(root)}
+            ), mock.patch.object(
+                self.capture,
+                "_fsync_directory",
+                side_effect=lambda created: fsynced.append(created),
+            ):
+                path = self.capture.capture_terminal_failure(
+                    surface="plugin_coordinator", response=self._response()
+                )
+
+            self.assertTrue(Path(path).is_file())
+            self.assertIn(root.parent, fsynced)
+            self.assertIn(root, fsynced)
+
     def test_accepted_history_does_not_consume_active_capture_cap(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(
             os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}

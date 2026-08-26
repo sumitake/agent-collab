@@ -23,5 +23,8 @@
   public plugin version, manifest digest, recognized request-field shape, and
   closed validation differences without copying request values or unknown
   field names.
+- Fsync every newly created outbox directory in its parent before first-event
+  publication returns, and document the workspace filer's shared bounded local
+  transition lock and network-outside-lock boundary.
 
 Addressed: #171, #173, #174

@@ -22,7 +22,9 @@ only after admission through the closed coordinator wire contract; rejected
 raw request values are omitted. A private capture lock waits under a fixed
 deadline and serializes capacity checks with publication across concurrent
 coordinator processes, preserving ordinary concurrent evidence and the 10,000
-unresolved-event hard bound. Malformed request identifiers that cannot encode
+unresolved-event hard bound. The workspace filer uses that same lock for local
+state transitions but releases it before GitHub operations, and newly created
+outbox directories are parent-fsynced before publication returns. Malformed request identifiers that cannot encode
 as UTF-8 omit their optional digest without suppressing the failure event.
 Plugin identity and request diagnostics are closed as well: the public plugin
 version, runtime-manifest digest, recognized request-field names, unknown-field

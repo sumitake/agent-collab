@@ -120,6 +120,9 @@ credentials, and environment data; request identifiers are stored only as
 SHA-256 digests. Public plugin version, runtime-manifest digest, recognized
 request-field names, unknown-field count, and closed validator differences are
 admitted; request values and unknown field names are not.
+First-use directory creation is parent-fsynced before publication returns. The
+workspace filer shares the bounded capture lock for local state transitions but
+never holds it across a GitHub read or write.
 
 The package does not itself post to GitHub or install a scheduler. A separately
 governed workspace one-shot filer may aggregate sanitized events and file
