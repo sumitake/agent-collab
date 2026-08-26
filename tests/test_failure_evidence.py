@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -223,6 +224,20 @@ class FailureEvidenceTests(unittest.TestCase):
                     surface="plugin_coordinator", response=self._response()
                 )
             self.assertEqual(len(list((Path(td) / "pending").glob("*.json"))), 1)
+
+    def test_capture_lock_serializes_capacity_check_and_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(
+            os.environ, {"AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": td}
+        ):
+            root = Path(td)
+            self.capture._private_directory(root)
+            with self.capture._open_capture_lock(root / ".capture.lock") as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with self.assertRaisesRegex(OSError, "capture is busy"):
+                    self.capture.capture_terminal_failure(
+                        surface="plugin_coordinator", response=self._response()
+                    )
+            self.assertEqual(list((root / "pending").glob("*.json")), [])
 
 
 if __name__ == "__main__":

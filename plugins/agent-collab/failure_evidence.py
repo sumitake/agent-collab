@@ -9,6 +9,7 @@ cannot cross the capture boundary.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -239,54 +240,83 @@ def _private_directory(path: Path) -> None:
         raise OSError("failure-evidence directory identity is unsafe")
 
 
+def _open_capture_lock(path: Path):
+    flags = (
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            raise OSError("failure-evidence capture lock is unsafe")
+        return os.fdopen(descriptor, "a+", encoding="utf-8")
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
 def _publish_event(event: Mapping[str, object], root: Path) -> Path:
     _private_directory(root)
-    pending = root / "pending"
-    _private_directory(pending)
-    event_files = 0
-    for state in _EVENT_STATES:
-        directory = root / state
-        if not directory.exists():
-            continue
-        metadata = directory.lstat()
-        if (
-            not stat.S_ISDIR(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or stat.S_IMODE(metadata.st_mode) != 0o700
-        ):
-            raise OSError("failure-evidence state directory is unsafe")
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                if entry.name.endswith(".json") and entry.is_file(follow_symlinks=False):
-                    event_files += 1
-                    if event_files >= _MAX_EVENT_FILES:
-                        raise OSError("failure-evidence local store is full")
-    payload = _canonical_bytes(event) + b"\n"
-    final = pending / f"{event['event_id']}.json"
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=f".{event['event_id']}.", suffix=".tmp", dir=pending
-    )
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb", closefd=True) as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        descriptor = -1
-        os.replace(temporary, final)
-        directory_descriptor = os.open(pending, os.O_RDONLY)
+    with _open_capture_lock(root / ".capture.lock") as lock:
         try:
-            os.fsync(directory_descriptor)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise OSError("failure-evidence capture is busy") from exc
+        pending = root / "pending"
+        _private_directory(pending)
+        event_files = 0
+        for state in _EVENT_STATES:
+            directory = root / state
+            if not directory.exists():
+                continue
+            metadata = directory.lstat()
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                raise OSError("failure-evidence state directory is unsafe")
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.name.endswith(".json") and entry.is_file(
+                        follow_symlinks=False
+                    ):
+                        event_files += 1
+                        if event_files >= _MAX_EVENT_FILES:
+                            raise OSError("failure-evidence local store is full")
+        payload = _canonical_bytes(event) + b"\n"
+        final = pending / f"{event['event_id']}.json"
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{event['event_id']}.", suffix=".tmp", dir=pending
+        )
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb", closefd=True) as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            descriptor = -1
+            os.replace(temporary, final)
+            directory_descriptor = os.open(pending, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
         finally:
-            os.close(directory_descriptor)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-    return final
+            if descriptor >= 0:
+                os.close(descriptor)
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+        return final
 
 
 def capture_terminal_failure(

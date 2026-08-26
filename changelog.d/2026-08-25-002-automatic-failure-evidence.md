@@ -13,5 +13,7 @@
   has validated them against its closed wire contract. Rejected raw request
   values are omitted even when they resemble syntactically valid control
   tokens.
+- Serialize the host-local capacity check with atomic publication across
+  concurrent coordinator processes so the 10,000-event bound remains hard.
 
 Addressed: #171, #173, #174
