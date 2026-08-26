@@ -321,9 +321,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.2.4")
-        self.assertEqual(codex["version"], "6.2.4")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.2.4")
+        self.assertEqual(plugin["version"], "6.3.0")
+        self.assertEqual(codex["version"], "6.3.0")
+        self.assertEqual(config["agent-collab"]["skill_version"], "6.3.0")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):

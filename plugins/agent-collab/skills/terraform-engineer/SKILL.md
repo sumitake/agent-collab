@@ -1,6 +1,6 @@
 ---
 name: terraform-engineer
-version: 6.2.4
+version: 6.3.0
 description: Designs, refactors, and reviews Terraform infrastructure-as-code across cloud providers, with a focus on module contracts, state safety, and reviewable plans. Use when the user says "review this Terraform plan", "help me design a reusable module", or "why did this apply want to replace my resource", or "/agent-collab:terraform-engineer." Also offer this proactively when a change touches module interfaces, state backend configuration, or resource lifecycle blocks.
 ---
 

@@ -434,6 +434,60 @@ class SemanticCoordinatorTests(unittest.TestCase):
         )
         self.assertNotIn("error_code", response)
 
+    def test_main_captures_terminal_failure_after_response_is_formed(self) -> None:
+        document = {"request_id": "private-id", "logical_action": "review.repository"}
+        response = {
+            "request_id": "private-id",
+            "status": "temporarily_unavailable",
+            "error_code": "protocol_capability_drift",
+        }
+        recorder = mock.Mock()
+        stdout = io.StringIO()
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", return_value=json.dumps(document).encode()
+        ), mock.patch.object(
+            self.coordinator, "process", return_value=(response, 0)
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(capture_terminal_failure=recorder),
+        ), mock.patch.object(sys, "stdout", stdout):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        rendered = json.loads(stdout.getvalue())
+        self.assertEqual(rendered["request_id"], response["request_id"])
+        self.assertEqual(rendered["status"], response["status"])
+        self.assertEqual(rendered["error_code"], response["error_code"])
+        recorder.assert_called_once_with(
+            surface="plugin_coordinator", response=response, request=document
+        )
+
+    def test_main_capture_error_preserves_response_and_exit_code(self) -> None:
+        response = {
+            "request_id": None,
+            "status": "unavailable",
+            "error_code": "coordinator_unavailable",
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=mock.Mock(side_effect=OSError("/secret/outbox"))
+            ),
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(sys, "stderr", stderr):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        rendered = json.loads(stdout.getvalue())
+        self.assertEqual(rendered["request_id"], response["request_id"])
+        self.assertEqual(rendered["status"], response["status"])
+        self.assertEqual(rendered["error_code"], response["error_code"])
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertIn("failure evidence capture unavailable", stderr.getvalue())
+
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []
         fake_client = types.SimpleNamespace(

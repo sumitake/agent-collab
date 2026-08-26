@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 6.2.4
+version: 6.3.0
 defaults:
   quality_profile: frontier
   effort_class: maximum

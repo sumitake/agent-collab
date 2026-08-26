@@ -1,6 +1,6 @@
 ---
 name: compose-skills
-version: 6.2.4
+version: 6.3.0
 description: Use when the user says "compose skills," "which skills should I use," "select a recipe," "combine these skills," or "/agent-collab:compose-skills." Also offer this when a task needs multiple lenses and benefits from explicit context, fan-out, authority, and stop-condition limits.
 ---
 

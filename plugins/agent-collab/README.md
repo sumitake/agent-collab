@@ -5,14 +5,19 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current repository source: **6.2.4**
+Current repository source: **6.3.0**
 
 Current published release: **6.2.4**
 ([`v6.2.4`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
-Version 6.2.4 adds a managed native Claude route through the
+Version 6.3.0 adds private allowlist-only capture of typed terminal
+coordinator failures after the response is complete. It excludes prompts,
+source paths/content, commands, raw provider streams, provider prose,
+artifacts, credentials, and environment data. Capture failure cannot change
+the response, provider authority, or no-replay contract; external filing is a
+separately governed workspace operation. Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or

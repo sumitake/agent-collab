@@ -584,6 +584,10 @@ def _load_host_policy():
     return _load("agent_collab_semantic_host_policy", "host_policy.py")
 
 
+def _load_failure_evidence():
+    return _load("agent_collab_failure_evidence", "failure_evidence.py")
+
+
 def _canonical_repo_root(value: object) -> str:
     if type(value) is not str or not value or "\x00" in value:
         raise ValueError("repository action requires repo_root")
@@ -1146,6 +1150,7 @@ def _read_one_request(stream: object) -> bytes:
 
 
 def main() -> int:
+    document: object = None
     try:
         raw = _read_one_request(sys.stdin.buffer)
     except _IncompleteTTYFrame:
@@ -1184,6 +1189,12 @@ def main() -> int:
                     response, code = _failure_response(
                         None, "unavailable", "coordinator_unavailable"
                     ), 0
+    try:
+        _load_failure_evidence().capture_terminal_failure(
+            surface="plugin_coordinator", response=response, request=document
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        sys.stderr.write("agent-collab: failure evidence capture unavailable\n")
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 
