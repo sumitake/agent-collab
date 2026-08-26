@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import termios
+import tempfile
 import time
 import types
 import unittest
@@ -69,6 +70,16 @@ def _write_all_with_deadline(
 class SemanticCoordinatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        cls.failure_evidence_root = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.failure_evidence_root.cleanup)
+        cls.failure_evidence_environment = mock.patch.dict(
+            os.environ,
+            {
+                "AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": cls.failure_evidence_root.name
+            },
+        )
+        cls.failure_evidence_environment.start()
+        cls.addClassCleanup(cls.failure_evidence_environment.stop)
         cls.client = _load("coordinator_test_client", PLUGIN / "runtime_client.py")
         cls.coordinator = _load("semantic_coordinator", PLUGIN / "coordinator.py")
         cls.host_policy = _load("semantic_host_policy", PLUGIN / "host_policy.py")
@@ -79,6 +90,14 @@ class SemanticCoordinatorTests(unittest.TestCase):
         cls.profile = cls.host_policy.HostProfile(
             "codex", "openai", "gpt-test", "codex", "session-1", False,
             governance_ready=True,
+        )
+
+    def test_failure_evidence_is_isolated_from_the_host_outbox(self) -> None:
+        configured = Path(os.environ["AGENT_COLLAB_FAILURE_EVIDENCE_ROOT"])
+        self.assertEqual(configured, Path(self.failure_evidence_root.name))
+        self.assertNotEqual(
+            configured,
+            Path.home() / ".agent-collab" / "failure-evidence",
         )
 
     def test_repository_request_adds_canonical_repo_source_and_wire_hash(self) -> None:
