@@ -588,6 +588,15 @@ def _load_failure_evidence():
     return _load("agent_collab_failure_evidence", "failure_evidence.py")
 
 
+def _warn_failure_evidence_unavailable() -> None:
+    try:
+        sys.stderr.write("agent-collab: failure evidence capture unavailable\n")
+    except Exception:
+        # The observer and its warning channel are both fail-soft. A broken
+        # stderr must never suppress the already-formed typed response.
+        pass
+
+
 def _canonical_repo_root(value: object) -> str:
     if type(value) is not str or not value or "\x00" in value:
         raise ValueError("repository action requires repo_root")
@@ -1193,8 +1202,8 @@ def main() -> int:
         _load_failure_evidence().capture_terminal_failure(
             surface="plugin_coordinator", response=response, request=document
         )
-    except (OSError, RuntimeError, TypeError, ValueError):
-        sys.stderr.write("agent-collab: failure evidence capture unavailable\n")
+    except Exception:
+        _warn_failure_evidence_unavailable()
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     return code
 

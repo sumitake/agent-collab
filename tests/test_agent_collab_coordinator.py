@@ -488,6 +488,29 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertNotIn("secret", stderr.getvalue())
         self.assertIn("failure evidence capture unavailable", stderr.getvalue())
 
+    def test_main_capture_error_with_broken_stderr_still_returns_response(self) -> None:
+        response = self.coordinator._failure_response(
+            None, "unavailable", "coordinator_unavailable"
+        )
+        stdout = io.StringIO()
+        broken_stderr = types.SimpleNamespace(
+            write=mock.Mock(side_effect=OSError("closed stderr"))
+        )
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=mock.Mock(side_effect=OSError("outbox"))
+            ),
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", broken_stderr
+        ):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), response)
+
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []
         fake_client = types.SimpleNamespace(

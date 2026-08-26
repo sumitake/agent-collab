@@ -6,6 +6,8 @@
   allowlist-only host-local outbox after the response is complete. Sensitive
   invocation material and provider output are excluded; capture failure cannot
   change the original response, authority, or no-replay contract. External
-  issue filing remains a separately governed workspace operation.
+  issue filing remains a separately governed workspace operation. The capture
+  module is included in the closed release archive, and even a broken stderr
+  warning channel cannot suppress the already-formed typed response.
 
 Addressed: #171
