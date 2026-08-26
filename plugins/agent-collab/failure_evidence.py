@@ -555,9 +555,9 @@ def _acquire_capture_lock(lock) -> None:
             time.sleep(min(_CAPTURE_LOCK_POLL_SECONDS, remaining))
 
 
-def _remove_abandoned_capture_temporaries(pending: Path) -> None:
+def _remove_abandoned_temporaries(directory: Path) -> None:
     removed = False
-    with os.scandir(pending) as entries:
+    with os.scandir(directory) as entries:
         for entry in entries:
             if not _CAPTURE_TEMP_RE.fullmatch(entry.name):
                 continue
@@ -566,7 +566,7 @@ def _remove_abandoned_capture_temporaries(pending: Path) -> None:
             os.unlink(entry.path)
             removed = True
     if removed:
-        _fsync_directory(pending)
+        _fsync_directory(directory)
 
 
 def _publish_event(event: Mapping[str, object], root: Path) -> Path:
@@ -575,7 +575,6 @@ def _publish_event(event: Mapping[str, object], root: Path) -> Path:
         _acquire_capture_lock(lock)
         pending = root / "pending"
         _private_directory(pending)
-        _remove_abandoned_capture_temporaries(pending)
         store_entries = 0
         for state in _EVENT_STATES:
             directory = root / state
@@ -588,6 +587,7 @@ def _publish_event(event: Mapping[str, object], root: Path) -> Path:
                 or stat.S_IMODE(metadata.st_mode) != 0o700
             ):
                 raise OSError("failure-evidence state directory is unsafe")
+            _remove_abandoned_temporaries(directory)
             with os.scandir(directory) as entries:
                 for _entry in entries:
                     store_entries += 1

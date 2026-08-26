@@ -369,13 +369,21 @@ class FailureEvidenceTests(unittest.TestCase):
                 )
             self.assertEqual(len(list((Path(td) / "pending").glob("*.json"))), 1)
 
-    def test_abandoned_capture_temporary_is_cleaned_under_store_lock(self) -> None:
+    def test_abandoned_active_state_temporaries_are_cleaned_under_store_lock(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            pending = Path(td) / "pending"
-            pending.mkdir(mode=0o700)
-            abandoned = pending / f".{('a' * 32)}.fixture.tmp"
-            abandoned.write_bytes(b"partial sensitive payload")
-            abandoned.chmod(0o600)
+            root = Path(td)
+            abandoned = []
+            for index, state in enumerate(
+                ("pending", "held", "sending", "uncertain"), start=10
+            ):
+                directory = root / state
+                directory.mkdir(mode=0o700)
+                event_id = f"{index:032x}"
+                temporary = directory / f".{event_id}.delivery-fixture.tmp"
+                temporary.write_bytes(b"partial sensitive payload")
+                temporary.chmod(0o600)
+                abandoned.append(temporary)
+            pending = root / "pending"
             foreign = pending / ".foreign.tmp"
             foreign.write_bytes(b"not owned by capture")
             foreign.chmod(0o600)
@@ -386,7 +394,7 @@ class FailureEvidenceTests(unittest.TestCase):
                     surface="plugin_coordinator", response=self._response()
                 )
             self.assertTrue(Path(path).is_file())
-            self.assertFalse(abandoned.exists())
+            self.assertTrue(all(not temporary.exists() for temporary in abandoned))
             self.assertTrue(foreign.is_file())
 
     def test_capture_lock_waits_for_brief_contention(self) -> None:
