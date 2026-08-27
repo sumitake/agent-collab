@@ -584,6 +584,19 @@ def _load_host_policy():
     return _load("agent_collab_semantic_host_policy", "host_policy.py")
 
 
+def _load_failure_evidence():
+    return _load("agent_collab_failure_evidence", "failure_evidence.py")
+
+
+def _warn_failure_evidence_unavailable() -> None:
+    try:
+        sys.stderr.write("agent-collab: failure evidence capture unavailable\n")
+    except Exception:
+        # The observer and its warning channel are both fail-soft. A broken
+        # stderr must never suppress the already-formed typed response.
+        pass
+
+
 def _canonical_repo_root(value: object) -> str:
     if type(value) is not str or not value or "\x00" in value:
         raise ValueError("repository action requires repo_root")
@@ -977,7 +990,11 @@ def _failure_response(
     )
 
 
-def process(document: object) -> tuple[dict[str, Any], int]:
+def process(
+    document: object, *, trusted_invocation: dict[str, object] | None = None
+) -> tuple[dict[str, Any], int]:
+    if trusted_invocation is not None:
+        trusted_invocation.clear()
     runtime = _load_runtime()
     wire, manifest_digest, descriptor_error = runtime.runtime_contract_snapshot()
     request_id = document.get("request_id") if isinstance(document, Mapping) else None
@@ -999,6 +1016,15 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             if readiness_requested
             else validate_request(document, wire, host, normalized=normalized)
         )
+        if trusted_invocation is not None:
+            for key in (
+                "logical_action",
+                "target_agent",
+                "quality_profile",
+                "effort_class",
+            ):
+                if key in envelope:
+                    trusted_invocation[key] = envelope[key]
     except _InvalidRequest as exc:
         return _failure_response(
             request_id, "invalid_request", exc.error_code, detail=exc.detail
@@ -1146,6 +1172,8 @@ def _read_one_request(stream: object) -> bytes:
 
 
 def main() -> int:
+    document: object = None
+    trusted_invocation: dict[str, object] = {}
     try:
         raw = _read_one_request(sys.stdin.buffer)
     except _IncompleteTTYFrame:
@@ -1179,12 +1207,25 @@ def main() -> int:
                 ), 2
             else:
                 try:
-                    response, code = process(document)
+                    response, code = process(
+                        document, trusted_invocation=trusted_invocation
+                    )
                 except (OSError, RuntimeError, ValueError):
                     response, code = _failure_response(
                         None, "unavailable", "coordinator_unavailable"
                     ), 0
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+    try:
+        _load_failure_evidence().capture_terminal_failure(
+            surface="plugin_coordinator",
+            response=response,
+            request=trusted_invocation,
+            request_trusted=bool(trusted_invocation),
+            request_shape=document,
+        )
+    except Exception:
+        _warn_failure_evidence_unavailable()
     return code
 
 

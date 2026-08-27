@@ -73,6 +73,8 @@ The public repository and package preserve these invariants:
    closed manifest metadata. Native implementation and build/sign credentials
    remain outside this repository.
 8. Retired packages are migration evidence, not rollback targets.
+9. Terminal failure capture is downstream and fail-soft. It never exposes raw
+   invocation material, changes provider authority, or licenses replay.
 
 ## Sanitization contract
 

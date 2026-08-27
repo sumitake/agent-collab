@@ -5,13 +5,31 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current repository source: **6.2.4**
+Current repository source: **6.3.0**
 
 Current published release: **6.2.4**
 ([`v6.2.4`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4));
 the exact package members and provider-free runtime readiness were verified on
 Claude, Codex, Antigravity, and Grok.
 
+Version 6.3.0 adds private allowlist-only capture of typed terminal
+coordinator failures after the response is written and flushed. It excludes prompts,
+source paths/content, commands, raw provider streams, provider prose,
+artifacts, credentials, and environment data. Capture failure cannot change
+the response, provider authority, or no-replay contract; external filing is a
+separately governed workspace operation. Invocation selectors are included
+only after admission through the closed coordinator wire contract; rejected
+raw request values are omitted. A private capture lock waits under a fixed
+deadline and serializes capacity checks with publication across concurrent
+coordinator processes, preserving ordinary concurrent evidence and the 10,000
+unresolved-event hard bound. The workspace filer uses that same lock for local
+state transitions but releases it before GitHub operations, and newly created
+outbox directories are parent-fsynced before publication returns. Malformed request identifiers that cannot encode
+as UTF-8 omit their optional digest without suppressing the failure event.
+Plugin identity and request diagnostics are closed as well: the public plugin
+version, runtime-manifest digest, recognized request-field names, unknown-field
+count, and allowlisted validation difference may be retained, but no request
+value or unknown field name is copied.
 Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,

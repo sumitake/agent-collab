@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import termios
+import tempfile
 import time
 import types
 import unittest
@@ -69,6 +70,16 @@ def _write_all_with_deadline(
 class SemanticCoordinatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        cls.failure_evidence_root = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.failure_evidence_root.cleanup)
+        cls.failure_evidence_environment = mock.patch.dict(
+            os.environ,
+            {
+                "AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": cls.failure_evidence_root.name
+            },
+        )
+        cls.failure_evidence_environment.start()
+        cls.addClassCleanup(cls.failure_evidence_environment.stop)
         cls.client = _load("coordinator_test_client", PLUGIN / "runtime_client.py")
         cls.coordinator = _load("semantic_coordinator", PLUGIN / "coordinator.py")
         cls.host_policy = _load("semantic_host_policy", PLUGIN / "host_policy.py")
@@ -79,6 +90,14 @@ class SemanticCoordinatorTests(unittest.TestCase):
         cls.profile = cls.host_policy.HostProfile(
             "codex", "openai", "gpt-test", "codex", "session-1", False,
             governance_ready=True,
+        )
+
+    def test_failure_evidence_is_isolated_from_the_host_outbox(self) -> None:
+        configured = Path(os.environ["AGENT_COLLAB_FAILURE_EVIDENCE_ROOT"])
+        self.assertEqual(configured, Path(self.failure_evidence_root.name))
+        self.assertNotEqual(
+            configured,
+            Path.home() / ".agent-collab" / "failure-evidence",
         )
 
     def test_repository_request_adds_canonical_repo_source_and_wire_hash(self) -> None:
@@ -433,6 +452,144 @@ class SemanticCoordinatorTests(unittest.TestCase):
             },
         )
         self.assertNotIn("error_code", response)
+
+    def test_main_captures_terminal_failure_after_response_is_formed(self) -> None:
+        document = {"request_id": "private-id", "logical_action": "review.repository"}
+        response = {
+            "request_id": "private-id",
+            "status": "temporarily_unavailable",
+            "error_code": "protocol_capability_drift",
+        }
+        recorder = mock.Mock()
+        stdout = io.StringIO()
+
+        def process_with_admitted_invocation(_document, *, trusted_invocation):
+            trusted_invocation.update(
+                {
+                    "logical_action": "review.repository",
+                    "target_agent": "codex",
+                    "quality_profile": "frontier",
+                    "effort_class": "maximum",
+                }
+            )
+            return response, 0
+
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", return_value=json.dumps(document).encode()
+        ), mock.patch.object(
+            self.coordinator, "process", side_effect=process_with_admitted_invocation
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(capture_terminal_failure=recorder),
+        ), mock.patch.object(sys, "stdout", stdout):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        rendered = json.loads(stdout.getvalue())
+        self.assertEqual(rendered["request_id"], response["request_id"])
+        self.assertEqual(rendered["status"], response["status"])
+        self.assertEqual(rendered["error_code"], response["error_code"])
+        recorder.assert_called_once_with(
+            surface="plugin_coordinator",
+            response=response,
+            request={
+                "logical_action": "review.repository",
+                "target_agent": "codex",
+                "quality_profile": "frontier",
+                "effort_class": "maximum",
+            },
+            request_trusted=True,
+            request_shape=document,
+        )
+
+    def test_main_flushes_response_before_failure_evidence_capture(self) -> None:
+        document = {"request_id": "private-id"}
+        response = {
+            "request_id": "private-id",
+            "status": "unavailable",
+            "error_code": "coordinator_unavailable",
+        }
+
+        class RecordingStdout(io.StringIO):
+            def __init__(self):
+                super().__init__()
+                self.was_flushed = False
+
+            def flush(self):
+                self.was_flushed = True
+                return super().flush()
+
+        stdout = RecordingStdout()
+
+        def capture_after_flush(**_kwargs):
+            self.assertTrue(stdout.was_flushed)
+            self.assertEqual(json.loads(stdout.getvalue()), response)
+
+        with mock.patch.object(
+            self.coordinator,
+            "_read_one_request",
+            return_value=json.dumps(document).encode(),
+        ), mock.patch.object(
+            self.coordinator, "process", return_value=(response, 0)
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=capture_after_flush
+            ),
+        ), mock.patch.object(sys, "stdout", stdout):
+            code = self.coordinator.main()
+
+        self.assertEqual(code, 0)
+
+    def test_main_capture_error_preserves_response_and_exit_code(self) -> None:
+        response = {
+            "request_id": None,
+            "status": "unavailable",
+            "error_code": "coordinator_unavailable",
+        }
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=mock.Mock(side_effect=OSError("/secret/outbox"))
+            ),
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(sys, "stderr", stderr):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        rendered = json.loads(stdout.getvalue())
+        self.assertEqual(rendered["request_id"], response["request_id"])
+        self.assertEqual(rendered["status"], response["status"])
+        self.assertEqual(rendered["error_code"], response["error_code"])
+        self.assertNotIn("secret", stderr.getvalue())
+        self.assertIn("failure evidence capture unavailable", stderr.getvalue())
+
+    def test_main_capture_error_with_broken_stderr_still_returns_response(self) -> None:
+        response = self.coordinator._failure_response(
+            None, "unavailable", "coordinator_unavailable"
+        )
+        stdout = io.StringIO()
+        broken_stderr = types.SimpleNamespace(
+            write=mock.Mock(side_effect=OSError("closed stderr"))
+        )
+        with mock.patch.object(
+            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
+        ), mock.patch.object(
+            self.coordinator,
+            "_load_failure_evidence",
+            return_value=types.SimpleNamespace(
+                capture_terminal_failure=mock.Mock(side_effect=OSError("outbox"))
+            ),
+        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
+            sys, "stderr", broken_stderr
+        ):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), response)
 
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []

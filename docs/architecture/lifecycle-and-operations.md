@@ -108,6 +108,29 @@ The primary should always:
 - keep merge, deployment, secret, and destructive decisions within the user's
   and repository's authority boundaries.
 
+### Automatic local failure capture
+
+The public coordinator contains a fail-soft observer for typed terminal
+failures. It writes one allowlist-built event to a private host-local outbox
+after the response has been written and flushed. It does not capture `ok` or `advisory`
+outcomes and cannot change the response, exit status, route, provider
+lifecycle, or replay policy. Captured events exclude prompts, source content
+and paths, commands, raw provider streams, provider prose, artifacts,
+credentials, and environment data; request identifiers are stored only as
+SHA-256 digests. Public plugin version, runtime-manifest digest, recognized
+request-field names, unknown-field count, and closed validator differences are
+admitted; request values and unknown field names are not.
+First-use directory creation is parent-fsynced before publication returns. The
+workspace filer shares the bounded capture lock for local state transitions but
+never holds it across a GitHub read or write.
+
+The package does not itself post to GitHub or install a scheduler. A separately
+governed workspace one-shot filer may aggregate sanitized events and file
+deduplicated issue comments. Its installation and status are separate host
+facts. If local capture is unavailable, preserve the typed invocation outcome
+and investigate the bounded warning; do not retry the provider request merely
+to regenerate diagnostics.
+
 `project-estimation` is offline and read-only by default. The packaged v6.2.4
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token

@@ -61,6 +61,7 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertEqual(archive._parse_manifest(json.dumps(manifest).encode()), manifest)
         self.assertNotIn("runtime_setup.py", archive.REQUIRED_ROOTS)
         self.assertNotIn("execute-output-contract-v1.json", archive.REQUIRED_ROOTS)
+        self.assertIn("failure_evidence.py", archive.REQUIRED_ROOTS)
 
     def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
         archive = _load()
@@ -101,6 +102,7 @@ class PluginArchiveTests(unittest.TestCase):
             names = [name for name, _ in plan]
         self.assertIn("project-estimation-data/estimate-request.schema.json", names)
         self.assertIn("project_estimation.py", names)
+        self.assertIn("failure_evidence.py", names)
         self.assertEqual(archive.REQUIRED_ROOTS.count("project_estimation.py"), 1)
         self.assertEqual(len(names), len(set(names)))
         self.assertIn("project-estimation-data/maintenance-receipt.json", names)

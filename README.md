@@ -5,9 +5,10 @@ compatible hosts. Version 6 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source and published distribution are
-**agent-collab** (v6.2.4), with signed provider runtime `4.2.1`. The
-**[v6.2.4 release](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4)**
+This public repository's current source is **agent-collab** (v6.3.0). The current
+published distribution remains **[v6.2.4](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4)**
+with signed provider runtime `4.2.1`; repository source is not yet a release,
+installation, or activation claim. The v6.2.4 release
 adds one action-scoped native Claude route for document intent while retaining
 bounded invocation correction and provider-neutral carrier reliability. Its
 exact package members, provider-free readiness, observed host bytes, and the
@@ -20,7 +21,18 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v6.2.4
+## What's new - v6.3.0
+
+- **Private automatic failure capture.** Typed terminal coordinator failures
+  produce an allowlist-only host-local event after the response is complete.
+  Prompts, source paths/content, commands, raw provider streams, provider
+  prose, artifacts, credentials, and environment data are excluded. Capture
+  failure cannot change the original response or authorize replay. Invocation
+  selectors are recorded only after closed-contract admission; rejected raw
+  request values are omitted. GitHub filing remains a separately governed
+  workspace operation.
+
+## Current published release - v6.2.4
 
 - **Action-scoped native Claude routing.** The official structured Claude CLI
   is a managed native carrier only for `context.documents.intent`, returning
