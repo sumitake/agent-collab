@@ -252,6 +252,27 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertEqual(self.coordinator._disposition(status)[0], expected)
 
+    def test_provider_started_timeout_at_cap_is_terminal_not_retryable(self) -> None:
+        disposition, recovery = self.coordinator._disposition(
+            "timeout",
+            timeout_ms=self.coordinator.MAX_TIMEOUT_MS,
+            error_code="timeout",
+            failure_trace={
+                "adapter_code": "provider_timeout",
+                "failure_phase": "inference",
+                "tool_outcomes": {
+                    "success": 0,
+                    "failed": 0,
+                    "incomplete": 0,
+                    "unknown": 1,
+                },
+            },
+        )
+        self.assertEqual(disposition, "inspect")
+        self.assertIn("terminal", recovery.lower())
+        self.assertIn("separately authorized", recovery.lower())
+        self.assertNotIn("increase", recovery.lower())
+
     def test_unrecognized_status_defaults_to_inspect(self) -> None:
         # Fail-safe: an unknown future status is never silently called an outage.
         self.assertEqual(self.coordinator._disposition("some_new_code")[0], "inspect")

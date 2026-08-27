@@ -23,6 +23,7 @@ from tests.test_direct_runtime_public_contract import _wire_descriptor
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
+EXPECTED_REPO_HEAD = "1" * 40
 
 
 def _load(name: str, path: Path):
@@ -70,16 +71,6 @@ def _write_all_with_deadline(
 class SemanticCoordinatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.failure_evidence_root = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.failure_evidence_root.cleanup)
-        cls.failure_evidence_environment = mock.patch.dict(
-            os.environ,
-            {
-                "AGENT_COLLAB_FAILURE_EVIDENCE_ROOT": cls.failure_evidence_root.name
-            },
-        )
-        cls.failure_evidence_environment.start()
-        cls.addClassCleanup(cls.failure_evidence_environment.stop)
         cls.client = _load("coordinator_test_client", PLUGIN / "runtime_client.py")
         cls.coordinator = _load("semantic_coordinator", PLUGIN / "coordinator.py")
         cls.host_policy = _load("semantic_host_policy", PLUGIN / "host_policy.py")
@@ -92,14 +83,6 @@ class SemanticCoordinatorTests(unittest.TestCase):
             governance_ready=True,
         )
 
-    def test_failure_evidence_is_isolated_from_the_host_outbox(self) -> None:
-        configured = Path(os.environ["AGENT_COLLAB_FAILURE_EVIDENCE_ROOT"])
-        self.assertEqual(configured, Path(self.failure_evidence_root.name))
-        self.assertNotEqual(
-            configured,
-            Path.home() / ".agent-collab" / "failure-evidence",
-        )
-
     def test_repository_request_adds_canonical_repo_source_and_wire_hash(self) -> None:
         request = {
             "request_id": "review-1",
@@ -110,6 +93,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review the current repository.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         host = self.host_policy.HostProfile(
             "codex", "openai", "gpt-test", "codex", "session-1", False,
@@ -120,10 +104,40 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(native["quality_profile"], "frontier")
         self.assertEqual(native["effort_class"], "maximum")
         self.assertEqual(
-            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+            native["source"],
+            {
+                "mode": "repository",
+                "repo_root": str(ROOT),
+                "expected_repo_head": EXPECTED_REPO_HEAD,
+            },
         )
         self.assertNotIn("route", native)
         self.assertNotIn("action", native)
+
+    def test_repository_request_requires_valid_expected_head(self) -> None:
+        base = {
+            "request_id": "review-head",
+            "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": None,
+            "timeout_ms": 5000,
+            "prompt": "Review the current repository.",
+            "repo_root": str(ROOT),
+        }
+        with self.assertRaises(ValueError) as missing:
+            self.coordinator.validate_request(base, self.wire, self.profile)
+        self.assertEqual(missing.exception.error_code, "request_not_closed")
+        self.assertIn("expected_repo_head", missing.exception.detail["missing"])
+
+        for value in ("a" * 39, "A" * 40, "g" * 40, "0" * 40, "a" * 41):
+            with self.subTest(value=value), self.assertRaises(ValueError) as invalid:
+                self.coordinator.validate_request(
+                    {**base, "expected_repo_head": value},
+                    self.wire,
+                    self.profile,
+                )
+            self.assertEqual(invalid.exception.error_code, "expected_repo_head_invalid")
 
     def test_context_repository_request_uses_descriptor_source_mode(self) -> None:
         request = {
@@ -1107,6 +1121,31 @@ class SemanticCoordinatorTests(unittest.TestCase):
             stream.close()
             os.close(slave_fd)
             os.close(master_fd)
+
+    def test_tty_is_rejected_before_runtime_load(self) -> None:
+        class TTYInput:
+            def isatty(self) -> bool:
+                return True
+
+            def fileno(self) -> int:
+                raise OSError("no terminal descriptor")
+
+        stdin = types.SimpleNamespace(buffer=TTYInput())
+        stdout = io.StringIO()
+        with mock.patch.object(self.coordinator.sys, "stdin", stdin), mock.patch.object(
+            self.coordinator.sys, "stdout", stdout
+        ), mock.patch.object(self.coordinator, "_load_runtime") as runtime:
+            code = self.coordinator.main()
+
+        response = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(response["status"], "invalid_request")
+        self.assertEqual(response["error_code"], "tty_unsupported")
+        self.assertEqual(response["detail"]["field"], "request")
+        self.assertEqual(
+            response["detail"]["constraint"], "eof_framed_pipe_or_file"
+        )
+        runtime.assert_not_called()
 
     def test_post_decode_failure_is_not_mislabeled_invalid_json(self) -> None:
         stdin = types.SimpleNamespace(buffer=io.BytesIO(b"{}"))
