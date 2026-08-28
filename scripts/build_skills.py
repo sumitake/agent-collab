@@ -60,6 +60,7 @@ ROUTED_SPECS = frozenset(
         "dev-delegate",
         "intent-check",
         "logic-check",
+        "merge-resolve",
         "context",
         "qa-verify",
         "red-team",

@@ -151,7 +151,7 @@ Logic checking applies wherever a verifiable computation exists. A representativ
 | Game / puzzle | Logic puzzle with discrete state space (Sudoku variant, constraint satisfaction) | Missed implicit constraint; backtracking-order produces a different-but-also-valid solution that contradicts "uniqueness assumed" |
 | Engineering / physics | Beam-deflection calculation for a multi-load-point cantilever | Wrong moment-of-inertia formula for the cross-section; superposition applied incorrectly; sign convention slip on one load direction |
 
-The `ANSWER:` line discipline and the constraints-explicit pattern apply uniformly across all of these. Domain-specific shifts: which conventions are easiest to mis-state in the constraints block (currency rules and rounding for financial; unit slips for clinical; sign conventions for physics; endianness for crypto).
+The constraints-explicit final-answer pattern applies uniformly across all of these. Domain-specific shifts: which conventions are easiest to mis-state in the constraints block (currency rules and rounding for financial; unit slips for clinical; sign conventions for physics; endianness for crypto).
 
 ## Anti-patterns
 

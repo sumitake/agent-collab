@@ -180,6 +180,25 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("must not automatically replay", invocation)
                 self.assertIn("fresh readiness", invocation)
 
+    def test_merge_resolve_uses_signed_artifact_without_format_replay(self) -> None:
+        build_skills = self._load_build_skills()
+        self.assertIn("merge-resolve", build_skills.ROUTED_SPECS)
+        text = (
+            PLUGIN / "skills" / "merge-resolve" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("signed `context_text` artifact", text)
+        self.assertIn("invalid_final", text)
+        self.assertIn("do not replay", text.lower())
+        self.assertNotIn("Output ONLY these six sections", text)
+        self.assertNotIn("**Retry-on-malformed.**", text)
+
+    def test_logic_check_has_no_stale_answer_line_contract(self) -> None:
+        text = (
+            PLUGIN / "skills" / "logic-check" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("The `ANSWER:` line discipline", text)
+        self.assertIn("constraints-explicit final-answer pattern", text)
+
     def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
         text = (
             PLUGIN / "skills" / "intent-check" / "SKILL.md"

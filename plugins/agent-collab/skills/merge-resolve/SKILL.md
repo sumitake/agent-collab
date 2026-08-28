@@ -8,6 +8,10 @@ defaults:
 description: Use when a user asks to resolve a git merge conflict or conflicting patch, says "ai-merge" or "AI-resolve," when merge or rebase exits with conflict markers and next steps are requested, when parallel worktrees need integration, or when a chain diff targets a file being edited.
 ---
 
+## Unified runtime invocation
+
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+
 # Merge resolve — cross-family merge-conflict resolution, operator-gated by default
 
 This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a cross-family read on the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
@@ -84,35 +88,43 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 
 ### 4. Cross-check prompt
 
-Submit the sealed merge-review role through `python3 "<plugin-root>/coordinator.py"` with
+Submit the sealed merge-review role through `python3 "<plugin-root>/coordinator.py"`
 with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy chooses an eligible
-independent reviewer. The prompt forces a **disagreement-first** output
-structure; the six-section schema is a functional contract:
+independent reviewer. The signed `context_text` artifact is the sole output
+contract; do not impose another terminal envelope. Ask the reviewer to address
+these disagreement-first criteria within that artifact:
+
+- summarize each side's intent;
+- decide `COMPATIBLE`, `INCOMPATIBLE`, or `NEEDS-HUMAN`, with a reason;
+- propose a unified diff when compatible;
+- identify risks and failure modes; and
+- state `H`, `M`, or `L` confidence with a reason.
+
+Use this prompt:
 
 ```
-Two branches modified the same region. Produce a unified resolution OR refuse if the change is semantically incompatible. Output ONLY these six sections — no preamble, no closing, cap 500 words total:
-
-1. INTENT-A SUMMARY: <one sentence>
-2. INTENT-B SUMMARY: <one sentence>
-3. COMPATIBILITY: COMPATIBLE | INCOMPATIBLE | NEEDS-HUMAN — <one-sentence reason>
-4. PROPOSED RESOLUTION (if COMPATIBLE): a unified diff block, fenced as ```diff
-5. RISKS / FAILURE MODES: bulleted
-6. CONFIDENCE: H | M | L — <one-sentence reason>
+Two branches modified the same region. Analyze both intents and either propose
+a unified resolution or explain why the change is incompatible or needs human
+judgment. Clearly state the compatibility decision, include a unified diff when
+compatible, identify risks, and state confidence. Cap the analysis at 500 words.
 
 --- HUNK ---
 {structured hunk + commit-context + surrounding-±20-lines}
 ```
 
-**Retry-on-malformed.** If the response does not contain all six numbered sections, retry exactly once with: "Previous response did not include all six required sections. Re-emit strictly per the template above, no preamble." If the second attempt is also malformed, surface to operator and refuse to proceed.
+If the runtime returns `invalid_final`, or the artifact does not clearly state
+compatibility and a proposed resolution when compatible, surface the terminal
+result or incomplete artifact and refuse to proceed. Do not salvage prose or
+replay the request merely to repair formatting.
 
 ### 5. Operator-confirm gate (DEFAULT)
 
-UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the cross-check's six sections rendered for the operator. The operator chooses:
+UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's signed artifact text for the operator. The operator chooses:
 
 - **`apply`** — apply the resolution to the working tree
 - **`apply-and-amend`** — apply AND amend the in-progress merge commit (only valid mid-merge)
 - **`reject`** — discard the proposal; leave conflict markers in place for manual resolution
-- **`revise <free-form>`** — re-run Step 4 with the operator's additional instruction prepended to the prompt
+- **`revise <free-form>`** — make a separately operator-authorized Step 4 request with the operator's additional instruction prepended to the prompt
 
 Empty / ambiguous operator responses default to **`reject`** (safe choice).
 
@@ -200,8 +212,8 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | Failure | Skill behavior |
 |---|---|
 | Conflict markers malformed | REFUSE; surface raw conflict + line number that failed parsing |
-| Cross-check returns no `PROPOSED RESOLUTION` after one retry | REFUSE; surface verifier's sections 1–3 + 5 + 6 |
-| `git apply --3way --check` fails on the proposed resolution | RETRY ONCE with regenerated resolution; second failure → REFUSE |
+| Signed artifact is `invalid_final` or contains no compatible proposed resolution | REFUSE; surface the typed result or incomplete artifact; do not replay for formatting |
+| `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |
 | Verifier-independence check fails (both sides independent-family-authored) | Switch to the active primary-as-resolver, or surface and ASK operator |
