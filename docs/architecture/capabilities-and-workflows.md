@@ -144,7 +144,7 @@ authority.
 | --- | --- | --- |
 | Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official structured CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
-| Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. |
+| Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. It is not a coordinator `target_agent` unless the current signed descriptor explicitly admits it. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |
 | Custom host | Explicit primary identity fields and the closed package contract. | If the host cannot load the package safely, it is unsupported; do not recreate provider-specific shims. |
 

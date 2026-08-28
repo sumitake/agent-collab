@@ -84,14 +84,16 @@ from fresh readiness. Where governance evidence is still required, use an
 eligible documented alternative or record an explicit operator-authorized path
 honestly; never fabricate reviewer convergence.
 
-Supported coordinator failures are also eligible for private, allowlist-only
-host-local capture after the typed response is written and flushed. Capture and any later
-GitHub filing are diagnostic planes separate from invocation and governance:
-capture failure does not change the response, and a filed comment is never an
-approval or retry instruction. Prompts, source paths/content, commands, raw
-provider streams, provider prose, artifacts, credentials, and environment data
-must not cross that boundary. A sending or uncertain GitHub write is
-reconciliation-only and must not be automatically replayed.
+The coordinator has no automatic failure-evidence capture or filing plane.
+Issue filing is an explicit, separately authorized operation after the typed
+response is available; a filed comment is diagnostic evidence, never approval
+or retry authority. A sending or uncertain GitHub write is reconciliation-only
+and must not be automatically replayed.
+
+The signed descriptor's artifact schema is the sole final-output contract.
+Prompts may specify review criteria but must not add an alternate JSON envelope,
+`VERDICT:` line, or trailing prose contract. `invalid_final` is terminal and
+must not be salvaged from provider prose or replayed for formatting.
 
 Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
 change. For any external contribution, use `OPERATOR-CONFIRMED` only after John

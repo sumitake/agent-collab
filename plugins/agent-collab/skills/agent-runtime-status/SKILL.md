@@ -1,6 +1,6 @@
 ---
 name: agent-runtime-status
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum

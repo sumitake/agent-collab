@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Send a draft, analysis, plan, or decision to the reviewer for an in
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Second opinion — independent cross-family read
 
@@ -92,7 +92,7 @@ Use the closed provider-neutral request fields `quality_profile="frontier"` and
 `effort_class="maximum"`; never name a model member.
 
 ```json coordinator-request
-{"request_id":"second-opinion-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"second-opinion-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
 ```
 
 Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy for slow, skeptical analysis. The economical,
@@ -101,23 +101,20 @@ Ensure each panelist receives the **whole** artifact — a divergence that is
 actually an artifact of one model truncating the context is a false signal,
 not a real disagreement.
 
-Use this prompt template — the four numbered sections are a functional contract, not stylistic suggestion. Downstream tooling (parity tests, audit logs, chain runners) keys on them:
+Use this prompt template for review content. The signed descriptor's
+`review_findings` schema is the sole output contract; do not add a second
+heading, JSON envelope, verdict line, or trailing-prose contract:
 
 ```
-Review the following [artifact type, e.g. "architecture proposal", "trial protocol amendment", "vendor MSA redline"]. Output only the four sections below — no preamble, no closing, no meta-commentary. Cap total response at 350 words.
-
-1. STRONGEST COUNTER-ARGUMENT: <single best objection>
-2. RISKS / FAILURE MODES: <bulleted, specific>
-3. UNSUPPORTED ASSUMPTIONS: <bulleted>
-4. CONFIDENCE: H | M | L — <one-sentence reason>
+Review the following [artifact type, e.g. "architecture proposal", "trial protocol amendment", "vendor MSA redline"]. In the descriptor-owned summary and findings, cover the strongest counter-argument, specific risks or failure modes, unsupported assumptions, and confidence. Cap substantive review text at 350 words.
 
 --- ARTIFACT ---
 [paste the full artifact verbatim]
 ```
 
-Malformed output is a terminal typed `protocol_error` for that panelist's
-request. Surface it explicitly; do not fabricate the four sections and do not
-replay the whole coordinator request. One panelist's terminal format failure
+An `invalid_final` result is terminal for that panelist's request. Surface it
+explicitly; do not fabricate an artifact and do not replay the coordinator
+request. One panelist's terminal format failure
 does not invalidate correctly returned artifacts from other panelists.
 
 ### 3b. Tiebreaker — only on a conflicting verdict
@@ -139,7 +136,7 @@ conflict to the operator; never fabricate a resolution.
 
 When you relay the panel to the user, the cardinal rule is **never average the reads into a softer middle, and never let a 2-of-N "agree" lull the decision.** Operate on a **high-water-mark of risk**: surface the **union** of all identified risks, led by the **single sharpest concern raised by *any* panelist** — even if only one panelist raised it and the others said "proceed." If one verifier issues a confident PROCEED and another a sharp RECONSIDER, the RECONSIDER's load-bearing objection leads; it is not netted against the PROCEED.
 
-**Surface the raw reads — do not paraphrase them into compliance.** Present each panelist's four-section output (or a faithful direct quote of its sharpest objections), attributed by name, so the operator sees the actual critiques and not the authoring model's softened summary of critiques of its own work. Lead with **divergence** across the panel, not agreement; quote the sharp objections directly.
+**Surface the raw reads — do not paraphrase them into compliance.** Present each panelist's artifact summary and sharpest findings, attributed by name, so the operator sees the actual critiques and not the authoring model's softened summary of critiques of its own work. Lead with **divergence** across the panel, not agreement; quote the sharp objections directly.
 
 A useful structure for the user-facing report:
 
@@ -217,6 +214,6 @@ When picking the right example to share with the user mid-invocation, match the 
 - **Skipping the verifier-independence check** when the artifact came from work authored within the independent family. That "review" is correlated with its author; the audit log will record a cross-check that did not, in substance, occur.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
 - **Replaying a malformed request.** If the verifier returns output without the
-  four numbered sections, surface the managed runtime's terminal typed failure.
+  descriptor-owned artifact, surface the managed runtime's terminal typed failure.
   Do not issue a second request or fabricate structure around the prose.
 - **Running this against a draft the user has already revised three times based on prior cross-checks.** At that point, the decision-quality issue is no longer "needs more critique" — it is "needs a decision." Say so.

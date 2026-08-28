@@ -8,7 +8,7 @@ description: Delegate a bounded independent development slice to an eligible cro
 # Dev-delegate
 
 Use `codegen.repository` or `frontend_codegen.repository`. Provide the canonical
-`repo_root`, exact objective, owned paths, expected patch, test expectations,
+`repo_root`, exact `expected_repo_head`, objective, owned paths, expected patch, test expectations,
 budget, and stop conditions. The runtime reproduces the caller-visible state in
 a disposable plain directory, runs one provider session there, and returns only
 the provider delta as a binary-safe patch.

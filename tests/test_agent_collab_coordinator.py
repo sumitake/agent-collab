@@ -7,13 +7,9 @@ import io
 import json
 import os
 from pathlib import Path
-import select
-import signal
 import subprocess
 import sys
-import termios
 import tempfile
-import time
 import types
 import unittest
 from unittest import mock
@@ -33,39 +29,6 @@ def _load(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def _configurable_terminal_settings(settings: list[object]) -> list[object]:
-    """Exclude the kernel-maintained pending-input status bit from comparisons."""
-
-    normalized = list(settings)
-    normalized[6] = list(settings[6])
-    normalized[3] &= ~getattr(termios, "PENDIN", 0)
-    return normalized
-
-
-def _write_all_with_deadline(
-    descriptor: int, payload: bytes, *, timeout_seconds: float = 5.0
-) -> None:
-    """Write a PTY frame without letting a regression hang the test process."""
-
-    view = memoryview(payload)
-    written = 0
-    deadline = time.monotonic() + timeout_seconds
-    while written < len(view):
-        try:
-            count = os.write(descriptor, view[written:])
-        except BlockingIOError:
-            count = 0
-        if count > 0:
-            written += count
-            continue
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise AssertionError("PTY writer exceeded its deadline")
-        _, writable, _ = select.select([], [descriptor], [], remaining)
-        if not writable:
-            raise AssertionError("PTY writer exceeded its deadline")
 
 
 class SemanticCoordinatorTests(unittest.TestCase):
@@ -139,6 +102,13 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 )
             self.assertEqual(invalid.exception.error_code, "expected_repo_head_invalid")
 
+        native = self.coordinator.validate_request(
+            {**base, "expected_repo_head": "a" * 64},
+            self.wire,
+            self.profile,
+        )
+        self.assertEqual(native["source"]["expected_repo_head"], "a" * 64)
+
     def test_context_repository_request_uses_descriptor_source_mode(self) -> None:
         request = {
             "request_id": "context-repository-1",
@@ -149,10 +119,16 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Extract repository facts.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         native = self.coordinator.validate_request(request, self.wire, self.profile)
         self.assertEqual(
-            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+            native["source"],
+            {
+                "mode": "repository",
+                "repo_root": str(ROOT),
+                "expected_repo_head": EXPECTED_REPO_HEAD,
+            },
         )
 
     def test_exact_legacy_semantic_fields_are_canonicalized(self) -> None:
@@ -167,7 +143,11 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 "route": " GROK ",
                 "timeout_ms": 5000,
                 "prompt": "Review architecture.",
-                "source": {"mode": "repository", "repo_root": str(ROOT)},
+                "source": {
+                    "mode": "repository",
+                    "repo_root": str(ROOT),
+                    "expected_repo_head": EXPECTED_REPO_HEAD,
+                },
             },
             self.wire,
             self.profile,
@@ -179,7 +159,12 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(native["effort_class"], "maximum")
         self.assertEqual(native["target_agent"], "grok")
         self.assertEqual(
-            native["source"], {"mode": "repository", "repo_root": str(ROOT)}
+            native["source"],
+            {
+                "mode": "repository",
+                "repo_root": str(ROOT),
+                "expected_repo_head": EXPECTED_REPO_HEAD,
+            },
         )
         self.assertEqual(
             normalized,
@@ -235,6 +220,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
                     "timeout_ms": 5000,
                     "prompt": "Review.",
                     "repo_root": str(ROOT),
+                    "expected_repo_head": EXPECTED_REPO_HEAD,
                 },
                 self.wire,
                 self.profile,
@@ -254,6 +240,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         with self.assertRaises(ValueError) as caught:
             self.coordinator.validate_request(request, self.wire, self.profile)
@@ -356,9 +343,8 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(response["request_id"], "context-private-error")
         self.assertEqual(response["status"], "provider_error")
         self.assertEqual(response["error_code"], "runtime_provider_error")
-        # An attempt-local failure is classified 'retry', never 'unavailable':
-        # this is what stops a transient error being read as a provider outage.
-        self.assertEqual(response["disposition"], "retry")
+        # Unknown provider-call state is never an outage and never authorizes replay.
+        self.assertEqual(response["disposition"], "inspect")
         self.assertIsInstance(response["recovery"], str)
         self.assertTrue(response["recovery"])
 
@@ -447,6 +433,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Analyze the repository.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         with mock.patch.object(
             self.coordinator, "_load_runtime", return_value=fake_client
@@ -466,144 +453,6 @@ class SemanticCoordinatorTests(unittest.TestCase):
             },
         )
         self.assertNotIn("error_code", response)
-
-    def test_main_captures_terminal_failure_after_response_is_formed(self) -> None:
-        document = {"request_id": "private-id", "logical_action": "review.repository"}
-        response = {
-            "request_id": "private-id",
-            "status": "temporarily_unavailable",
-            "error_code": "protocol_capability_drift",
-        }
-        recorder = mock.Mock()
-        stdout = io.StringIO()
-
-        def process_with_admitted_invocation(_document, *, trusted_invocation):
-            trusted_invocation.update(
-                {
-                    "logical_action": "review.repository",
-                    "target_agent": "codex",
-                    "quality_profile": "frontier",
-                    "effort_class": "maximum",
-                }
-            )
-            return response, 0
-
-        with mock.patch.object(
-            self.coordinator, "_read_one_request", return_value=json.dumps(document).encode()
-        ), mock.patch.object(
-            self.coordinator, "process", side_effect=process_with_admitted_invocation
-        ), mock.patch.object(
-            self.coordinator,
-            "_load_failure_evidence",
-            return_value=types.SimpleNamespace(capture_terminal_failure=recorder),
-        ), mock.patch.object(sys, "stdout", stdout):
-            code = self.coordinator.main()
-        self.assertEqual(code, 0)
-        rendered = json.loads(stdout.getvalue())
-        self.assertEqual(rendered["request_id"], response["request_id"])
-        self.assertEqual(rendered["status"], response["status"])
-        self.assertEqual(rendered["error_code"], response["error_code"])
-        recorder.assert_called_once_with(
-            surface="plugin_coordinator",
-            response=response,
-            request={
-                "logical_action": "review.repository",
-                "target_agent": "codex",
-                "quality_profile": "frontier",
-                "effort_class": "maximum",
-            },
-            request_trusted=True,
-            request_shape=document,
-        )
-
-    def test_main_flushes_response_before_failure_evidence_capture(self) -> None:
-        document = {"request_id": "private-id"}
-        response = {
-            "request_id": "private-id",
-            "status": "unavailable",
-            "error_code": "coordinator_unavailable",
-        }
-
-        class RecordingStdout(io.StringIO):
-            def __init__(self):
-                super().__init__()
-                self.was_flushed = False
-
-            def flush(self):
-                self.was_flushed = True
-                return super().flush()
-
-        stdout = RecordingStdout()
-
-        def capture_after_flush(**_kwargs):
-            self.assertTrue(stdout.was_flushed)
-            self.assertEqual(json.loads(stdout.getvalue()), response)
-
-        with mock.patch.object(
-            self.coordinator,
-            "_read_one_request",
-            return_value=json.dumps(document).encode(),
-        ), mock.patch.object(
-            self.coordinator, "process", return_value=(response, 0)
-        ), mock.patch.object(
-            self.coordinator,
-            "_load_failure_evidence",
-            return_value=types.SimpleNamespace(
-                capture_terminal_failure=capture_after_flush
-            ),
-        ), mock.patch.object(sys, "stdout", stdout):
-            code = self.coordinator.main()
-
-        self.assertEqual(code, 0)
-
-    def test_main_capture_error_preserves_response_and_exit_code(self) -> None:
-        response = {
-            "request_id": None,
-            "status": "unavailable",
-            "error_code": "coordinator_unavailable",
-        }
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with mock.patch.object(
-            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
-        ), mock.patch.object(
-            self.coordinator,
-            "_load_failure_evidence",
-            return_value=types.SimpleNamespace(
-                capture_terminal_failure=mock.Mock(side_effect=OSError("/secret/outbox"))
-            ),
-        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(sys, "stderr", stderr):
-            code = self.coordinator.main()
-        self.assertEqual(code, 0)
-        rendered = json.loads(stdout.getvalue())
-        self.assertEqual(rendered["request_id"], response["request_id"])
-        self.assertEqual(rendered["status"], response["status"])
-        self.assertEqual(rendered["error_code"], response["error_code"])
-        self.assertNotIn("secret", stderr.getvalue())
-        self.assertIn("failure evidence capture unavailable", stderr.getvalue())
-
-    def test_main_capture_error_with_broken_stderr_still_returns_response(self) -> None:
-        response = self.coordinator._failure_response(
-            None, "unavailable", "coordinator_unavailable"
-        )
-        stdout = io.StringIO()
-        broken_stderr = types.SimpleNamespace(
-            write=mock.Mock(side_effect=OSError("closed stderr"))
-        )
-        with mock.patch.object(
-            self.coordinator, "_read_one_request", side_effect=OSError("read failed")
-        ), mock.patch.object(
-            self.coordinator,
-            "_load_failure_evidence",
-            return_value=types.SimpleNamespace(
-                capture_terminal_failure=mock.Mock(side_effect=OSError("outbox"))
-            ),
-        ), mock.patch.object(sys, "stdout", stdout), mock.patch.object(
-            sys, "stderr", broken_stderr
-        ):
-            code = self.coordinator.main()
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(stdout.getvalue()), response)
 
     def test_readiness_derives_host_lineage_and_uses_one_runtime_process(self) -> None:
         calls: list[object] = []
@@ -704,6 +553,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review architecture.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         with mock.patch.object(
             self.coordinator, "_load_runtime", return_value=fake_client
@@ -727,6 +577,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         host = self.host_policy.HostProfile(
             "codex", "openai", "gpt-test", "codex", "session-1", False,
@@ -755,6 +606,7 @@ class SemanticCoordinatorTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Govern.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         with mock.patch.object(
             self.coordinator, "_load_runtime", return_value=fake_client
@@ -877,251 +729,6 @@ class SemanticCoordinatorTests(unittest.TestCase):
                 self.assertEqual(response["error_code"], "invalid_json_request")
                 self.assertNotIn("error", response)
 
-    def test_open_pty_request_completes_on_newline_without_eof(self) -> None:
-        """An interactive caller receives one response while its PTY stays open."""
-
-        master_fd, slave_fd = os.openpty()
-        process = subprocess.Popen(
-            [sys.executable, str(PLUGIN / "coordinator.py")],
-            stdin=slave_fd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        try:
-            started = time.monotonic()
-            os.write(master_fd, b"{}\n")
-            stdout, stderr = process.communicate(timeout=5)
-            self.assertLess(time.monotonic() - started, 5)
-            self.assertEqual(stderr, b"")
-            response = json.loads(stdout)
-            self.assertEqual(process.returncode, 2)
-            self.assertEqual(response["status"], "invalid_request")
-            self.assertEqual(response["error_code"], "missing_common_fields")
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=5)
-            os.close(master_fd)
-
-    def test_open_pty_long_request_bypasses_canonical_buffer_and_restores_tty(
-        self,
-    ) -> None:
-        """A long newline frame completes while its PTY stays open and unchanged."""
-
-        master_fd, slave_fd = os.openpty()
-        observer_fd = os.dup(slave_fd)
-        original = termios.tcgetattr(observer_fd)
-        without_echo = list(original)
-        without_echo[6] = list(original[6])
-        without_echo[3] &= ~(termios.ECHO | getattr(termios, "ECHONL", 0))
-        termios.tcsetattr(observer_fd, termios.TCSANOW, without_echo)
-        expected = termios.tcgetattr(observer_fd)
-        process = subprocess.Popen(
-            [sys.executable, str(PLUGIN / "coordinator.py")],
-            stdin=slave_fd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        payload = json.dumps({"padding": "x" * (64 * 1024)}).encode("utf-8") + b"\n"
-        try:
-            started = time.monotonic()
-            ready_deadline = started + 2
-            while termios.tcgetattr(observer_fd)[3] & termios.ICANON:
-                self.assertIsNone(process.poll())
-                self.assertLess(time.monotonic(), ready_deadline)
-                time.sleep(0.001)
-            os.set_blocking(master_fd, False)
-            _write_all_with_deadline(master_fd, payload)
-            stdout, stderr = process.communicate(timeout=5)
-            self.assertLess(time.monotonic() - started, 5)
-            self.assertEqual(stderr, b"")
-            response = json.loads(stdout)
-            self.assertEqual(process.returncode, 2)
-            self.assertEqual(response["status"], "invalid_request")
-            self.assertEqual(response["error_code"], "missing_common_fields")
-            self.assertEqual(
-                _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
-                _configurable_terminal_settings(expected),
-            )
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=5)
-            termios.tcsetattr(observer_fd, termios.TCSANOW, original)
-            os.close(observer_fd)
-            os.close(master_fd)
-
-    def test_open_pty_valid_slow_frame_is_not_an_incomplete_false_failure(
-        self,
-    ) -> None:
-        """A valid frame may pause beyond the retired inter-chunk heuristic."""
-
-        master_fd, slave_fd = os.openpty()
-        process = subprocess.Popen(
-            [sys.executable, str(PLUGIN / "coordinator.py")],
-            stdin=slave_fd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        try:
-            started = time.monotonic()
-            ready_deadline = started + 2
-            while termios.tcgetattr(master_fd)[3] & termios.ICANON:
-                self.assertIsNone(process.poll())
-                self.assertLess(time.monotonic(), ready_deadline)
-                time.sleep(0.001)
-            os.write(master_fd, b"{")
-            time.sleep(2.2)
-            os.write(master_fd, b"}\n")
-            stdout, stderr = process.communicate(timeout=5)
-            self.assertEqual(stderr, b"")
-            response = json.loads(stdout)
-            self.assertEqual(process.returncode, 2)
-            self.assertEqual(response["status"], "invalid_request")
-            self.assertEqual(response["error_code"], "missing_common_fields")
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=5)
-            os.close(master_fd)
-
-    def test_open_pty_sigterm_restores_tty_before_terminating(self) -> None:
-        master_fd, slave_fd = os.openpty()
-        observer_fd = os.dup(slave_fd)
-        original = termios.tcgetattr(observer_fd)
-        without_echo = list(original)
-        without_echo[6] = list(original[6])
-        without_echo[3] &= ~(termios.ECHO | getattr(termios, "ECHONL", 0))
-        termios.tcsetattr(observer_fd, termios.TCSANOW, without_echo)
-        expected = termios.tcgetattr(observer_fd)
-        process = subprocess.Popen(
-            [sys.executable, str(PLUGIN / "coordinator.py")],
-            stdin=slave_fd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        try:
-            ready_deadline = time.monotonic() + 2
-            while termios.tcgetattr(observer_fd)[3] & termios.ICANON:
-                self.assertIsNone(process.poll())
-                self.assertLess(time.monotonic(), ready_deadline)
-                time.sleep(0.001)
-            process.terminate()
-            process.communicate(timeout=5)
-            self.assertEqual(process.returncode, -signal.SIGTERM)
-            self.assertEqual(
-                _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
-                _configurable_terminal_settings(expected),
-            )
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=5)
-            termios.tcsetattr(observer_fd, termios.TCSANOW, original)
-            os.close(observer_fd)
-            os.close(master_fd)
-
-    def test_open_pty_disconnect_returns_typed_incomplete_frame(self) -> None:
-        master_fd, slave_fd = os.openpty()
-        process = subprocess.Popen(
-            [sys.executable, str(PLUGIN / "coordinator.py")],
-            stdin=slave_fd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        try:
-            ready_deadline = time.monotonic() + 2
-            while termios.tcgetattr(master_fd)[3] & termios.ICANON:
-                self.assertIsNone(process.poll())
-                self.assertLess(time.monotonic(), ready_deadline)
-                time.sleep(0.001)
-            os.close(master_fd)
-            master_fd = -1
-            stdout, stderr = process.communicate(timeout=5)
-            self.assertEqual(stderr, b"")
-            response = json.loads(stdout)
-            self.assertEqual(process.returncode, 2)
-            self.assertEqual(response["status"], "invalid_request")
-            self.assertEqual(response["error_code"], "tty_frame_incomplete")
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=5)
-            if master_fd >= 0:
-                os.close(master_fd)
-
-    def test_tty_deadline_restores_terminal_and_maps_to_typed_error(self) -> None:
-        master_fd, slave_fd = os.openpty()
-        observer_fd = os.dup(slave_fd)
-        stream = os.fdopen(os.dup(slave_fd), "rb", buffering=0)
-        original = termios.tcgetattr(observer_fd)
-        os.write(master_fd, b'{"request_id":"truncated"')
-        descriptor = stream.fileno()
-        with mock.patch.object(
-            self.coordinator.select,
-            "select",
-            side_effect=[([descriptor], [], []), ([], [], [])],
-        ):
-            with self.assertRaises(self.coordinator._IncompleteTTYFrame):
-                self.coordinator._read_tty_request(stream)
-        self.assertEqual(
-            _configurable_terminal_settings(termios.tcgetattr(observer_fd)),
-            _configurable_terminal_settings(original),
-        )
-        with (
-            mock.patch.object(
-                self.coordinator,
-                "_read_one_request",
-                side_effect=self.coordinator._IncompleteTTYFrame,
-            ),
-            mock.patch.object(self.coordinator.sys, "stdout", io.StringIO()) as output,
-        ):
-            result = self.coordinator.main()
-        response = json.loads(output.getvalue())
-        self.assertEqual(result, 2)
-        self.assertEqual(response["status"], "invalid_request")
-        self.assertEqual(response["error_code"], "tty_frame_incomplete")
-        self.assertEqual(response["detail"]["max_wait_ms"], 120000)
-        stream.close()
-        os.close(observer_fd)
-        os.close(slave_fd)
-        os.close(master_fd)
-
-    def test_tty_restore_failure_does_not_mask_incomplete_frame(self) -> None:
-        master_fd, slave_fd = os.openpty()
-        stream = os.fdopen(os.dup(slave_fd), "rb", buffering=0)
-        descriptor = stream.fileno()
-        try:
-            with (
-                mock.patch.object(
-                    self.coordinator.select,
-                    "select",
-                    return_value=([descriptor], [], []),
-                ),
-                mock.patch.object(self.coordinator.os, "read", return_value=b""),
-                mock.patch.object(
-                    self.coordinator.termios,
-                    "tcsetattr",
-                    side_effect=[None, termios.error(5, "disconnected")],
-                ),
-            ):
-                with self.assertRaises(self.coordinator._IncompleteTTYFrame):
-                    self.coordinator._read_tty_request(stream)
-        finally:
-            stream.close()
-            os.close(slave_fd)
-            os.close(master_fd)
-
     def test_tty_is_rejected_before_runtime_load(self) -> None:
         class TTYInput:
             def isatty(self) -> bool:
@@ -1161,6 +768,14 @@ class SemanticCoordinatorTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "unavailable")
         self.assertEqual(response["error_code"], "coordinator_unavailable")
+
+    def test_regular_file_reader_remains_eof_framed(self) -> None:
+        payload = b'{"request_id":"file-1"}'
+        with tempfile.TemporaryFile(mode="w+b") as stream:
+            stream.write(payload)
+            stream.seek(0)
+            self.assertFalse(stream.isatty())
+            self.assertEqual(self.coordinator._read_one_request(stream), payload)
 
     def test_non_tty_pipe_waits_for_eof_and_rejects_trailing_object(self) -> None:
         process = subprocess.Popen(

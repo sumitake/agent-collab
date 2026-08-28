@@ -114,7 +114,6 @@ REQUIRED_ROOTS = (
     "README.md",
     "skills",
     "coordinator.py",
-    "failure_evidence.py",
     "runtime_client.py",
     "runtime_bundle.py",
     "host_policy.py",

@@ -10,7 +10,7 @@ Use `codegen.repository` for ordinary code generation or
 `frontend_codegen.repository` for frontend-affinity work. These are private-
 repository patch actions, not read-only planning or governance.
 
-Provide the canonical `repo_root`, bounded prompt, target agent only when
+Provide the canonical `repo_root`, exact `expected_repo_head`, bounded prompt, target agent only when
 explicitly requested. The coordinator observes author lineage from the current
 host; never supply it as a request field. Never send a model name, provider CLI
 version, provider transport action, tool list, or raw command.

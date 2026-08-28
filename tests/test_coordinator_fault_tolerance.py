@@ -31,6 +31,7 @@ from tests.test_direct_runtime_public_contract import _wire_descriptor
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "agent-collab"
+EXPECTED_REPO_HEAD = "1" * 40
 
 
 def _load(name: str, path: Path):
@@ -74,7 +75,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         request.update(overrides)
         return request
 
-    def _v7_descriptor(
+    def _v8_descriptor(
         self,
         *,
         review_targets: list[str] | None = None,
@@ -82,7 +83,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
     ) -> dict:
         descriptor, _digest = _wire_descriptor()
         descriptor = copy.deepcopy(descriptor)
-        descriptor["schema_version"] = 7
+        descriptor["schema_version"] = 8
         agents = [
             "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"
         ]
@@ -168,13 +169,13 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             descriptor, expected_sha256=digest
         )
 
-    def _v7_wire(
+    def _v8_wire(
         self,
         *,
         review_targets: list[str] | None = None,
         review_floor: str = "maximum",
     ):
-        descriptor = self._v7_descriptor(
+        descriptor = self._v8_descriptor(
             review_targets=review_targets, review_floor=review_floor
         )
         digest = hashlib.sha256(
@@ -234,10 +235,10 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
 
     def test_disposition_specific_mapping(self) -> None:
         cases = {
-            "provider_error": "retry",
-            "teardown_error": "retry",
-            "timeout": "retry",
-            "cancelled": "retry",
+            "provider_error": "inspect",
+            "teardown_error": "inspect",
+            "timeout": "inspect",
+            "cancelled": "inspect",
             "protocol_error": "inspect",
             "auth_error": "unavailable",
             "quota_error": "unavailable",
@@ -251,6 +252,49 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         for status, expected in cases.items():
             with self.subTest(status=status):
                 self.assertEqual(self.coordinator._disposition(status)[0], expected)
+
+    def test_proven_pre_inference_timeout_below_cap_allows_fresh_request(self) -> None:
+        disposition, recovery = self.coordinator._disposition(
+            "timeout",
+            timeout_ms=120_000,
+            error_code="timeout",
+            failure_trace={
+                "adapter_code": "caller_deadline",
+                "failure_phase": "setup",
+                "tool_outcomes": {
+                    "success": 0,
+                    "failed": 0,
+                    "incomplete": 0,
+                    "unknown": 0,
+                },
+            },
+        )
+        self.assertEqual(disposition, "retry")
+        self.assertIn("separately authorized new request", recovery.lower())
+        self.assertIn("more time", recovery.lower())
+        self.assertIn("not a replay", recovery.lower())
+
+    def test_provider_started_timeout_below_cap_is_terminal_not_retryable(self) -> None:
+        disposition, recovery = self.coordinator._disposition(
+            "timeout",
+            timeout_ms=120_000,
+            error_code="timeout",
+            failure_trace={
+                "adapter_code": "provider_timeout",
+                "failure_phase": "inference",
+                "tool_outcomes": {
+                    "success": 0,
+                    "failed": 0,
+                    "incomplete": 0,
+                    "unknown": 1,
+                },
+            },
+        )
+        self.assertEqual(disposition, "inspect")
+        self.assertIn("terminal", recovery.lower())
+        self.assertIn("separately authorized", recovery.lower())
+        self.assertIn("never a replay", recovery.lower())
+        self.assertIn("larger timeout", recovery.lower())
 
     def test_provider_started_timeout_at_cap_is_terminal_not_retryable(self) -> None:
         disposition, recovery = self.coordinator._disposition(
@@ -272,19 +316,60 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         self.assertIn("terminal", recovery.lower())
         self.assertIn("separately authorized", recovery.lower())
         self.assertNotIn("increase", recovery.lower())
+        self.assertNotIn("larger timeout", recovery.lower())
+
+    def test_source_and_incompatible_cli_recovery_are_specific(self) -> None:
+        source_disposition, source_recovery = self.coordinator._disposition(
+            "invalid_request",
+            timeout_ms=120_000,
+            error_code="source_head_mismatch",
+            failure_trace={
+                "adapter_code": "source_head_mismatch",
+                "failure_phase": "setup",
+                "tool_outcomes": {
+                    "success": 0,
+                    "failed": 0,
+                    "incomplete": 0,
+                    "unknown": 0,
+                },
+            },
+        )
+        self.assertEqual(source_disposition, "inspect")
+        self.assertIn("seal", source_recovery.lower())
+        self.assertIn("intended repository root", source_recovery.lower())
+
+        cli_disposition, cli_recovery = self.coordinator._disposition(
+            "unavailable",
+            timeout_ms=120_000,
+            error_code="provider_cli_incompatible",
+            failure_trace={
+                "adapter_code": "provider_cli_incompatible",
+                "failure_phase": "setup",
+                "tool_outcomes": {
+                    "success": 0,
+                    "failed": 0,
+                    "incomplete": 0,
+                    "unknown": 0,
+                },
+            },
+        )
+        self.assertEqual(cli_disposition, "inspect")
+        self.assertIn("official update path", cli_recovery.lower())
+        self.assertIn("separately authorized", cli_recovery.lower())
+        self.assertNotIn("more timeout", cli_recovery.lower())
 
     def test_unrecognized_status_defaults_to_inspect(self) -> None:
         # Fail-safe: an unknown future status is never silently called an outage.
         self.assertEqual(self.coordinator._disposition("some_new_code")[0], "inspect")
 
-    def test_runtime_teardown_error_surfaces_retry_not_outage(self) -> None:
+    def test_runtime_teardown_error_with_unknown_call_state_requires_inspection(self) -> None:
         result = self.client.RuntimeResult(
             self.client.RuntimeStatus.TEARDOWN_ERROR, error="teardown could not be proven"
         )
         response, code = self._process(self._documents_request(), result=result)
         self.assertEqual(code, 0)
         self.assertEqual(response["status"], "teardown_error")
-        self.assertEqual(response["disposition"], "retry")
+        self.assertEqual(response["disposition"], "inspect")
 
     def test_runtime_auth_error_surfaces_unavailable(self) -> None:
         result = self.client.RuntimeResult(
@@ -528,8 +613,8 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         self.assertNotIn("occupied_model_lineages", native)
         self.assertNotIn("evidence_anchors", native)
 
-    def test_v7_descriptor_drives_target_and_effort_criteria(self) -> None:
-        wire = self._v7_wire()
+    def test_v8_descriptor_drives_target_and_effort_criteria(self) -> None:
+        wire = self._v8_wire()
         request = {
             "request_id": "review-v7",
             "logical_action": "review.repository",
@@ -539,6 +624,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
         }
         with self.assertRaises(self.coordinator._InvalidRequest) as caught:
             self.coordinator.validate_request(request, wire, self.profile)
@@ -560,8 +646,8 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         self.assertEqual(native["evidence_anchors"], [])
         self.assertEqual(self.client._envelope_document(native, wire), native)
 
-    def test_v7_context_is_forwarded_only_when_descriptor_admits_it(self) -> None:
-        wire = self._v7_wire(
+    def test_v8_context_is_forwarded_only_when_descriptor_admits_it(self) -> None:
+        wire = self._v8_wire(
             review_targets=[
                 "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"
             ]
@@ -575,6 +661,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             "timeout_ms": 5000,
             "prompt": "Review the disclosed blocker.",
             "repo_root": str(ROOT),
+            "expected_repo_head": EXPECTED_REPO_HEAD,
             "occupied_model_lineages": [" GOOGLE "],
             "evidence_anchors": [
                 {"id": "tests", "path": "tests/test_agent_collab_coordinator.py"}
@@ -593,8 +680,8 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             normalized[0]["field"], "occupied_model_lineages[0]"
         )
 
-    def test_v7_context_rejects_ambiguous_or_unsafe_values(self) -> None:
-        wire = self._v7_wire()
+    def test_v8_context_rejects_ambiguous_or_unsafe_values(self) -> None:
+        wire = self._v8_wire()
         cases = {
             "unknown_lineage": {"occupied_model_lineages": ["unknown"]},
             "duplicate_lineage": {"occupied_model_lineages": ["google", "google"]},
@@ -638,6 +725,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
                 "timeout_ms": 5000,
                 "prompt": "Review.",
                 "repo_root": str(ROOT),
+                "expected_repo_head": EXPECTED_REPO_HEAD,
                 **fields,
             }
             with self.subTest(name=name), self.assertRaises(
@@ -645,8 +733,8 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             ):
                 self.coordinator.validate_request(request, wire, self.profile)
 
-    def test_v7_descriptor_rejects_incompatible_schema_and_floor_types(self) -> None:
-        descriptor = self._v7_descriptor()
+    def test_v8_descriptor_rejects_incompatible_schema_and_floor_types(self) -> None:
+        descriptor = self._v8_descriptor()
         descriptor["semantic_request"]["properties"].pop("evidence_anchors")
         descriptor["semantic_request"]["required"].remove("evidence_anchors")
         digest = hashlib.sha256(
@@ -655,12 +743,12 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
                 ensure_ascii=False, allow_nan=False,
             ).encode("utf-8")
         ).hexdigest()
-        with self.assertRaisesRegex(ValueError, "inconsistent with v7"):
+        with self.assertRaisesRegex(ValueError, "inconsistent with identity projections"):
             self.client.validate_wire_descriptor(
                 descriptor, expected_sha256=digest
             )
 
-        descriptor = self._v7_descriptor()
+        descriptor = self._v8_descriptor()
         descriptor["logical_action_effort_floors"]["review.repository"] = []
         digest = hashlib.sha256(
             json.dumps(
@@ -673,8 +761,8 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
                 descriptor, expected_sha256=digest
             )
 
-    def test_v7_descriptor_bounds_recovery_projection_cardinality(self) -> None:
-        descriptor = self._v7_descriptor()
+    def test_v8_descriptor_bounds_recovery_projection_cardinality(self) -> None:
+        descriptor = self._v8_descriptor()
         descriptor["logical_agents"] = ["gemini", "grok"] + [
             f"agent{i}" for i in range(63)
         ]

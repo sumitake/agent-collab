@@ -1,35 +1,28 @@
-# agent-collab 6
+# agent-collab 7
 
 `agent-collab` is one collaboration package with a closed semantic request
 boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current repository source: **6.3.0**
+Current repository source: **7.0.0**
 
 Current published release: **6.2.4**
 ([`v6.2.4`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4));
 the exact package members and provider-free runtime readiness were verified on
-Claude, Codex, Antigravity, and Grok.
+Claude, Codex, Antigravity, and Grok. Repository source stages signed provider
+runtime `5.0.0` with wire schema 8; that source state is not itself a
+publication or activation claim.
 
-Version 6.3.0 adds private allowlist-only capture of typed terminal
-coordinator failures after the response is written and flushed. It excludes prompts,
-source paths/content, commands, raw provider streams, provider prose,
-artifacts, credentials, and environment data. Capture failure cannot change
-the response, provider authority, or no-replay contract; external filing is a
-separately governed workspace operation. Invocation selectors are included
-only after admission through the closed coordinator wire contract; rejected
-raw request values are omitted. A private capture lock waits under a fixed
-deadline and serializes capacity checks with publication across concurrent
-coordinator processes, preserving ordinary concurrent evidence and the 10,000
-unresolved-event hard bound. The workspace filer uses that same lock for local
-state transitions but releases it before GitHub operations, and newly created
-outbox directories are parent-fsynced before publication returns. Malformed request identifiers that cannot encode
-as UTF-8 omit their optional digest without suppressing the failure event.
-Plugin identity and request diagnostics are closed as well: the public plugin
-version, runtime-manifest digest, recognized request-field names, unknown-field
-count, and allowlisted validation difference may be retained, but no request
-value or unknown field name is copied.
+Version 7.0.0 binds every repository request to its canonical root and exact
+expected head, rejects real TTY input before runtime loading, and derives
+replay-safe recovery from closed typed failure traces. A proven pre-inference
+setup failure may recommend a separately authorized fresh request; a
+provider-started or uncertain timeout, cancellation, provider failure, or
+teardown failure remains terminal for that attempt. Incompatible Agy producer
+output points to the official Agy update path, never a longer replay. The
+automatic host-local failure-evidence module and archive member are removed;
+public issue filing remains an explicit, separately authorized operation.
 Version 6.2.4 adds a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
@@ -47,7 +40,7 @@ spelling errors in closed invocation tokens and ships signed provider runtime
 and Grok cancellation reliability repairs. It never corrects open prose,
 aliases, or ambiguous values, and it never replays a provider request. Version
 6.2.2 added a pinned clean-runner bootstrap for the mandatory runtime
-manifest-schema gate and published the bounded TTY request framing,
+manifest-schema gate and historically published the now-removed bounded TTY request framing,
 conservative invocation recovery, and signed provider runtime `4.2.0` that had
 been prepared for 6.2.1. Runtime 4.2.0 recovers an
 eligible distinct route within the original invocation, publishes exact
@@ -104,15 +97,10 @@ Send one JSON object on stdin to:
 python3 "<plugin-root>/coordinator.py"
 ```
 
-For a noninteractive pipe or file, close stdin after the object; the exact body
-is EOF-delimited. On a TTY, terminate the single object with a newline within
-the bounded 120-second frame window; the coordinator responds without waiting
-for the terminal to close. An automated PTY owner must wait until the slave has
-entered noncanonical mode before transmitting, because bytes sent before the
-Python process starts are still governed by the platform's canonical line
-buffer. In either mode, only one object is consumed and one accepted request
-starts at most one runtime attempt. Official skill and release invocations use
-closed noninteractive stdin and have no PTY startup race.
+Close stdin after the object; the exact body is EOF-delimited. Pipes and
+regular files are supported. A real TTY is rejected with
+`tty_unsupported` before the runtime loads. Exactly one object is consumed and
+one accepted request starts at most one runtime attempt.
 
 The canonical request contains exactly these common fields:
 
@@ -125,7 +113,8 @@ The canonical request contains exactly these common fields:
   "target_agent": null,
   "timeout_ms": 120000,
   "prompt": "Review the requested change.",
-  "repo_root": "/absolute/canonical/repository"
+  "repo_root": "/absolute/canonical/repository",
+  "expected_repo_head": "0123456789abcdef0123456789abcdef01234567"
 }
 ```
 
@@ -136,14 +125,21 @@ The canonical request contains exactly these common fields:
 - `effort_class` is `minimal`, `standard`, or `maximum`.
   These fields express desired quality and depth; they never name a model.
 - `target_agent` is `null` unless the user explicitly named an agent. It is a
-  logical agent name, not a provider or model selector.
+  logical agent name admitted by the signed descriptor, not a provider, model,
+  or host selector. `antigravity` is a host identity and is not a logical
+  target unless a future signed descriptor explicitly admits it.
 - The coordinator observes the current host family and adds `author_lineage`
   internally. A caller-supplied lineage is rejected.
-- `timeout_ms` is 1–600000 (the enforced outer deadline the coordinator applies
-  to the native process). A value over the cap is rejected with an actionable
-  `timeout_ms_over_cap` error naming the `max`, not silently clamped.
+- `timeout_ms` is 1–600000. It is the enforced total deadline for every action
+  except `codegen.repository` and `frontend_codegen.repository`; after their
+  signed runtime reports supervised provider start, it becomes the maximum
+  admitted-progress inactivity interval. A value over the cap is rejected with
+  an actionable `timeout_ms_over_cap` error naming the `max`, not silently
+  clamped.
 - `prompt` is non-empty UTF-8, bounded to 1 MiB.
-- Every repository action adds exactly one canonical absolute `repo_root`.
+- Every repository action adds exactly one canonical absolute `repo_root` and
+  its exact lowercase 40- or 64-hex `expected_repo_head`. All-zero heads are
+  rejected.
 - Document-context actions replace `repo_root` with `documents`, an array of
   1–64 closed `{ "label", "content" }` objects whose total content is at most
   32 MiB.
@@ -185,12 +181,14 @@ returns every logical action in one zero-inference snapshot:
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with wire schema 7, runtime
-protocol 4, native contract 4, and provider runtime `4.2.1`. Schema 7 publishes
-logical agents, model lineages, action-compatible targets, and effort floors;
-request-bound occupied lineages and evidence anchors remain closed and
-runtime-adjudicated. The wire revision records compatible descriptor evolution;
-runtime protocol 4 remains the executable compatibility boundary. The manifest carries one
+The workspace build emits one schema-4 manifest with wire schema 8, runtime
+protocol 4, native contract 4, and provider runtime `5.0.0`. Schema 8 retains
+the schema-7 logical agents, model lineages, action-compatible targets, and
+effort floors while requiring every repository source to carry its exact
+nonzero expected head. Request-bound occupied lineages and evidence anchors
+remain closed and runtime-adjudicated. The wire revision records compatible
+descriptor evolution; runtime protocol 4 remains the executable compatibility
+boundary. The manifest carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
@@ -207,16 +205,14 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-The released runtime 4.2.1 build adds the action-scoped Claude edge while
-preserving protocol 4 and the closed authority model. It refreshes supported
-CLI currency at build time and applies the same grounded-output tolerance
-across all five native carrier families. Codex uses provider-default effort
-when its native interface has no exact advertised tier. Gemini repository reads
-use the permission-capable route, and Grok uses the supervised ACP route;
-cancelled attempts remain retryable and never quarantine the route. Untargeted
-selection may move to the next eligible distinct route before provider
-execution, inside the same invocation; there is no provider replay, fallback
-invocation, or authority substitution.
+The repository runtime 5.0.0 build preserves the action-scoped Claude edge and
+the closed protocol-4 authority model. Gemini remains the subscription-preferred
+repository and governance route when eligible; Agy versions below 1.1.20 fail
+closed before inference. Grok runs with request-private provider state and the
+sealed repository as its only project context. Code-generation actions use the
+public timeout as an admitted-progress inactivity lease after supervised
+provider start; ordinary actions retain a fixed total deadline. Provider-started
+or uncertain terminal outcomes never authorize replay or fallback invocation.
 
 Claude uses the official structured CLI only for document-intent requests. The
 route is read-only, source-bound to documents, and cost-last after Gemini and
@@ -236,8 +232,11 @@ For each accepted request the public client:
 4. Rechecks entrypoint identity immediately before spawning.
 5. Starts the fixed entrypoint as a new process group with bounded stdin,
    stdout, and stderr.
-6. Applies the shared deadline and explicitly sends TERM, then KILL if needed,
-   and reaps the group.
+6. Applies the shared deadline (or, for codegen after supervised provider start,
+   the admitted-progress inactivity lease), explicitly sends TERM, then KILL if
+   needed, and reaps the group. Only the runtime's fixed content-free progress
+   mark renews that lease; raw output and progress-channel EOF do not. Cleanup
+   after a lost lease uses its own short bounded reserve.
 7. Validates the exact success, ungrounded advisory, or failure response
    against the descriptor.
 
@@ -289,6 +288,12 @@ agent/provider/model/executable/catalog/bundle identity is diagnostic only; it
 does not create authority and is not a second receipt. There are no
 provider-specific governance proofs and no self-hashed caller assertion.
 
+The descriptor-owned artifact schema is the sole final-output contract.
+Callers may state review criteria in the prompt, but must not require or append
+an alternate JSON envelope, a `VERDICT:` line, or trailing prose. An
+`invalid_final` result is terminal: never salvage prose into an artifact and
+never replay the same request to repair formatting.
+
 An `advisory` result is safe substantive text from a clean attempt that lacked
 sufficient native source evidence. It is explicitly ungrounded, carries no
 artifact or receipt, and cannot authorize governance, merge, or source claims.
@@ -309,7 +314,7 @@ supports exactly one source mode:
 - `context.documents.extract`, `context.documents.intent`, or
   `context.documents.reason` with bounded inline documents; or
 - `context.repository.extract` or `context.repository.reason` with one
-  canonical repository root.
+  canonical repository root and exact expected head.
 
 It is read-only and cannot create governance authority or apply changes.
 

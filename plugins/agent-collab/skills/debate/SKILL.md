@@ -1,6 +1,6 @@
 ---
 name: debate
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Stage a structured multi-round adversarial debate between the activ
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Debate — structured adversarial advocacy with synthesis
 
@@ -83,15 +83,13 @@ State the assignment clearly to the user before starting: "the active primary wi
 
 **the reviewer's opening:** Submit the sealed debate role through
 `python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy selects an
-eligible independent advocate. Use this prompt template (the structured fields
-are a functional contract — downstream synthesis steps key on them):
+eligible independent advocate. Use this prompt template for debate content;
+the signed artifact schema remains the sole output contract:
 
 ```
 You are in a structured debate. Proposition: "[proposition]"
 
 You argue [PRO|CON]. Make the strongest case. Do not hedge, concede, or balance.
-
-Output ONLY (no preamble, no "in conclusion"):
 
 ARGUMENT 1 (strongest): <claim + specific reasoning>
 EVIDENCE 1: <concrete example or scenario>
@@ -103,7 +101,8 @@ Context (background only — do NOT summarize back to me):
 [paste the relevant context the user has shared, plus the proposition's domain framing]
 ```
 
-If the reviewer's response does not contain at least two `ARGUMENT N (...) :` / `EVIDENCE N:` pairs, retry exactly once with: "Previous response did not follow the structured format (ARGUMENT N / EVIDENCE N pairs). Re-emit strictly per the template, no preamble." If the second attempt is also malformed, surface that explicitly to the user rather than papering over it.
+If the runtime returns `invalid_final`, surface that terminal result rather
+than papering over it or replaying the request for formatting.
 
 ### 4. Round 2 — Rebuttals
 
@@ -122,13 +121,11 @@ Continuing the debate. The opposing side ([PRO|CON]) just argued:
 
 You are still arguing [your side]. Rebut the two strongest points from the opposing side. Be specific — quote the claim, then explain why it is wrong, weak, or based on a false assumption. Do not concede.
 
-Output ONLY (no preamble):
-
 REBUTTAL 1 (target: <quote of opposing argument>): <your rebuttal>
 REBUTTAL 2 (target: <quote of opposing argument>): <your rebuttal>
 ```
 
-Same retry rule as the opening: if format breaks, retry once with the format-correction prompt; if still broken, surface the failure.
+As in the opening, preserve `invalid_final` without a formatting replay.
 
 ### 5. Round 3 (optional) — Closing arguments
 

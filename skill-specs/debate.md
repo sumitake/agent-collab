@@ -76,15 +76,13 @@ State the assignment clearly to the user before starting: "{{ primary_agent }} w
 
 **{{ verifier_agent }}'s opening:** Submit the sealed debate role through
 `{{ mcp_tool_ask }}` with {{ debate_call_params }}. Central policy selects an
-eligible independent advocate. Use this prompt template (the structured fields
-are a functional contract — downstream synthesis steps key on them):
+eligible independent advocate. Use this prompt template for debate content;
+the signed artifact schema remains the sole output contract:
 
 ```
 You are in a structured debate. Proposition: "[proposition]"
 
 You argue [PRO|CON]. Make the strongest case. Do not hedge, concede, or balance.
-
-Output ONLY (no preamble, no "in conclusion"):
 
 ARGUMENT 1 (strongest): <claim + specific reasoning>
 EVIDENCE 1: <concrete example or scenario>
@@ -96,7 +94,8 @@ Context (background only — do NOT summarize back to me):
 [paste the relevant context the user has shared, plus the proposition's domain framing]
 ```
 
-If {{ verifier_agent }}'s response does not contain at least two `ARGUMENT N (...) :` / `EVIDENCE N:` pairs, retry exactly once with: "Previous response did not follow the structured format (ARGUMENT N / EVIDENCE N pairs). Re-emit strictly per the template, no preamble." If the second attempt is also malformed, surface that explicitly to the user rather than papering over it.
+If the runtime returns `invalid_final`, surface that terminal result rather
+than papering over it or replaying the request for formatting.
 
 ### 4. Round 2 — Rebuttals
 
@@ -115,13 +114,11 @@ Continuing the debate. The opposing side ([PRO|CON]) just argued:
 
 You are still arguing [your side]. Rebut the two strongest points from the opposing side. Be specific — quote the claim, then explain why it is wrong, weak, or based on a false assumption. Do not concede.
 
-Output ONLY (no preamble):
-
 REBUTTAL 1 (target: <quote of opposing argument>): <your rebuttal>
 REBUTTAL 2 (target: <quote of opposing argument>): <your rebuttal>
 ```
 
-Same retry rule as the opening: if format breaks, retry once with the format-correction prompt; if still broken, surface the failure.
+As in the opening, preserve `invalid_final` without a formatting replay.
 
 ### 5. Round 3 (optional) — Closing arguments
 

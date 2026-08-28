@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.3.0\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.0\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.3.0")
+            self.assertEqual(manifest["version"], "7.0.0")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -99,6 +99,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             self.assertIsNotNone(match, skill)
             request = json.loads(match.group(1))
             request["repo_root"] = str(ROOT)
+            request["expected_repo_head"] = "1" * 40
             native = coordinator.validate_request(request, wire, host)
             self.assertEqual(native["logical_action"], "review.repository")
 

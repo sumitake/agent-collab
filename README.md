@@ -1,14 +1,15 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 6 keeps the closed semantic coordinator and
+compatible hosts. Version 7 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source is **agent-collab** (v6.3.0). The current
+This public repository's current source is **agent-collab** (v7.0.0). The current
 published distribution remains **[v6.2.4](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4)**
-with signed provider runtime `4.2.1`; repository source is not yet a release,
-installation, or activation claim. The v6.2.4 release
+with signed provider runtime `4.2.1`. Repository source stages signed provider
+runtime `5.0.0` with wire schema 8; it is not yet a release, installation, or
+activation claim. The v6.2.4 release
 adds one action-scoped native Claude route for document intent while retaining
 bounded invocation correction and provider-neutral carrier reliability. Its
 exact package members, provider-free readiness, observed host bytes, and the
@@ -21,16 +22,25 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v6.3.0
+## What's new - v7.0.0
 
-- **Private automatic failure capture.** Typed terminal coordinator failures
-  produce an allowlist-only host-local event after the response is complete.
-  Prompts, source paths/content, commands, raw provider streams, provider
-  prose, artifacts, credentials, and environment data are excluded. Capture
-  failure cannot change the original response or authorize replay. Invocation
-  selectors are recorded only after closed-contract admission; rejected raw
-  request values are omitted. GitHub filing remains a separately governed
-  workspace operation.
+- **Exact repository binding.** Every repository request now carries both its
+  canonical absolute `repo_root` and the verified 40- or 64-hex
+  `expected_repo_head`; omission or mismatch fails before provider work.
+- **Replay-safe failure recovery.** Typed failure traces distinguish proven
+  pre-inference setup failures from provider-started or uncertain outcomes.
+  Only the former can recommend a fresh request; timeouts, cancellation,
+  provider failures, teardown failures, and incompatible Agy producer output
+  remain inspect-first and never authorize replay of the same request.
+- **One framing contract.** Coordinator input is one EOF-framed JSON object
+  from a pipe or regular file. A real TTY is rejected before the runtime loads,
+  removing the platform-sensitive terminal framing path.
+- **No automatic failure-evidence plane.** The host-local capture module and
+  archive member are removed. Filing a public issue remains an explicit,
+  separately authorized operation based on the typed response.
+- **Paired runtime generation.** Signed provider runtime `5.0.0` advances wire
+  schema 7 to 8 and binds the new exact-head and failure-fidelity contracts into
+  both Darwin architectures without changing the 12-action public surface.
 
 ## Current published release - v6.2.4
 
@@ -43,7 +53,7 @@ installation, and readiness claims separate.
 - **Descriptor-derived projections.** The public action set remains 12 while
   the signed descriptor now derives 15 transport actions and 19 valid
   action/source pairs across five native carrier families.
-- **Reliable PTY framing.** TTY requests use one 120-second total newline-frame
+- **Historical PTY framing (v6.2.4 only).** TTY requests used one 120-second total newline-frame
   bound instead of an inter-chunk cutoff, so valid pauses do not become false
   failures and oversized frames terminate promptly. Automated PTY owners wait
   for noncanonical readiness before sending; official skill and release paths
@@ -87,7 +97,7 @@ installation, and readiness claims separate.
   lifecycle, and path spellings. Untargeted requests may select the next
   eligible distinct route inside the same runtime invocation, without replay,
   provider fallback, or authority substitution.
-- **Bounded interactive framing.** A TTY accepts one newline-terminated JSON
+- **Historical interactive framing (v6.2.2 only).** A TTY accepted one newline-terminated JSON
   request without waiting for EOF. Noninteractive stdin remains EOF-delimited
   and still rejects trailing bytes, preserving the exact-one-object boundary.
 - **Identity-preserving recovery.** The coordinator canonicalizes only closed,
@@ -250,7 +260,8 @@ governance.repository
 review.repository
 ```
 
-Repository actions require a canonical absolute `repo_root`. Document context
+Repository actions require a canonical absolute `repo_root` and the exact
+`expected_repo_head`. Document context
 uses bounded inline documents. Conceptual architecture uses prompt-only source.
 The runtime's workspace-generated wire descriptor derives the internal 15
 transport actions and 19 action/source pairs. Those projections are diagnostic
@@ -278,7 +289,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `4.2.1`;
+- provider runtime version `5.0.0`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.

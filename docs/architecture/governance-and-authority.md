@@ -46,7 +46,7 @@ authorities:
 | **output-only** | May work in a private temporary workspace and return a patch or code artifact for the primary to inspect and apply. | OpenCode build and Grok code generation. |
 | **unavailable** | The contract name is recognized but no hardened backend currently satisfies it. | Codex build in this repository generation. |
 | **primary-executed** | The active primary follows the skill locally; no independent managed route is implied. | Self-executed engineering-process skills and primary-only visual guidance where typed media transport is absent. |
-| **async readiness** | Reports whether a host-owned async target is currently addressable. | Explicit Claude or Antigravity target/session readiness. The public coordinator never sends. |
+| **async readiness** | Reports whether a host-owned async target is currently addressable. | Explicit Claude or Antigravity target/session readiness. This is not a coordinator `target_agent`; the public coordinator never sends. |
 
 No failure converts one row to another. In particular:
 

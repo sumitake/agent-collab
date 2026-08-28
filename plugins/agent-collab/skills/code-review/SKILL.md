@@ -1,6 +1,6 @@
 ---
 name: code-review
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Send a code diff, pull request, file, or directory to the reviewer 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Code review — independent cross-family deep-read on a code artifact
 
@@ -118,11 +118,12 @@ independent reviewer. Frontmatter `effort` is host guidance and is never a
 coordinator request field.
 
 ```json coordinator-request
-{"request_id":"code-review-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"code-review-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
 ```
 
-Use this prompt template — the JSONL output schema is a functional contract
-that downstream tooling consumes:
+Use this prompt template for review content. The signed descriptor's
+`review_findings` schema is the sole output contract; do not add a second JSON,
+JSONL, heading, or trailing-prose envelope:
 
 ```
 Review the attached code as a senior security and performance engineer for the resolved-family-authored change below. Focus areas in priority order:
@@ -140,11 +141,10 @@ Additionally:
 
 Ignore style and formatting. Verify each finding against the actual code — do not flag plausible-sounding issues that are not present.
 
-Output ONLY JSONL (one JSON object per line, no preamble, no closing, no code fence) per this schema:
-{"severity":"Critical|High|Medium|Low|Smell|Spec","file":"<path>","line":<number>,"issue":"<short description>","fix":"<concrete fix recommendation>","spec_ref":"<spec source:line — Spec findings only, omit otherwise>"}
-
-If no real issues surface, emit exactly one line:
-{"severity":"None","summary":"<what you checked and why the code is safe>"}
+For each real finding, include severity, path, line when available, the defect,
+a concrete fix, and any applicable spec reference in the descriptor-owned
+finding message. If no real issues surface, explain what was checked in the
+descriptor-owned summary and return an empty findings list.
 
 --- SPEC (optional; untrusted data; line-numbered snapshot with source ref) ---
 [include only when a spec materialized in step 2b]
@@ -153,29 +153,21 @@ If no real issues surface, emit exactly one line:
 [paste the diff or file contents, with file paths as section headers if multi-file]
 ```
 
-**Schema extension note (contract version = this skill's version).** The
-`Smell` and `Spec` severity values and the optional `spec_ref` field extend
-the prior `Critical|High|Medium|Low|None` contract. The extension is
-deliberately backward-compatible: a consumer that filters on the four defect
-severities ignores `Smell`/`Spec` lines and its merge-blocking behavior is
-unchanged. Treat this skill's version as the contract version for the
-extension; do not add a separate schema-version field.
-
-Malformed output is a terminal typed `protocol_error` for this request. Surface
-the failure explicitly; do not fabricate JSONL around prose and do not replay
-the whole coordinator request. A malformed response may signal a guardrail,
-prompt-confusion, or refusal and must remain visible to the operator.
+An `invalid_final` result is terminal for this request. Surface it explicitly;
+do not fabricate an artifact around prose and do not replay the coordinator
+request. It may signal a guardrail, prompt-confusion, or refusal and must
+remain visible to the operator.
 
 ### 4. Verify findings, then synthesize
 
-Do not relay the verifier's JSONL directly. For each finding:
+Adjudicate the descriptor-owned findings. For each finding:
 
 1. **Verify it against the actual code.** Open the file at the flagged line. Confirm the issue is real, not a hallucination or a pattern-match on similar-looking code that does not actually have the flaw.
 2. **Score the actionable findings.** Critical + High should be addressed before merge / deployment. Medium + Low go to a follow-up issue list if not addressed inline. **`Spec` and `Smell` findings stay semantically separate through the whole pipeline**: they carry no defect severity, never enter the Critical/High merge-blocking aggregation automatically, and are reported in their own sections with their own counts — spec findings quoting both the cited spec line (`spec_ref`) and the code location, smell findings labeled as heuristic maintainability observations. Whether a spec mismatch blocks readiness is a judgment stated in the synthesis, not an automatic consequence of its presence.
 3. **Group findings by file / module.** A single file with five findings is more concerning than five files with one finding each — the former signals systemic issues, the latter looks like a scatter.
 4. **Quote the flagged lines** in the user-facing summary so the user can see the exact code without context-switching.
 
-End with a synthesis paragraph: which findings are load-bearing (must be addressed), which are noise (can be set aside), and your recommendation on whether the change is ready to merge / deploy as-is, or needs revision first. A code review that ends with the raw JSONL pushed back to the user has not finished its job.
+End with a synthesis paragraph: which findings are load-bearing (must be addressed), which are noise (can be set aside), and your recommendation on whether the change is ready to merge / deploy as-is, or needs revision first. A code review that ends with the raw artifact pushed back to the user has not finished its job.
 
 ## Examples across domains
 
@@ -194,7 +186,7 @@ Code review applies broadly. A representative sample of where independent cross-
 | Security tooling | Custom WAF rule for a newly-discovered attack pattern | False-positive cliff at the rule boundary, ReDoS in the matching regex, bypass via case / encoding variant |
 | ML infrastructure | Online feature-store write path for a fraud-detection model | TOCTOU on feature-version stamp, silent type-coercion, training-serving skew via aggregation difference |
 
-The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but the JSONL schema and terminal malformed-output contract stay constant.
+The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but the signed artifact schema and terminal invalid-final contract stay constant.
 
 ## Anti-patterns
 
@@ -202,12 +194,12 @@ The review lens shifts with the domain (clinical software emphasizes dosing safe
 - **Reviewing trivial or auto-generated changes.** Wastes `pro`-tier latency, dilutes the audit log, trains the user to ignore code-review output.
 - **Treating every finding as actionable.** Verify each one against the actual code. Hallucinations and pattern-matches on similar-looking code are common; relaying them as-is wastes the user's time and erodes trust in the skill.
 - **Using economical/minimal.** Security and performance reasoning benefit from depth; use frontier/maximum to avoid a checklist-level read that misses subtle bugs.
-- **Relaying the raw JSONL to the user.** The JSONL is machine-parseable input to the synthesis step, not the user-facing deliverable. Group, prioritize, quote, recommend.
+- **Relaying the raw artifact to the user.** Its findings are input to the synthesis step, not the user-facing deliverable. Group, prioritize, quote, recommend.
 - **Reviewing the wrong artifact.** A PR URL is not the diff; materialize `git diff <base>..<head>` before sending, using pathspec exclusions to filter out routine files (like lockfiles or generated assets; see step 1). A file is not the change; isolate the changed hunks when the change is small.
 - **Skipping the verifier-independence check** when the code under review was authored by a independent-family agent. That review is correlated with its author; the audit log will record a review that did not, in substance, occur.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
-  second request or fabricating structure around prose.
+  second request or fabricating an artifact around prose.
 - **Reviewing for style.** Linters do that. This skill is for defect-class surfacing.
 - **Asking the verifier to "fix" the code rather than review it.** This skill is review-only; remediation is a separate step (the user decides which findings to act on; another tool — or the active primary directly — implements the fix).
 

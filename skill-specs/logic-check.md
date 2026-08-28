@@ -64,11 +64,12 @@ But: **do send the constraints and assumptions** {{ primary_agent }} used. Impli
 Submit the sealed logic-check role through `{{ mcp_tool_ask }}` with
 {{ logic_check_call_params }}. Central policy resolves an independent eligible
 reviewer; Claude/Anthropic is ineligible for this review action, and its
-document-intent route is not a substitute. Use this prompt template — the
-`ANSWER:` line is a functional contract that the comparison step keys on:
+document-intent route is not a substitute. Use this prompt template for
+substantive derivation. The signed `context_text` artifact is the sole output
+contract; do not add another terminal envelope:
 
 ```
-Solve this problem from scratch. Show step-by-step work, then emit the final answer on its own line as `ANSWER: <value>`.
+Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.
 
 PROBLEM:
 [Problem statement — exactly as the user posed it, or {{ primary_agent }}'s clean restatement if the original was ambiguous]
@@ -81,14 +82,11 @@ CONSTRAINTS (do not deviate):
 - [Tie-breaking: e.g., "earliest-arrival wins on duplicate timestamps"]
 - [Other implicit assumptions {{ primary_agent }} relied on]
 
-No preamble. No commentary. Show work, then `ANSWER: <value>` on the last line.
+Include enough intermediate work for independent comparison.
 ```
 
-**Retry-on-malformed.** If the response does not contain a line matching `ANSWER: <value>`, retry exactly once with:
-
-> Previous response did not include the required `ANSWER:` line. Re-emit with work shown above and a final line beginning `ANSWER:`, nothing else after.
-
-If the second attempt is also malformed, surface explicitly and fall back to manual inspection. Do not infer an answer from the prose — the explicit `ANSWER:` line is the comparison-step anchor.
+If the runtime returns `invalid_final`, surface it and fall back to manual
+inspection. Do not infer an answer from salvaged prose or replay the request.
 
 ### 3. For very large structured traces — switch to transition critique
 
@@ -103,11 +101,8 @@ Prompt template for transition critique:
 ```
 Verify each transition in the trace below. For each step, confirm the state transition is correct given the constraints. If a transition is wrong, identify which step and why.
 
-Output ONLY:
-STEP <n>: CORRECT | WRONG — <one-sentence reason>
-(one line per step; nothing else)
-
-FINAL: AGREE | DISAGREE | INDETERMINATE — <one-sentence reason>
+Identify each wrong transition by step, explain why, and state whether the
+overall trace agrees, disagrees, or remains indeterminate.
 
 CONSTRAINTS:
 [constraints as in re-derivation template]

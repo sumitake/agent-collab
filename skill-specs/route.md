@@ -25,7 +25,8 @@ The public actions are:
 - `context.documents.extract`, `context.documents.reason`,
   `context.repository.extract`, and `context.repository.reason`
 
-Repository actions require the canonical `repo_root`. Document-context actions
+Repository actions require the canonical `repo_root` and exact
+`expected_repo_head`. Document-context actions
 require bounded `documents` and reject a repository source. Code generation
 returns a private-repository patch and never applies it to the caller.
 

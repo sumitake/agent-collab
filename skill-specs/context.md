@@ -18,7 +18,8 @@ governance verdict even when the prompt says “review” or “audit.”
   `label` and `content`. Select `context.documents.extract` for mechanical
   structured extraction or `context.documents.reason` for multi-source
   synthesis and reasoning.
-- **Repository:** provide the canonical `repo_root`. Select
+- **Repository:** provide the canonical `repo_root` and exact
+  `expected_repo_head`. Select
   `context.repository.extract` for inventory or tracing, or
   `context.repository.reason` for architectural or multi-hop synthesis.
 
