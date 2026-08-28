@@ -115,7 +115,7 @@ Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v6.2.4
+`project-estimation` is offline and read-only by default. The packaged v7.0.0
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
@@ -192,8 +192,8 @@ moving branch merely to make the generic update command advance it.
 
 ### Co-packaged runtime during update
 
-Version 6 has no separately installed broker, daemon, socket, selector, lane,
-or setup lifecycle. The signed runtime bundle and its manifest are members of
+The current package has no separately installed broker, daemon, socket,
+selector, lane, or setup lifecycle. The signed runtime bundle and its manifest are members of
 the plugin package. Updating the package therefore updates one closed unit;
 readiness verifies that unit before any semantic request.
 
@@ -256,8 +256,8 @@ or substitute a hand-run partial check.
 
 ## Remove
 
-Version 6 has no separately installed broker or native lifecycle state to
-remove. Remove the package through the host manager.
+The current package has no separately installed broker or native lifecycle state
+to remove. Remove the package through the host manager.
 
 Claude Code:
 

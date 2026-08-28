@@ -10,6 +10,12 @@ the contribution contract remain authoritative for their respective claims.
 When two generations differ, use the status vocabulary below instead of
 silently treating them as the same thing.
 
+The current published release is v7.0.0 with signed provider runtime 5.0.0,
+manifest schema 4, runtime protocol 4, native contract 4, wire schema 8, and
+12 logical / 15 transport / 19 valid action-source pairs. One post-restart
+Codex installation has been verified; this does not establish installation,
+activation, or readiness on every host.
+
 ## Read this handbook in order
 
 1. [System context](system-context.md) explains what the project is, what it is
@@ -102,7 +108,7 @@ not a public issue or pull request.
 | --- | --- | --- |
 | What does the package install? | [System context](system-context.md) | Host manifests, generated marketplaces, package tree, and distribution tests. |
 | Which workflows exist? | [Capabilities and workflows](capabilities-and-workflows.md) | `skill-specs/`, generated skills, package reference, and skill-contract tests. |
-| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v6.2.4 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
+| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v7.0.0 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
 | Who may review, write, or merge? | [Governance and authority](governance-and-authority.md) | Host policy, coordinator, public governance contract, PR template, and compliance checks. |
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
 | How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |

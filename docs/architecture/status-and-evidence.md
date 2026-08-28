@@ -17,6 +17,30 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
+## Current snapshot — v7.0.0
+
+The public [`v7.0.0` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)
+is published and its release evidence is verified. This is a dated snapshot:
+the release is current, while installation and readiness remain host-specific
+evidence planes.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated v7.0.0 tag object `e9bdba19191a8b48571d13517faae96a99e4a872` identifies public commit `fb4723c696663efd9c725be8f62c521a720aa15e`; exact-tag workflow run `33152601182` succeeded and GitHub Release `378330262` was published on 2026-08-28 UTC. | published | The immutable release commit contains package 7.0.0 and provider runtime **5.0.0**. |
+| The release contains `agent-collab.v7.0.0.plugin`, its checksum, and `agent-collab-v7.0.0.spdx.json`, with GitHub SHA-256 digests `eb1b2aa3eb8fa916bc6ae4e422127c15cc8da81c1a31c202f9bbeffc2c3aa9ac`, `4a82fc421d701d64bb522466cab5b3624d6fe298c410240a8f25f9052ca92381`, and `0401776c60951ee1c508bf94522bf7493c322149e51327b993bc5b00dc3286f1`. | verified release evidence | The published asset set is fixed and independently digest-addressed. |
+| The package manifest SHA-256 is `2bf858764510fddfa86f491f677ad1a80d05b854a33d77a9a3230d0cb399fddf`; it binds wire digest `9ec0c1d0c943a9ba9025dbb554847abea45d5c2dcac893a69ac09539d265a85f` and arm64/x86_64 bundle digests `00d6647f161bc66069fd8f2091791585693e9a350c2e678b8ff09634a167d2b3` / `b4bb0ddca2f5cf5ca59ebf2c6d31e9a77de8468e38b06c2b6e2cf66d6b1eeef3`. | verified release evidence | Manifest schema 4, runtime protocol 4, native contract 4, and wire schema 8 bind both supported Darwin architectures to one public contract. |
+| The released descriptor and public contract tests agree on 12 logical actions, 15 transport actions, and 19 valid action/source pairs. | verified release evidence | The exact-head repository binding, typed failure/recovery contract, TTY rejection, request-private Grok state, narrow read-only Claude document-intent route, and removal of automatic failure-evidence capture are part of the v7 public contract. |
+| One post-restart Codex installation reports the v7.0.0 package, matches all 170 published archive members, and returns provider-free readiness `ok` for all 12 logical actions with zero model calls. | verified host installation | This proves one host's post-restart package bytes and readiness boundary only. It does not establish all-host installation, semantic-canary success, provider authentication, or future provider availability. |
+
+### v7.0.0 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root `README.md` | **updated** | Current-source and publication language now identifies v7.0.0 and bounds installation evidence to the observed Codex installation. |
+| `plugins/agent-collab/README.md` | **updated** | The package reference matches runtime 5.0.0, protocol/native contract 4, wire schema 8, and 12/15/19 cardinalities. |
+| Public architecture handbook | **updated** | Current-status, lifecycle, authority, project-estimation, and release-closeout pages were reconciled against the immutable tag, manifest, assets, and public contract tests. |
+| Generated `CHANGELOG.md` | **verified current** | The immutable v7.0.0 release entry was compiled by the release flow; this post-tag clarification uses a new fragment and does not rewrite generated release history. |
+
 ## v6.2.4 release closeout snapshot
 
 The following public and host evidence was reconciled on 2026-08-25. It is a

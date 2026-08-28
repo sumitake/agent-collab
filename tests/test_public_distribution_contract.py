@@ -1,7 +1,8 @@
-"""Version-6 public distribution contract."""
+"""Current public distribution and documentation-release contract."""
 
 import json
 from pathlib import Path
+import re
 import unittest
 
 
@@ -10,7 +11,7 @@ PLUGIN = ROOT / "plugins" / "agent-collab"
 
 
 class PublicDistributionContractTests(unittest.TestCase):
-    def test_source_generated_metadata_is_consistently_version_6(self) -> None:
+    def test_source_generated_metadata_is_consistently_version_7(self) -> None:
         versions = {
             json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))["version"]
             for host in (".claude-plugin", ".codex-plugin")
@@ -20,6 +21,32 @@ class PublicDistributionContractTests(unittest.TestCase):
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
         self.assertEqual(versions, {"7.0.0"})
+
+    def test_current_release_documentation_matches_published_evidence(self) -> None:
+        status = (
+            ROOT / "docs" / "architecture" / "status-and-evidence.md"
+        ).read_text(encoding="utf-8")
+        match = re.search(r"^## Current snapshot — v(\d+\.\d+\.\d+)$", status, re.MULTILINE)
+        self.assertIsNotNone(match)
+        version = match.group(1)
+        self.assertIn(
+            f"[`v{version}` release](https://github.com/sumitake/agent-collab/releases/tag/v{version})",
+            status,
+        )
+        self.assertRegex(
+            status,
+            rf"The signed annotated v{re.escape(version)} tag object `[^`]+` identifies public commit `[^`]+`",
+        )
+        current_release = f"Current published release: **{version}**"
+
+        for path in (ROOT / "README.md", PLUGIN / "README.md"):
+            with self.subTest(path=path):
+                self.assertIn(current_release, path.read_text(encoding="utf-8"))
+
+        root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"The v{version} closeout is recorded", root_readme)
+
+        self.assertIn(f"## Current snapshot — v{version}", status)
 
     def test_marketplace_fragment_describes_the_direct_package(self) -> None:
         fragment = json.loads(

@@ -7,12 +7,13 @@ binary, socket, lane, or lifecycle command.
 
 Current repository source: **7.0.0**
 
-Current published release: **6.2.4**
-([`v6.2.4`](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4));
-the exact package members and provider-free runtime readiness were verified on
-Claude, Codex, Antigravity, and Grok. Repository source stages signed provider
-runtime `5.0.0` with wire schema 8; that source state is not itself a
-publication or activation claim.
+Current published release: **7.0.0**
+([`v7.0.0`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)); it
+carries signed provider runtime `5.0.0`, a schema-4 manifest with runtime
+protocol 4 and native contract 4, wire schema 8, 12 logical actions, 15
+transport actions, and 19 valid action/source pairs. One post-restart Codex
+installation has been verified against this release. That is host-specific
+evidence and does not claim all-host installation, activation, or readiness.
 
 Version 7.0.0 binds every repository request to its canonical root and exact
 expected head, rejects real TTY input before runtime loading, and derives
@@ -23,16 +24,16 @@ teardown failure remains terminal for that attempt. Incompatible Agy producer
 output points to the official Agy update path, never a longer replay. The
 automatic host-local failure-evidence module and archive member are removed;
 public issue filing remains an explicit, separately authorized operation.
-Version 6.2.4 adds a managed native Claude route through the
+The previous v6.2.4 release added a managed native Claude route through the
 official structured CLI for `context.documents.intent` only. It returns
 read-only document intent, is cost-last after eligible Gemini and Grok routes,
 and does not make Claude eligible for review, governance, repository, or
 code-generation actions. Host-owned asynchronous coordination remains a
-separate surface. The signed descriptor retains 12 public logical actions and
-now derives 15 transport actions and 19 valid action/source pairs across five
-native carrier families. The released archive and all four installed roots were
-verified byte-for-byte; readiness is provider-free and does not imply future
-provider authentication or availability.
+separate surface. Its signed descriptor retained 12 public logical actions and
+derived 15 transport actions and 19 valid action/source pairs across five native
+carrier families. That v6.2.4 archive and its four observed installed roots were
+verified byte-for-byte; this historical readiness evidence does not establish
+current v7 installation or future provider availability.
 
 Version 6.2.3 adds bounded correction for uniquely identifiable one-edit
 spelling errors in closed invocation tokens and ships signed provider runtime

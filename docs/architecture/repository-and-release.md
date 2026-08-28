@@ -101,11 +101,11 @@ operator notification if still unsuccessful. Expired pricing becomes
 `unpriced`; expired quota becomes `unknown`. Structural, privacy, provenance,
 integrity, schema, and material-regression failures always block.
 
-The published v6.2.4 release admits the governed bootstrap aggregate,
+The published v7.0.0 release admits the governed bootstrap aggregate,
 pricing/quota snapshots, notification, and schema-3 receipt introduced in
 v6.2.0. The enhancement duration prior is descriptive; greenfield and
 unsupported metric families remain unavailable. The bootstrap is not promoted
-calibration; the refreshed maintenance evidence is receipt-bound to 6.2.4. See
+calibration; the refreshed maintenance evidence is receipt-bound to 7.0.0. See
 [Project estimation](project-estimation.md).
 
 ### Policy-only
@@ -191,6 +191,13 @@ the signed tag and GitHub Release exist, published assets have been verified,
 and any required installation, activation, readiness, and live qualification
 have completed. The release is not complete until this closeout is merged and
 checked against the exact release evidence.
+
+When a release has a separately governed private companion, the public
+documentation correction merges first. The companion may then be reconciled
+against that public merge, without exposing private identifiers or operational
+detail here. Record the exact public merge commit and release evidence only
+after the public merge exists; do not make either side depend on a future hash
+from the other.
 
 Review and update these public surfaces together:
 
