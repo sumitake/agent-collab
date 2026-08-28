@@ -258,6 +258,11 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             "timeout",
             timeout_ms=120_000,
             error_code="timeout",
+            diagnostics={
+                "provider_processes": 0,
+                "provider_model_calls": 0,
+                "provider_turns": 0,
+            },
             failure_trace={
                 "adapter_code": "caller_deadline",
                 "failure_phase": "setup",
@@ -273,6 +278,66 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         self.assertIn("separately authorized new request", recovery.lower())
         self.assertIn("more time", recovery.lower())
         self.assertIn("not a replay", recovery.lower())
+
+    def test_setup_trace_without_exact_zero_provider_counters_requires_inspection(self) -> None:
+        trace = {
+            "adapter_code": "caller_deadline",
+            "failure_phase": "setup",
+            "tool_outcomes": {
+                "success": 0,
+                "failed": 0,
+                "incomplete": 0,
+                "unknown": 0,
+            },
+        }
+        for name, diagnostics in {
+            "missing": {},
+            "nonzero": {
+                "provider_processes": 1,
+                "provider_model_calls": 0,
+                "provider_turns": 0,
+            },
+            "boolean": {
+                "provider_processes": False,
+                "provider_model_calls": 0,
+                "provider_turns": 0,
+            },
+        }.items():
+            with self.subTest(name=name):
+                disposition, _ = self.coordinator._disposition(
+                    "timeout",
+                    timeout_ms=120_000,
+                    error_code="timeout",
+                    diagnostics=diagnostics,
+                    failure_trace=trace,
+                )
+                self.assertEqual(disposition, "inspect")
+
+    def test_process_uses_provider_counters_for_retry_proof(self) -> None:
+        result = self.client.RuntimeResult(
+            self.client.RuntimeStatus.TIMEOUT,
+            error="caller_deadline",
+            provenance={
+                "diagnostics": {
+                    "provider_processes": 1,
+                    "provider_model_calls": 0,
+                    "provider_turns": 0,
+                    "failure_trace": {
+                        "adapter_code": "caller_deadline",
+                        "failure_phase": "setup",
+                        "tool_outcomes": {
+                            "success": 0,
+                            "failed": 0,
+                            "incomplete": 0,
+                            "unknown": 0,
+                        },
+                    },
+                }
+            },
+        )
+        response, code = self._process(self._documents_request(), result=result)
+        self.assertEqual(code, 0)
+        self.assertEqual(response["disposition"], "inspect")
 
     def test_provider_started_timeout_below_cap_is_terminal_not_retryable(self) -> None:
         disposition, recovery = self.coordinator._disposition(

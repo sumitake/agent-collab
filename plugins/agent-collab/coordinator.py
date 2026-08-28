@@ -133,9 +133,19 @@ def _trace_value(
 
 def _pre_inference_zero_provider(
     failure_trace: Mapping[str, object] | None,
+    diagnostics: Mapping[str, object] | None,
 ) -> bool:
     """Return whether the closed trace proves execution stopped before inference."""
 
+    if not isinstance(diagnostics, Mapping) or not all(
+        type(diagnostics.get(field)) is int and diagnostics.get(field) == 0
+        for field in (
+            "provider_processes",
+            "provider_model_calls",
+            "provider_turns",
+        )
+    ):
+        return False
     if _trace_value(failure_trace, "failure_phase") != "setup":
         return False
     outcomes = _trace_value(failure_trace, "tool_outcomes")
@@ -155,6 +165,7 @@ def _disposition(
     timeout_ms: int | None = None,
     error_code: str | None = None,
     failure_trace: Mapping[str, object] | None = None,
+    diagnostics: Mapping[str, object] | None = None,
 ) -> tuple[str, str]:
     """Classify a non-usable outcome so a caller cannot misread it.
 
@@ -172,7 +183,7 @@ def _disposition(
         and type(timeout_ms) is not bool
         and 0 < timeout_ms < MAX_TIMEOUT_MS
     )
-    proven_pre_inference = _pre_inference_zero_provider(failure_trace)
+    proven_pre_inference = _pre_inference_zero_provider(failure_trace, diagnostics)
 
     if effective_code == "provider_cli_incompatible":
         return "inspect", (
@@ -1090,6 +1101,7 @@ def _failure_response(
     *,
     timeout_ms: int | None = None,
     failure_trace: Mapping[str, object] | None = None,
+    diagnostics: Mapping[str, object] | None = None,
     **extra: object,
 ) -> dict[str, Any]:
     """A non-usable response carrying its classified disposition and recovery hint."""
@@ -1099,6 +1111,7 @@ def _failure_response(
         timeout_ms=timeout_ms,
         error_code=error_code,
         failure_trace=failure_trace,
+        diagnostics=diagnostics,
     )
     return _response(
         request_id, status, error_code, disposition=disposition, recovery=recovery, **extra
@@ -1180,6 +1193,7 @@ def process(document: object) -> tuple[dict[str, Any], int]:
             failure_trace=(
                 failure_trace if isinstance(failure_trace, Mapping) else None
             ),
+            diagnostics=diagnostics if isinstance(diagnostics, Mapping) else None,
         )
     if normalized:
         response["normalized"] = normalized
