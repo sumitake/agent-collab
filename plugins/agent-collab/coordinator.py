@@ -8,17 +8,12 @@ attempt-local failure cannot suppress a later caller-authorized request.
 
 from __future__ import annotations
 
-import errno
 import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import select
-import signal
 import sys
-import termios
-import time
 from typing import Any, Mapping
 
 
@@ -28,10 +23,9 @@ MAX_DOCUMENTS = 64
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
 MAX_PROMPT_BYTES = 1024 * 1024
 MAX_TIMEOUT_MS = 600_000
-_TTY_READ_CHUNK_BYTES = 64 * 1024
-_TTY_FRAME_TIMEOUT_SECONDS = 120.0
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _ERROR_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
+_EXPECTED_REPO_HEAD_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _COMMON_KEYS = {
     "request_id",
     "logical_action",
@@ -86,14 +80,6 @@ class _InvalidRequest(ValueError):
         self.detail = detail
 
 
-class _IncompleteTTYFrame(RuntimeError):
-    """The terminal frame reached EOF or its total deadline before newline."""
-
-
-class _TTYRestoreFailure(RuntimeError):
-    """The terminal could not be restored after reading a complete frame."""
-
-
 def _field_name(value: object) -> str:
     """Return a bounded ASCII-printable rendering of a request key for diagnostics.
 
@@ -137,7 +123,50 @@ def _bounded_scalar(value: object) -> object:
     return type(value).__name__
 
 
-def _disposition(status: str) -> tuple[str, str]:
+def _trace_value(
+    failure_trace: Mapping[str, object] | None, field: str
+) -> object | None:
+    if not isinstance(failure_trace, Mapping):
+        return None
+    return failure_trace.get(field)
+
+
+def _pre_inference_zero_provider(
+    failure_trace: Mapping[str, object] | None,
+    diagnostics: Mapping[str, object] | None,
+) -> bool:
+    """Return whether the closed trace proves execution stopped before inference."""
+
+    if not isinstance(diagnostics, Mapping) or not all(
+        type(diagnostics.get(field)) is int and diagnostics.get(field) == 0
+        for field in (
+            "provider_processes",
+            "provider_model_calls",
+            "provider_turns",
+        )
+    ):
+        return False
+    if _trace_value(failure_trace, "failure_phase") != "setup":
+        return False
+    outcomes = _trace_value(failure_trace, "tool_outcomes")
+    if not isinstance(outcomes, Mapping) or set(outcomes) != {
+        "success",
+        "failed",
+        "incomplete",
+        "unknown",
+    }:
+        return False
+    return all(type(value) is int and value == 0 for value in outcomes.values())
+
+
+def _disposition(
+    status: str,
+    *,
+    timeout_ms: int | None = None,
+    error_code: str | None = None,
+    failure_trace: Mapping[str, object] | None = None,
+    diagnostics: Mapping[str, object] | None = None,
+) -> tuple[str, str]:
     """Classify a non-usable outcome so a caller cannot misread it.
 
     The single load-bearing invariant: an *attempt-local* outcome
@@ -147,20 +176,90 @@ def _disposition(status: str) -> tuple[str, str]:
     what stops a recoverable invocation error being reported as an outage.
     """
 
+    adapter_code = _trace_value(failure_trace, "adapter_code")
+    effective_code = adapter_code if type(adapter_code) is str else error_code
+    below_cap = (
+        type(timeout_ms) is int
+        and type(timeout_ms) is not bool
+        and 0 < timeout_ms < MAX_TIMEOUT_MS
+    )
+    proven_pre_inference = _pre_inference_zero_provider(failure_trace, diagnostics)
+
+    if effective_code == "provider_cli_incompatible":
+        return "inspect", (
+            "The Agy producer is incompatible. Update Agy through its official update path, "
+            "then make a separately authorized new request if still wanted; never replay this "
+            "request or extend its deadline as a repair."
+        )
+    if effective_code == "provider_timeout":
+        timeout_hint = (
+            " A separately authorized new request may use a larger timeout because this one "
+            "was below the public cap."
+            if below_cap
+            else ""
+        )
+        return "inspect", (
+            "The selected provider did not complete. This attempt is terminal and unavailable "
+            "as evidence; any later invocation is a separately authorized new request, never a "
+            "replay of this one." + timeout_hint
+        )
+    if effective_code in {
+        "source_context_too_large",
+        "source_changed",
+        "source_head_mismatch",
+        "source_deadline",
+        "source_io",
+        "source_invalid",
+    }:
+        if (
+            status == "timeout"
+            and effective_code == "source_deadline"
+            and proven_pre_inference
+        ):
+            suffix = (
+                " A separately authorized new request may use more time or a smaller sealed root."
+                if below_cap
+                else " The timeout is already at the public cap; reduce the sealed root instead."
+            )
+            return "retry", (
+                "The intended repository could not be captured before inference; stabilize and "
+                "seal that exact root before a new request." + suffix
+            )
+        return "inspect", (
+            "Stabilize, reduce, and seal the intended repository root, then make a separately "
+            "authorized new request if still wanted. Do not replay this request or substitute a "
+            "different root."
+        )
     if status in {"invalid_request", "capability_error", "output_limit"}:
         return "fix_request", (
             "The request as sent is not accepted (shape, target, action, effort, or size); "
             "adjust it per any 'detail'. This is not a provider outage; do not retry it unchanged."
         )
-    if status in {"provider_error", "teardown_error"}:
-        return "retry", (
-            "Attempt-local failure. Per the runtime contract this does NOT establish provider "
-            "unavailability; a fresh request may succeed. Do not report an outage from this alone."
+    if status in {"provider_error", "teardown_error", "timeout", "cancelled"}:
+        if proven_pre_inference:
+            suffix = ""
+            if status == "timeout":
+                suffix = (
+                    " It may use more time or a smaller scope because the prior timeout was "
+                    "below the public cap."
+                    if below_cap
+                    else " The timeout is already at the public cap; use a smaller scope."
+                )
+            return "retry", (
+                "The trace proves inference did not start and no provider work was observed. "
+                "Any later invocation is still a separately authorized new request, not a replay."
+                + suffix
+            )
+        timeout_hint = (
+            " A separately authorized new request may use a larger timeout because this one "
+            "was below the public cap."
+            if status == "timeout" and below_cap
+            else ""
         )
-    if status in {"timeout", "cancelled"}:
-        return "retry", (
-            "The attempt did not finish. Retry with more time (raise timeout_ms toward the 600000ms "
-            "cap) or a smaller scope. This is not a route-down signal."
+        return "inspect", (
+            "The request may have reached provider execution. Treat this attempt as terminal and "
+            "unavailable evidence; any later invocation is a separately authorized new request, "
+            "never an automatic replay." + timeout_hint
         )
     if status == "protocol_error":
         return "inspect", (
@@ -376,12 +475,19 @@ def _flatten_source(
             after=mode,
             reason=mode_reason,
         )
-    if mode == "repository" and set(source) == {"mode", "repo_root"}:
-        field, value = "repo_root", source["repo_root"]
+    if mode == "repository" and set(source) == {
+        "mode",
+        "repo_root",
+        "expected_repo_head",
+    }:
+        fields = {
+            "repo_root": source["repo_root"],
+            "expected_repo_head": source["expected_repo_head"],
+        }
     elif mode == "documents" and set(source) == {"mode", "documents"}:
-        field, value = "documents", source["documents"]
+        fields = {"documents": source["documents"]}
     elif mode == "conceptual_prompt" and set(source) == {"mode"}:
-        field, value = None, None
+        fields = {}
     else:
         raise _InvalidRequest(
             "source_invalid",
@@ -390,7 +496,7 @@ def _flatten_source(
                 "constraint": "one exact repository, documents, or conceptual source",
             },
         )
-    if field is not None:
+    for field, value in fields.items():
         if field in document and document[field] != value:
             raise _InvalidRequest(
                 "conflicting_fields", {"field": field, "conflicts_with": "source"}
@@ -584,19 +690,6 @@ def _load_host_policy():
     return _load("agent_collab_semantic_host_policy", "host_policy.py")
 
 
-def _load_failure_evidence():
-    return _load("agent_collab_failure_evidence", "failure_evidence.py")
-
-
-def _warn_failure_evidence_unavailable() -> None:
-    try:
-        sys.stderr.write("agent-collab: failure evidence capture unavailable\n")
-    except Exception:
-        # The observer and its warning channel are both fail-soft. A broken
-        # stderr must never suppress the already-formed typed response.
-        pass
-
-
 def _canonical_repo_root(value: object) -> str:
     if type(value) is not str or not value or "\x00" in value:
         raise ValueError("repository action requires repo_root")
@@ -610,6 +703,22 @@ def _canonical_repo_root(value: object) -> str:
     if resolved != path or not resolved.is_dir():
         raise ValueError("repo_root must be canonical and name a directory")
     return str(resolved)
+
+
+def _expected_repo_head(value: object) -> str:
+    if (
+        type(value) is not str
+        or _EXPECTED_REPO_HEAD_RE.fullmatch(value) is None
+        or not any(character != "0" for character in value)
+    ):
+        raise _InvalidRequest(
+            "expected_repo_head_invalid",
+            {
+                "field": "expected_repo_head",
+                "constraint": "40 or 64 lowercase hexadecimal characters, not all zero",
+            },
+        )
+    return value
 
 
 def _documents(value: object) -> list[dict[str, str]]:
@@ -691,10 +800,16 @@ def validate_request(
     source_mode = wire.logical_action_source_modes[action]
     optional = set(document) & _OPTIONAL_CONTEXT_KEYS
     if source_mode == "repository":
-        expected = _COMMON_KEYS | {"repo_root"} | optional
+        expected = _COMMON_KEYS | {"repo_root", "expected_repo_head"} | optional
         if set(document) != expected:
             raise _closure_error(document, expected, action, "repo_root")
-        source = {"mode": "repository", "repo_root": _canonical_repo_root(document["repo_root"])}
+        source = {
+            "mode": "repository",
+            "repo_root": _canonical_repo_root(document["repo_root"]),
+            "expected_repo_head": _expected_repo_head(
+                document["expected_repo_head"]
+            ),
+        }
     elif source_mode == "documents":
         expected = _COMMON_KEYS | {"documents"} | optional
         if set(document) != expected:
@@ -980,21 +1095,30 @@ def _bounded_reason(text: str) -> str:
 
 
 def _failure_response(
-    request_id: object, status: str, error_code: str, **extra: object
+    request_id: object,
+    status: str,
+    error_code: str,
+    *,
+    timeout_ms: int | None = None,
+    failure_trace: Mapping[str, object] | None = None,
+    diagnostics: Mapping[str, object] | None = None,
+    **extra: object,
 ) -> dict[str, Any]:
     """A non-usable response carrying its classified disposition and recovery hint."""
 
-    disposition, recovery = _disposition(status)
+    disposition, recovery = _disposition(
+        status,
+        timeout_ms=timeout_ms,
+        error_code=error_code,
+        failure_trace=failure_trace,
+        diagnostics=diagnostics,
+    )
     return _response(
         request_id, status, error_code, disposition=disposition, recovery=recovery, **extra
     )
 
 
-def process(
-    document: object, *, trusted_invocation: dict[str, object] | None = None
-) -> tuple[dict[str, Any], int]:
-    if trusted_invocation is not None:
-        trusted_invocation.clear()
+def process(document: object) -> tuple[dict[str, Any], int]:
     runtime = _load_runtime()
     wire, manifest_digest, descriptor_error = runtime.runtime_contract_snapshot()
     request_id = document.get("request_id") if isinstance(document, Mapping) else None
@@ -1016,15 +1140,6 @@ def process(
             if readiness_requested
             else validate_request(document, wire, host, normalized=normalized)
         )
-        if trusted_invocation is not None:
-            for key in (
-                "logical_action",
-                "target_agent",
-                "quality_profile",
-                "effort_class",
-            ):
-                if key in envelope:
-                    trusted_invocation[key] = envelope[key]
     except _InvalidRequest as exc:
         return _failure_response(
             request_id, "invalid_request", exc.error_code, detail=exc.detail
@@ -1059,8 +1174,26 @@ def process(
     if usable:
         response = _response(envelope["request_id"], result.status.value)
     else:
+        runtime_error_code = _runtime_error_code(result)
+        diagnostics = (
+            result.provenance.get("diagnostics")
+            if isinstance(result.provenance, Mapping)
+            else None
+        )
+        failure_trace = (
+            diagnostics.get("failure_trace")
+            if isinstance(diagnostics, Mapping)
+            else None
+        )
         response = _failure_response(
-            envelope["request_id"], result.status.value, _runtime_error_code(result)
+            envelope["request_id"],
+            result.status.value,
+            runtime_error_code,
+            timeout_ms=envelope["timeout_ms"],
+            failure_trace=(
+                failure_trace if isinstance(failure_trace, Mapping) else None
+            ),
+            diagnostics=diagnostics if isinstance(diagnostics, Mapping) else None,
         )
     if normalized:
         response["normalized"] = normalized
@@ -1073,88 +1206,8 @@ def process(
     return response, 0
 
 
-def _read_tty_request(stream: object) -> bytes:
-    """Read one bounded newline frame without a terminal canonical-buffer limit."""
-
-    fileno = getattr(stream, "fileno", None)
-    if not callable(fileno):
-        raise OSError("coordinator TTY is unreadable")
-    descriptor = fileno()
-    original = termios.tcgetattr(descriptor)
-    configured = list(original)
-    configured[6] = list(original[6])
-    configured[3] &= ~(
-        termios.ICANON | termios.ECHO | getattr(termios, "ECHONL", 0)
-    )
-    configured[6][termios.VMIN] = 1
-    configured[6][termios.VTIME] = 0
-    prior_handlers: dict[int, object] = {}
-    configured_applied = False
-    read_failed = False
-
-    def restore_terminal() -> None:
-        termios.tcsetattr(descriptor, termios.TCSANOW, original)
-
-    def terminate_after_restore(signum: int, _frame: object) -> None:
-        signal.signal(signum, signal.SIG_DFL)
-        try:
-            restore_terminal()
-        except (OSError, termios.error):
-            pass
-        os.kill(os.getpid(), signum)
-
-    try:
-        for signum in (signal.SIGHUP, signal.SIGQUIT, signal.SIGTERM):
-            prior_handler = signal.getsignal(signum)
-            if prior_handler == signal.SIG_DFL:
-                signal.signal(signum, terminate_after_restore)
-                prior_handlers[signum] = prior_handler
-        termios.tcsetattr(descriptor, termios.TCSANOW, configured)
-        configured_applied = True
-        frame = bytearray()
-        deadline = time.monotonic() + _TTY_FRAME_TIMEOUT_SECONDS
-        while len(frame) <= MAX_INPUT_BYTES:
-            wait_seconds = deadline - time.monotonic()
-            if wait_seconds <= 0:
-                raise _IncompleteTTYFrame
-            readable, _, _ = select.select([descriptor], [], [], wait_seconds)
-            if not readable:
-                raise _IncompleteTTYFrame
-            remaining = MAX_INPUT_BYTES + 1 - len(frame)
-            try:
-                chunk = os.read(
-                    descriptor, min(_TTY_READ_CHUNK_BYTES, remaining)
-                )
-            except OSError as exc:
-                if exc.errno == errno.EIO:
-                    raise _IncompleteTTYFrame from exc
-                raise
-            if not chunk:
-                raise _IncompleteTTYFrame
-            newline = chunk.find(b"\n")
-            if newline >= 0:
-                frame.extend(chunk[: newline + 1])
-                break
-            frame.extend(chunk)
-        return bytes(frame)
-    except BaseException:
-        read_failed = True
-        raise
-    finally:
-        restore_error: BaseException | None = None
-        if configured_applied:
-            try:
-                restore_terminal()
-            except (OSError, termios.error) as exc:
-                restore_error = exc
-        for signum, prior_handler in prior_handlers.items():
-            signal.signal(signum, prior_handler)
-        if restore_error is not None and not read_failed:
-            raise _TTYRestoreFailure from restore_error
-
-
 def _read_one_request(stream: object) -> bytes:
-    """Read one EOF-framed pipe request or one newline-framed TTY request."""
+    """Read one bounded EOF-framed pipe or regular-file request."""
 
     is_tty = False
     probe = getattr(stream, "isatty", None)
@@ -1164,7 +1217,10 @@ def _read_one_request(stream: object) -> bytes:
         except (OSError, ValueError):
             is_tty = False
     if is_tty:
-        return _read_tty_request(stream)
+        raise _InvalidRequest(
+            "tty_unsupported",
+            {"field": "request", "constraint": "eof_framed_pipe_or_file"},
+        )
     reader = getattr(stream, "read", None)
     if not callable(reader):
         raise OSError("coordinator stdin is unreadable")
@@ -1173,19 +1229,14 @@ def _read_one_request(stream: object) -> bytes:
 
 def main() -> int:
     document: object = None
-    trusted_invocation: dict[str, object] = {}
     try:
         raw = _read_one_request(sys.stdin.buffer)
-    except _IncompleteTTYFrame:
+    except _InvalidRequest as exc:
         response, code = _failure_response(
             None,
             "invalid_request",
-            "tty_frame_incomplete",
-            detail={
-                "field": "request",
-                "constraint": "newline_terminated_tty_frame",
-                "max_wait_ms": int(_TTY_FRAME_TIMEOUT_SECONDS * 1000),
-            },
+            exc.error_code,
+            detail=exc.detail,
         ), 2
     except (OSError, RuntimeError, ValueError):
         response, code = _failure_response(
@@ -1207,25 +1258,13 @@ def main() -> int:
                 ), 2
             else:
                 try:
-                    response, code = process(
-                        document, trusted_invocation=trusted_invocation
-                    )
+                    response, code = process(document)
                 except (OSError, RuntimeError, ValueError):
                     response, code = _failure_response(
                         None, "unavailable", "coordinator_unavailable"
                     ), 0
     sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\n")
     sys.stdout.flush()
-    try:
-        _load_failure_evidence().capture_terminal_failure(
-            surface="plugin_coordinator",
-            response=response,
-            request=trusted_invocation,
-            request_trusted=bool(trusted_invocation),
-            request_shape=document,
-        )
-    except Exception:
-        _warn_failure_evidence_unavailable()
     return code
 
 

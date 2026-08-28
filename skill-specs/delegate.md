@@ -42,7 +42,7 @@ The killer failure mode of delegation is **inconsistent output formats** between
 Pick a structured output format that both halves will share:
 
 - **Markdown table** for tabular comparisons (competitor research, candidate calibration, vendor evaluation)
-- **JSONL one-per-item** for downstream programmatic consumption
+- **Numbered records with consistent fields** for downstream programmatic consumption
 - **Numbered list with consistent fields** for human-readable summaries
 
 ### 3. Dispatch {{ verifier_agent }}'s portion
@@ -64,7 +64,7 @@ independent-family route.
 Example prompt:
 
 ```
-Research the 3 [items] below. Output ONLY a Markdown table with columns: [Column A | Column B | Column C | Column D]. No preamble, no closing.
+Research the 3 [items] below. Return a Markdown table with columns: [Column A | Column B | Column C | Column D].
 
 ITEMS: [Item 1, Item 2, Item 3]
 

@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Task the reviewer with actively breaking a system, API, validation 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Red team — adversarial input generation by the cross-family agent
 
@@ -83,11 +83,12 @@ independent reviewer. Frontmatter `effort` is host guidance and is never a
 coordinator request field.
 
 ```json coordinator-request
-{"request_id":"red-team-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>"}
+{"request_id":"red-team-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
 ```
 
-Use this prompt template — the JSONL output schema is a functional contract;
-downstream tooling consumes it:
+Use this prompt template for adversarial content. The signed descriptor's
+`review_findings` schema is the sole output contract; do not add a second JSON,
+JSONL, heading, or trailing-prose envelope:
 
 ```
 You are a red-team agent. Your objective: break the [validation logic / API contract / parser / prompt pipeline / policy] below. Generate exactly N adversarial inputs — exact strings, payloads, or scenarios — designed to bypass, crash, or trigger misbehavior in the target system.
@@ -95,30 +96,30 @@ You are a red-team agent. Your objective: break the [validation logic / API cont
 Threat model: [unauthenticated external attacker / authenticated low-privilege user / privileged insider / model-output adversary / ...]
 Success criterion: [bypass / crash / misbehavior — choose one or "any of the three"]
 
-Output ONLY JSONL (one JSON object per line, no preamble, no closing, no code fence) per this schema:
-{"input":"<exact input or payload, fully quoted>","result":"Bypass|Crash|Misbehavior","mechanism":"<one-sentence attack vector>"}
-
-If you cannot generate N inputs that meet the criterion (e.g., the system genuinely appears robust against this objective), emit fewer and add one final line:
-{"input":null,"result":"Robust","mechanism":"<one-sentence reason the system appears robust against this objective>"}
+Record each viable adversarial input, predicted result, and mechanism in a
+descriptor-owned finding message. If fewer than N meet the criterion, return
+only the viable findings and explain the shortfall in the artifact summary.
 
 --- TARGET ---
 [Specification + code/rule definition]
 ```
 
-Malformed output is a terminal typed `protocol_error` for this request. Surface
-the failure explicitly; do not fabricate JSONL around prose and do not replay
-the whole coordinator request. A malformed response may signal a content-policy
-guardrail and must remain visible as evidence of the verifier's limits.
+An `invalid_final` result is terminal for this request. Surface the failure
+explicitly; do not fabricate an artifact around prose and do not replay the
+coordinator request. It may signal a content-policy guardrail and must remain
+visible as evidence of the verifier's limits.
 
 ### 4. Verify each finding, then close the loop
 
-Do not relay the verifier's JSONL directly to the user. For each adversarial input:
+Adjudicate each adversarial finding before relaying it to the user:
 
 1. **Actually test it.** Run the input against the real system (or a faithful local reproduction). If the input does NOT in fact bypass / crash / misbehave as claimed, drop it from the user-facing report — the verifier hallucinated an attack vector. Hallucinations are common in red-teaming because the verifier is generating *plausible* inputs without ground-truth verification.
 2. **Categorize by attack class.** Group findings — "all five inputs in this set exploit the unicode-normalization gap," "three exploit the integer-overflow on the count field." Class-level patterns are more useful than per-input lists for fix prioritization.
 3. **Score by severity and exploitability.** A bypass requiring privileged insider access ranks differently from a bypass exploitable by an anonymous external request.
 4. **Recommend fixes.** For each verified attack class, propose a concrete defense — the input normalization that closes the unicode-gap, the bounded-integer type that prevents the overflow, the explicit rate-limiter reset that prevents the desync.
-5. **Surface the "Robust" sentinel if present.** If the verifier emitted the `{"input":null,"result":"Robust",...}` line, that is a meaningful finding — the verifier could not find inputs meeting the objective. Report it, but do not treat it as proof of security; it is the verifier's failure-to-find, not a soundness guarantee.
+5. **Surface an empty-findings result accurately.** If the summary says no
+   viable input met the objective, report that without treating it as proof of
+   security; it is failure-to-find, not a soundness guarantee.
 
 End with a synthesis paragraph: which attack classes are load-bearing (the user must fix before deploying), which are noise (hallucinations or extremely-low-exploitability), and a recommendation on whether the surface is ready as-is or needs revision.
 
@@ -139,7 +140,7 @@ Red-teaming applies wherever a control surface exists with adversarial inputs. A
 | Embedded / IoT | Firmware-update signature checker on a smart-thermostat | Signature-stripping with valid-checksum padding; rollback-to-vulnerable-version exploit; partial-write power-fail to forced-recovery-mode |
 | Distributed systems | Leader-election protocol in a coordination service | Network-partition-induced split-brain; clock-jump-induced false leader; message-reordering-induced log divergence |
 
-The JSONL schema and threat-model + success-criterion framing stay constant across domains; the attack categories shift to match the surface.
+The signed artifact schema and threat-model + success-criterion framing stay constant across domains; the attack categories shift to match the surface.
 
 ## Anti-patterns
 
@@ -151,7 +152,7 @@ The JSONL schema and threat-model + success-criterion framing stay constant acro
 - **Skipping the verifier-independence check** when the artifact came from a independent-family agent. Same-family red-teams produce inputs the author would have anticipated.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
-  second request or fabricating JSONL.
-- **Treating a "Robust" sentinel as a security proof.** It is the verifier's failure-to-find, not a soundness argument. The system may still have undefended classes the verifier did not explore.
+  second request or fabricating an artifact.
+- **Treating an empty findings list as a security proof.** It is the verifier's failure-to-find, not a soundness argument. The system may still have undefended classes the verifier did not explore.
 - **Running red-team on artifacts with no adversarial framing.** A draft email or a brainstorm output has no adversary; the exercise produces nothing useful.
 - **Re-running on a surface that has already been red-teamed without changes.** Coverage saturation is real; additional passes return increasingly speculative inputs.

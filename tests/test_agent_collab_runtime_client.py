@@ -68,6 +68,13 @@ class DirectRuntimeClientTests(unittest.TestCase):
             "timeout_ms": timeout_ms,
         }
 
+    def _codegen_document(self, timeout_ms: int) -> dict[str, object]:
+        return {
+            "request_id": "codegen-1",
+            "logical_action": "codegen.repository",
+            "timeout_ms": timeout_ms,
+        }
+
     def test_owned_runtime_directory_with_children_has_a_valid_identity(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             bundle = Path(raw) / "agent-collab-runtime.bundle"
@@ -204,6 +211,309 @@ class DirectRuntimeClientTests(unittest.TestCase):
             mock.ANY,
             deadline=102.0 + self.client.TEARDOWN_REAP_SECONDS,
         )
+
+    def test_codegen_progress_marks_renew_only_the_stall_lease(self) -> None:
+        class Stream:
+            def __init__(self, descriptor: int) -> None:
+                self.descriptor = descriptor
+                self.closed = False
+
+            def fileno(self) -> int:
+                return self.descriptor
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            stdin = Stream(10)
+            stdout = Stream(11)
+            stderr = Stream(12)
+
+            def __init__(self) -> None:
+                self.polls = 0
+
+            def poll(self) -> int | None:
+                self.polls += 1
+                return None if self.polls == 1 else 0
+
+        class Selector:
+            latest: "Selector | None" = None
+
+            def __init__(self) -> None:
+                self.keys: dict[str, object] = {}
+                self.timeouts: list[float] = []
+                self.calls = 0
+                type(self).latest = self
+
+            def register(self, fileobj: object, _events: int, kind: str) -> None:
+                self.keys[kind] = type(
+                    "SelectorKey", (), {"fileobj": fileobj, "data": kind}
+                )()
+
+            def unregister(self, *_args: object) -> None:
+                pass
+
+            def select(self, timeout: float) -> list[tuple[object, int]]:
+                self.timeouts.append(timeout)
+                self.calls += 1
+                if self.calls == 1:
+                    return [(self.keys["progress"], 0)]
+                return [
+                    (self.keys["stdout"], 0),
+                    (self.keys["stderr"], 0),
+                ]
+
+            def close(self) -> None:
+                pass
+
+        reads = {99: b"\x01", 11: b"", 12: b""}
+        with mock.patch.object(
+            self.client.selectors, "DefaultSelector", Selector
+        ), mock.patch.object(
+            self.client.os, "set_blocking"
+        ), mock.patch.object(
+            self.client.os, "read", side_effect=lambda descriptor, _size: reads[descriptor]
+        ), mock.patch.object(
+            self.client.time, "monotonic", side_effect=(9.95, 10.0, 10.1)
+        ):
+            _out, _err, terminal = self.client._collect_bounded(
+                Process(), b"", 10.0, progress_reader=99, stall_interval=5.0
+            )
+
+        self.assertEqual(terminal, "")
+        self.assertAlmostEqual(Selector.latest.timeouts[0], 0.05)
+        self.assertEqual(Selector.latest.timeouts[1], 0.1)
+
+        reads[99] = b"\x02"
+        with mock.patch.object(
+            self.client.selectors, "DefaultSelector", Selector
+        ), mock.patch.object(
+            self.client.os, "set_blocking"
+        ), mock.patch.object(
+            self.client.os, "read", side_effect=lambda descriptor, _size: reads[descriptor]
+        ), mock.patch.object(
+            self.client.time, "monotonic", return_value=9.95
+        ):
+            _out, _err, malformed = self.client._collect_bounded(
+                Process(), b"", 10.0, progress_reader=99, stall_interval=5.0
+            )
+
+        self.assertEqual(malformed, "progress_pipe_lost")
+
+    def test_codegen_progress_eof_does_not_renew_the_response_lease(self) -> None:
+        class Stream:
+            def __init__(self, descriptor: int) -> None:
+                self.descriptor = descriptor
+                self.closed = False
+
+            def fileno(self) -> int:
+                return self.descriptor
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            stdin = Stream(10)
+            stdout = Stream(11)
+            stderr = Stream(12)
+
+            def poll(self) -> int | None:
+                return 0
+
+        class Selector:
+            latest: "Selector | None" = None
+
+            def __init__(self) -> None:
+                self.keys: dict[str, object] = {}
+                self.timeouts: list[float] = []
+                self.calls = 0
+                type(self).latest = self
+
+            def register(self, fileobj: object, _events: int, kind: str) -> None:
+                self.keys[kind] = type(
+                    "SelectorKey", (), {"fileobj": fileobj, "data": kind}
+                )()
+
+            def unregister(self, fileobj: object) -> None:
+                for kind, key in tuple(self.keys.items()):
+                    if key.fileobj is fileobj or key.fileobj == fileobj:
+                        del self.keys[kind]
+
+            def select(self, timeout: float) -> list[tuple[object, int]]:
+                self.timeouts.append(timeout)
+                self.calls += 1
+                if self.calls == 1:
+                    return [(self.keys["progress"], 0)]
+                return [
+                    (key, 0)
+                    for kind, key in self.keys.items()
+                    if kind in {"stdout", "stderr"}
+                ]
+
+            def close(self) -> None:
+                pass
+
+        reads = {99: b"", 11: b"response\n", 12: b""}
+
+        def read(descriptor: int, _size: int) -> bytes:
+            value = reads[descriptor]
+            if descriptor == 11:
+                reads[descriptor] = b""
+            return value
+
+        with mock.patch.object(
+            self.client.selectors, "DefaultSelector", Selector
+        ), mock.patch.object(
+            self.client.os, "set_blocking"
+        ), mock.patch.object(
+            self.client.os, "read", side_effect=read
+        ), mock.patch.object(
+            self.client.time,
+            "monotonic",
+            # A clean EOF may precede the runtime's already-formed stdout
+            # response, but it is not an admitted progress mark.  If EOF
+            # reset the lease to five seconds, the 6.05 observation would
+            # time out before the response could be collected.
+            side_effect=(1.0, 1.0, 6.05),
+        ):
+            out, _err, terminal = self.client._collect_bounded(
+                Process(), b"", 10.0, progress_reader=99, stall_interval=5.0
+            )
+
+        self.assertEqual(terminal, "")
+        self.assertEqual(out, b"response\n")
+        self.assertEqual(Selector.latest.timeouts[0], 0.1)
+        self.assertEqual(Selector.latest.timeouts[1], 0.1)
+
+    def test_codegen_launch_passes_private_progress_writer_and_lost_pipe_reaps(self) -> None:
+        class Stream:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            pid = 4242
+            stdin = Stream()
+            stdout = Stream()
+            stderr = Stream()
+
+        process = Process()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=Path("/tmp/agent-collab-runtime"),
+            bundle_path=Path("/tmp"),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client.FileIdentity(1, 1, 0o100700, 1, os.getuid(), 1, 1, 1),
+            wire=self.wire,
+        )
+        collected: dict[str, object] = {}
+        collections = 0
+
+        def collect(_process, request: bytes, _deadline: float, **kwargs: object):
+            nonlocal collections
+            collections += 1
+            if collections == 2:
+                with self.assertRaises(OSError):
+                    os.fstat(collected["progress_reader"])
+                self.assertEqual(request, b"")
+                self.assertEqual(kwargs, {})
+                return b"", b"", ""
+            collected["request"] = json.loads(request)
+            collected.update(kwargs)
+            reader = kwargs["progress_reader"]
+            assert type(reader) is int
+            return b"", b"", "progress_pipe_lost"
+
+        with mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_envelope_document", return_value=self._codegen_document(5000)
+        ), mock.patch.object(
+            self.client, "_identity", return_value=resolution.identity
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.client, "_collect_bounded", side_effect=collect
+        ), mock.patch.object(
+            self.client, "_terminate_and_reap", return_value=True
+        ) as reap:
+            result = self.client.invoke(envelope={})
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.CANCELLED)
+        self.assertEqual(collected["request"]["timeout_ms"], 5000)
+        self.assertEqual(collected["stall_interval"], 5.0)
+        self.assertIn("pass_fds", popen.call_args.kwargs)
+        writer = popen.call_args.kwargs["pass_fds"][0]
+        self.assertEqual(
+            popen.call_args.kwargs["env"][self.client._PROGRESS_FD_ENV],
+            str(writer),
+        )
+        with self.assertRaises(OSError):
+            os.fstat(writer)
+        with self.assertRaises(OSError):
+            os.fstat(collected["progress_reader"])
+        self.assertEqual(collections, 2)
+        reap.assert_called_once()
+
+    def test_codegen_lease_expiry_allows_bounded_runtime_cleanup_before_reap(self) -> None:
+        class Stream:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            pid = 4242
+            stdin = Stream()
+            stdout = Stream()
+            stderr = Stream()
+
+        process = Process()
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=Path("/tmp/agent-collab-runtime"),
+            bundle_path=Path("/tmp"),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client.FileIdentity(
+                1, 1, 0o100700, 1, os.getuid(), 1, 1, 1
+            ),
+            wire=self.wire,
+        )
+        collected: list[tuple[bytes, float, dict[str, object]]] = []
+
+        def collect(
+            _process, request: bytes, deadline: float, **kwargs: object
+        ) -> tuple[bytes, bytes, str]:
+            collected.append((request, deadline, kwargs))
+            return (b"", b"", "timeout") if len(collected) == 1 else (b"", b"", "")
+
+        with mock.patch.object(
+            self.client, "resolve_runtime", return_value=resolution
+        ), mock.patch.object(
+            self.client, "_envelope_document", return_value=self._codegen_document(5000)
+        ), mock.patch.object(
+            self.client, "_identity", return_value=resolution.identity
+        ), mock.patch.object(
+            self.client.subprocess, "Popen", return_value=process
+        ), mock.patch.object(
+            self.client, "_collect_bounded", side_effect=collect
+        ), mock.patch.object(
+            self.client, "_terminate_and_reap", return_value=True
+        ) as reap:
+            result = self.client.invoke(envelope={})
+
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(len(collected), 2)
+        self.assertEqual(collected[1][0], b"")
+        self.assertEqual(collected[1][2], {})
+        self.assertLessEqual(
+            collected[1][1] - collected[0][1],
+            self.client.PROCESS_CLEANUP_RESERVE_SECONDS + 0.1,
+        )
+        reap.assert_called_once()
 
     def test_advisory_is_a_usable_receipt_free_runtime_result(self) -> None:
         self.assertTrue(hasattr(self.client.RuntimeStatus, "ADVISORY"))

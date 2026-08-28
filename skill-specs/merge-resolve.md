@@ -81,35 +81,43 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 
 ### 4. Cross-check prompt
 
-Submit the sealed merge-review role through `{{ mcp_tool_ask }}` with
+Submit the sealed merge-review role through `{{ mcp_tool_ask }}`
 {{ merge_resolve_call_params }}. Central policy chooses an eligible
-independent reviewer. The prompt forces a **disagreement-first** output
-structure; the six-section schema is a functional contract:
+independent reviewer. The signed `context_text` artifact is the sole output
+contract; do not impose another terminal envelope. Ask the reviewer to address
+these disagreement-first criteria within that artifact:
+
+- summarize each side's intent;
+- decide `COMPATIBLE`, `INCOMPATIBLE`, or `NEEDS-HUMAN`, with a reason;
+- propose a unified diff when compatible;
+- identify risks and failure modes; and
+- state `H`, `M`, or `L` confidence with a reason.
+
+Use this prompt:
 
 ```
-Two branches modified the same region. Produce a unified resolution OR refuse if the change is semantically incompatible. Output ONLY these six sections — no preamble, no closing, cap 500 words total:
-
-1. INTENT-A SUMMARY: <one sentence>
-2. INTENT-B SUMMARY: <one sentence>
-3. COMPATIBILITY: COMPATIBLE | INCOMPATIBLE | NEEDS-HUMAN — <one-sentence reason>
-4. PROPOSED RESOLUTION (if COMPATIBLE): a unified diff block, fenced as ```diff
-5. RISKS / FAILURE MODES: bulleted
-6. CONFIDENCE: H | M | L — <one-sentence reason>
+Two branches modified the same region. Analyze both intents and either propose
+a unified resolution or explain why the change is incompatible or needs human
+judgment. Clearly state the compatibility decision, include a unified diff when
+compatible, identify risks, and state confidence. Cap the analysis at 500 words.
 
 --- HUNK ---
 {structured hunk + commit-context + surrounding-±20-lines}
 ```
 
-**Retry-on-malformed.** If the response does not contain all six numbered sections, retry exactly once with: "Previous response did not include all six required sections. Re-emit strictly per the template above, no preamble." If the second attempt is also malformed, surface to operator and refuse to proceed.
+If the runtime returns `invalid_final`, or the artifact does not clearly state
+compatibility and a proposed resolution when compatible, surface the terminal
+result or incomplete artifact and refuse to proceed. Do not salvage prose or
+replay the request merely to repair formatting.
 
 ### 5. Operator-confirm gate (DEFAULT)
 
-UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the cross-check's six sections rendered for the operator. The operator chooses:
+UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's signed artifact text for the operator. The operator chooses:
 
 - **`apply`** — apply the resolution to the working tree
 - **`apply-and-amend`** — apply AND amend the in-progress merge commit (only valid mid-merge)
 - **`reject`** — discard the proposal; leave conflict markers in place for manual resolution
-- **`revise <free-form>`** — re-run Step 4 with the operator's additional instruction prepended to the prompt
+- **`revise <free-form>`** — make a separately operator-authorized Step 4 request with the operator's additional instruction prepended to the prompt
 
 Empty / ambiguous operator responses default to **`reject`** (safe choice).
 
@@ -197,8 +205,8 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | Failure | Skill behavior |
 |---|---|
 | Conflict markers malformed | REFUSE; surface raw conflict + line number that failed parsing |
-| Cross-check returns no `PROPOSED RESOLUTION` after one retry | REFUSE; surface verifier's sections 1–3 + 5 + 6 |
-| `git apply --3way --check` fails on the proposed resolution | RETRY ONCE with regenerated resolution; second failure → REFUSE |
+| Signed artifact is `invalid_final` or contains no compatible proposed resolution | REFUSE; surface the typed result or incomplete artifact; do not replay for formatting |
+| `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |
 | Verifier-independence check fails (both sides {{ verifier_family }}-family-authored) | Switch to {{ primary_agent }}-as-resolver, or surface and ASK operator |

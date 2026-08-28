@@ -158,7 +158,7 @@ LOGICAL_ACTION_EFFORT_FLOORS = {
 }
 
 WIRE_CONTRACT_SHA256 = (
-    "774067d0a2a640b2eac27cace99f6cf812649169e03aab2ec8fcf77a2c3fe2a9"
+    "9ec0c1d0c943a9ba9025dbb554847abea45d5c2dcac893a69ac09539d265a85f"
 )
 
 
@@ -321,9 +321,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "6.3.0")
-        self.assertEqual(codex["version"], "6.3.0")
-        self.assertEqual(config["agent-collab"]["skill_version"], "6.3.0")
+        self.assertEqual(plugin["version"], "7.0.0")
+        self.assertEqual(codex["version"], "7.0.0")
+        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.0")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -371,6 +371,40 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot.logical_actions, frozenset(LOGICAL_ACTIONS))
+
+    def test_public_client_accepts_only_head_bound_wire_schema_8(self) -> None:
+        client = _load("wire_v8_runtime_client", PLUGIN / "runtime_client.py")
+        descriptor, _digest = _wire_descriptor()
+        descriptor = json.loads(json.dumps(descriptor))
+        self.assertEqual(descriptor["schema_version"], 8)
+        repository = descriptor["semantic_request"]["properties"]["source"]["oneOf"][0]
+        self.assertIn("expected_repo_head", repository["properties"])
+        self.assertIn("expected_repo_head", repository["required"])
+
+        snapshot = client.validate_wire_descriptor(
+            descriptor, expected_sha256=_descriptor_sha256(descriptor)
+        )
+        self.assertEqual(snapshot.logical_actions, frozenset(LOGICAL_ACTIONS))
+
+        missing = json.loads(json.dumps(descriptor))
+        missing_repository = missing["semantic_request"]["properties"]["source"]["oneOf"][0]
+        missing_repository["properties"].pop("expected_repo_head")
+        missing_repository["required"].remove("expected_repo_head")
+        with self.assertRaisesRegex(ValueError, "not head-bound"):
+            client.validate_wire_descriptor(
+                missing, expected_sha256=_descriptor_sha256(missing)
+            )
+
+        zero_admitted = json.loads(json.dumps(descriptor))
+        zero_repository = zero_admitted["semantic_request"]["properties"]["source"]["oneOf"][0]
+        zero_repository["properties"]["expected_repo_head"] = {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+        }
+        with self.assertRaisesRegex(ValueError, "admits an unbound head"):
+            client.validate_wire_descriptor(
+                zero_admitted, expected_sha256=_descriptor_sha256(zero_admitted)
+            )
 
     def test_public_client_rejects_invalid_wire_schema_revisions(self) -> None:
         client = _load("invalid_wire_revision_runtime_client", PLUGIN / "runtime_client.py")
@@ -431,7 +465,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertNotIn("contracts", artifact["properties"])
         self.assertNotIn("route_contract_version", artifact["properties"])
         wire_schema = properties["wire_contract"]
-        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 7})
+        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 8})
         self.assertIn(
             "advisory_response",
             wire_schema["required"],
@@ -497,7 +531,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "4.2.1"},
+            {"const": "5.0.0"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -545,7 +579,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
         self.assertGreater(descriptor["schema_version"], 0)
-        self.assertEqual(descriptor["schema_version"], 7)
+        self.assertEqual(descriptor["schema_version"], 8)
         self.assertEqual(descriptor["runtime_protocol_version"], 4)
         encoded = json.dumps(
             descriptor,
@@ -584,7 +618,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
                 self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
                 self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
         for artifact in manifest["artifacts"]:
-            self.assertEqual(artifact["provider_runtime_version"], "4.2.1")
+            self.assertEqual(artifact["provider_runtime_version"], "5.0.0")
             self.assertEqual(artifact["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:

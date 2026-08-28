@@ -1,6 +1,6 @@
 ---
 name: learning-loop
-version: 6.3.0
+version: 7.0.0
 description: Capture durable lessons, errors, and verified fixes in a project-local learning ledger, consult it before re-deriving known failures, and track recurrence toward promotion, using the bundled deterministic learning_ledger.py CLI. Use when the user says "capture this lesson", "log this error to the ledger", "check the learning ledger", "record a recurrence", "any known fix for this?", or "/agent-collab:learning-loop." Also offer this proactively when the same failure recurs across sessions, or when a hard-won diagnosis is about to be lost because it lives only in one session's context.
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Audit a verifiable, step-wise computation (arithmetic, financial ca
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Logic check — independent re-derivation of a verifiable computation
 
@@ -71,11 +71,12 @@ But: **do send the constraints and assumptions** the active primary used. Implic
 Submit the sealed logic-check role through `python3 "<plugin-root>/coordinator.py"` with
 `quality_profile='frontier'` and `effort_class='maximum'`. Central policy resolves an independent eligible
 reviewer; Claude/Anthropic is ineligible for this review action, and its
-document-intent route is not a substitute. Use this prompt template — the
-`ANSWER:` line is a functional contract that the comparison step keys on:
+document-intent route is not a substitute. Use this prompt template for
+substantive derivation. The signed `context_text` artifact is the sole output
+contract; do not add another terminal envelope:
 
 ```
-Solve this problem from scratch. Show step-by-step work, then emit the final answer on its own line as `ANSWER: <value>`.
+Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.
 
 PROBLEM:
 [Problem statement — exactly as the user posed it, or the active primary's clean restatement if the original was ambiguous]
@@ -88,14 +89,11 @@ CONSTRAINTS (do not deviate):
 - [Tie-breaking: e.g., "earliest-arrival wins on duplicate timestamps"]
 - [Other implicit assumptions the active primary relied on]
 
-No preamble. No commentary. Show work, then `ANSWER: <value>` on the last line.
+Include enough intermediate work for independent comparison.
 ```
 
-**Retry-on-malformed.** If the response does not contain a line matching `ANSWER: <value>`, retry exactly once with:
-
-> Previous response did not include the required `ANSWER:` line. Re-emit with work shown above and a final line beginning `ANSWER:`, nothing else after.
-
-If the second attempt is also malformed, surface explicitly and fall back to manual inspection. Do not infer an answer from the prose — the explicit `ANSWER:` line is the comparison-step anchor.
+If the runtime returns `invalid_final`, surface it and fall back to manual
+inspection. Do not infer an answer from salvaged prose or replay the request.
 
 ### 3. For very large structured traces — switch to transition critique
 
@@ -110,11 +108,8 @@ Prompt template for transition critique:
 ```
 Verify each transition in the trace below. For each step, confirm the state transition is correct given the constraints. If a transition is wrong, identify which step and why.
 
-Output ONLY:
-STEP <n>: CORRECT | WRONG — <one-sentence reason>
-(one line per step; nothing else)
-
-FINAL: AGREE | DISAGREE | INDETERMINATE — <one-sentence reason>
+Identify each wrong transition by step, explain why, and state whether the
+overall trace agrees, disagrees, or remains indeterminate.
 
 CONSTRAINTS:
 [constraints as in re-derivation template]
@@ -156,7 +151,7 @@ Logic checking applies wherever a verifiable computation exists. A representativ
 | Game / puzzle | Logic puzzle with discrete state space (Sudoku variant, constraint satisfaction) | Missed implicit constraint; backtracking-order produces a different-but-also-valid solution that contradicts "uniqueness assumed" |
 | Engineering / physics | Beam-deflection calculation for a multi-load-point cantilever | Wrong moment-of-inertia formula for the cross-section; superposition applied incorrectly; sign convention slip on one load direction |
 
-The `ANSWER:` line discipline and the constraints-explicit pattern apply uniformly across all of these. Domain-specific shifts: which conventions are easiest to mis-state in the constraints block (currency rules and rounding for financial; unit slips for clinical; sign conventions for physics; endianness for crypto).
+The constraints-explicit final-answer pattern applies uniformly across all of these. Domain-specific shifts: which conventions are easiest to mis-state in the constraints block (currency rules and rounding for financial; unit slips for clinical; sign conventions for physics; endianness for crypto).
 
 ## Anti-patterns
 

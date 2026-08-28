@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_6(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 6.3.0\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.0\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "6.3.0")
+            self.assertEqual(manifest["version"], "7.0.0")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -99,6 +99,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             self.assertIsNotNone(match, skill)
             request = json.loads(match.group(1))
             request["repo_root"] = str(ROOT)
+            request["expected_repo_head"] = "1" * 40
             native = coordinator.validate_request(request, wire, host)
             self.assertEqual(native["logical_action"], "review.repository")
 
@@ -178,6 +179,81 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("route or provider unavailability", invocation)
                 self.assertIn("must not automatically replay", invocation)
                 self.assertIn("fresh readiness", invocation)
+
+    def test_merge_resolve_uses_signed_artifact_without_format_replay(self) -> None:
+        build_skills = self._load_build_skills()
+        self.assertIn("merge-resolve", build_skills.ROUTED_SPECS)
+        text = (
+            PLUGIN / "skills" / "merge-resolve" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("signed `context_text` artifact", text)
+        self.assertIn("invalid_final", text)
+        self.assertIn("do not replay", text.lower())
+        self.assertNotIn("Output ONLY these six sections", text)
+        self.assertNotIn("**Retry-on-malformed.**", text)
+
+    def test_logic_check_has_no_stale_answer_line_contract(self) -> None:
+        text = (
+            PLUGIN / "skills" / "logic-check" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("The `ANSWER:` line discipline", text)
+        self.assertIn("constraints-explicit final-answer pattern", text)
+
+    def test_routed_quality_repair_never_auto_replays_signed_artifact(self) -> None:
+        cases = {
+            "simulate-user": {
+                "forbidden": (
+                    "**Retry-on-out-of-character.**",
+                    "Re-emit strictly in character",
+                    "Push back; retry; surface if it fails twice.",
+                ),
+                "required": (
+                    "Surface the out-of-character simulation as incomplete.",
+                    "A later caller-authorized request is a new attempt.",
+                ),
+            },
+            "qa-verify": {
+                "forbidden": ("re-run the QA with the clarification",),
+                "required": (
+                    "Do not automatically issue a second provider request.",
+                    "A later caller-authorized request is a new attempt.",
+                ),
+            },
+            "brainstorm": {
+                "forbidden": (
+                    "push back with a follow-up:",
+                    "Push back at least once for genuinely different angles before settling.",
+                ),
+                "required": (
+                    "Show and synthesize the current signed artifact.",
+                    "Only after the caller selects a cluster or explicitly authorizes a new request",
+                ),
+            },
+            "debate": {
+                "forbidden": (
+                    'push back: "this is a debate, defend the side you were assigned forcefully."',
+                    'push back: "you are arguing [side], defend it without hedging. The synthesis step is where balance returns."',
+                ),
+                "required": (
+                    "Treat a conciliatory or hedged round as weaker evidence in the synthesis.",
+                    "Do not issue a replacement provider request automatically.",
+                ),
+            },
+        }
+
+        for name, assertions in cases.items():
+            for path in (
+                ROOT / "skill-specs" / f"{name}.md",
+                PLUGIN / "skills" / name / "SKILL.md",
+            ):
+                text = path.read_text(encoding="utf-8")
+                normalized = " ".join(text.split())
+                for phrase in assertions["forbidden"]:
+                    with self.subTest(name=name, path=path, forbidden=phrase):
+                        self.assertNotIn(phrase, normalized)
+                for phrase in assertions["required"]:
+                    with self.subTest(name=name, path=path, required=phrase):
+                        self.assertIn(phrase, normalized)
 
     def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
         text = (

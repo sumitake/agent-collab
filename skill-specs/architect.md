@@ -8,7 +8,8 @@ description: Request read-only architecture consultation for codebase analysis, 
 
 Use `architecture.repository` for repository-aware analysis and
 `architecture.conceptual` only for genuinely conceptual consultation. A
-repository request must include the canonical `repo_root` and succeeds only
+repository request must include the canonical `repo_root` and exact
+`expected_repo_head` and succeeds only
 with native inspected-path evidence. Safe substantive text without that
 evidence may be returned only as an explicitly ungrounded advisory; it is
 useful analysis but not repository authority.

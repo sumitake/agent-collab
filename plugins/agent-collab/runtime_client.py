@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "4.2.1"
+PROVIDER_RUNTIME_VERSION = "5.0.0"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -48,6 +48,12 @@ TERM_GRACE_SECONDS = 0.5
 # teardown_error results, most visibly on long Agy runs.
 TEARDOWN_REAP_SECONDS = 5.0
 PROCESS_CLEANUP_RESERVE_SECONDS = TERM_GRACE_SECONDS * 4
+_CODEGEN_ACTIONS = frozenset({
+    "codegen.repository",
+    "frontend_codegen.repository",
+})
+_PROGRESS_FD_ENV = "AGENT_COLLAB_RUNTIME_PROGRESS_FD"
+_PROGRESS_MARK = b"\x01"
 EXPECTED_MINIMUM_MACOS = "14.0"
 RUNTIME_ENTRYPOINT = "agent-collab-runtime"
 SUPPORTED_ARTIFACT_PATHS = MappingProxyType({
@@ -85,7 +91,7 @@ _WIRE_KEYS_V6 = frozenset(
         "zero_inference_readiness",
     }
 )
-_WIRE_V7_KEYS = frozenset(
+_WIRE_IDENTITY_KEYS = frozenset(
     {
         "logical_agents",
         "model_lineages",
@@ -322,8 +328,8 @@ def validate_wire_descriptor(
     if not _exact_int(schema_version) or schema_version < 1:
         raise ValueError("wire descriptor schema version is invalid")
     expected_keys = (
-        _WIRE_KEYS_V6 | _WIRE_V7_KEYS
-        if schema_version == 7
+        _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS
+        if schema_version in {7, 8}
         else _WIRE_KEYS_V6
     )
     if frozenset(descriptor) != expected_keys:
@@ -369,7 +375,7 @@ def validate_wire_descriptor(
     model_lineages: frozenset[str] = frozenset()
     action_targets: dict[str, tuple[str, ...]] = {}
     effort_floors: dict[str, str] = {}
-    if schema_version == 7:
+    if schema_version in {7, 8}:
         raw_agents = descriptor["logical_agents"]
         raw_lineages = descriptor["model_lineages"]
         if (
@@ -441,29 +447,53 @@ def validate_wire_descriptor(
         _validate_schema_document(descriptor[name])
     for schema in artifacts.values():
         _validate_schema_document(schema)
-    if schema_version == 7:
-        try:
-            _validate_schema(
-                {
-                    "wire_contract_sha256": expected_sha256,
-                    "request_id": "descriptor-v7-probe",
-                    "logical_action": "review.repository",
-                    "quality_profile": "frontier",
-                    "effort_class": "maximum",
-                    "target_agent": None,
-                    "author_lineage": None,
-                    "timeout_ms": 1,
-                    "prompt": "Probe.",
-                    "source": {"mode": "repository", "repo_root": "/"},
-                    "occupied_model_lineages": [next(iter(model_lineages))],
-                    "evidence_anchors": [{"id": "probe", "path": "README.md"}],
-                },
-                descriptor["semantic_request"],
+    if schema_version in {7, 8}:
+        repository_probe = {"mode": "repository", "repo_root": "/"}
+        for variant in descriptor["semantic_request"]["properties"]["source"]["oneOf"]:
+            if variant.get("properties", {}).get("mode") == {"const": "repository"}:
+                if "expected_repo_head" in variant["properties"]:
+                    repository_probe["expected_repo_head"] = "1" * 40
+                break
+        if schema_version == 8 and "expected_repo_head" not in repository_probe:
+            raise ValueError(
+                "wire descriptor v8 repository source is not head-bound"
             )
+        semantic_probe = {
+            "wire_contract_sha256": expected_sha256,
+            "request_id": f"descriptor-v{schema_version}-probe",
+            "logical_action": "review.repository",
+            "quality_profile": "frontier",
+            "effort_class": "maximum",
+            "target_agent": None,
+            "author_lineage": None,
+            "timeout_ms": 1,
+            "prompt": "Probe.",
+            "source": repository_probe,
+            "occupied_model_lineages": [next(iter(model_lineages))],
+            "evidence_anchors": [{"id": "probe", "path": "README.md"}],
+        }
+        try:
+            _validate_schema(semantic_probe, descriptor["semantic_request"])
         except ValueError as exc:
             raise ValueError(
-                "wire descriptor semantic request is inconsistent with v7 projections"
+                "wire descriptor semantic request is inconsistent with identity projections"
             ) from exc
+        if schema_version == 8:
+            for invalid_head in (None, "0" * 40, "0" * 64):
+                invalid_probe = dict(semantic_probe)
+                invalid_source = dict(repository_probe)
+                if invalid_head is None:
+                    invalid_source.pop("expected_repo_head")
+                else:
+                    invalid_source["expected_repo_head"] = invalid_head
+                invalid_probe["source"] = invalid_source
+                try:
+                    _validate_schema(invalid_probe, descriptor["semantic_request"])
+                except ValueError:
+                    continue
+                raise ValueError(
+                    "wire descriptor v8 repository source admits an unbound head"
+                )
     readiness = descriptor["zero_inference_readiness"]
     if (
         type(readiness) is not dict
@@ -1245,6 +1275,33 @@ def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
     return env
 
 
+def _close_fd(descriptor: int | None) -> None:
+    if descriptor is None:
+        return
+    try:
+        os.close(descriptor)
+    except OSError:
+        pass
+
+
+def _progress_pipe() -> tuple[int, int]:
+    """Create the private, content-free codegen liveness channel."""
+
+    try:
+        reader, writer = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
+    except AttributeError:
+        reader, writer = os.pipe()
+    try:
+        for descriptor in (reader, writer):
+            os.set_blocking(descriptor, False)
+            os.set_inheritable(descriptor, False)
+    except OSError:
+        _close_fd(reader)
+        _close_fd(writer)
+        raise
+    return reader, writer
+
+
 def _terminate_and_reap(
     process: subprocess.Popen[bytes], *, deadline: float
 ) -> bool:
@@ -1308,21 +1365,42 @@ def _terminate_and_reap(
 
 
 def _collect_bounded(
-    process: subprocess.Popen[bytes], request: bytes, deadline: float
+    process: subprocess.Popen[bytes],
+    request: bytes,
+    deadline: float,
+    *,
+    progress_reader: int | None = None,
+    stall_interval: float | None = None,
 ) -> tuple[bytes, bytes, str]:
+    if (progress_reader is None) != (stall_interval is None):
+        raise ValueError("progress reader and stall interval must be paired")
+    if stall_interval is not None and (
+        type(stall_interval) is bool or stall_interval <= 0
+    ):
+        raise ValueError("stall interval must be positive")
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     streams = (process.stdin, process.stdout, process.stderr)
     for stream in streams:
-        os.set_blocking(stream.fileno(), False)
+        if not getattr(stream, "closed", False):
+            os.set_blocking(stream.fileno(), False)
     selector = selectors.DefaultSelector()
-    selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
-    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
     sent = 0
     stdout = bytearray()
     stderr = bytearray()
-    open_reads = {"stdout", "stderr"}
+    open_reads = {
+        kind
+        for kind, stream in (("stdout", process.stdout), ("stderr", process.stderr))
+        if not getattr(stream, "closed", False)
+    }
     try:
+        if not getattr(process.stdin, "closed", False):
+            selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+        if "stdout" in open_reads:
+            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        if "stderr" in open_reads:
+            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        if progress_reader is not None:
+            selector.register(progress_reader, selectors.EVENT_READ, "progress")
         while open_reads or process.poll() is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -1344,6 +1422,26 @@ def _collect_bounded(
                     if sent == len(request):
                         selector.unregister(stream)
                         stream.close()
+                elif kind == "progress":
+                    try:
+                        mark = os.read(progress_reader, 65536)
+                    except BlockingIOError:
+                        continue
+                    except OSError:
+                        return bytes(stdout), bytes(stderr), "progress_pipe_lost"
+                    if not mark:
+                        try:
+                            selector.unregister(progress_reader)
+                        except KeyError:
+                            pass
+                        # The one-shot runtime may close its writer after its
+                        # already-formed response but before stdout is flushed.
+                        # Keep the current lease so that response can drain;
+                        # EOF is not a progress mark and never renews it.
+                        continue
+                    if mark != _PROGRESS_MARK * len(mark):
+                        return bytes(stdout), bytes(stderr), "progress_pipe_lost"
+                    deadline = time.monotonic() + stall_interval
                 else:
                     try:
                         chunk = os.read(stream.fileno(), 65536)
@@ -1408,6 +1506,10 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     if not _exact_int(timeout_ms) or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime timeout is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     deadline = time.monotonic() + timeout_ms / 1000.0
+    codegen_liveness = (
+        operation == "invoke"
+        and document.get("logical_action") in _CODEGEN_ACTIONS
+    )
     reserve_ms = min(
         int(PROCESS_CLEANUP_RESERVE_SECONDS * 1000),
         max(1, timeout_ms // 2),
@@ -1415,9 +1517,11 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     outer_cleanup_ms = max(1, reserve_ms // 2)
     runtime_deadline = deadline - reserve_ms / 1000.0
     collection_deadline = deadline - outer_cleanup_ms / 1000.0
-    remaining_runtime_ms = int(
-        max(0.0, runtime_deadline - time.monotonic()) * 1000
-    )
+    remaining_runtime_ms = int(max(
+        0.0,
+        (collection_deadline if codegen_liveness else runtime_deadline)
+        - time.monotonic(),
+    ) * 1000)
     if remaining_runtime_ms < 1:
         return RuntimeResult(
             RuntimeStatus.TIMEOUT,
@@ -1426,7 +1530,8 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             artifact_digest=resolution.artifact_digest,
         )
     document = dict(document)
-    document["timeout_ms"] = remaining_runtime_ms
+    if not codegen_liveness:
+        document["timeout_ms"] = remaining_runtime_ms
     try:
         request = _canonical_json(document) + b"\n"
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
@@ -1439,8 +1544,24 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     stdout = None
     terminal = None
     returncode = None
+    progress_reader: int | None = None
+    progress_writer: int | None = None
     try:
         with _isolated_tmpdir() as tmpdir:
+            environment = _scrubbed_env(tmpdir)
+            launch_kwargs: dict[str, object] = {}
+            if codegen_liveness:
+                try:
+                    progress_reader, progress_writer = _progress_pipe()
+                except OSError:
+                    return RuntimeResult(
+                        RuntimeStatus.UNAVAILABLE,
+                        error="codegen progress channel could not be created",
+                        manifest_digest=resolution.manifest_digest,
+                        artifact_digest=resolution.artifact_digest,
+                    )
+                environment[_PROGRESS_FD_ENV] = str(progress_writer)
+                launch_kwargs["pass_fds"] = (progress_writer,)
             try:
                 process = subprocess.Popen(
                     [str(resolution.path), "invoke", "--protocol", str(PROTOCOL_VERSION)],
@@ -1448,14 +1569,49 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     cwd=tmpdir,
-                    env=_scrubbed_env(tmpdir),
+                    env=environment,
                     start_new_session=True,
+                    **launch_kwargs,
                 )
             except OSError:
                 return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="direct runtime could not be launched", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            stdout, _stderr, terminal = _collect_bounded(
-                process, request, collection_deadline
-            )
+            finally:
+                _close_fd(progress_writer)
+                progress_writer = None
+            try:
+                if codegen_liveness:
+                    stdout, _stderr, terminal = _collect_bounded(
+                        process,
+                        request,
+                        collection_deadline,
+                        progress_reader=progress_reader,
+                        stall_interval=timeout_ms / 1000.0,
+                    )
+                else:
+                    stdout, _stderr, terminal = _collect_bounded(
+                        process, request, collection_deadline
+                    )
+            except OSError:
+                if not codegen_liveness:
+                    raise
+                stdout, _stderr, terminal = b"", b"", "progress_pipe_lost"
+            _close_fd(progress_reader)
+            progress_reader = None
+            if codegen_liveness and terminal in {"progress_pipe_lost", "timeout"}:
+                # Closing the read end is the cancellation signal.  The
+                # runtime supervises its provider in a separate process
+                # group, so let that supervisor observe EPIPE (or its own
+                # stall), terminate/reap the provider, and flush a terminal
+                # response before force-killing only the runtime group.
+                try:
+                    _collect_bounded(
+                        process,
+                        b"",
+                        time.monotonic()
+                        + PROCESS_CLEANUP_RESERVE_SECONDS,
+                    )
+                except Exception:
+                    pass
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream is not None and not stream.closed:
                     stream.close()
@@ -1464,13 +1620,22 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                     process,
                     deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
                 )
-                status = RuntimeStatus.TIMEOUT if terminal == "timeout" else RuntimeStatus.OUTPUT_LIMIT
+                status = {
+                    "timeout": RuntimeStatus.TIMEOUT,
+                    "progress_pipe_lost": RuntimeStatus.CANCELLED,
+                    "output_limit": RuntimeStatus.OUTPUT_LIMIT,
+                }[terminal]
                 if not reaped:
                     status = RuntimeStatus.TEARDOWN_ERROR
                 return RuntimeResult(status, error=terminal.replace("_", " "), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            remaining = max(0.0, deadline - time.monotonic())
             try:
-                returncode = process.wait(timeout=remaining)
+                returncode = process.wait(
+                    timeout=(
+                        0
+                        if codegen_liveness
+                        else max(0.0, deadline - time.monotonic())
+                    )
+                )
             except subprocess.TimeoutExpired:
                 reaped = _terminate_and_reap(
                     process,
@@ -1512,6 +1677,9 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
         # cleanup failure; the residue is recorded, not converted into a
         # false provider failure.
         teardown_note = teardown_note or str(exc)
+    finally:
+        _close_fd(progress_writer)
+        _close_fd(progress_reader)
     try:
         response = runtime_bundle.load_closed_json_object(
             stdout, max_bytes=MAX_RESPONSE_BYTES

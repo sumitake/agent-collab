@@ -1,6 +1,6 @@
 ---
 name: project-estimation
-version: 6.3.0
+version: 7.0.0
 description: Use when the user says "estimate this project", "estimate the wall-clock time and cost", "scope this enhancement", "reconcile this estimate with actuals", "calibrate project estimates", or "audit the estimation data"; or when asking how long an agent-led project will take, its API-equivalent token cost, why an estimate missed, or whether evidence supports a delivery range. Also use while creating or materially revising a formal implementation design or formal implementation plan.
 ---
 

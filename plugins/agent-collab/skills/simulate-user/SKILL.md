@@ -1,6 +1,6 @@
 ---
 name: simulate-user
-version: 6.3.0
+version: 7.0.0
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -10,7 +10,7 @@ description: Cast the reviewer into a strict roleplay as a user persona or stake
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root`. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
 
 # Simulate-user — in-character persona reaction to an artifact
 
@@ -69,11 +69,13 @@ React IN CHARACTER. [Word limit, e.g., "Under 150 words"]. No "review," no "As a
 [paste the artifact verbatim]
 ```
 
-**Retry-on-out-of-character.** If the response slips out of character (delivers a "review" instead of a reaction; says "As {persona}, I would..."), retry once with:
-
-> Previous response slipped out of character — it read as a review, not a reaction. Re-emit strictly in character as [persona]. Show the persona's actual reaction, internal monologue if confused, and what they would do next. No "review" framing, no "as a {persona}" preamble.
-
-If the second attempt is also out of character, surface that to the user — the verifier may have hit a guardrail or the persona may be hard to inhabit in strict-character mode. Either way, the failure-to-inhabit is information.
+**Out-of-character artifact.** If the response slips out of character
+(delivers a "review" instead of a reaction; says "As {persona}, I would..."),
+Surface the out-of-character simulation as incomplete. Do not issue a second
+provider request or ask the verifier to repair the artifact. A later
+caller-authorized request is a new attempt. If the caller authorizes one,
+include the stricter persona framing in that new request. The
+failure-to-inhabit is itself information.
 
 ### 4. Surface the in-character reaction, then synthesize
 
@@ -104,7 +106,7 @@ The pattern is constant: name a specific, opinionated, time-budgeted persona; ca
 
 ## Anti-patterns
 
-- **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Push back; retry; surface if it fails twice.
+- **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Surface the current artifact as incomplete; do not replay it automatically.
 - **Simulating a generic "user"** instead of a specific opinionated persona. Generic personas produce generic reactions. Always name the persona's title, context, mood, time budget.
 - **Skipping the synthesis step.** The raw in-character reaction is data; the user wants the actionable change. The skill is not done until the synthesis is delivered.
 - **Using frontier/maximum reflexively.** Short in-character reactions favor economical/minimal; frontier/maximum is for nuanced-reasoning personas (litigator, detail engineer, or compliance officer parsing a regulation).

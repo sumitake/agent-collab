@@ -27,23 +27,15 @@ construct an agent/action pair.
    constraints, success criteria, and stop conditions.
 3. Replace only the two document contents with the frozen artifacts. Preserve
    every other request field exactly and do not add identity or routing fields.
-4. Ask the selected independent reviewer to return exactly:
-
-```text
-VERDICT: MATCH | DRIFT | AMBIGUOUS
-MISSED CONSTRAINTS:
-- ...
-ADDED SCOPE:
-- ...
-AMBIGUITIES:
-- ...
-RECOMMENDED INTERPRETATION:
-<concise restatement>
-```
-
-5. If `MATCH`, proceed. If `DRIFT`, revise the interpretation and recheck once.
-   If `AMBIGUOUS`, ask the operator only the load-bearing question. Preserve the
-   typed route result and immutable provenance.
+4. Ask the selected independent reviewer to compare missed constraints, added
+   scope, ambiguities, and a recommended interpretation inside the
+   descriptor-owned `context_text` artifact. Do not require a verdict line or
+   any alternate terminal envelope.
+5. Adjudicate the returned text as match, drift, or ambiguity. On a match,
+   proceed. On drift, revise the interpretation and recheck only when a new
+   request is separately justified. On ambiguity, ask the operator only the
+   load-bearing question. Preserve the typed route result and immutable
+   provenance; `invalid_final` is terminal and is never replayed for format.
 
 Never reconstruct a raw provider command, choose a target, invoke Claude
 synchronously, or turn a route-local typed failure into a claim that global

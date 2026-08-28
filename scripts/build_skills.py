@@ -60,6 +60,7 @@ ROUTED_SPECS = frozenset(
         "dev-delegate",
         "intent-check",
         "logic-check",
+        "merge-resolve",
         "context",
         "qa-verify",
         "red-team",
@@ -232,7 +233,11 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         ) + suffix + (
             "The public request names one logical action and optional target agent; "
             "provider transport actions are internal descriptor data. For every "
-            "repository action, pass the canonical `repo_root`. For document "
+            "repository action, pass the canonical `repo_root` and its exact "
+            "`expected_repo_head`. The signed artifact schema is the sole terminal "
+            "output contract: prompts may state review criteria but must not append "
+            "a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve "
+            "`invalid_final` as a terminal failure without salvage or replay. For document "
             "context, pass bounded `documents` and no repository source.\n"
         )
     return rendered[: match.end()] + block + rendered[match.end() :]

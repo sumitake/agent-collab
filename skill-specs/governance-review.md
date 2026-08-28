@@ -6,8 +6,8 @@ description: Use when the operator says "governance review," "high-stakes review
 
 # Independent governance review
 
-Use only `governance.repository` with the canonical `repo_root`, exact artifact
-or task. The coordinator observes author lineage from the current host; never
+Use only `governance.repository` with the canonical `repo_root`, exact
+`expected_repo_head`, artifact, or task. The coordinator observes author lineage from the current host; never
 supply it as a request field. Resolve the plugin root, read the coordinator
 schema, and submit one semantic request. Do not send a provider route/action
 pair.
