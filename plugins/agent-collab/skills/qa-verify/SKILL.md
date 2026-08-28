@@ -113,7 +113,7 @@ The verdict is not the deliverable; the adjudication is.
 
 - Investigate each failed constraint. Open the relevant code or output and confirm the verifier's claim. Verifier hallucinations are less common in QA than in code-review (the schema is tighter) but not zero.
 - If the failed constraint is real, inform the user clearly: **the QA pass failed, here are the missed constraints, here is the proposed fix.** Do not minimize.
-- If the failed constraint is hallucinated, report that explicitly: "the reviewer flagged X, but X is not in fact missing — the {field/line/path} is present at {location}." Then either re-run the QA with the clarification or move on.
+- If the failed constraint is hallucinated, report that explicitly: "the reviewer flagged X, but X is not in fact missing — the {field/line/path} is present at {location}." Do not automatically issue a second provider request. A later caller-authorized request is a new attempt. If the caller authorizes one, include the clarification in that new request. Otherwise, move on.
 
 **On `APPROVE`:**
 

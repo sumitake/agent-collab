@@ -78,7 +78,7 @@ Axes-based prompts produce systematic coverage of the option space; flat prompts
 
 ### 4. Do not pre-filter; let the weird ones through
 
-If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the tool returns a list that is uniformly safe or uniformly variations on the same theme, push back with a follow-up: "those are too similar — give me five more that take a genuinely different angle, including at least one you think is probably wrong."
+If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the list is uniformly safe or uniformly variations on the same theme, say so. Show and synthesize the current signed artifact. Do not issue a follow-up automatically. Only after the caller selects a cluster or explicitly authorizes a new request may you request a more divergent batch.
 
 ### 5. Synthesize, then close
 
@@ -107,7 +107,9 @@ useful when you want a specific style of divergence. Brief guide:
 
 ## Iteration
 
-A single brainstorm round is rarely the whole job. After the first round:
+A single brainstorm round may reveal useful next directions. After presenting
+and synthesizing the first round, ask which cluster interests the caller. Only
+after the caller selects a cluster or explicitly authorizes a new request:
 
 - Pick the cluster that surfaces the most interest and request 5–10 more candidates in that direction. (This is convergence-via-divergence — narrowing the option space by going wider in the chosen sub-space.)
 - Pick the cluster that feels weakest and ask "what would it take to make this category actually viable?" — the constraints that surface often illuminate the real problem.
@@ -137,7 +139,7 @@ Pick examples from the user's domain when explaining the brainstorm scope. Match
 ## Anti-patterns
 
 - **Asking the reviewer to decide.** Brainstorming is divergent. Asking "which is best?" pushes the model into a synthesis it has no business making for the user — and trains the user to outsource judgment.
-- **Accepting the first list without pressing for divergence.** The first list often clusters around the most obvious solution category. Push back at least once for genuinely different angles before settling.
+- **Hiding a lack of divergence.** The first list often clusters around the most obvious solution category. Say so, show the list, and let the caller decide whether another divergent request is worthwhile.
 - **Mixing convergence into the brainstorm prompt.** "Give me 10 options ranked by likelihood of success" is a different request — and a worse one for this stage. Generate first, evaluate later. If the user genuinely wants ranking, do a second-pass convergent invocation, not a mixed-mode first pass.
 - **Using frontier/maximum reflexively because the topic feels weighty.** Divergent generation favors economical/minimal for more candidates and lower latency. Reserve frontier/maximum for cases where each candidate genuinely needs reasoning depth (e.g., generating hypothetical contract clauses where each one needs internal coherence, not just one-line bullet points).
 - **Pre-filtering the weird ones before showing the user.** The strange-looking candidate is often where the gem hides. Show everything; let the user prune.

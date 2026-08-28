@@ -223,11 +223,11 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 ## Anti-patterns
 
 - **Soft openings.** "There are good points on both sides" is not a debate, it is mush. Both sides should defend their assigned position with conviction, not hedge.
-- **Conceding mid-debate.** Both sides defend until synthesis. the reviewer conceding in Round 2 ("yes, the PRO side has a fair point...") defeats the purpose. If the reviewer's rebuttal reads as conciliatory, push back: "this is a debate, defend the side you were assigned forcefully."
+- **Conceding mid-debate.** Both sides defend until synthesis. the reviewer conceding in Round 2 ("yes, the PRO side has a fair point...") weakens that round. Treat a conciliatory or hedged round as weaker evidence in the synthesis. Do not issue a replacement provider request automatically. A later caller-authorized request is a new attempt.
 - **Skipping synthesis.** Leaving the user with two transcripts and no verdict is strictly worse than running `second-opinion`. The synthesis step is the deliverable, not the debate itself.
 - **Manufacturing two sides on a question where one is clearly right.** This produces false equivalence. Use `second-opinion` for one-sided questions; reserve debate for genuine binaries.
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
-- **Letting the reviewer hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," push back: "you are arguing [side], defend it without hedging. The synthesis step is where balance returns."
+- **Letting the reviewer hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," record that limitation and weigh it in the synthesis rather than steering a replacement round automatically.
 - **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
 - **Skipping the verifier-independence check** when the user's pre-existing position came from a independent-family agent. Same-family debate is correlated; structurally one-sided. Apply the independence rule before assigning sides.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.

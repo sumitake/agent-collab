@@ -8,8 +8,9 @@
   replay-safe, source-specific, and aware of the public timeout cap; provider
   attempts with started or unknown inference require inspection and a
   separately authorized new request rather than replay.
-- Align `merge-resolve` and `logic-check` with the signed artifact terminal
-  contract and remove automatic format-repair provider requests.
+- Align `merge-resolve`, `logic-check`, `simulate-user`, `qa-verify`,
+  `brainstorm`, and `debate` with the signed artifact terminal contract and
+  remove automatic format- or semantic-quality-repair provider requests.
 - Treat `provider_cli_incompatible` as an inspection outcome repaired through
   the official Agy update path, never by increasing the same request's timeout.
 - Reject real TTY input before loading the runtime. Supported coordinator

@@ -69,11 +69,13 @@ React IN CHARACTER. [Word limit, e.g., "Under 150 words"]. No "review," no "As a
 [paste the artifact verbatim]
 ```
 
-**Retry-on-out-of-character.** If the response slips out of character (delivers a "review" instead of a reaction; says "As {persona}, I would..."), retry once with:
-
-> Previous response slipped out of character — it read as a review, not a reaction. Re-emit strictly in character as [persona]. Show the persona's actual reaction, internal monologue if confused, and what they would do next. No "review" framing, no "as a {persona}" preamble.
-
-If the second attempt is also out of character, surface that to the user — the verifier may have hit a guardrail or the persona may be hard to inhabit in strict-character mode. Either way, the failure-to-inhabit is information.
+**Out-of-character artifact.** If the response slips out of character
+(delivers a "review" instead of a reaction; says "As {persona}, I would..."),
+Surface the out-of-character simulation as incomplete. Do not issue a second
+provider request or ask the verifier to repair the artifact. A later
+caller-authorized request is a new attempt. If the caller authorizes one,
+include the stricter persona framing in that new request. The
+failure-to-inhabit is itself information.
 
 ### 4. Surface the in-character reaction, then synthesize
 
@@ -104,7 +106,7 @@ The pattern is constant: name a specific, opinionated, time-budgeted persona; ca
 
 ## Anti-patterns
 
-- **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Push back; retry; surface if it fails twice.
+- **Letting the verifier slip into "polite critique" mode.** "I think this could be improved by..." defeats the skill. Surface the current artifact as incomplete; do not replay it automatically.
 - **Simulating a generic "user"** instead of a specific opinionated persona. Generic personas produce generic reactions. Always name the persona's title, context, mood, time budget.
 - **Skipping the synthesis step.** The raw in-character reaction is data; the user wants the actionable change. The skill is not done until the synthesis is delivered.
 - **Using frontier/maximum reflexively.** Short in-character reactions favor economical/minimal; frontier/maximum is for nuanced-reasoning personas (litigator, detail engineer, or compliance officer parsing a regulation).

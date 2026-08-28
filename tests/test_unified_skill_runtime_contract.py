@@ -199,6 +199,62 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("The `ANSWER:` line discipline", text)
         self.assertIn("constraints-explicit final-answer pattern", text)
 
+    def test_routed_quality_repair_never_auto_replays_signed_artifact(self) -> None:
+        cases = {
+            "simulate-user": {
+                "forbidden": (
+                    "**Retry-on-out-of-character.**",
+                    "Re-emit strictly in character",
+                    "Push back; retry; surface if it fails twice.",
+                ),
+                "required": (
+                    "Surface the out-of-character simulation as incomplete.",
+                    "A later caller-authorized request is a new attempt.",
+                ),
+            },
+            "qa-verify": {
+                "forbidden": ("re-run the QA with the clarification",),
+                "required": (
+                    "Do not automatically issue a second provider request.",
+                    "A later caller-authorized request is a new attempt.",
+                ),
+            },
+            "brainstorm": {
+                "forbidden": (
+                    "push back with a follow-up:",
+                    "Push back at least once for genuinely different angles before settling.",
+                ),
+                "required": (
+                    "Show and synthesize the current signed artifact.",
+                    "Only after the caller selects a cluster or explicitly authorizes a new request",
+                ),
+            },
+            "debate": {
+                "forbidden": (
+                    'push back: "this is a debate, defend the side you were assigned forcefully."',
+                    'push back: "you are arguing [side], defend it without hedging. The synthesis step is where balance returns."',
+                ),
+                "required": (
+                    "Treat a conciliatory or hedged round as weaker evidence in the synthesis.",
+                    "Do not issue a replacement provider request automatically.",
+                ),
+            },
+        }
+
+        for name, assertions in cases.items():
+            for path in (
+                ROOT / "skill-specs" / f"{name}.md",
+                PLUGIN / "skills" / name / "SKILL.md",
+            ):
+                text = path.read_text(encoding="utf-8")
+                normalized = " ".join(text.split())
+                for phrase in assertions["forbidden"]:
+                    with self.subTest(name=name, path=path, forbidden=phrase):
+                        self.assertNotIn(phrase, normalized)
+                for phrase in assertions["required"]:
+                    with self.subTest(name=name, path=path, required=phrase):
+                        self.assertIn(phrase, normalized)
+
     def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
         text = (
             PLUGIN / "skills" / "intent-check" / "SKILL.md"
