@@ -121,7 +121,7 @@ GitHub-hosted runners and receives no private build/sign credentials.
 
 Policy-only releases contain an empty runtime manifest. An activation release
 may import only a final signed and notarized standalone bundle, its closed
-schema-4/runtime-protocol-3/native-contract-4 manifest, the canonical generated
+schema-4/runtime-protocol-4/native-contract-4 manifest, the canonical generated
 wire descriptor and hash, per-member verification metadata, and required
 third-party license evidence. Public contributors never build or inspect the
 private implementation.

@@ -45,14 +45,14 @@ Current repository route contracts cover:
 - Claude read-only document-intent work through the official structured CLI,
   cost-last after eligible Gemini and Grok routes;
 - Gemini advisory, governance, and bounded context work;
-- Codex advisory and governance work;
+- Codex advisory, governance, and output-only code-generation work;
 - OpenCode planning and output-only build work;
 - Grok read-only architecture, governance, bounded context, and output-only
   code generation.
 
-Codex build is recognized but typed unavailable in this repository generation.
 The route list is a **current repository contract**, not installed/active
-evidence. Readiness is resolved immediately before use.
+evidence. Readiness is resolved immediately before use, including for the
+output-only Codex code-generation route.
 
 ### Primary-executed workflows
 
@@ -123,7 +123,7 @@ workflows explicitly compose the checkpoint before final presentation. A host
 without contextual skill selection uses explicit invocation and reports that
 the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
-semantics, and the published v6.2.4 maintenance evidence.
+semantics, and the published v7.0.0 maintenance evidence.
 
 The packaged prior is currently an explicit bootstrap: enhancement duration is
 descriptive, bootstrap confidence cannot be high, and unsupported greenfield,

@@ -42,9 +42,9 @@ authorities:
 
 | Authority | Meaning | Examples in the current public contract |
 | --- | --- | --- |
-| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
-| **output-only** | May work in a private temporary workspace and return a patch or code artifact for the primary to inspect and apply. | OpenCode build and Grok code generation. |
-| **unavailable** | The contract name is recognized but no hardened backend currently satisfies it. | Codex build in this repository generation. |
+| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude document intent, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
+| **output-only** | May work in a private temporary workspace and return a patch or code artifact for the primary to inspect and apply. | Codex code generation, OpenCode build, and Grok code generation. |
+| **unavailable** | The contract name is recognized but no hardened backend currently satisfies it on the observing host or runtime. | Any route whose typed readiness result is unavailable; this is not inferred from the descriptor alone. |
 | **primary-executed** | The active primary follows the skill locally; no independent managed route is implied. | Self-executed engineering-process skills and primary-only visual guidance where typed media transport is absent. |
 | **async readiness** | Reports whether a host-owned async target is currently addressable. | Explicit Claude or Antigravity target/session readiness. This is not a coordinator `target_agent`; the public coordinator never sends. |
 

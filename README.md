@@ -5,15 +5,14 @@ compatible hosts. Version 7 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source is **agent-collab** (v7.0.0). The current
-published distribution remains **[v6.2.4](https://github.com/sumitake/agent-collab/releases/tag/v6.2.4)**
-with signed provider runtime `4.2.1`. Repository source stages signed provider
-runtime `5.0.0` with wire schema 8; it is not yet a release, installation, or
-activation claim. The v6.2.4 release
-adds one action-scoped native Claude route for document intent while retaining
-bounded invocation correction and provider-neutral carrier reliability. Its
-exact package members, provider-free readiness, observed host bytes, and the
-environmentally unavailable Claude inference canary are recorded separately.
+This public repository's current source is **agent-collab** (v7.0.0).
+
+Current published release: **7.0.0** ([`v7.0.0`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)).
+It carries signed provider runtime `5.0.0`, a schema-4 manifest with runtime
+protocol 4 and native contract 4, wire schema 8, 12 logical actions, 15
+transport actions, and 19 valid action/source pairs. One post-restart Codex
+installation has been verified against this release. That is host-specific
+evidence, not an all-host installation, activation, or readiness claim.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -38,11 +37,19 @@ installation, and readiness claims separate.
 - **No automatic failure-evidence plane.** The host-local capture module and
   archive member are removed. Filing a public issue remains an explicit,
   separately authorized operation based on the typed response.
-- **Paired runtime generation.** Signed provider runtime `5.0.0` advances wire
-  schema 7 to 8 and binds the new exact-head and failure-fidelity contracts into
-  both Darwin architectures without changing the 12-action public surface.
+- **Narrow native Claude route.** The official structured Claude CLI remains a
+  managed, read-only carrier only for `context.documents.intent`; it is
+  cost-last after eligible Gemini and Grok routes and is not a route for review,
+  governance, repository, or code-generation actions.
+- **Request-private Grok state.** Grok code-generation work uses request-private
+  provider state and returns a bounded output-only artifact for the primary to
+  inspect; it does not write the caller's checkout.
+- **Paired runtime generation.** The published signed provider runtime `5.0.0`
+  advances wire schema 7 to 8 and binds the exact-head and failure-fidelity
+  contracts into both Darwin architectures without changing the 12-action
+  public surface.
 
-## Current published release - v6.2.4
+## Previous published release - v6.2.4
 
 - **Action-scoped native Claude routing.** The official structured Claude CLI
   is a managed native carrier only for `context.documents.intent`, returning
@@ -347,7 +354,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v6.0.1 closeout is recorded in the
+The v7.0.0 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing
