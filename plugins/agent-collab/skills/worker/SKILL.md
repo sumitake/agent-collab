@@ -1,6 +1,6 @@
 ---
 name: worker
-version: 7.0.0
+version: 7.0.1
 description: Use when the operator says "delegate this implementation," "generate a private patch," "use Grok for codegen," or "use Moonshot for frontend work." Also offer this when a bounded non-governance task needs output-only code generation without access to the caller checkout.
 ---
 

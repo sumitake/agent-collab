@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from dataclasses import replace
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -37,9 +38,78 @@ class DirectRuntimeClientTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = _load("direct_process_client", CLIENT)
         descriptor, digest = _wire_descriptor()
+        descriptor = dict(descriptor)
+        descriptor["schema_version"] = 9
+        descriptor["logical_action_timeout_modes"] = {
+            action: (
+                "admitted_progress_inactivity"
+                if action in {
+                    "codegen.repository",
+                    "frontend_codegen.repository",
+                    "review.repository",
+                    "frontend_review.repository",
+                    "governance.repository",
+                }
+                else "total_deadline"
+            )
+            for action in descriptor["logical_actions"]
+        }
+        cls.descriptor = descriptor
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
         cls.wire = cls.client.validate_wire_descriptor(
             descriptor, expected_sha256=digest
         )
+
+    def test_wire_v9_retains_repository_head_binding(self) -> None:
+        descriptor = json.loads(json.dumps(self.descriptor))
+        for variant in descriptor["semantic_request"]["properties"]["source"][
+            "oneOf"
+        ]:
+            properties = variant.get("properties", {})
+            if properties.get("mode") == {"const": "repository"}:
+                properties.pop("expected_repo_head")
+                variant["required"].remove("expected_repo_head")
+                break
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+        with self.assertRaisesRegex(ValueError, "v9 repository source"):
+            self.client.validate_wire_descriptor(
+                descriptor, expected_sha256=digest
+            )
+
+    def test_rejects_future_wire_schema_without_a_paired_client(self) -> None:
+        descriptor = json.loads(json.dumps(self.descriptor))
+        descriptor["schema_version"] = 10
+        digest = hashlib.sha256(
+            json.dumps(
+                descriptor,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+        with self.assertRaisesRegex(ValueError, "schema version"):
+            self.client.validate_wire_descriptor(
+                descriptor, expected_sha256=digest
+            )
 
     def _envelope(self, timeout_ms: int) -> dict[str, object]:
         return {
@@ -456,6 +526,79 @@ class DirectRuntimeClientTests(unittest.TestCase):
             os.fstat(collected["progress_reader"])
         self.assertEqual(collections, 2)
         reap.assert_called_once()
+
+    def test_repository_progress_pipe_follows_signed_timeout_mode(self) -> None:
+        """Repository actions use the descriptor, including non-codegen names."""
+
+        class Stream:
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class Process:
+            pid = 4242
+            stdin = Stream()
+            stdout = Stream()
+            stderr = Stream()
+
+        resolution = self.client.RuntimeResolution(
+            self.client.RuntimeStatus.OK,
+            path=Path("/tmp/agent-collab-runtime"),
+            bundle_path=Path("/tmp"),
+            manifest_digest="a" * 64,
+            artifact_digest="b" * 64,
+            identity=self.client.FileIdentity(1, 1, 0o100700, 1, os.getuid(), 1, 1, 1),
+            wire=self.wire,
+        )
+
+        for action, expects_pipe in (
+            ("review.repository", True),
+            ("governance.repository", True),
+            ("architecture.repository", False),
+        ):
+            process = Process()
+            documents = {
+                "request_id": f"{action}-1",
+                "logical_action": action,
+                "timeout_ms": 5_000,
+            }
+            calls = 0
+
+            def collect(_process, _request, _deadline, **kwargs):
+                nonlocal calls
+                calls += 1
+                if expects_pipe:
+                    self.assertIn("progress_reader", kwargs)
+                    self.assertIn("stall_interval", kwargs)
+                    return (b"", b"", "timeout" if calls == 1 else "")
+                self.assertEqual(kwargs, {})
+                return b"", b"", "timeout"
+
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=resolution
+            ), mock.patch.object(
+                self.client, "_envelope_document", return_value=documents
+            ), mock.patch.object(
+                self.client, "_identity", return_value=resolution.identity
+            ), mock.patch.object(
+                self.client.subprocess, "Popen", return_value=process
+            ) as popen, mock.patch.object(
+                self.client, "_collect_bounded", side_effect=collect
+            ), mock.patch.object(
+                self.client, "_terminate_and_reap", return_value=True
+            ):
+                result = self.client.invoke(envelope={})
+
+            self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+            self.assertEqual("pass_fds" in popen.call_args.kwargs, expects_pipe)
+            if expects_pipe:
+                writer = popen.call_args.kwargs["pass_fds"][0]
+                self.assertEqual(
+                    popen.call_args.kwargs["env"][self.client._PROGRESS_FD_ENV],
+                    str(writer),
+                )
+            self.assertEqual(calls, 2 if expects_pipe else 1)
 
     def test_codegen_lease_expiry_allows_bounded_runtime_cleanup_before_reap(self) -> None:
         class Stream:

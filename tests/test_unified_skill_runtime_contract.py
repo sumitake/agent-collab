@@ -24,10 +24,10 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
 
     def test_generated_skills_and_host_manifests_are_version_7(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.0\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.1\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.0")
+            self.assertEqual(manifest["version"], "7.0.1")
 
     def test_readme_documents_closed_semantic_coordinator(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")

@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "5.0.0"
+PROVIDER_RUNTIME_VERSION = "5.0.2"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -48,10 +48,6 @@ TERM_GRACE_SECONDS = 0.5
 # teardown_error results, most visibly on long Agy runs.
 TEARDOWN_REAP_SECONDS = 5.0
 PROCESS_CLEANUP_RESERVE_SECONDS = TERM_GRACE_SECONDS * 4
-_CODEGEN_ACTIONS = frozenset({
-    "codegen.repository",
-    "frontend_codegen.repository",
-})
 _PROGRESS_FD_ENV = "AGENT_COLLAB_RUNTIME_PROGRESS_FD"
 _PROGRESS_MARK = b"\x01"
 EXPECTED_MINIMUM_MACOS = "14.0"
@@ -91,7 +87,7 @@ _WIRE_KEYS_V6 = frozenset(
         "zero_inference_readiness",
     }
 )
-_WIRE_IDENTITY_KEYS = frozenset(
+_WIRE_IDENTITY_KEYS_V7 = frozenset(
     {
         "logical_agents",
         "model_lineages",
@@ -99,7 +95,9 @@ _WIRE_IDENTITY_KEYS = frozenset(
         "logical_action_effort_floors",
     }
 )
+_WIRE_IDENTITY_KEYS_V9 = _WIRE_IDENTITY_KEYS_V7 | {"logical_action_timeout_modes"}
 _EFFORT_CLASSES = frozenset({"minimal", "standard", "maximum"})
+_TIMEOUT_MODES = frozenset({"total_deadline", "admitted_progress_inactivity"})
 _MAX_DESCRIPTOR_IDENTITIES = 64
 _ARTIFACT_SCHEMAS = frozenset(
     {"review_findings", "governance_verdict", "context_text", "private_patch"}
@@ -247,6 +245,7 @@ class WireDescriptorSnapshot:
     model_lineages: frozenset[str]
     logical_action_targets: Mapping[str, tuple[str, ...]]
     logical_action_effort_floors: Mapping[str, str]
+    logical_action_timeout_modes: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -325,10 +324,16 @@ def validate_wire_descriptor(
     if type(descriptor) is not dict:
         raise ValueError("wire descriptor is not closed")
     schema_version = descriptor.get("schema_version")
-    if not _exact_int(schema_version) or schema_version < 1:
+    if (
+        not _exact_int(schema_version)
+        or schema_version < 1
+        or schema_version > 9
+    ):
         raise ValueError("wire descriptor schema version is invalid")
     expected_keys = (
-        _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS
+        _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V9
+        if schema_version == 9
+        else _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V7
         if schema_version in {7, 8}
         else _WIRE_KEYS_V6
     )
@@ -375,7 +380,8 @@ def validate_wire_descriptor(
     model_lineages: frozenset[str] = frozenset()
     action_targets: dict[str, tuple[str, ...]] = {}
     effort_floors: dict[str, str] = {}
-    if schema_version in {7, 8}:
+    timeout_modes: dict[str, str] = {}
+    if schema_version in {7, 8, 9}:
         raw_agents = descriptor["logical_agents"]
         raw_lineages = descriptor["model_lineages"]
         if (
@@ -427,6 +433,18 @@ def validate_wire_descriptor(
                 raise ValueError("wire descriptor action recovery projections are invalid")
             action_targets[action] = tuple(targets)
             effort_floors[action] = raw_floors[action]
+        if schema_version >= 9:
+            raw_timeout_modes = descriptor["logical_action_timeout_modes"]
+            if (
+                type(raw_timeout_modes) is not dict
+                or set(raw_timeout_modes) != set(actions_value)
+                or any(
+                    type(mode) is not str or mode not in _TIMEOUT_MODES
+                    for mode in raw_timeout_modes.values()
+                )
+            ):
+                raise ValueError("wire descriptor action timeout modes are invalid")
+            timeout_modes = dict(raw_timeout_modes)
 
     artifacts = descriptor["artifacts"]
     if type(artifacts) is not dict or frozenset(artifacts) != _ARTIFACT_SCHEMAS:
@@ -447,16 +465,19 @@ def validate_wire_descriptor(
         _validate_schema_document(descriptor[name])
     for schema in artifacts.values():
         _validate_schema_document(schema)
-    if schema_version in {7, 8}:
+    if schema_version in {7, 8, 9}:
         repository_probe = {"mode": "repository", "repo_root": "/"}
         for variant in descriptor["semantic_request"]["properties"]["source"]["oneOf"]:
             if variant.get("properties", {}).get("mode") == {"const": "repository"}:
                 if "expected_repo_head" in variant["properties"]:
                     repository_probe["expected_repo_head"] = "1" * 40
                 break
-        if schema_version == 8 and "expected_repo_head" not in repository_probe:
+        if (
+            schema_version in {8, 9}
+            and "expected_repo_head" not in repository_probe
+        ):
             raise ValueError(
-                "wire descriptor v8 repository source is not head-bound"
+                f"wire descriptor v{schema_version} repository source is not head-bound"
             )
         semantic_probe = {
             "wire_contract_sha256": expected_sha256,
@@ -478,7 +499,7 @@ def validate_wire_descriptor(
             raise ValueError(
                 "wire descriptor semantic request is inconsistent with identity projections"
             ) from exc
-        if schema_version == 8:
+        if schema_version in {8, 9}:
             for invalid_head in (None, "0" * 40, "0" * 64):
                 invalid_probe = dict(semantic_probe)
                 invalid_source = dict(repository_probe)
@@ -492,7 +513,7 @@ def validate_wire_descriptor(
                 except ValueError:
                     continue
                 raise ValueError(
-                    "wire descriptor v8 repository source admits an unbound head"
+                    f"wire descriptor v{schema_version} repository source admits an unbound head"
                 )
     readiness = descriptor["zero_inference_readiness"]
     if (
@@ -523,6 +544,7 @@ def validate_wire_descriptor(
         model_lineages=model_lineages,
         logical_action_targets=action_targets,
         logical_action_effort_floors=effort_floors,
+        logical_action_timeout_modes=timeout_modes,
     )
 
 
@@ -1285,7 +1307,7 @@ def _close_fd(descriptor: int | None) -> None:
 
 
 def _progress_pipe() -> tuple[int, int]:
-    """Create the private, content-free codegen liveness channel."""
+    """Create one private, content-free admitted-progress channel."""
 
     try:
         reader, writer = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
@@ -1506,9 +1528,11 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     if not _exact_int(timeout_ms) or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime timeout is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     deadline = time.monotonic() + timeout_ms / 1000.0
-    codegen_liveness = (
+    admitted_progress = (
         operation == "invoke"
-        and document.get("logical_action") in _CODEGEN_ACTIONS
+        and resolution.wire.logical_action_timeout_modes.get(
+            document.get("logical_action")
+        ) == "admitted_progress_inactivity"
     )
     reserve_ms = min(
         int(PROCESS_CLEANUP_RESERVE_SECONDS * 1000),
@@ -1519,7 +1543,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     collection_deadline = deadline - outer_cleanup_ms / 1000.0
     remaining_runtime_ms = int(max(
         0.0,
-        (collection_deadline if codegen_liveness else runtime_deadline)
+        (collection_deadline if admitted_progress else runtime_deadline)
         - time.monotonic(),
     ) * 1000)
     if remaining_runtime_ms < 1:
@@ -1530,7 +1554,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             artifact_digest=resolution.artifact_digest,
         )
     document = dict(document)
-    if not codegen_liveness:
+    if not admitted_progress:
         document["timeout_ms"] = remaining_runtime_ms
     try:
         request = _canonical_json(document) + b"\n"
@@ -1550,13 +1574,13 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
         with _isolated_tmpdir() as tmpdir:
             environment = _scrubbed_env(tmpdir)
             launch_kwargs: dict[str, object] = {}
-            if codegen_liveness:
+            if admitted_progress:
                 try:
                     progress_reader, progress_writer = _progress_pipe()
                 except OSError:
                     return RuntimeResult(
                         RuntimeStatus.UNAVAILABLE,
-                        error="codegen progress channel could not be created",
+                        error="runtime progress channel could not be created",
                         manifest_digest=resolution.manifest_digest,
                         artifact_digest=resolution.artifact_digest,
                     )
@@ -1579,7 +1603,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 _close_fd(progress_writer)
                 progress_writer = None
             try:
-                if codegen_liveness:
+                if admitted_progress:
                     stdout, _stderr, terminal = _collect_bounded(
                         process,
                         request,
@@ -1592,12 +1616,12 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                         process, request, collection_deadline
                     )
             except OSError:
-                if not codegen_liveness:
+                if not admitted_progress:
                     raise
                 stdout, _stderr, terminal = b"", b"", "progress_pipe_lost"
             _close_fd(progress_reader)
             progress_reader = None
-            if codegen_liveness and terminal in {"progress_pipe_lost", "timeout"}:
+            if admitted_progress and terminal in {"progress_pipe_lost", "timeout"}:
                 # Closing the read end is the cancellation signal.  The
                 # runtime supervises its provider in a separate process
                 # group, so let that supervisor observe EPIPE (or its own
@@ -1632,7 +1656,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                 returncode = process.wait(
                     timeout=(
                         0
-                        if codegen_liveness
+                        if admitted_progress
                         else max(0.0, deadline - time.monotonic())
                     )
                 )

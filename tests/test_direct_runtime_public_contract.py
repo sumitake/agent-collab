@@ -157,8 +157,23 @@ LOGICAL_ACTION_EFFORT_FLOORS = {
     "review.repository": "maximum",
 }
 
+LOGICAL_ACTION_TIMEOUT_MODES = {
+    "architecture.conceptual": "total_deadline",
+    "architecture.repository": "total_deadline",
+    "codegen.repository": "admitted_progress_inactivity",
+    "context.documents.extract": "total_deadline",
+    "context.documents.intent": "total_deadline",
+    "context.documents.reason": "total_deadline",
+    "context.repository.extract": "total_deadline",
+    "context.repository.reason": "total_deadline",
+    "frontend_codegen.repository": "admitted_progress_inactivity",
+    "frontend_review.repository": "admitted_progress_inactivity",
+    "governance.repository": "admitted_progress_inactivity",
+    "review.repository": "admitted_progress_inactivity",
+}
+
 WIRE_CONTRACT_SHA256 = (
-    "9ec0c1d0c943a9ba9025dbb554847abea45d5c2dcac893a69ac09539d265a85f"
+    "86137024f7e16c67bbeb9f29eaee03d8031e645ce1b5b2c46154aeae7528bcd9"
 )
 
 
@@ -321,9 +336,9 @@ class DirectRuntimeSkillContractTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(plugin["version"], "7.0.0")
-        self.assertEqual(codex["version"], "7.0.0")
-        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.0")
+        self.assertEqual(plugin["version"], "7.0.1")
+        self.assertEqual(codex["version"], "7.0.1")
+        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.1")
 
 
 class PublicSemanticMembershipTests(unittest.TestCase):
@@ -353,6 +368,10 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             dict(snapshot.logical_action_effort_floors),
             LOGICAL_ACTION_EFFORT_FLOORS,
         )
+        self.assertEqual(
+            dict(snapshot.logical_action_timeout_modes),
+            LOGICAL_ACTION_TIMEOUT_MODES,
+        )
 
     def test_public_client_accepts_the_previous_positive_wire_schema_revision(self) -> None:
         client = _load("positive_wire_revision_runtime_client", PLUGIN / "runtime_client.py")
@@ -363,6 +382,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             "model_lineages",
             "logical_action_targets",
             "logical_action_effort_floors",
+            "logical_action_timeout_modes",
         ):
             descriptor.pop(key)
 
@@ -376,6 +396,8 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         client = _load("wire_v8_runtime_client", PLUGIN / "runtime_client.py")
         descriptor, _digest = _wire_descriptor()
         descriptor = json.loads(json.dumps(descriptor))
+        descriptor["schema_version"] = 8
+        descriptor.pop("logical_action_timeout_modes")
         self.assertEqual(descriptor["schema_version"], 8)
         repository = descriptor["semantic_request"]["properties"]["source"]["oneOf"][0]
         self.assertIn("expected_repo_head", repository["properties"])
@@ -465,7 +487,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertNotIn("contracts", artifact["properties"])
         self.assertNotIn("route_contract_version", artifact["properties"])
         wire_schema = properties["wire_contract"]
-        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 8})
+        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 9})
         self.assertIn(
             "advisory_response",
             wire_schema["required"],
@@ -475,6 +497,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             "model_lineages",
             "logical_action_targets",
             "logical_action_effort_floors",
+            "logical_action_timeout_modes",
         ):
             self.assertIn(field, wire_schema["required"])
         self.assertEqual(
@@ -522,6 +545,16 @@ class PublicSemanticMembershipTests(unittest.TestCase):
                 for action, floor in LOGICAL_ACTION_EFFORT_FLOORS.items()
             },
         )
+        timeout_schema = wire_schema["properties"]["logical_action_timeout_modes"]
+        self.assertFalse(timeout_schema["additionalProperties"])
+        self.assertEqual(timeout_schema["required"], list(LOGICAL_ACTIONS))
+        self.assertEqual(
+            timeout_schema["properties"],
+            {
+                action: {"const": mode}
+                for action, mode in LOGICAL_ACTION_TIMEOUT_MODES.items()
+            },
+        )
         self.assertEqual(properties["wire_contract_sha256"], {"const": WIRE_CONTRACT_SHA256})
         self.assertEqual(
             properties["artifacts"]["items"]["properties"]["wire_contract_sha256"],
@@ -531,7 +564,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "5.0.0"},
+            {"const": "5.0.2"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -579,7 +612,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
         self.assertGreater(descriptor["schema_version"], 0)
-        self.assertEqual(descriptor["schema_version"], 8)
+        self.assertEqual(descriptor["schema_version"], 9)
         self.assertEqual(descriptor["runtime_protocol_version"], 4)
         encoded = json.dumps(
             descriptor,
@@ -612,13 +645,17 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             descriptor["logical_action_effort_floors"],
             LOGICAL_ACTION_EFFORT_FLOORS,
         )
+        self.assertEqual(
+            descriptor["logical_action_timeout_modes"],
+            LOGICAL_ACTION_TIMEOUT_MODES,
+        )
         for result in descriptor["success_response"]["properties"]["result"]["oneOf"][2:]:
             evidence = result["properties"]["evidence"]["properties"]
             with self.subTest(artifact=result["properties"]["artifact_type"]):
                 self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
                 self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
         for artifact in manifest["artifacts"]:
-            self.assertEqual(artifact["provider_runtime_version"], "5.0.0")
+            self.assertEqual(artifact["provider_runtime_version"], "5.0.2")
             self.assertEqual(artifact["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:
