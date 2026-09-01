@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 4
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "5.0.2"
+PROVIDER_RUNTIME_VERSION = "5.0.3"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -327,12 +327,12 @@ def validate_wire_descriptor(
     if (
         not _exact_int(schema_version)
         or schema_version < 1
-        or schema_version > 9
+        or schema_version > 10
     ):
         raise ValueError("wire descriptor schema version is invalid")
     expected_keys = (
         _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V9
-        if schema_version == 9
+        if schema_version in {9, 10}
         else _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V7
         if schema_version in {7, 8}
         else _WIRE_KEYS_V6
@@ -381,7 +381,7 @@ def validate_wire_descriptor(
     action_targets: dict[str, tuple[str, ...]] = {}
     effort_floors: dict[str, str] = {}
     timeout_modes: dict[str, str] = {}
-    if schema_version in {7, 8, 9}:
+    if schema_version in {7, 8, 9, 10}:
         raw_agents = descriptor["logical_agents"]
         raw_lineages = descriptor["model_lineages"]
         if (
@@ -465,7 +465,7 @@ def validate_wire_descriptor(
         _validate_schema_document(descriptor[name])
     for schema in artifacts.values():
         _validate_schema_document(schema)
-    if schema_version in {7, 8, 9}:
+    if schema_version in {7, 8, 9, 10}:
         repository_probe = {"mode": "repository", "repo_root": "/"}
         for variant in descriptor["semantic_request"]["properties"]["source"]["oneOf"]:
             if variant.get("properties", {}).get("mode") == {"const": "repository"}:
@@ -473,7 +473,7 @@ def validate_wire_descriptor(
                     repository_probe["expected_repo_head"] = "1" * 40
                 break
         if (
-            schema_version in {8, 9}
+            schema_version in {8, 9, 10}
             and "expected_repo_head" not in repository_probe
         ):
             raise ValueError(
@@ -499,7 +499,7 @@ def validate_wire_descriptor(
             raise ValueError(
                 "wire descriptor semantic request is inconsistent with identity projections"
             ) from exc
-        if schema_version in {8, 9}:
+        if schema_version in {8, 9, 10}:
             for invalid_head in (None, "0" * 40, "0" * 64):
                 invalid_probe = dict(semantic_probe)
                 invalid_source = dict(repository_probe)

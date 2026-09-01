@@ -159,7 +159,7 @@ LOGICAL_ACTION_EFFORT_FLOORS = {
 
 LOGICAL_ACTION_TIMEOUT_MODES = {
     "architecture.conceptual": "total_deadline",
-    "architecture.repository": "total_deadline",
+    "architecture.repository": "admitted_progress_inactivity",
     "codegen.repository": "admitted_progress_inactivity",
     "context.documents.extract": "total_deadline",
     "context.documents.intent": "total_deadline",
@@ -173,7 +173,7 @@ LOGICAL_ACTION_TIMEOUT_MODES = {
 }
 
 WIRE_CONTRACT_SHA256 = (
-    "86137024f7e16c67bbeb9f29eaee03d8031e645ce1b5b2c46154aeae7528bcd9"
+    "05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8"
 )
 
 
@@ -487,7 +487,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         self.assertNotIn("contracts", artifact["properties"])
         self.assertNotIn("route_contract_version", artifact["properties"])
         wire_schema = properties["wire_contract"]
-        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 9})
+        self.assertEqual(wire_schema["properties"]["schema_version"], {"const": 10})
         self.assertIn(
             "advisory_response",
             wire_schema["required"],
@@ -564,7 +564,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             properties["artifacts"]["items"]["properties"][
                 "provider_runtime_version"
             ],
-            {"const": "5.0.2"},
+            {"const": "5.0.3"},
         )
 
     def test_committed_manifest_is_the_schema_four_activation(self) -> None:
@@ -612,7 +612,7 @@ class PublicSemanticMembershipTests(unittest.TestCase):
         descriptor = manifest["wire_contract"]
         self.assertIs(type(descriptor["schema_version"]), int)
         self.assertGreater(descriptor["schema_version"], 0)
-        self.assertEqual(descriptor["schema_version"], 9)
+        self.assertEqual(descriptor["schema_version"], 10)
         self.assertEqual(descriptor["runtime_protocol_version"], 4)
         encoded = json.dumps(
             descriptor,
@@ -649,13 +649,25 @@ class PublicSemanticMembershipTests(unittest.TestCase):
             descriptor["logical_action_timeout_modes"],
             LOGICAL_ACTION_TIMEOUT_MODES,
         )
-        for result in descriptor["success_response"]["properties"]["result"]["oneOf"][2:]:
+        for result in descriptor["success_response"]["properties"]["result"]["oneOf"]:
             evidence = result["properties"]["evidence"]["properties"]
+            if "inspected_paths" not in evidence:
+                continue
+            artifact = result["properties"]["artifact_type"]["const"]
+            expected_minimum = (
+                0
+                if artifact in {"governance_verdict", "review_findings"}
+                else 1
+            )
             with self.subTest(artifact=result["properties"]["artifact_type"]):
-                self.assertEqual(evidence["inspected_paths"]["minItems"], 1)
-                self.assertEqual(evidence["repository_evidence"]["minItems"], 1)
+                self.assertEqual(
+                    evidence["inspected_paths"]["minItems"], expected_minimum
+                )
+                self.assertEqual(
+                    evidence["repository_evidence"]["minItems"], expected_minimum
+                )
         for artifact in manifest["artifacts"]:
-            self.assertEqual(artifact["provider_runtime_version"], "5.0.2")
+            self.assertEqual(artifact["provider_runtime_version"], "5.0.3")
             self.assertEqual(artifact["wire_contract_sha256"], WIRE_CONTRACT_SHA256)
 
     def test_public_runtime_has_no_broker_or_setup_lifecycle_api(self) -> None:

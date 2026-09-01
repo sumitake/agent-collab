@@ -18,7 +18,7 @@
     "protocol_version": {"const": 4},
     "contract_version": {"const": 4},
     "wire_contract_sha256": {
-      "const": "86137024f7e16c67bbeb9f29eaee03d8031e645ce1b5b2c46154aeae7528bcd9"
+      "const": "05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8"
     },
     "wire_contract": {
       "type": "object",
@@ -46,7 +46,7 @@
         "zero_inference_readiness"
       ],
       "properties": {
-        "schema_version": {"const": 9},
+        "schema_version": {"const": 10},
         "runtime_protocol_version": {"const": 4},
         "routing_source_sha256": {
           "type": "string",
@@ -196,7 +196,7 @@
           ],
           "properties": {
             "architecture.conceptual": {"const": "total_deadline"},
-            "architecture.repository": {"const": "total_deadline"},
+            "architecture.repository": {"const": "admitted_progress_inactivity"},
             "codegen.repository": {"const": "admitted_progress_inactivity"},
             "context.documents.extract": {"const": "total_deadline"},
             "context.documents.intent": {"const": "total_deadline"},
@@ -379,8 +379,8 @@
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"const": "5.0.2"},
-          "wire_contract_sha256": {"const": "86137024f7e16c67bbeb9f29eaee03d8031e645ce1b5b2c46154aeae7528bcd9"},
+          "provider_runtime_version": {"const": "5.0.3"},
+          "wire_contract_sha256": {"const": "05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8"},
           "files": {
             "type": "array",
             "minItems": 1,

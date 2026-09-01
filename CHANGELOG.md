@@ -64,30 +64,6 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
-- Ship the paired signed provider runtime 5.0.2 generation with source-seal
-  failure fidelity, durable Grok managed-route parity, and wire schema 9.
-- Drive caller liveness from each signed logical action's timeout mode:
-  admitted repository review, frontend review, governance, and code generation
-  use supervised content-free progress as an inactivity lease, while all other
-  actions keep a fixed total deadline.
-- Keep Grok result admission tolerant of provider prose, formatting, passive
-  metadata, and previously unseen fingerprints; contract-valid typed artifacts
-  and sealed source evidence remain authoritative.
-- Advance the public client, schema, dual-architecture runtime mirrors, and
-  regression suite together as agent-collab 7.0.1.
-
-### Documentation
-
-- Reconcile the public README and architecture handbook with the published
-  v7.0.0 package, provider runtime 5.0.0, protocol-4 exact-head request
-  boundary, and the release and installation evidence that is actually
-  verified. The final release documentation procedure now records the public
-  correction before its private companion without changing the immutable
-  v7.0.0 release.
-
-Keep the public README focused on the latest release and route earlier release
-history to the generated changelog.
-
 ### agent-collab 7.0.0 — 2026-08-27
 
 #### Changed

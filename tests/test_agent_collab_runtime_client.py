@@ -39,11 +39,12 @@ class DirectRuntimeClientTests(unittest.TestCase):
         cls.client = _load("direct_process_client", CLIENT)
         descriptor, digest = _wire_descriptor()
         descriptor = dict(descriptor)
-        descriptor["schema_version"] = 9
+        descriptor["schema_version"] = 10
         descriptor["logical_action_timeout_modes"] = {
             action: (
                 "admitted_progress_inactivity"
                 if action in {
+                    "architecture.repository",
                     "codegen.repository",
                     "frontend_codegen.repository",
                     "review.repository",
@@ -68,7 +69,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
             descriptor, expected_sha256=digest
         )
 
-    def test_wire_v9_retains_repository_head_binding(self) -> None:
+    def test_wire_v10_retains_repository_head_binding(self) -> None:
         descriptor = json.loads(json.dumps(self.descriptor))
         for variant in descriptor["semantic_request"]["properties"]["source"][
             "oneOf"
@@ -88,14 +89,14 @@ class DirectRuntimeClientTests(unittest.TestCase):
             ).encode("utf-8")
         ).hexdigest()
 
-        with self.assertRaisesRegex(ValueError, "v9 repository source"):
+        with self.assertRaisesRegex(ValueError, "v10 repository source"):
             self.client.validate_wire_descriptor(
                 descriptor, expected_sha256=digest
             )
 
     def test_rejects_future_wire_schema_without_a_paired_client(self) -> None:
         descriptor = json.loads(json.dumps(self.descriptor))
-        descriptor["schema_version"] = 10
+        descriptor["schema_version"] = 11
         digest = hashlib.sha256(
             json.dumps(
                 descriptor,
@@ -555,7 +556,7 @@ class DirectRuntimeClientTests(unittest.TestCase):
         for action, expects_pipe in (
             ("review.repository", True),
             ("governance.repository", True),
-            ("architecture.repository", False),
+            ("architecture.repository", True),
         ):
             process = Process()
             documents = {
@@ -700,7 +701,13 @@ class DirectRuntimeClientTests(unittest.TestCase):
                         "success": 0, "failed": 0,
                         "incomplete": 0, "unknown": 0,
                     },
-                    "outside_source_observed": False,
+                    "source_access": {
+                        "authorized_local_successes": 0,
+                        "denied_local_attempts": 0,
+                        "unauthorized_local_successes": 0,
+                        "ambiguous_local_events": 0,
+                        "authorized_local_classes": [],
+                    },
                     "native_envelope_sha256": "d" * 64,
                     "cleanup_confirmed": True,
                     "containment_detail": None,

@@ -15,13 +15,13 @@ transport actions, and 19 valid action/source pairs. One post-restart Codex
 installation has been verified against this release. That is host-specific
 evidence and does not claim all-host installation, activation, or readiness.
 
-The unreleased 7.0.1 source pairs signed provider runtime `5.0.2` with wire
-schema 9. The descriptor now signs each logical action's timeout mode, so
-repository review, frontend review, governance, and both code-generation
-actions use admitted-progress inactivity after supervised provider start.
-Managed Grok completion is tolerant of prose, formatting, passive metadata,
-and previously unseen fingerprints; those observations are diagnostic and do
-not override a contract-valid typed artifact plus sealed source evidence.
+The unreleased 7.0.1 source pairs signed provider runtime `5.0.3` with wire
+schema 10. The descriptor signs each logical action's timeout mode, so
+repository architecture, review, frontend review, governance, and both
+code-generation actions use admitted-progress inactivity after supervised
+provider start. Review and governance authority comes from the exact sealed
+source, valid structured final, canonical tracked artifact paths, and cleanup;
+carrier tool telemetry remains diagnostic and contributes no path authority.
 
 Version 7.0.0 binds every repository request to its canonical root and exact
 expected head, rejects real TTY input before runtime loading, and derives
@@ -141,7 +141,7 @@ The canonical request contains exactly these common fields:
   internally. A caller-supplied lineage is rejected.
 - `timeout_ms` is 1–600000. It is the enforced total deadline unless the signed
   descriptor selects `admitted_progress_inactivity`. For
-  `codegen.repository`, `frontend_codegen.repository`,
+  `architecture.repository`, `codegen.repository`, `frontend_codegen.repository`,
   `frontend_review.repository`, `governance.repository`, and
   `review.repository`, it becomes the maximum inactivity interval only after
   supervised provider start. A value over the cap is rejected with an
@@ -192,14 +192,15 @@ returns every logical action in one zero-inference snapshot:
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with wire schema 9, runtime
-protocol 4, native contract 4, and provider runtime `5.0.2`. Schema 9 retains
-the schema-8 exact repository-head binding, logical agents, model lineages,
-action-compatible targets, and effort floors while adding a signed timeout
-mode for every logical action. Request-bound occupied lineages and evidence
-anchors remain closed and runtime-adjudicated. The wire revision records
-compatible descriptor evolution; runtime protocol 4 remains the executable
-compatibility boundary. The manifest carries one
+The workspace build emits one schema-4 manifest with wire schema 10, runtime
+protocol 4, native contract 4, and provider runtime `5.0.3`. Schema 10 retains
+the schema-9 signed timeout modes, exact repository-head binding, logical
+agents, model lineages, action-compatible targets, and effort floors while
+admitting repository architecture progress under the same inactivity contract.
+Request-bound occupied lineages and evidence anchors remain closed and
+runtime-adjudicated. The wire revision records compatible descriptor evolution;
+runtime protocol 4 remains the executable compatibility boundary. The manifest
+carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
@@ -216,7 +217,7 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-The repository runtime 5.0.2 build preserves the action-scoped Claude edge and
+The repository runtime 5.0.3 build preserves the action-scoped Claude edge and
 the closed protocol-4 authority model. Gemini remains the subscription-preferred
 repository and governance route when eligible; Agy versions below 1.1.20 fail
 closed before inference. Grok runs with request-private provider state and the
