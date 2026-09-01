@@ -237,8 +237,39 @@ class TestRootReadmeVersions(unittest.TestCase):
     def test_whatsnew_hyphen_tolerated(self):
         self.assertEqual(crc.extract_whatsnew_version("## What's new - v0.11.0\n"), "0.11.0")
 
+    def test_whatsnew_versions_collects_every_showcase(self):
+        self.assertEqual(
+            crc.extract_whatsnew_versions(
+                "## What's new - v0.12.0\n\n## What's new — v0.11.0\n"
+            ),
+            ["0.12.0", "0.11.0"],
+        )
+
     def test_whatsnew_absent(self):
         self.assertIsNone(crc.extract_whatsnew_version("## Something else\n"))
+
+
+class TestRootReadmeShowcaseInvariant(unittest.TestCase):
+    def test_accepts_exactly_one_current_showcase(self):
+        self.assertIsNone(
+            crc.whatsnew_showcase_error("## What's new - v3.0.0\n", "3.0.0")
+        )
+
+    def test_rejects_appended_release_showcase(self):
+        self.assertEqual(
+            crc.whatsnew_showcase_error(
+                "## What's new - v3.0.0\n## What's new - v2.9.0\n",
+                "3.0.0",
+            ),
+            "expected exactly one What's new release showcase, "
+            "found 2 (3.0.0, 2.9.0)",
+        )
+
+    def test_rejects_missing_release_showcase(self):
+        self.assertEqual(
+            crc.whatsnew_showcase_error("## What ships\n", "3.0.0"),
+            "expected exactly one What's new release showcase, found 0 (none)",
+        )
 
 
 class TestPluginReadmeVersion(unittest.TestCase):

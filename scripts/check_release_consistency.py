@@ -211,9 +211,28 @@ def extract_root_summary_version(text: str) -> str | None:
 
 
 def extract_whatsnew_version(text: str) -> str | None:
-    """'## What's new - vX.Y.Z' heading (hyphen / en-dash / em-dash tolerated)."""
-    m = re.search(rf"^##\s+What's new\s*[-–—]\s*v{_SEMVER}", text, re.M)
-    return m.group(1) if m else None
+    """First '## What's new - vX.Y.Z' heading, retained for callers/tests."""
+    versions = extract_whatsnew_versions(text)
+    return versions[0] if versions else None
+
+
+def extract_whatsnew_versions(text: str) -> list[str]:
+    """All release-showcase headings (hyphen / en-dash / em-dash tolerated)."""
+    return re.findall(rf"^##\s+What's new\s*[-–—]\s*v{_SEMVER}", text, re.M)
+
+
+def whatsnew_showcase_error(text: str, expected: str) -> str | None:
+    """Return the release-showcase invariant violation, if any."""
+    versions = extract_whatsnew_versions(text)
+    if len(versions) != 1:
+        found = ", ".join(versions) if versions else "none"
+        return (
+            "expected exactly one What's new release showcase, "
+            f"found {len(versions)} ({found})"
+        )
+    if versions[0] != expected:
+        return f"whatsnew version is {versions[0]}, expected {expected}"
+    return None
 
 
 def extract_plugin_readme_version(text: str) -> str | None:
@@ -498,12 +517,15 @@ def run_consistency(root: Path) -> tuple[bool, list[str]]:
         ok = False
         lines.append("FAIL  root README.md: cannot read file")
     else:
-        whatsnew = extract_whatsnew_version(root_readme_text)
-        if whatsnew != expected:
+        whatsnew_error = whatsnew_showcase_error(root_readme_text, expected)
+        if whatsnew_error:
             ok = False
-            lines.append(f"FAIL  root README.md: whatsnew version is {whatsnew}, expected {expected}")
+            lines.append(f"FAIL  root README.md: {whatsnew_error}")
         else:
-            lines.append(f"PASS  root README.md: whatsnew version = {whatsnew}")
+            lines.append(
+                "PASS  root README.md: exactly one What's new release showcase "
+                f"at version {expected}"
+            )
 
         if m_text is not None:
             try:
