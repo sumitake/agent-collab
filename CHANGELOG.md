@@ -64,6 +64,36 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 7.0.1 — 2026-09-01
+
+#### Changed
+
+- Ship one paired signed provider runtime 5.0.3 generation with wire schema 10,
+  preserving exact-head source seals, structured-final validation, canonical
+  tracked artifact paths, deterministic cleanup, and the one-process/no-replay
+  lifecycle.
+- Treat absent, noisy, denied, and outside-support carrier tool telemetry as
+  diagnostic for repository review and governance; provider terminal failures,
+  source changes, escaped paths, invalid finals, and cleanup failures remain
+  hard failures, while context and private-patch evidence stay strict.
+- Admit `architecture.repository` review-diff transport and signed
+  admitted-progress inactivity without adding a broker, sandbox helper,
+  provider fingerprint gate, retry, or fallback path.
+- Advance the public client, schema, dual-architecture runtime mirrors, and
+  regression suite together as agent-collab 7.0.1.
+
+### Documentation
+
+- Reconcile the public README and architecture handbook with the published
+  v7.0.0 package, provider runtime 5.0.0, protocol-4 exact-head request
+  boundary, and the release and installation evidence that is actually
+  verified. The final release documentation procedure now records the public
+  correction before its private companion without changing the immutable
+  v7.0.0 release.
+
+Keep the public README focused on the latest release and route earlier release
+history to the generated changelog.
+
 ### agent-collab 7.0.0 — 2026-08-27
 
 #### Changed
