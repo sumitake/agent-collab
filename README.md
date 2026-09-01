@@ -39,34 +39,6 @@ installation, and readiness claims separate.
   wire digest
   `05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8`.
 
-## What's new - v7.0.0
-
-- **Exact repository binding.** Every repository request now carries both its
-  canonical absolute `repo_root` and the verified 40- or 64-hex
-  `expected_repo_head`; omission or mismatch fails before provider work.
-- **Replay-safe failure recovery.** Typed failure traces distinguish proven
-  pre-inference setup failures from provider-started or uncertain outcomes.
-  Only the former can recommend a fresh request; timeouts, cancellation,
-  provider failures, teardown failures, and incompatible Agy producer output
-  remain inspect-first and never authorize replay of the same request.
-- **One framing contract.** Coordinator input is one EOF-framed JSON object
-  from a pipe or regular file. A real TTY is rejected before the runtime loads,
-  removing the platform-sensitive terminal framing path.
-- **No automatic failure-evidence plane.** The host-local capture module and
-  archive member are removed. Filing a public issue remains an explicit,
-  separately authorized operation based on the typed response.
-- **Narrow native Claude route.** The official structured Claude CLI remains a
-  managed, read-only carrier only for `context.documents.intent`; it is
-  cost-last after eligible Gemini and Grok routes and is not a route for review,
-  governance, repository, or code-generation actions.
-- **Request-private Grok state.** Grok code-generation work uses request-private
-  provider state and returns a bounded output-only artifact for the primary to
-  inspect; it does not write the caller's checkout.
-- **Paired runtime generation.** The published signed provider runtime `5.0.0`
-  advances wire schema 7 to 8 and binds the exact-head and failure-fidelity
-  contracts into both Darwin architectures without changing the 12-action
-  public surface.
-
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
 ## What ships

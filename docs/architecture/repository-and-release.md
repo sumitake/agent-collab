@@ -208,8 +208,11 @@ Review and update these public surfaces together:
    link claims to authoritative public evidence.
 2. **Root `README.md`:** keep the package overview, current-release narrative,
    examples, capabilities, counts, lifecycle links, and security boundaries
-   aligned with the released version. Do not turn the README into a second
-   protocol reference.
+   aligned with the released version. Replace the complete existing
+   `## What's new - vX.Y.Z` showcase with the new release's block; never prepend
+   or retain an older showcase. Exactly one such heading may remain, and all
+   earlier release history belongs in `CHANGELOG.md`. Do not turn the README
+   into a second protocol reference.
 3. **Stale-state reconciliation:** derive version/runtime, logical-action,
    transport-action, source-pair, architecture, and skill counts from the exact
    released manifest or generated inventory. Search the README and handbook for
