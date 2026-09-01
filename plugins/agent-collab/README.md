@@ -5,7 +5,7 @@ boundary and one co-packaged native runtime. Public callers choose a logical
 action and source; they never choose a provider route, transport action, model,
 binary, socket, lane, or lifecycle command.
 
-Current repository source: **7.0.0**
+Current repository source: **7.0.1**
 
 Current published release: **7.0.0**
 ([`v7.0.0`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)); it
@@ -14,6 +14,14 @@ protocol 4 and native contract 4, wire schema 8, 12 logical actions, 15
 transport actions, and 19 valid action/source pairs. One post-restart Codex
 installation has been verified against this release. That is host-specific
 evidence and does not claim all-host installation, activation, or readiness.
+
+The unreleased 7.0.1 source pairs signed provider runtime `5.0.3` with wire
+schema 10. The descriptor signs each logical action's timeout mode, so
+repository architecture, review, frontend review, governance, and both
+code-generation actions use admitted-progress inactivity after supervised
+provider start. Review and governance authority comes from the exact sealed
+source, valid structured final, canonical tracked artifact paths, and cleanup;
+carrier tool telemetry remains diagnostic and contributes no path authority.
 
 Version 7.0.0 binds every repository request to its canonical root and exact
 expected head, rejects real TTY input before runtime loading, and derives
@@ -131,11 +139,13 @@ The canonical request contains exactly these common fields:
   target unless a future signed descriptor explicitly admits it.
 - The coordinator observes the current host family and adds `author_lineage`
   internally. A caller-supplied lineage is rejected.
-- `timeout_ms` is 1–600000. It is the enforced total deadline for every action
-  except `codegen.repository` and `frontend_codegen.repository`; after their
-  signed runtime reports supervised provider start, it becomes the maximum
-  admitted-progress inactivity interval. A value over the cap is rejected with
-  an actionable `timeout_ms_over_cap` error naming the `max`, not silently
+- `timeout_ms` is 1–600000. It is the enforced total deadline unless the signed
+  descriptor selects `admitted_progress_inactivity`. For
+  `architecture.repository`, `codegen.repository`, `frontend_codegen.repository`,
+  `frontend_review.repository`, `governance.repository`, and
+  `review.repository`, it becomes the maximum inactivity interval only after
+  supervised provider start. A value over the cap is rejected with an
+  actionable `timeout_ms_over_cap` error naming the `max`, not silently
   clamped.
 - `prompt` is non-empty UTF-8, bounded to 1 MiB.
 - Every repository action adds exactly one canonical absolute `repo_root` and
@@ -182,14 +192,15 @@ returns every logical action in one zero-inference snapshot:
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with wire schema 8, runtime
-protocol 4, native contract 4, and provider runtime `5.0.0`. Schema 8 retains
-the schema-7 logical agents, model lineages, action-compatible targets, and
-effort floors while requiring every repository source to carry its exact
-nonzero expected head. Request-bound occupied lineages and evidence anchors
-remain closed and runtime-adjudicated. The wire revision records compatible
-descriptor evolution; runtime protocol 4 remains the executable compatibility
-boundary. The manifest carries one
+The workspace build emits one schema-4 manifest with wire schema 10, runtime
+protocol 4, native contract 4, and provider runtime `5.0.3`. Schema 10 retains
+the schema-9 signed timeout modes, exact repository-head binding, logical
+agents, model lineages, action-compatible targets, and effort floors while
+admitting repository architecture progress under the same inactivity contract.
+Request-bound occupied lineages and evidence anchors remain closed and
+runtime-adjudicated. The wire revision records compatible descriptor evolution;
+runtime protocol 4 remains the executable compatibility boundary. The manifest
+carries one
 top-level closed `wire_contract` and its canonical `wire_contract_sha256`.
 That descriptor is the only source for:
 
@@ -206,14 +217,15 @@ That descriptor is the only source for:
 Artifact entries contain bundle membership and signing identity only. They do
 not mirror action membership.
 
-The repository runtime 5.0.0 build preserves the action-scoped Claude edge and
+The repository runtime 5.0.3 build preserves the action-scoped Claude edge and
 the closed protocol-4 authority model. Gemini remains the subscription-preferred
 repository and governance route when eligible; Agy versions below 1.1.20 fail
 closed before inference. Grok runs with request-private provider state and the
-sealed repository as its only project context. Code-generation actions use the
-public timeout as an admitted-progress inactivity lease after supervised
-provider start; ordinary actions retain a fixed total deadline. Provider-started
-or uncertain terminal outcomes never authorize replay or fallback invocation.
+sealed repository as its only project context. Actions marked
+`admitted_progress_inactivity` by the signed descriptor use the public timeout
+as an inactivity lease after supervised provider start; other actions retain a
+fixed total deadline. Provider-started or uncertain terminal outcomes never
+authorize replay or fallback invocation.
 
 Claude uses the official structured CLI only for document-intent requests. The
 route is read-only, source-bound to documents, and cost-last after Gemini and
@@ -233,11 +245,11 @@ For each accepted request the public client:
 4. Rechecks entrypoint identity immediately before spawning.
 5. Starts the fixed entrypoint as a new process group with bounded stdin,
    stdout, and stderr.
-6. Applies the shared deadline (or, for codegen after supervised provider start,
-   the admitted-progress inactivity lease), explicitly sends TERM, then KILL if
-   needed, and reaps the group. Only the runtime's fixed content-free progress
-   mark renews that lease; raw output and progress-channel EOF do not. Cleanup
-   after a lost lease uses its own short bounded reserve.
+6. Applies the shared deadline or the descriptor-admitted inactivity lease
+   after supervised provider start, explicitly sends TERM, then KILL if needed,
+   and reaps the group. Only the runtime's fixed content-free progress mark
+   renews that lease; raw output and progress-channel EOF do not. Cleanup after
+   a lost lease uses its own short bounded reserve.
 7. Validates the exact success, ungrounded advisory, or failure response
    against the descriptor.
 

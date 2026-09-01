@@ -84,6 +84,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
         descriptor, _digest = _wire_descriptor()
         descriptor = copy.deepcopy(descriptor)
         descriptor["schema_version"] = 8
+        descriptor.pop("logical_action_timeout_modes")
         agents = [
             "alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"
         ]
@@ -145,6 +146,7 @@ class CoordinatorFaultToleranceTests(unittest.TestCase):
             "model_lineages",
             "logical_action_targets",
             "logical_action_effort_floors",
+            "logical_action_timeout_modes",
         ):
             descriptor.pop(field, None)
         semantic = descriptor["semantic_request"]

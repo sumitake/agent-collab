@@ -5,7 +5,7 @@ compatible hosts. Version 7 keeps the closed semantic coordinator and
 co-packaged direct native runtime while adding provider-neutral quality and
 effort profiles, current-portfolio routing, and truthful advisory degradation.
 
-This public repository's current source is **agent-collab** (v7.0.0).
+This public repository's current source is **agent-collab** (v7.0.1).
 
 Current published release: **7.0.0** ([`v7.0.0`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)).
 It carries signed provider runtime `5.0.0`, a schema-4 manifest with runtime
@@ -20,6 +20,24 @@ machine-operational contract for the repository source. The dated
 [status and evidence snapshot](docs/architecture/status-and-evidence.md)
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
+
+## What's new - v7.0.1
+
+- **Liveness follows admitted progress.** Wire schema 10 signs one timeout mode
+  per logical action. Repository architecture, review, frontend review,
+  governance, and both code-generation actions use a finite inactivity lease
+  only after supervised provider start; other actions retain a total deadline.
+  Content-free runtime progress renews the lease, while prose and ordinary
+  output do not.
+- **Sealed-artifact review authority.** Review and governance accept a valid
+  structured final against the exact sealed source and canonical tracked
+  artifact paths even when carrier tool telemetry is absent, noisy, or denied.
+  Provider terminal failures, source-seal changes, escaped paths, invalid
+  finals, and cleanup failures remain hard failures.
+- **One paired runtime generation.** Signed provider runtime `5.0.3` carries
+  the source-containment reset and admitted-progress corrections together under
+  wire digest
+  `05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8`.
 
 ## What's new - v7.0.0
 
@@ -140,7 +158,7 @@ The public source expects:
 - manifest schema 4;
 - runtime protocol 4;
 - native manifest contract 4;
-- provider runtime version `5.0.0`;
+- provider runtime version `5.0.3`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - no action-membership mirror in artifact entries.
