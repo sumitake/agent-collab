@@ -64,6 +64,30 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 7.0.2 — 2026-09-02
+
+- Replace the strict semantic coordinator with a routing-only protocol-5 shim.
+  Provider JSON, verdict, findings, receipt, telemetry, terminal-wrapper, and
+  prose formatting are no longer content gates; every bounded observed
+  nonempty final or recovered partial reaches caller reasoning.
+- Keep repository identity, exact-head readback, disposable code-generation
+  copies, binary-safe patch capture, effect verification, and cleanup
+  caller-owned. Runtime diagnostics remain visible and never fabricate
+  approval, authority, a receipt, patch bytes, or cleanup from process exit.
+- Ship signed and notarized provider runtime 5.0.4 for macOS arm64 and x86_64
+  with manifest schema 4, runtime protocol 5, native contract 4, wire schema
+  11, and wire digest
+  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`.
+
+- Preserve valid bounded runtime records across malformed UTF-8, missing final
+  newline, and unrelated stderr overflow, while excluding stdout records whose
+  delimiter falls beyond the response byte cap.
+
+Keep the root README's What's-new area to exactly one current-release showcase.
+Release consistency now rejects absent or accumulated showcase headings, and
+the release closeout procedure explicitly replaces the prior block instead of
+prepending another entry.
+
 ### agent-collab 7.0.1 — 2026-09-01
 
 #### Changed
