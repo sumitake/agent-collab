@@ -22,18 +22,22 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_2(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.1\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.2\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.1")
+            self.assertEqual(manifest["version"], "7.0.2")
 
-    def test_readme_documents_closed_semantic_coordinator(self) -> None:
+    def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
-        self.assertIn("## Coordinator request", text)
+        self.assertIn("## Routing request", text)
         self.assertIn("wire_contract_sha256", text)
         self.assertIn("12 logical actions", text)
+        self.assertIn("protocol 5", text)
+        self.assertIn("Provider final content is opaque", text)
+        self.assertIn("full raw response", text)
+        self.assertNotIn("## Coordinator request", text)
         self.assertNotIn("runtime_setup.py", text)
 
     def test_readmes_match_descriptor_cardinalities(self) -> None:
@@ -41,131 +45,53 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
         )["wire_contract"]
         logical = len(descriptor["logical_actions"])
-        transports = len(descriptor["base_transport_actions"])
-        pairs = len(descriptor["valid_action_source_pairs"])
         root_section = self._section(
             (ROOT / "README.md").read_text(encoding="utf-8"), "Semantic actions"
         )
         package_section = self._section(
             (PLUGIN / "README.md").read_text(encoding="utf-8"),
-            "Direct runtime boundary",
+            "Routing request",
         )
 
         for section, claims in (
             (
                 root_section,
-                (
-                    (r"\b(\d+) logical actions\b", logical),
-                    (r"\b(\d+)\s+transport actions\b", transports),
-                    (r"\b(\d+)\s+action/source pairs\b", pairs),
-                ),
+                ((r"\b(\d+) logical actions\b", logical),),
             ),
             (
                 package_section,
-                (
-                    (r"\b(\d+) logical actions\b", logical),
-                    (r"\b(\d+) source-collapsed provider transport actions\b", transports),
-                    (r"\b(\d+) currently valid action/source pairs\b", pairs),
-                ),
+                ((r"\b(\d+) logical actions\b", logical),),
             ),
         ):
             for pattern, expected in claims:
                 with self.subTest(pattern=pattern, expected=expected):
                     self._assert_single_cardinality_claim(section, pattern, expected)
 
-    def test_review_skill_examples_are_accepted_closed_coordinator_requests(self) -> None:
-        def load(name: str, path: Path):
-            spec = importlib.util.spec_from_file_location(name, path)
-            assert spec is not None and spec.loader is not None
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
-            return module
-
-        coordinator = load("skill_example_coordinator", PLUGIN / "coordinator.py")
-        client = load("skill_example_client", PLUGIN / "runtime_client.py")
-        policy = load("skill_example_policy", PLUGIN / "host_policy.py")
-        from tests.test_direct_runtime_public_contract import _wire_descriptor
-
-        descriptor, digest = _wire_descriptor()
-        wire = client.validate_wire_descriptor(descriptor, expected_sha256=digest)
-        host = policy.HostProfile(
-            "codex", "openai", "gpt-test", "codex", "session-1", False,
-            governance_ready=True,
-        )
-        for skill in ("code-review", "second-opinion", "red-team"):
-            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
-            match = re.search(r"```json coordinator-request\n(.+?)\n```", text, re.S)
-            self.assertIsNotNone(match, skill)
-            request = json.loads(match.group(1))
-            request["repo_root"] = str(ROOT)
-            request["expected_repo_head"] = "1" * 40
-            native = coordinator.validate_request(request, wire, host)
-            self.assertEqual(native["logical_action"], "review.repository")
-
-    def test_runtime_status_uses_one_closed_all_action_request(self) -> None:
-        text = (
-            PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        invocation = text.split("\n# Agent runtime status\n", 1)[0]
-        self.assertIn("one bounded JSON readiness request", invocation)
-        self.assertIn("complete all-action readiness matrix", invocation)
-        self.assertIn("zero-inference", invocation)
-        for routed_request_claim in (
-            "logical action",
-            "target agent",
-            "prompt",
-            "source",
-            "`repo_root`",
-            "`documents`",
+    def test_review_skills_reason_over_raw_content_without_format_gate(self) -> None:
+        for skill in (
+            "code-review", "second-opinion", "red-team", "qa-verify",
+            "governance-review",
         ):
-            self.assertNotIn(routed_request_claim, invocation.lower())
+            with self.subTest(skill=skill):
+                text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(
+                    encoding="utf-8"
+                ).casefold()
+                self.assertIn("ordinary model reasoning", text)
+                self.assertIn("raw", text)
+                self.assertIn("response", text)
+                self.assertTrue("verdict" in text or "recommendation" in text)
+                self.assertNotIn("invalid_final", text)
 
-        ordinary = (
-            PLUGIN / "skills" / "code-review" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        ordinary_invocation = ordinary.split("\n# Code review\n", 1)[0]
-        self.assertIn("one logical action and optional target agent", ordinary_invocation)
-
-        matches = re.findall(r"```json coordinator-request\n(.+?)\n```", text, re.S)
-        self.assertEqual(len(matches), 1)
-        self.assertEqual(
-            json.loads(matches[0]),
-            {
-                "operation": "readiness",
-                "request_id": "runtime-status-1",
-                "quality_profile": "frontier",
-                "effort_class": "maximum",
-                "timeout_ms": 120000,
-            },
-        )
-        self.assertRegex(text.lower(), r"do not issue one\s+request per action")
-
-    def test_lifecycle_guide_uses_the_closed_runtime_status_request(self) -> None:
-        skill = (
+    def test_runtime_status_uses_one_zero_inference_all_action_request(self) -> None:
+        text = " ".join((
             PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        skill_match = re.search(
-            r"```json coordinator-request\n(.+?)\n```", skill, re.S
-        )
-        self.assertIsNotNone(skill_match)
+        ).read_text(encoding="utf-8").casefold().split())
+        self.assertIn("dispatch_requested=false", text)
+        self.assertIn("one caller-defined work unit for each of the 12", text)
+        self.assertIn("do not issue one process per action", text)
+        self.assertIn("do not invoke a provider as a readiness probe", text)
 
-        guide = (
-            ROOT / "docs" / "architecture" / "lifecycle-and-operations.md"
-        ).read_text(encoding="utf-8")
-        guide_match = re.search(
-            r"printf '%s\\n' '(\{.+?\})' \| python3 "
-            r'"<installed-plugin-root>/coordinator\.py"',
-            guide,
-        )
-        self.assertIsNotNone(guide_match)
-        self.assertEqual(
-            json.loads(guide_match.group(1)),
-            json.loads(skill_match.group(1)),
-        )
-
-    def test_routed_skills_keep_provider_failures_attempt_local(self) -> None:
-        """Invocation failures must never become an implicit route quarantine."""
+    def test_routed_skills_keep_one_attempt_and_preserve_content(self) -> None:
         build_skills = self._load_build_skills()
         for name in sorted(build_skills.ROUTED_SPECS):
             with self.subTest(name=name):
@@ -173,22 +99,30 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                     PLUGIN / "skills" / name / "SKILL.md"
                 ).read_text(encoding="utf-8")
                 invocation = text.split("\n# ", 1)[0].lower()
-                self.assertIn("`provider_error` and `teardown_error`", invocation)
-                self.assertIn("attempt-local", invocation)
-                self.assertIn("must not quarantine", invocation)
-                self.assertIn("route or provider unavailability", invocation)
-                self.assertIn("must not automatically replay", invocation)
-                self.assertIn("fresh readiness", invocation)
+                self.assertIn("one bounded json routing request", invocation)
+                self.assertIn("one caller-defined work unit", invocation)
+                self.assertIn("preserve every returned content record", invocation)
+                self.assertIn("optional diagnostics", invocation)
+                self.assertIn("at most one provider attempt per work unit", invocation)
+                self.assertIn("never synthesize approval", invocation)
 
-    def test_merge_resolve_uses_signed_artifact_without_format_replay(self) -> None:
+    def test_route_uses_protocol_five_explicit_target_field(self) -> None:
+        text = (
+            PLUGIN / "skills" / "route" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("`explicit_target`", text)
+        self.assertNotIn("`target_agent`", text)
+
+    def test_merge_resolve_uses_raw_content_without_format_replay(self) -> None:
         build_skills = self._load_build_skills()
         self.assertIn("merge-resolve", build_skills.ROUTED_SPECS)
         text = (
             PLUGIN / "skills" / "merge-resolve" / "SKILL.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("signed `context_text` artifact", text)
-        self.assertIn("invalid_final", text)
+        self.assertIn("raw response", text)
+        self.assertIn("ordinary model reasoning", text)
         self.assertIn("do not replay", text.lower())
+        self.assertNotIn("invalid_final", text)
         self.assertNotIn("Output ONLY these six sections", text)
         self.assertNotIn("**Retry-on-malformed.**", text)
 
@@ -225,7 +159,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                     "Push back at least once for genuinely different angles before settling.",
                 ),
                 "required": (
-                    "Show and synthesize the current signed artifact.",
+                    "Show and synthesize the full raw response.",
                     "Only after the caller selects a cluster or explicitly authorizes a new request",
                 ),
             },
@@ -255,32 +189,25 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                     with self.subTest(name=name, path=path, required=phrase):
                         self.assertIn(phrase, normalized)
 
-    def test_intent_check_uses_the_descriptor_owned_untargeted_action(self) -> None:
+    def test_intent_check_uses_document_intent_action_without_format_gate(self) -> None:
         text = (
             PLUGIN / "skills" / "intent-check" / "SKILL.md"
-        ).read_text(encoding="utf-8")
-        matches = re.findall(r"```json coordinator-request\n(.+?)\n```", text, re.S)
-        self.assertEqual(len(matches), 1)
-        request = json.loads(matches[0])
-        self.assertEqual(request["logical_action"], "context.documents.intent")
-        self.assertIsNone(request["target_agent"])
-        # standard/standard per the operator-adjudicated verify-intent
-        # effort floors (workspace #2771; skill companion in v6.0.6).
-        self.assertEqual(request["quality_profile"], "standard")
-        self.assertEqual(request["effort_class"], "standard")
-        self.assertEqual(
-            set(request),
-            {
-                "request_id",
-                "logical_action",
-                "quality_profile",
-                "effort_class",
-                "target_agent",
-                "timeout_ms",
-                "prompt",
-                "documents",
-            },
-        )
+        ).read_text(encoding="utf-8").casefold()
+        self.assertIn("context.documents.intent", text)
+        self.assertIn("quality_profile: standard", text)
+        self.assertIn("effort_class: standard", text)
+        self.assertIn("raw response", text)
+        self.assertNotIn("invalid_final", text)
+
+    def test_private_patch_remains_caller_owned_and_disposable(self) -> None:
+        for name in ("worker", "dev-delegate"):
+            with self.subTest(name=name):
+                text = (
+                    PLUGIN / "skills" / name / "SKILL.md"
+                ).read_text(encoding="utf-8").casefold()
+                for phrase in ("disposable", "patch", "caller", "cleanup", "source head"):
+                    self.assertIn(phrase, text)
+                self.assertIn("never infer a patch", text)
 
     @staticmethod
     def _load_build_skills():

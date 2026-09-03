@@ -33,7 +33,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -67,10 +67,10 @@ readiness, not from a fixed inventory in this skill. Claude/Anthropic is not
 eligible for the review action: its only managed route is read-only document
 intent, whose authority and evidence cannot satisfy this panel. An Anthropic
 governance peer review may occur only through a separately configured
-host-owned async transport after its readiness is observed; the public
-coordinator neither sends nor accepts governance over `inbox/async`. It is
+host-owned async transport after its readiness is observed; the public routing
+runtime neither sends nor accepts governance over `inbox/async`. It is
 therefore a supplementary async view, never a managed review panelist. Callers
-must not bypass the coordinator with a raw `claude -p` invocation.
+must not bypass the managed route with a raw `claude -p` invocation.
 
 Per-panelist invocation is centralized: submit the sealed review role through
 the managed runtime, exclude the active primary and artifact-author families,
@@ -80,13 +80,11 @@ route is typed unavailable and omitted; never restore a retired package or
 provider command. Hold one eligible independent reviewer as the tiebreaker
 rather than including it in the first wave.
 
-Use the documented closed coordinator request for each panelist. Frontmatter
-Use the closed provider-neutral request fields `quality_profile="frontier"` and
-`effort_class="maximum"`; never name a model member.
-
-```json coordinator-request
-{"request_id":"second-opinion-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the second-opinion contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
-```
+Use one documented routing work unit for each panelist with
+`quality_profile="frontier"` and `effort_class="maximum"`; never name a model
+member. The caller seals and verifies the exact repository head, supplies the
+bounded review prompt as opaque payload, and rechecks that head before using
+the response.
 
 Use {{ tier_pro_resolves_to }} for slow, skeptical analysis. The economical,
 minimal-effort profile optimizes for throughput rather than finding objections.
@@ -94,9 +92,8 @@ Ensure each panelist receives the **whole** artifact — a divergence that is
 actually an artifact of one model truncating the context is a false signal,
 not a real disagreement.
 
-Use this prompt template for review content. The signed descriptor's
-`review_findings` schema is the sole output contract; do not add a second
-heading, JSON envelope, verdict line, or trailing-prose contract:
+Use this prompt template for review content. Provider formatting is not an
+output contract; the caller reasons over the complete raw response:
 
 ```
 Review the following [artifact type, e.g. "architecture proposal", "trial protocol amendment", "vendor MSA redline"]. In the descriptor-owned summary and findings, cover the strongest counter-argument, specific risks or failure modes, unsupported assumptions, and confidence. Cap substantive review text at 350 words.
@@ -105,10 +102,10 @@ Review the following [artifact type, e.g. "architecture proposal", "trial protoc
 [paste the full artifact verbatim]
 ```
 
-An `invalid_final` result is terminal for that panelist's request. Surface it
-explicitly; do not fabricate an artifact and do not replay the coordinator
-request. One panelist's terminal format failure
-does not invalidate correctly returned artifacts from other panelists.
+Read the complete nonempty raw response and deduce the best-supported operative
+verdict. Preserve mixed prose, wrappers, and partial content; never fabricate an
+artifact or replay for formatting. One panelist's diagnostics do not invalidate
+content returned by other panelists.
 
 ### 3b. Tiebreaker — only on a conflicting verdict
 
@@ -206,7 +203,7 @@ When picking the right example to share with the user mid-invocation, match the 
   it does not ratify a panel or adjudicate additive compatible notes.
 - **Skipping the verifier-independence check** when the artifact came from work authored within the {{ verifier_family }} family. That "review" is correlated with its author; the audit log will record a cross-check that did not, in substance, occur.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
-- **Replaying a malformed request.** If the verifier returns output without the
-  descriptor-owned artifact, surface the managed runtime's terminal typed failure.
+- **Replaying for formatting.** Preserve every nonempty raw response and reason
+  over it; a second attempt is not a formatting repair.
   Do not issue a second request or fabricate structure around the prose.
 - **Running this against a draft the user has already revised three times based on prior cross-checks.** At that point, the decision-quality issue is no longer "needs more critique" — it is "needs a decision." Say so.

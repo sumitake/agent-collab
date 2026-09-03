@@ -37,7 +37,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -105,18 +105,13 @@ review instructions.
 
 ### 3. Call the verifier
 
-Submit the sealed code-review role through `{{ mcp_tool_ask }}` using the
-documented closed coordinator request below. Central policy chooses an eligible
-independent reviewer. Frontmatter `effort` is host guidance and is never a
-coordinator request field.
+Submit one `review.repository` work unit through `{{ mcp_tool_ask }}`. Central
+policy chooses an eligible independent reviewer. The caller seals and verifies
+the exact repository head, supplies the bounded review prompt as opaque payload,
+and rechecks that head before using the response.
 
-```json coordinator-request
-{"request_id":"code-review-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Review the supplied repository artifact using the code-review contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
-```
-
-Use this prompt template for review content. The signed descriptor's
-`review_findings` schema is the sole output contract; do not add a second JSON,
-JSONL, heading, or trailing-prose envelope:
+Use this prompt template for review content. Provider formatting is not an
+output contract; the caller reasons over the complete raw response:
 
 ```
 Review the attached code as a senior security and performance engineer for the {{ primary_family }}-family-authored change below. Focus areas in priority order:
@@ -146,10 +141,10 @@ descriptor-owned summary and return an empty findings list.
 [paste the diff or file contents, with file paths as section headers if multi-file]
 ```
 
-An `invalid_final` result is terminal for this request. Surface it explicitly;
-do not fabricate an artifact around prose and do not replay the coordinator
-request. It may signal a guardrail, prompt-confusion, or refusal and must
-remain visible to the operator.
+Read the complete returned raw response and deduce the best-supported operative
+verdict with ordinary model reasoning. Preserve mixed prose, wrappers, and
+partial content for audit; never require provider-authored JSON or replay for
+formatting. A genuine empty response remains no evidence.
 
 ### 4. Verify findings, then synthesize
 
@@ -179,7 +174,7 @@ Code review applies broadly. A representative sample of where independent cross-
 | Security tooling | Custom WAF rule for a newly-discovered attack pattern | False-positive cliff at the rule boundary, ReDoS in the matching regex, bypass via case / encoding variant |
 | ML infrastructure | Online feature-store write path for a fraud-detection model | TOCTOU on feature-version stamp, silent type-coercion, training-serving skew via aggregation difference |
 
-The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but the signed artifact schema and terminal invalid-final contract stay constant.
+The review lens shifts with the domain (clinical software emphasizes dosing safety; financial software emphasizes precision; security tooling emphasizes false-positive vs false-negative trade-off), but raw provider formatting never determines whether content reaches caller reasoning.
 
 ## Anti-patterns
 

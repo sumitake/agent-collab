@@ -1,33 +1,32 @@
 ---
 name: governance-review
-version: 7.0.1
+version: 7.0.2
 description: Use when the operator says "governance review," "high-stakes review," "authoritative verdict," or "tiebreaker." Also offer this when reviewer-family independence and an exact repository-grounded verdict must be enforced.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Independent governance review
 
-Use only `governance.repository` with the canonical `repo_root`, exact
-`expected_repo_head`, artifact, or task. The coordinator observes author lineage from the current host; never
-supply it as a request field. Resolve the plugin root, read the coordinator
-schema, and submit one semantic request. Do not send a provider route/action
-pair.
+Use only `governance.repository`. The caller creates one bounded work unit for
+the immutable review scope and runs it from the canonical repository at the
+exact expected source head. Do not send a provider route/action pair or
+reconstruct a provider command.
 Use `quality_profile="frontier"` and `effort_class="maximum"`. These are closed
 provider-neutral request fields and never authorize a model or version pin.
 
-The compiled policy excludes the author lineage and admits only candidates
-with governance authority, repository evidence, and the closed verdict
-artifact. A specifically selected ineligible or same-family agent fails typed;
-it is never silently replaced. Architecture, review, context, frontend critique,
-and private-patch codegen artifacts cannot satisfy governance.
-An ungrounded advisory also cannot satisfy governance, even when its prose
-contains an approving word.
+The caller must positively establish that the selected reviewer is independent
+from the author and that the response addresses the exact source head and
+declared scope before treating it as governance evidence. A specifically
+selected ineligible or same-family agent is not silently replaced.
 
-Accept a verdict only with the provider-neutral execution receipt bound to the
-selected edge, source, attempt, artifact, and evidence. Provider-specific proof
-objects, model names, session identifiers, raw tool streams, and stderr do not
-grant authority. The reviewer must demonstrate native reads of the exact
-repository and the caller fingerprint must remain unchanged.
+Preserve every nonempty raw or recovered response. Use ordinary model reasoning
+over its full content to deduce the best-supported operative verdict; do not
+require JSON, verdict keys, findings shape, terminal wrappers, telemetry, or a
+receipt, and never synthesize approval from process exit. Retain available
+receipts and diagnostics for audit, including any integrity concerns, but do
+not discard provider content when they are absent or malformed. If reviewer
+independence, exact source identity, or scope cannot be positively established,
+keep the response as advisory content and do not claim authoritative approval.

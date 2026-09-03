@@ -8,22 +8,24 @@ description: Request read-only architecture consultation for codebase analysis, 
 
 Use `architecture.repository` for repository-aware analysis and
 `architecture.conceptual` only for genuinely conceptual consultation. A
-repository request must include the canonical `repo_root` and exact
-`expected_repo_head` and succeeds only
-with native inspected-path evidence. Safe substantive text without that
-evidence may be returned only as an explicitly ungrounded advisory; it is
-useful analysis but not repository authority.
+repository consultation runs from a caller-controlled checkout at the exact
+expected source head. The caller records and rechecks that identity; path or
+telemetry output from the provider is diagnostic only. A response whose source
+identity cannot be positively established remains useful advisory content but
+is not repository authority.
 
-Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
-request through the public coordinator. Set `target_agent` only when the user
+Resolve the plugin root, read `<plugin-root>/README.md`, and submit one bounded
+work unit through the routing runtime. Set `explicit_target` only when the user
 explicitly names one. Do not construct provider commands or transport actions.
 Use `quality_profile="frontier"` and `effort_class="maximum"` for substantial
 architecture work; these choose desired quality and depth, never a model ID.
 
 Ask for the recommended architecture, invariants and threat boundaries,
 dependency-ordered implementation units, verification plan, and unresolved
-assumptions. The result is read-only advice. The primary owns edits, tests,
-integration, commits, merge/release/deploy, and secrets.
+assumptions. Preserve every nonempty raw or recovered response and interpret it
+with ordinary model reasoning; provider formatting and optional diagnostics do
+not gate the advice. The primary owns edits, tests, integration, commits,
+merge/release/deploy, and secrets.
 
 ## Delivery estimate checkpoint
 

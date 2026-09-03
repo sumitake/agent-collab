@@ -8,20 +8,21 @@ description: Delegate a bounded independent development slice to an eligible cro
 # Dev-delegate
 
 Use `codegen.repository` or `frontend_codegen.repository`. Provide the canonical
-`repo_root`, exact `expected_repo_head`, objective, owned paths, expected patch, test expectations,
-budget, and stop conditions. The runtime reproduces the caller-visible state in
-a disposable plain directory, runs one provider session there, and returns only
-the provider delta as a binary-safe patch.
+source identity, objective, owned paths, expected patch, test expectations,
+budget, and stop conditions. The caller creates a disposable repository copy,
+records its identity and source head, and supplies that directory as the work
+unit's native cwd. One provider session may edit only that copy.
 
-Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
-request through the coordinator. An explicit target is honored or fails typed;
+Resolve the plugin root, read `<plugin-root>/README.md`, and submit one bounded
+work unit through the routing runtime. An explicit target is honored or fails typed;
 never substitute a different agent or reconstruct a provider command. Model and
 CLI identities are observed diagnostics, not request pins.
 Use `quality_profile="standard"` and `effort_class="standard"` by default;
 raise either only for a genuinely more demanding patch. The runtime resolves a
 current compatible portfolio member without persisting a model selection.
 
-Treat the patch and reported tests as untrusted. The primary verifies that the
-caller fingerprint stayed unchanged, reviews/applies the patch, and runs
-independent tests. Providers never commit, push, open or merge PRs, deploy, or
-write outside the disposable repository.
+After the attempt, the caller captures a binary-safe diff from the disposable
+copy, preserves every nonempty raw or recovered response, verifies the source
+head did not change, and removes the copy. Treat the diff and reported tests as
+untrusted. The primary reviews/applies the accepted diff and runs independent
+tests. Never infer a patch, receipt, approval, or cleanup from process exit.

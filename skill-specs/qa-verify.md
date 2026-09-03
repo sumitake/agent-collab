@@ -35,7 +35,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -62,9 +62,8 @@ Submit the sealed QA role through `{{ mcp_tool_ask }}` with
 an independent eligible reviewer; Claude/Anthropic is ineligible for this
 review action, and its document-intent route is not a substitute.
 
-Use this prompt template for QA content. The signed descriptor's
-`review_findings` schema is the sole output contract; do not add a second
-verdict line, JSON envelope, heading, or trailing-prose contract:
+Use this prompt template for QA content. Provider formatting is not an output
+contract; the caller reasons over the complete raw response:
 
 ```
 You are a strict QA inspector. Verify the Final Output against the Original Request below. Look for hallucinations, off-by-one errors, ignored constraints, silent partial successes, and any gap between what was asked and what was delivered.
@@ -95,8 +94,9 @@ what is out of scope so the inspector does not thrash on style nits or
 pre-existing issues. A clean approval against presence-level constraints is weak
 evidence; weigh it accordingly in step 3.
 
-An `invalid_final` result is terminal. Surface it explicitly; do not infer a
-verdict from prose, fabricate an artifact, or replay the coordinator request.
+Read the complete nonempty raw response and deduce the best-supported QA verdict
+with ordinary reasoning. Preserve partial or mixed prose; never fabricate a
+receipt or replay the request for formatting.
 
 ### 3. Adjudicate the QA result
 
@@ -104,7 +104,7 @@ The verdict is not the deliverable; the adjudication is.
 
 **On `REQUEST_CHANGES`:**
 
-- Investigate each failed constraint. Open the relevant code or output and confirm the verifier's claim. Verifier hallucinations are less common in QA than in code-review (the schema is tighter) but not zero.
+- Investigate each failed constraint. Open the relevant code or output and confirm the verifier's claim. A verifier can hallucinate even when the prompt is tightly constrained.
 - If the failed constraint is real, inform the user clearly: **the QA pass failed, here are the missed constraints, here is the proposed fix.** Do not minimize.
 - If the failed constraint is hallucinated, report that explicitly: "{{ verifier_agent }} flagged X, but X is not in fact missing — the {field/line/path} is present at {location}." Do not automatically issue a second provider request. A later caller-authorized request is a new attempt. If the caller authorizes one, include the clarification in that new request. Otherwise, move on.
 
@@ -112,7 +112,7 @@ The verdict is not the deliverable; the adjudication is.
 
 - Report "no issues flagged on independent review" — **not** "verified correct." A clean QA pass is one signal, not a guarantee; an independent reviewer can also miss bugs the executor missed. Overstating a PASS as "correctness verified" trains the user to trust the QA layer more than it deserves.
 
-**On `NEEDS_DISCUSSION` or `invalid_final`:**
+**On `NEEDS_DISCUSSION`:**
 
 - Surface the unresolved or terminal result and recommend manual inspection of
   the relevant constraints. Do not pretend a verdict happened.
@@ -142,8 +142,8 @@ The descriptor-owned review verdict applies to all of these uniformly; what shif
 - **Using this for simple tasks where success is visually obvious.** Wastes a verifier call and adds noise to the audit log.
 - **Overstating an approval as "verified correct."** It means "no issues flagged on this independent review." Independent reviewers also miss bugs. Phrasing matters; precision protects the user from over-trusting the layer.
 - **Skipping the verifier-independence check** when the work was executed by a {{ verifier_family }}-family agent. Same-family QA is correlated blind spots, not independent verification.
-- **Replaying `invalid_final`.** Preserve the terminal typed result; never ask
-  a second provider attempt merely to repair formatting.
+- **Replaying for formatting.** Preserve the raw result; never ask a second
+  provider attempt merely to obtain different formatting.
 - **Treating a hallucinated FAIL as a real fail.** Verify each FAILED CONSTRAINT against the actual output before alarming the user. Hallucinations happen in QA too.
 - **Using frontier/maximum reflexively.** Binary verification is usually the right job for economical/minimal; reserve frontier/maximum for constraints requiring subtle correctness reasoning (numerical stability, regulatory interpretation, or domain-specific edge cases).
 - **Running QA on incomplete evidence** and reporting approval to the user. A QA pass on partial evidence signals "all clear" when the verifier never saw the relevant gap. Better to gather full evidence first and accept the latency.

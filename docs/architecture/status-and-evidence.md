@@ -17,7 +17,19 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.0
+## Current snapshot — v7.0.1
+
+The public [`v7.0.1` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)
+is published and its immutable release workflow succeeded. Repository source
+7.0.2 is a later staged candidate and is not collapsed into this snapshot.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated v7.0.1 tag object `18345057169251a202d334b1b12b1c13ef137b9f` identifies public commit `5443782e748920f97f0d9f327b9eb87aae3664ac`; exact-tag workflow run `33545065583` succeeded and the GitHub Release was published on 2026-09-01 UTC. | published | The immutable release commit contains package 7.0.1 and provider runtime **5.0.3**. |
+| The release contains `agent-collab.v7.0.1.plugin`, its checksum, and `agent-collab-v7.0.1.spdx.json`, with GitHub SHA-256 digests `154f5278d18599eb282abb657b82e9635cfc7af8fdddd223b636fa590d181ccc`, `2d494d71fb0c2177ccadaf9b74ac2ff64f243e7e218843a013c374281d605e5d`, and `740ea324f80b614ec4d747394fc3ac468064adef6ff2951220d391cd3dcb38cd`. | verified release evidence | The published asset set is fixed and independently digest-addressed. |
+| Manifest SHA-256 `8d5ce34bd6bef513bd4a93f0774d3f6c2779f3f2f7dac07b292c6b08ff14f799` binds wire digest `05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8` and arm64/x86_64 bundle digests `81817dc9a738edf28e66df92ac031e0505307baea27ced3bf69109e6d73e4214` / `9672776deb62c7ef0ca2f8f75069955ceb312794c8812a301390e7efe8931158`. | verified release evidence | Manifest schema 4, runtime protocol 4, native contract 4, and wire schema 10 bind the paired release. |
+
+## v7.0.0 release closeout snapshot
 
 The public [`v7.0.0` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)
 is published and its release evidence is verified. This is a dated snapshot:

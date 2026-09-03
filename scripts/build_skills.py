@@ -187,7 +187,7 @@ def validate_description_length(rendered: str, target_rel: Path | str) -> None:
 
 
 def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
-    """Add the one canonical standalone invocation contract to routed skills."""
+    """Add the one canonical routing-only invocation contract to routed skills."""
     if spec_name not in ROUTED_SPECS:
         return rendered
     match = FRONTMATTER_RE.match(rendered)
@@ -200,46 +200,28 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "`python3 \"<plugin-root>/coordinator.py\"` and send one bounded JSON "
     )
     suffix = (
-        "It runs standalone from the installed plugin. Never discover a "
-        "provider executable or reconstruct a raw command. "
-        "`provider_error` and `teardown_error` are attempt-local diagnostics: "
-        "they invalidate only that request's artifact and evidence. They must "
-        "not quarantine a route, exclude it from later selection, or establish "
-        "route or provider unavailability. The caller must not automatically "
-        "replay the failed request; a later caller-authorized request is a new "
-        "attempt whose eligibility is recomputed from fresh readiness. "
+        "The shim runs standalone from the installed plugin and transports the "
+        "routing client's bounded result without semantic interpretation. Never "
+        "discover a provider executable, reconstruct a raw command, or replay, "
+        "retry, or fail over a consumed work unit. Provider status, terminal "
+        "records, receipts, telemetry, and other structured fields are optional "
+        "diagnostics; none is a content-availability gate. Preserve every "
+        "returned content record or recovered partial response and interpret it "
+        "with ordinary model reasoning. Never synthesize approval, authority, or "
+        "a receipt from process exit or missing diagnostics. "
     )
-    if spec_name == "agent-runtime-status":
-        block = prefix + (
-            "readiness request on stdin. Before constructing it, read the "
-            "**Coordinator readiness request schema** in "
-            "`<plugin-root>/README.md`; never invent fields. The public "
-            "coordinator re-observes the active host, validates the "
-            "zero-inference readiness request, and verifies the co-packaged "
-            "native manifest and wire descriptor. "
-        ) + suffix + (
-            "This single call asks the runtime for "
-            "the complete all-action readiness matrix and never invokes a "
-            "model.\n"
-        )
-    else:
-        block = prefix + (
-            "request on stdin. Before constructing it, read the **Coordinator "
-            "request schema** in `<plugin-root>/README.md`; never invent fields or "
-            "route/action pairs. The public "
-            "coordinator re-observes the active host, validates the semantic "
-            "request, and verifies the co-packaged native manifest and wire "
-            "descriptor. "
-        ) + suffix + (
-            "The public request names one logical action and optional target agent; "
-            "provider transport actions are internal descriptor data. For every "
-            "repository action, pass the canonical `repo_root` and its exact "
-            "`expected_repo_head`. The signed artifact schema is the sole terminal "
-            "output contract: prompts may state review criteria but must not append "
-            "a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve "
-            "`invalid_final` as a terminal failure without salvage or replay. For document "
-            "context, pass bounded `documents` and no repository source.\n"
-        )
+    block = prefix + (
+        "routing request on stdin. Before constructing it, read the **Routing "
+        "request** section in `<plugin-root>/README.md` and the co-packaged "
+        "manifest's signed `wire_contract`; never invent fields or provider "
+        "actions. Supply one caller-defined work unit for this skill's logical "
+        "action, with a bounded opaque payload. Repository identity, source-head "
+        "verification, disposable copies, patch capture, and cleanup remain "
+        "caller-owned where applicable. "
+    ) + suffix + (
+        "A planning-only request sets `dispatch_requested=false`; a live request "
+        "sets it true and consumes at most one provider attempt per work unit.\n"
+    )
     return rendered[: match.end()] + block + rendered[match.end() :]
 
 

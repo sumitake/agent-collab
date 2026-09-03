@@ -8,7 +8,7 @@ import sys
 import unittest
 from unittest import mock
 
-from tests.test_direct_runtime_public_contract import _wire_descriptor
+from tests.test_protocol5_public_contract import wire_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,10 +45,10 @@ class ReleaseRuntimeGateTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
-        descriptor, digest = _wire_descriptor()
+        descriptor, digest = wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 4,
+            "protocol_version": 5,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,

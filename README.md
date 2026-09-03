@@ -1,18 +1,16 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7 keeps the closed semantic coordinator and
-co-packaged direct native runtime while adding provider-neutral quality and
-effort profiles, current-portfolio routing, and truthful advisory degradation.
+compatible hosts. Version 7.0.2 pairs a routing-only public client with the
+co-packaged direct native runtime. Callers choose logical work; provider output
+remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.1).
+This public repository's current source is **agent-collab** (v7.0.2).
 
-Current published release: **7.0.0** ([`v7.0.0`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)).
-It carries signed provider runtime `5.0.0`, a schema-4 manifest with runtime
-protocol 4 and native contract 4, wire schema 8, 12 logical actions, 15
-transport actions, and 19 valid action/source pairs. One post-restart Codex
-installation has been verified against this release. That is host-specific
-evidence, not an all-host installation, activation, or readiness claim.
+Current published release: **7.0.1** ([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)).
+It carries signed provider runtime `5.0.3`. The 7.0.2 source is a staged
+candidate until its governed pull request, tag, assets, and host installation
+are each positively verified.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -21,23 +19,18 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.1
+## What's new - v7.0.2
 
-- **Liveness follows admitted progress.** Wire schema 10 signs one timeout mode
-  per logical action. Repository architecture, review, frontend review,
-  governance, and both code-generation actions use a finite inactivity lease
-  only after supervised provider start; other actions retain a total deadline.
-  Content-free runtime progress renews the lease, while prose and ordinary
-  output do not.
-- **Sealed-artifact review authority.** Review and governance accept a valid
-  structured final against the exact sealed source and canonical tracked
-  artifact paths even when carrier tool telemetry is absent, noisy, or denied.
-  Provider terminal failures, source-seal changes, escaped paths, invalid
-  finals, and cleanup failures remain hard failures.
-- **One paired runtime generation.** Signed provider runtime `5.0.3` carries
-  the source-containment reset and admitted-progress corrections together under
-  wire digest
-  `05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8`.
+- **Opaque provider content.** Wire schema 11 removes provider-authored JSON,
+  verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
+  content gates. Every bounded nonempty final or recovered partial reaches the
+  caller for ordinary reasoning.
+- **Routing-only public boundary.** The public shim accepts the signed routing
+  request and returns runtime records without semantic normalization, provider
+  command reconstruction, retry, replay, or fallback.
+- **One paired runtime generation.** Signed provider runtime `5.0.4` carries
+  the recovery change for both macOS architectures under wire digest
+  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -47,7 +40,7 @@ For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
   `plugins/agent-collab/skills/`.
 - Pinned source and license provenance for MIT-derived skill material in
   `docs/third-party-skill-provenance.md`.
-- A closed semantic coordinator at `plugins/agent-collab/coordinator.py`.
+- A bounded routing-only shim at `plugins/agent-collab/coordinator.py`.
 - A direct bounded process client at `plugins/agent-collab/runtime_client.py`.
 - Provider-neutral host observations and migration reporting.
 - One schema-4 runtime manifest contract and public archive/release/export
@@ -101,12 +94,10 @@ governance.repository
 review.repository
 ```
 
-Repository actions require a canonical absolute `repo_root` and the exact
-`expected_repo_head`. Document context
-uses bounded inline documents. Conceptual architecture uses prompt-only source.
-The runtime's workspace-generated wire descriptor derives the internal 15
-transport actions and 19 action/source pairs. Those projections are diagnostic
-contract data, not a second public request surface.
+For repository actions the caller owns the canonical checkout or disposable
+copy, exact source-head readback, patch capture where applicable, and cleanup.
+Document content is bounded in the opaque work-unit payload. Runtime routing
+and provider/carrier selection remain descriptor-owned.
 
 See `plugins/agent-collab/README.md` for the exact coordinator and runtime
 contract.
@@ -128,12 +119,12 @@ The canonical workspace build owns the final binary and generated manifest.
 The public source expects:
 
 - manifest schema 4;
-- runtime protocol 4;
+- runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.3`;
+- provider runtime version `5.0.4`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
-- no action-membership mirror in artifact entries.
+- wire schema 11 with 12 logical actions.
 
 The public client verifies fixed plugin-relative path, exact membership and
 digests, Mach-O architecture/minimum macOS, hardened Developer ID identity,
@@ -188,7 +179,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v7.0.0 closeout is recorded in the
+The v7.0.1 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing

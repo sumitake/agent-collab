@@ -10,11 +10,10 @@ not compatibility dependencies and must not remain active.
 - Replace every `long-context` or size-branded context command with
   `/agent-collab:context`.
 - `/agent-collab:ai-merge-resolve`, `/claude-collab:ai-merge-resolve`, `/codex-collab:ai-merge-resolve`, `/antigravity-collab:ai-merge-resolve` | `/agent-collab:merge-resolve`
-- Send a logical action and source to the coordinator. Exact `action` and
-  `route` field names are accepted only when their values already name a public
-  logical action and canonical logical agent. Old provider route/action pairs,
-  models, transport actions, and product aliases remain unsupported; that wire
-  has been removed.
+- Send a descriptor-shaped routing request with one or more logical work units.
+  Old provider route/action pairs, semantic coordinator fields, models,
+  transport actions, and product aliases remain unsupported; that wire has
+  been removed.
 
 ## Verify
 
@@ -28,8 +27,8 @@ The provider-free report distinguishes active, installed, and cached legacy
 observations. Active retired packages block direct routing. Cache-only residue
 does not become an executable route.
 
-The current package unit is manifest schema 4, runtime protocol 4, native
-contract 4, provider runtime `5.0.0`, and descriptor schema 8. The generated
+The current source package unit is manifest schema 4, runtime protocol 5,
+native contract 4, provider runtime `5.0.4`, and descriptor schema 11. The generated
 manifest carries one top-level `wire_contract` and
 `wire_contract_sha256`. A mixed unit fails typed.
 

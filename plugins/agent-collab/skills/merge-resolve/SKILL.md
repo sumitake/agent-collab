@@ -1,6 +1,6 @@
 ---
 name: merge-resolve
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Use when a user asks to resolve a git merge conflict or conflicting
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Merge resolve — cross-family merge-conflict resolution, operator-gated by default
 
@@ -41,7 +41,7 @@ This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: seman
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -89,10 +89,10 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 ### 4. Cross-check prompt
 
 Submit the sealed merge-review role through `python3 "<plugin-root>/coordinator.py"`
-with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy chooses an eligible
-independent reviewer. The signed `context_text` artifact is the sole output
-contract; do not impose another terminal envelope. Ask the reviewer to address
-these disagreement-first criteria within that artifact:
+with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy chooses an eligible independent
+reviewer. Provider formatting is not an output contract; reason over the
+complete raw response. Ask the reviewer to address these disagreement-first
+criteria:
 
 - summarize each side's intent;
 - decide `COMPATIBLE`, `INCOMPATIBLE`, or `NEEDS-HUMAN`, with a reason;
@@ -112,14 +112,13 @@ compatible, identify risks, and state confidence. Cap the analysis at 500 words.
 {structured hunk + commit-context + surrounding-±20-lines}
 ```
 
-If the runtime returns `invalid_final`, or the artifact does not clearly state
-compatibility and a proposed resolution when compatible, surface the terminal
-result or incomplete artifact and refuse to proceed. Do not salvage prose or
-replay the request merely to repair formatting.
+Reason over the full raw response and deduce whether it supports compatibility
+and a concrete resolution. If it does not, refuse to proceed and explain the
+missing basis. Preserve partial prose and never replay for formatting.
 
 ### 5. Operator-confirm gate (DEFAULT)
 
-UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's signed artifact text for the operator. The operator chooses:
+UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's full raw response for the operator. The operator chooses:
 
 - **`apply`** — apply the resolution to the working tree
 - **`apply-and-amend`** — apply AND amend the in-progress merge commit (only valid mid-merge)
@@ -212,7 +211,7 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | Failure | Skill behavior |
 |---|---|
 | Conflict markers malformed | REFUSE; surface raw conflict + line number that failed parsing |
-| Signed artifact is `invalid_final` or contains no compatible proposed resolution | REFUSE; surface the typed result or incomplete artifact; do not replay for formatting |
+| Raw response supports no compatible proposed resolution | REFUSE; surface the missing basis; preserve the response and do not replay for formatting |
 | `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |

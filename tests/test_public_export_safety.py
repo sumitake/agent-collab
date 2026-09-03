@@ -76,7 +76,7 @@ class PublicExportSafetyTests(unittest.TestCase):
         return module
 
     def _root_with_duplicate_manifest(self, root: Path, module) -> Path:
-        from tests.test_direct_runtime_public_contract import _wire_descriptor
+        from tests.test_protocol5_public_contract import wire_descriptor
 
         plugin = root / "plugins" / "agent-collab"
         plugin.mkdir(parents=True)
@@ -90,7 +90,7 @@ class PublicExportSafetyTests(unittest.TestCase):
         member.write_bytes(b"bytes")
         member.chmod(0o755)
 
-        descriptor, digest = _wire_descriptor()
+        descriptor, digest = wire_descriptor()
         member_digest = hashlib.sha256(b"bytes").hexdigest()
         records = [
             {
@@ -107,7 +107,7 @@ class PublicExportSafetyTests(unittest.TestCase):
         ]
         manifest = {
             "schema_version": 4,
-            "protocol_version": 4,
+            "protocol_version": 5,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,

@@ -37,7 +37,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -77,7 +77,7 @@ State the assignment clearly to the user before starting: "{{ primary_agent }} w
 **{{ verifier_agent }}'s opening:** Submit the sealed debate role through
 `{{ mcp_tool_ask }}` with {{ debate_call_params }}. Central policy selects an
 eligible independent advocate. Use this prompt template for debate content;
-the signed artifact schema remains the sole output contract:
+the returned content remains opaque to the runtime:
 
 ```
 You are in a structured debate. Proposition: "[proposition]"
@@ -94,8 +94,8 @@ Context (background only — do NOT summarize back to me):
 [paste the relevant context the user has shared, plus the proposition's domain framing]
 ```
 
-If the runtime returns `invalid_final`, surface that terminal result rather
-than papering over it or replaying the request for formatting.
+Interpret every nonempty returned response as the advocate's contribution;
+preserve partial or mixed prose and never replay for formatting.
 
 ### 4. Round 2 — Rebuttals
 
@@ -118,7 +118,7 @@ REBUTTAL 1 (target: <quote of opposing argument>): <your rebuttal>
 REBUTTAL 2 (target: <quote of opposing argument>): <your rebuttal>
 ```
 
-As in the opening, preserve `invalid_final` without a formatting replay.
+As in the opening, preserve every observed response without a formatting replay.
 
 ### 5. Round 3 (optional) — Closing arguments
 

@@ -6,24 +6,23 @@ description: Use when the operator says "governance review," "high-stakes review
 
 # Independent governance review
 
-Use only `governance.repository` with the canonical `repo_root`, exact
-`expected_repo_head`, artifact, or task. The coordinator observes author lineage from the current host; never
-supply it as a request field. Resolve the plugin root, read the coordinator
-schema, and submit one semantic request. Do not send a provider route/action
-pair.
+Use only `governance.repository`. The caller creates one bounded work unit for
+the immutable review scope and runs it from the canonical repository at the
+exact expected source head. Do not send a provider route/action pair or
+reconstruct a provider command.
 Use `quality_profile="frontier"` and `effort_class="maximum"`. These are closed
 provider-neutral request fields and never authorize a model or version pin.
 
-The compiled policy excludes the author lineage and admits only candidates
-with governance authority, repository evidence, and the closed verdict
-artifact. A specifically selected ineligible or same-family agent fails typed;
-it is never silently replaced. Architecture, review, context, frontend critique,
-and private-patch codegen artifacts cannot satisfy governance.
-An ungrounded advisory also cannot satisfy governance, even when its prose
-contains an approving word.
+The caller must positively establish that the selected reviewer is independent
+from the author and that the response addresses the exact source head and
+declared scope before treating it as governance evidence. A specifically
+selected ineligible or same-family agent is not silently replaced.
 
-Accept a verdict only with the provider-neutral execution receipt bound to the
-selected edge, source, attempt, artifact, and evidence. Provider-specific proof
-objects, model names, session identifiers, raw tool streams, and stderr do not
-grant authority. The reviewer must demonstrate native reads of the exact
-repository and the caller fingerprint must remain unchanged.
+Preserve every nonempty raw or recovered response. Use ordinary model reasoning
+over its full content to deduce the best-supported operative verdict; do not
+require JSON, verdict keys, findings shape, terminal wrappers, telemetry, or a
+receipt, and never synthesize approval from process exit. Retain available
+receipts and diagnostics for audit, including any integrity concerns, but do
+not discard provider content when they are absent or malformed. If reviewer
+independence, exact source identity, or scope cannot be positively established,
+keep the response as advisory content and do not claim authoritative approval.

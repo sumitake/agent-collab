@@ -7,18 +7,20 @@ description: Use when the operator says "delegate this implementation," "generat
 # Delegate bounded worker output
 
 Use `codegen.repository` for ordinary code generation or
-`frontend_codegen.repository` for frontend-affinity work. These are private-
-repository patch actions, not read-only planning or governance.
+`frontend_codegen.repository` for frontend-affinity work. These are disposable-
+repository editing actions, not read-only planning or governance.
 
-Provide the canonical `repo_root`, exact `expected_repo_head`, bounded prompt, target agent only when
-explicitly requested. The coordinator observes author lineage from the current
-host; never supply it as a request field. Never send a model name, provider CLI
-version, provider transport action, tool list, or raw command.
+The caller creates a disposable repository copy, records its source head and
+filesystem identity, and supplies that directory as the work unit's native cwd.
+Provide a bounded prompt and an explicit target only when requested. Never send
+a model name, provider CLI version, provider transport action, tool list, or raw
+command.
 Send closed `quality_profile` and `effort_class` fields; use `standard` for
 both unless the task justifies an economical or frontier profile.
 
-The provider may inspect, edit, and test only the disposable copy. It returns a
-binary-safe provider-only patch plus bounded summary and test claims. It never
-applies the patch or mutates caller Git metadata. The primary reviews and
-applies accepted changes, runs independent tests, and owns commits, PRs,
-merges, and deployment.
+The provider may inspect, edit, and test only the disposable copy. The caller
+preserves every nonempty raw or recovered response, captures the binary-safe
+diff, verifies the recorded source head, and removes the copy. Provider
+formatting and optional diagnostics do not gate content recovery. The primary
+reviews and applies accepted changes, runs independent tests, and owns commits,
+PRs, merges, and deployment. Never infer a patch or cleanup from process exit.

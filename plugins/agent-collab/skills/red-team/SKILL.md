@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Task the reviewer with actively breaking a system, API, validation 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Red team — adversarial input generation by the cross-family agent
 
@@ -43,7 +43,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -77,18 +77,13 @@ A focused objective produces focused output. "Find security issues" produces a g
 
 ### 3. Call the verifier
 
-Submit the sealed red-team role through `python3 "<plugin-root>/coordinator.py"` using the
-documented closed coordinator request below. Central policy chooses an eligible
-independent reviewer. Frontmatter `effort` is host guidance and is never a
-coordinator request field.
+Submit one `review.repository` work unit through `python3 "<plugin-root>/coordinator.py"`. Central
+policy chooses an eligible independent reviewer. The caller seals and verifies
+the exact repository head and supplies the bounded red-team prompt as opaque
+payload.
 
-```json coordinator-request
-{"request_id":"red-team-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
-```
-
-Use this prompt template for adversarial content. The signed descriptor's
-`review_findings` schema is the sole output contract; do not add a second JSON,
-JSONL, heading, or trailing-prose envelope:
+Use this prompt template for adversarial content. Provider formatting is not an
+output contract; the caller reasons over the complete raw response:
 
 ```
 You are a red-team agent. Your objective: break the [validation logic / API contract / parser / prompt pipeline / policy] below. Generate exactly N adversarial inputs — exact strings, payloads, or scenarios — designed to bypass, crash, or trigger misbehavior in the target system.
@@ -96,18 +91,17 @@ You are a red-team agent. Your objective: break the [validation logic / API cont
 Threat model: [unauthenticated external attacker / authenticated low-privilege user / privileged insider / model-output adversary / ...]
 Success criterion: [bypass / crash / misbehavior — choose one or "any of the three"]
 
-Record each viable adversarial input, predicted result, and mechanism in a
-descriptor-owned finding message. If fewer than N meet the criterion, return
-only the viable findings and explain the shortfall in the artifact summary.
+Describe each viable adversarial input, predicted result, and mechanism. If
+fewer than N meet the criterion, return only the viable findings and explain
+the shortfall in the response.
 
 --- TARGET ---
 [Specification + code/rule definition]
 ```
 
-An `invalid_final` result is terminal for this request. Surface the failure
-explicitly; do not fabricate an artifact around prose and do not replay the
-coordinator request. It may signal a content-policy guardrail and must remain
-visible as evidence of the verifier's limits.
+Read and reason over every nonempty raw response, including a refusal or partial
+answer, and preserve it as evidence of the verifier's limits. Never fabricate a
+finding or replay for formatting.
 
 ### 4. Verify each finding, then close the loop
 
@@ -140,7 +134,7 @@ Red-teaming applies wherever a control surface exists with adversarial inputs. A
 | Embedded / IoT | Firmware-update signature checker on a smart-thermostat | Signature-stripping with valid-checksum padding; rollback-to-vulnerable-version exploit; partial-write power-fail to forced-recovery-mode |
 | Distributed systems | Leader-election protocol in a coordination service | Network-partition-induced split-brain; clock-jump-induced false leader; message-reordering-induced log divergence |
 
-The signed artifact schema and threat-model + success-criterion framing stay constant across domains; the attack categories shift to match the surface.
+The threat-model and success-criterion framing stay constant across domains; the attack categories shift to match the surface, while provider formatting stays non-authoritative.
 
 ## Anti-patterns
 

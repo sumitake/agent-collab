@@ -43,10 +43,10 @@ Divergent generation favors **throughput over depth** —
 for highly nuanced creative work where reasoning depth on each candidate idea
 is more valuable than candidate breadth.
 
-The public coordinator accepts no brainstorm-specific fields. Put the
-following as labeled sections inside the single `prompt` string and dispatch
-only through an advertised read-only advisory contract. If the native route
-is unavailable, return typed unavailable; do not invent coordinator fields or
+The routing contract accepts no brainstorm-specific fields. Put the following
+as labeled sections inside the work unit's opaque prompt and dispatch only
+through an advertised read-only advisory capability. If the native route is
+unavailable, report it; do not invent routing fields or
 reconstruct a provider invocation:
 
 - `prompt` — the framed problem statement.
@@ -57,7 +57,9 @@ reconstruct a provider invocation:
 - `methodology` — see § Methodology selection below; default `auto` lets the tool pick.
 - `includeAnalysis` — whether the tool should produce its own grouping/analysis alongside the ideas; default true is usually right, but turn off if you intend to do the synthesis yourself in step 4.
 
-Always specify the **output shape** in the prompt — a numbered list with one candidate per line, no preamble, no closing commentary. Free-form prose responses are hard to synthesize across.
+Request a numbered list with one candidate per line as presentation guidance,
+not as a runtime gate. Preserve and synthesize any nonempty response even when
+its formatting differs.
 
 ### 3. Ask for variation along axes, not a flat list
 
@@ -71,7 +73,7 @@ Axes-based prompts produce systematic coverage of the option space; flat prompts
 
 ### 4. Do not pre-filter; let the weird ones through
 
-If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the list is uniformly safe or uniformly variations on the same theme, say so. Show and synthesize the current signed artifact. Do not issue a follow-up automatically. Only after the caller selects a cluster or explicitly authorizes a new request may you request a more divergent batch.
+If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the list is uniformly safe or uniformly variations on the same theme, say so. Show and synthesize the full raw response. Do not issue a follow-up automatically. Only after the caller selects a cluster or explicitly authorizes a new request may you request a more divergent batch.
 
 ### 5. Synthesize, then close
 
