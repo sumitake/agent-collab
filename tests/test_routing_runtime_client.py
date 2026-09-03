@@ -209,6 +209,45 @@ class RoutingRuntimeClientTests(unittest.TestCase):
         self.assertEqual(records, [content])
         self.assertIn("malformed runtime output was excluded", note)
 
+    def test_records_are_split_and_decoded_from_original_bytes(self) -> None:
+        first = {
+            "frame_type": "content",
+            "content": "provider content before malformed bytes",
+        }
+        unicode_content = {
+            "frame_type": "content",
+            "content": "line separator stays inside content: \u2028",
+        }
+        raw = (
+            json.dumps(first, separators=(",", ":")).encode("utf-8")
+            + b"\n"
+            + b'{"frame_type":"content","content":"ab\xffcd"}\n'
+            + json.dumps(
+                unicode_content,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            + b"\n"
+        )
+
+        records, note = self.client._parse_routing_records(raw)
+
+        self.assertEqual(records, [first, unicode_content])
+        self.assertIn("malformed runtime output was excluded", note)
+
+    def test_valid_unterminated_final_record_is_retained(self) -> None:
+        content = {
+            "frame_type": "content",
+            "content": "complete content before abrupt stream close",
+        }
+
+        records, note = self.client._parse_routing_records(
+            json.dumps(content, separators=(",", ":")).encode("utf-8")
+        )
+
+        self.assertEqual(records, [content])
+        self.assertEqual(note, "")
+
     def test_nonzero_exit_and_missing_terminal_do_not_discard_content(self) -> None:
         descriptor, digest = _descriptor()
         wire = self.client.validate_wire_descriptor(

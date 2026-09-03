@@ -1005,9 +1005,17 @@ def _collect_bounded(
                         open_reads.discard(kind)
                         continue
                     target, limit = (stdout, MAX_RESPONSE_BYTES) if kind == "stdout" else (stderr, MAX_STDERR_BYTES)
-                    target.extend(chunk)
-                    if len(target) > limit:
+                    available = limit - len(target)
+                    if len(chunk) > available:
+                        target.extend(chunk[:available])
+                        if kind == "stdout":
+                            boundary = stdout.rfind(b"\n")
+                            if boundary >= 0:
+                                del stdout[boundary + 1:]
+                            else:
+                                stdout.clear()
                         return bytes(stdout), bytes(stderr), "output_limit"
+                    target.extend(chunk)
             if process.poll() is not None and not events:
                 for kind, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
                     if kind not in open_reads:
@@ -1028,9 +1036,17 @@ def _collect_bounded(
                         if kind == "stdout"
                         else (stderr, MAX_STDERR_BYTES)
                     )
-                    target.extend(chunk)
-                    if len(target) > limit:
+                    available = limit - len(target)
+                    if len(chunk) > available:
+                        target.extend(chunk[:available])
+                        if kind == "stdout":
+                            boundary = stdout.rfind(b"\n")
+                            if boundary >= 0:
+                                del stdout[boundary + 1:]
+                            else:
+                                stdout.clear()
                         return bytes(stdout), bytes(stderr), "output_limit"
+                    target.extend(chunk)
         return bytes(stdout), bytes(stderr), ""
     finally:
         selector.close()
@@ -1043,12 +1059,13 @@ def _reject_nonfinite(_value: str) -> None:
 def _parse_routing_records(raw: bytes) -> tuple[list[dict[str, object]], str]:
     records: list[dict[str, object]] = []
     malformed = False
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        text = raw.decode("utf-8", errors="ignore")
-        malformed = True
-    for line in text.splitlines():
+    lines = raw.split(b"\n")
+    for encoded in lines:
+        try:
+            line = encoded.decode("utf-8")
+        except UnicodeDecodeError:
+            malformed = True
+            continue
         if not line:
             continue
         try:
