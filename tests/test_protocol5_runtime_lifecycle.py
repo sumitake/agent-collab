@@ -319,6 +319,29 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
         self.assertIn("output limit", result.error)
         self.assertNotIn("execution_receipt", result.provenance or {})
 
+    def test_output_limit_excludes_record_terminated_beyond_cap(self) -> None:
+        first = self.content("content fully observed within cap")
+        crossing = self.content("content whose terminator crosses cap")
+        first_line = json.dumps(first, separators=(",", ":")) + "\n"
+        crossing_line = json.dumps(crossing, separators=(",", ":")) + "\n"
+        with tempfile.TemporaryDirectory() as raw:
+            executable = self.script(
+                Path(raw),
+                "import sys\n"
+                f"sys.stdout.write({(first_line + crossing_line)!r})\n",
+            )
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=self.resolution(executable)
+            ), mock.patch.object(
+                self.client,
+                "MAX_RESPONSE_BYTES",
+                len((first_line + crossing_line).encode()) - 1,
+            ):
+                result = self.client.invoke(envelope=self.request(5_000))
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result, [first])
+        self.assertIn("output limit", result.error)
+
     def test_stderr_limit_is_bounded_and_reports_no_content(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             executable = self.script(
@@ -330,6 +353,26 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
                 result = self.client.invoke(envelope=self.request(5_000))
         self.assertEqual(result.status, self.client.RuntimeStatus.OUTPUT_LIMIT)
         self.assertEqual(result.result, [])
+        self.assertIn("output limit", result.error)
+
+    def test_stderr_limit_keeps_valid_unterminated_stdout_record(self) -> None:
+        record = self.content("unterminated content before stderr overflow")
+        payload = json.dumps(record, separators=(",", ":"))
+        with tempfile.TemporaryDirectory() as raw:
+            executable = self.script(
+                Path(raw),
+                "import sys, time\n"
+                f"sys.stdout.write({payload!r})\n"
+                "sys.stdout.flush()\n"
+                "time.sleep(0.05)\n"
+                "sys.stderr.write('x' * 128)\n",
+            )
+            with mock.patch.object(
+                self.client, "resolve_runtime", return_value=self.resolution(executable)
+            ), mock.patch.object(self.client, "MAX_STDERR_BYTES", 32):
+                result = self.client.invoke(envelope=self.request(5_000))
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result, [record])
         self.assertIn("output limit", result.error)
 
     def test_unproven_process_group_teardown_does_not_discard_content(self) -> None:
