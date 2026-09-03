@@ -35,10 +35,13 @@ class TestCiTestCoverage(unittest.TestCase):
     def test_native_boundary_tests_are_explicit(self) -> None:
         text = _workflow_text()
         for module in (
-            "tests.test_agent_collab_runtime_client",
+            "tests.test_routing_runtime_client",
+            "tests.test_protocol5_runtime_lifecycle",
             "tests.test_agent_collab_migration",
-            "tests.test_agent_collab_coordinator",
+            "tests.test_routing_coordinator",
             "tests.test_public_export_safety",
+            "tests.test_protocol5_public_contract",
+            "tests.test_unified_skill_runtime_contract",
         ):
             self.assertIn(module, text)
 

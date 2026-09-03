@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: standard
   effort_class: standard
@@ -10,7 +10,7 @@ description: Verify that the active primary's interpretation matches the operato
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Intent check - independent interpretation comparison
 
@@ -19,13 +19,11 @@ plain-language interpretation. Do not include an implementation plan; this
 step checks understanding, not design quality.
 
 Resolve the **plugin root** from this loaded file and invoke only
-`python3 "<plugin-root>/coordinator.py"` with this descriptor-owned, untargeted
-request. The runtime selects an eligible independent route; the caller does not
-construct an agent/action pair.
-
-```json coordinator-request
-{"request_id":"intent-check-1","logical_action":"context.documents.intent","quality_profile":"standard","effort_class":"standard","target_agent":null,"timeout_ms":120000,"prompt":"Compare the operator request with the primary interpretation. Identify only material omissions, added scope, or ambiguity; do not design or execute the work.","documents":[{"label":"operator_request","content":"<verbatim operator request>"},{"label":"primary_interpretation","content":"<plain-language interpretation>"}]}
-```
+`python3 "<plugin-root>/coordinator.py"` with one untargeted
+`context.documents.intent` work unit. Put the verbatim operator request and
+plain-language primary interpretation in its bounded opaque payload. The runtime
+selects an eligible independent route; the caller does not construct an
+agent/action pair.
 
 ## Workflow
 
@@ -35,14 +33,13 @@ construct an agent/action pair.
 3. Replace only the two document contents with the frozen artifacts. Preserve
    every other request field exactly and do not add identity or routing fields.
 4. Ask the selected independent reviewer to compare missed constraints, added
-   scope, ambiguities, and a recommended interpretation inside the
-   descriptor-owned `context_text` artifact. Do not require a verdict line or
-   any alternate terminal envelope.
+   scope, ambiguities, and a recommended interpretation. Preserve the complete
+   raw response; do not require a verdict line or alternate envelope.
 5. Adjudicate the returned text as match, drift, or ambiguity. On a match,
    proceed. On drift, revise the interpretation and recheck only when a new
    request is separately justified. On ambiguity, ask the operator only the
-   load-bearing question. Preserve the typed route result and immutable
-   provenance; `invalid_final` is terminal and is never replayed for format.
+   load-bearing question. Preserve and reason over the full raw route result;
+   never replay it for formatting.
 
 Never reconstruct a raw provider command, choose a target, invoke Claude
 synchronously, or turn a route-local typed failure into a claim that global

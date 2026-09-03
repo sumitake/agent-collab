@@ -1,6 +1,6 @@
 ---
 name: context
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Use when the user says "summarize these documents," "extract this c
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Source-grounded context
 
@@ -37,10 +37,10 @@ an empty request-private document root.
 
 ## Request and result contract
 
-Resolve the plugin root from this loaded file, read the coordinator schema in
-`<plugin-root>/README.md`, and submit one semantic request to
-`python3 "<plugin-root>/coordinator.py"`. Use an explicit `target_agent` only
-when the user named one; never construct a provider transport action.
+Resolve the plugin root from this loaded file, read the routing schema in
+`<plugin-root>/README.md`, and submit one work unit to
+`python3 "<plugin-root>/coordinator.py"`. Use an `explicit_target` only when
+the user named one; never construct a provider transport action.
 Use `quality_profile="economical"` with `effort_class="minimal"` for mechanical
 extraction, and raise these closed provider-neutral fields only when the task
 actually requires more synthesis depth. Never name a model or provider member.
@@ -49,16 +49,10 @@ One accepted request launches one provider process and fresh session. Provider-
 internal tool rounds or model calls may exceed one. There is no automatic whole-request replay after any model call and no malformed-output retry.
 Preserve typed failures.
 
-Accept success only when the result contains `{"text":"..."}` plus runtime-
-owned evidence. Document mode must confirm a native read for every label and
-return its hash and byte count without echoing source contents. Repository mode
-must return native repository evidence and normalized inspected paths. For
-high-stakes extraction, the primary spot-checks load-bearing claims against the
-source.
-
-If a clean attempt returns useful text without sufficient native source
-evidence, preserve it only as an explicitly ungrounded advisory. It carries no
-receipt, finding, governance, merge, or source-grounded authority.
+Preserve every bounded returned content frame or recovered partial. Interpret
+the raw text with ordinary reasoning, then spot-check load-bearing claims
+against the caller-owned document or exact repository source. Missing or
+conflicting diagnostics do not hide content and do not create authority.
 
 This capability is advisory and read-only. It never edits files, applies a
 patch, creates governance evidence, or authorizes a provider command outside

@@ -1,33 +1,35 @@
 ---
 name: architect
-version: 7.0.1
+version: 7.0.2
 description: Request read-only architecture consultation for codebase analysis, system design, implementation planning, decomposition, or long-horizon strategy. Use when the user says "ask the architect," "have Grok design this," "architecture consultation," "plan this implementation," or "/agent-collab:architect." Also offer this before a substantial multi-system implementation where an independent architecture pass can reduce rework.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Architecture consultation
 
 Use `architecture.repository` for repository-aware analysis and
 `architecture.conceptual` only for genuinely conceptual consultation. A
-repository request must include the canonical `repo_root` and exact
-`expected_repo_head` and succeeds only
-with native inspected-path evidence. Safe substantive text without that
-evidence may be returned only as an explicitly ungrounded advisory; it is
-useful analysis but not repository authority.
+repository consultation runs from a caller-controlled checkout at the exact
+expected source head. The caller records and rechecks that identity; path or
+telemetry output from the provider is diagnostic only. A response whose source
+identity cannot be positively established remains useful advisory content but
+is not repository authority.
 
-Resolve the plugin root, read `<plugin-root>/README.md`, and submit one semantic
-request through the public coordinator. Set `target_agent` only when the user
+Resolve the plugin root, read `<plugin-root>/README.md`, and submit one bounded
+work unit through the routing runtime. Set `explicit_target` only when the user
 explicitly names one. Do not construct provider commands or transport actions.
 Use `quality_profile="frontier"` and `effort_class="maximum"` for substantial
 architecture work; these choose desired quality and depth, never a model ID.
 
 Ask for the recommended architecture, invariants and threat boundaries,
 dependency-ordered implementation units, verification plan, and unresolved
-assumptions. The result is read-only advice. The primary owns edits, tests,
-integration, commits, merge/release/deploy, and secrets.
+assumptions. Preserve every nonempty raw or recovered response and interpret it
+with ordinary model reasoning; provider formatting and optional diagnostics do
+not gate the advice. The primary owns edits, tests, integration, commits,
+merge/release/deploy, and secrets.
 
 ## Delivery estimate checkpoint
 

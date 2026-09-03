@@ -75,14 +75,12 @@ convergence, and never grants ordinary agent self-merge eligibility. The
 `operator_reserved` field must begin with `yes` and identify the
 operator-controlled action.
 
-Coordinator `provider_error` and `teardown_error` results are attempt-local.
-They invalidate that attempt's artifact and evidence, but do not establish
-provider or route unavailability, quarantine the route, or block unrelated
-repository work. Never automatically replay the failed request; a later
-caller-authorized request is a distinct attempt whose eligibility is evaluated
-from fresh readiness. Where governance evidence is still required, use an
-eligible documented alternative or record an explicit operator-authorized path
-honestly; never fabricate reviewer convergence.
+Runtime status and diagnostic fields remain attempt-local observations. They do
+not discard bounded provider content already observed, establish provider-wide
+unavailability, quarantine a route, or authorize replay. The caller interprets
+the preserved raw response and separately verifies the reviewer, exact source,
+scope, and any operational effects needed for governance. Never fabricate
+reviewer convergence, approval, a receipt, or authority from process exit.
 
 The coordinator has no automatic failure-evidence capture or filing plane.
 Issue filing is an explicit, separately authorized operation after the typed
@@ -90,10 +88,11 @@ response is available; a filed comment is diagnostic evidence, never approval
 or retry authority. A sending or uncertain GitHub write is reconciliation-only
 and must not be automatically replayed.
 
-The signed descriptor's artifact schema is the sole final-output contract.
-Prompts may specify review criteria but must not add an alternate JSON envelope,
-`VERDICT:` line, or trailing prose contract. `invalid_final` is terminal and
-must not be salvaged from provider prose or replayed for formatting.
+Provider formatting is never a governance gate. JSON shape, verdict fields,
+findings structure, receipts, telemetry, terminal wrappers, and prose style are
+optional diagnostics or presentation. Every bounded nonempty final or recovered
+partial reaches the caller for ordinary reasoning; only absent content remains
+absent. No consumed request is replayed merely to change formatting.
 
 Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
 change. For any external contribution, use `OPERATOR-CONFIRMED` only after John
@@ -121,7 +120,7 @@ GitHub-hosted runners and receives no private build/sign credentials.
 
 Policy-only releases contain an empty runtime manifest. An activation release
 may import only a final signed and notarized standalone bundle, its closed
-schema-4/runtime-protocol-4/native-contract-4 manifest, the canonical generated
+schema-4/runtime-protocol-5/native-contract-4 manifest, the canonical generated
 wire descriptor and hash, per-member verification metadata, and required
 third-party license evidence. Public contributors never build or inspect the
 private implementation.

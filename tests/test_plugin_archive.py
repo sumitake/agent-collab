@@ -13,7 +13,7 @@ import unittest
 from datetime import date
 from unittest import mock
 
-from tests.test_direct_runtime_public_contract import _wire_descriptor
+from tests.test_protocol5_public_contract import wire_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,10 +48,10 @@ class PluginArchiveTests(unittest.TestCase):
 
     def test_policy_manifest_uses_the_single_top_level_descriptor(self) -> None:
         archive = _load()
-        descriptor, digest = _wire_descriptor()
+        descriptor, digest = wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 4,
+            "protocol_version": 5,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,
@@ -65,10 +65,10 @@ class PluginArchiveTests(unittest.TestCase):
 
     def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
         archive = _load()
-        descriptor, digest = _wire_descriptor()
+        descriptor, digest = wire_descriptor()
         manifest = {
             "schema_version": 4,
-            "protocol_version": 4,
+            "protocol_version": 5,
             "contract_version": 4,
             "wire_contract": descriptor,
             "wire_contract_sha256": digest,

@@ -10,11 +10,10 @@ the contribution contract remain authoritative for their respective claims.
 When two generations differ, use the status vocabulary below instead of
 silently treating them as the same thing.
 
-The current published release is v7.0.0 with signed provider runtime 5.0.0,
-manifest schema 4, runtime protocol 4, native contract 4, wire schema 8, and
-12 logical / 15 transport / 19 valid action-source pairs. One post-restart
-Codex installation has been verified; this does not establish installation,
-activation, or readiness on every host.
+The current published release is v7.0.1 with signed provider runtime 5.0.3,
+manifest schema 4, runtime protocol 4, native contract 4, and wire schema 10.
+Repository source 7.0.2 stages protocol 5, wire schema 11, and runtime 5.0.4;
+those claims remain staged until release and installed qualification complete.
 
 ## Read this handbook in order
 

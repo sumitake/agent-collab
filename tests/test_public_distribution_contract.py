@@ -20,7 +20,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["plugins"][0]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
-        self.assertEqual(versions, {"7.0.1"})
+        self.assertEqual(versions, {"7.0.2"})
 
     def test_current_release_documentation_matches_published_evidence(self) -> None:
         status = (
@@ -56,9 +56,9 @@ class PublicDistributionContractTests(unittest.TestCase):
         self.assertIn("moonshot", fragment["tags"])
         self.assertNotIn("glm", fragment["tags"])
 
-    def test_distribution_documents_direct_semantic_runtime(self) -> None:
+    def test_distribution_documents_direct_routing_runtime(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
-        for phrase in ("schema-4 manifest", "runtime protocol 4", "native contract 4", "new process group"):
+        for phrase in ("schema-4 manifest", "runtime protocol 5", "native contract 4", "new process group"):
             self.assertIn(phrase, text)
 
     def test_mit_engineering_process_pack_survives_the_version_5_cutover(self) -> None:

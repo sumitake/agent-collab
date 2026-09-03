@@ -39,7 +39,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -65,8 +65,8 @@ Submit the sealed logic-check role through `{{ mcp_tool_ask }}` with
 {{ logic_check_call_params }}. Central policy resolves an independent eligible
 reviewer; Claude/Anthropic is ineligible for this review action, and its
 document-intent route is not a substitute. Use this prompt template for
-substantive derivation. The signed `context_text` artifact is the sole output
-contract; do not add another terminal envelope:
+substantive derivation. The caller reasons over the complete raw response;
+provider formatting is not an output contract:
 
 ```
 Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.
@@ -85,8 +85,9 @@ CONSTRAINTS (do not deviate):
 Include enough intermediate work for independent comparison.
 ```
 
-If the runtime returns `invalid_final`, surface it and fall back to manual
-inspection. Do not infer an answer from salvaged prose or replay the request.
+Reason over every nonempty raw response, including recovered partial prose, and
+deduce the best-supported result. Verify its steps manually before relying on
+it; never replay for formatting.
 
 ### 3. For very large structured traces — switch to transition critique
 

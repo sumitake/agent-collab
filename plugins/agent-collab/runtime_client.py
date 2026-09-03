@@ -32,9 +32,9 @@ from typing import Any, Iterator, Mapping, Sequence
 PLUGIN_ROOT = Path(__file__).resolve().parent
 MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "5.0.3"
+PROVIDER_RUNTIME_VERSION = "5.0.4"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -228,24 +228,11 @@ _RUNTIME_RESPONSE_STATUSES = frozenset(
 class WireDescriptorSnapshot:
     sha256: str
     logical_actions: frozenset[str]
-    logical_action_source_modes: Mapping[str, str]
-    transport_actions: frozenset[tuple[str, str]]
-    action_source_pairs: frozenset[tuple[str, str, str]]
-    semantic_request: Mapping[str, Any]
-    success_response: Mapping[str, Any]
-    advisory_response: Mapping[str, Any]
-    failure_response: Mapping[str, Any]
-    artifact_schemas: Mapping[str, Any]
-    execution_receipt: Mapping[str, Any]
-    readiness_request: Mapping[str, Any]
-    readiness_response: Mapping[str, Any]
-    bounded_diagnostics: Mapping[str, Any]
     routing_source_sha256: str
     logical_agents: frozenset[str]
-    model_lineages: frozenset[str]
-    logical_action_targets: Mapping[str, tuple[str, ...]]
-    logical_action_effort_floors: Mapping[str, str]
-    logical_action_timeout_modes: Mapping[str, str]
+    routing_request: Mapping[str, Any]
+    content_frame: Mapping[str, Any]
+    terminal_planning_record: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -317,27 +304,23 @@ def _unique_rows(value: object, width: int) -> frozenset[tuple[str, ...]]:
 def validate_wire_descriptor(
     descriptor: object, *, expected_sha256: str
 ) -> WireDescriptorSnapshot:
-    """Validate one closed workspace-generated descriptor and derive projections."""
+    """Validate the closed routing-only descriptor bound by the manifest."""
 
     if type(expected_sha256) is not str or _SHA256_RE.fullmatch(expected_sha256) is None:
         raise ValueError("wire descriptor digest is invalid")
     if type(descriptor) is not dict:
         raise ValueError("wire descriptor is not closed")
-    schema_version = descriptor.get("schema_version")
-    if (
-        not _exact_int(schema_version)
-        or schema_version < 1
-        or schema_version > 10
-    ):
-        raise ValueError("wire descriptor schema version is invalid")
-    expected_keys = (
-        _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V9
-        if schema_version in {9, 10}
-        else _WIRE_KEYS_V6 | _WIRE_IDENTITY_KEYS_V7
-        if schema_version in {7, 8}
-        else _WIRE_KEYS_V6
-    )
-    if frozenset(descriptor) != expected_keys:
+    if frozenset(descriptor) != {
+        "$defs",
+        "content_frame",
+        "logical_actions",
+        "logical_agents",
+        "routing_request",
+        "routing_source_sha256",
+        "runtime_protocol_version",
+        "schema_version",
+        "terminal_planning_record",
+    }:
         raise ValueError("wire descriptor is not closed")
     try:
         encoded = _canonical_json(descriptor)
@@ -345,6 +328,8 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor is not canonical JSON") from exc
     if hashlib.sha256(encoded).hexdigest() != expected_sha256:
         raise ValueError("wire descriptor digest does not match")
+    if not _exact_int(descriptor["schema_version"], 11):
+        raise ValueError("wire descriptor schema version is unsupported")
     if not _exact_int(descriptor["runtime_protocol_version"], PROTOCOL_VERSION):
         raise ValueError("wire descriptor runtime protocol is unsupported")
     routing_sha = descriptor["routing_source_sha256"]
@@ -359,192 +344,32 @@ def validate_wire_descriptor(
         or len(set(actions_value)) != 12
     ):
         raise ValueError("wire descriptor logical actions are invalid")
-    action_source_modes = descriptor["logical_action_source_modes"]
+    raw_agents = descriptor["logical_agents"]
     if (
-        type(action_source_modes) is not dict
-        or set(action_source_modes) != set(actions_value)
+        type(raw_agents) is not list
+        or not raw_agents
+        or len(raw_agents) > _MAX_DESCRIPTOR_IDENTITIES
         or any(
-            type(mode) is not str or mode not in _SOURCE_MODES
-            for mode in action_source_modes.values()
+            type(item) is not str
+            or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", item) is None
+            for item in raw_agents
         )
+        or len(raw_agents) != len(set(raw_agents))
     ):
-        raise ValueError("wire descriptor logical action sources are invalid")
-    transports = _unique_rows(descriptor["base_transport_actions"], 2)
-    pairs = _unique_rows(descriptor["valid_action_source_pairs"], 3)
-    if len(transports) != 15 or len(pairs) != 19:
-        raise ValueError("wire descriptor projections have wrong cardinality")
-    if any(row[:2] not in transports or row[2] not in _SOURCE_MODES for row in pairs):
-        raise ValueError("wire descriptor source projection is inconsistent")
-
-    logical_agents: frozenset[str] = frozenset()
-    model_lineages: frozenset[str] = frozenset()
-    action_targets: dict[str, tuple[str, ...]] = {}
-    effort_floors: dict[str, str] = {}
-    timeout_modes: dict[str, str] = {}
-    if schema_version in {7, 8, 9, 10}:
-        raw_agents = descriptor["logical_agents"]
-        raw_lineages = descriptor["model_lineages"]
-        if (
-            type(raw_agents) is not list
-            or not raw_agents
-            or len(raw_agents) > _MAX_DESCRIPTOR_IDENTITIES
-            or any(
-                type(item) is not str
-                or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", item) is None
-                for item in raw_agents
-            )
-            or len(raw_agents) != len(set(raw_agents))
-        ):
-            raise ValueError("wire descriptor logical agents are invalid")
-        if (
-            type(raw_lineages) is not list
-            or not raw_lineages
-            or len(raw_lineages) > _MAX_DESCRIPTOR_IDENTITIES
-            or any(
-                type(item) is not str
-                or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", item) is None
-                for item in raw_lineages
-            )
-            or len(raw_lineages) != len(set(raw_lineages))
-        ):
-            raise ValueError("wire descriptor model lineages are invalid")
-        logical_agents = frozenset(raw_agents)
-        model_lineages = frozenset(raw_lineages)
-        raw_targets = descriptor["logical_action_targets"]
-        raw_floors = descriptor["logical_action_effort_floors"]
-        if (
-            type(raw_targets) is not dict
-            or set(raw_targets) != set(actions_value)
-            or type(raw_floors) is not dict
-            or set(raw_floors) != set(actions_value)
-        ):
-            raise ValueError("wire descriptor action recovery projections are invalid")
-        for action in actions_value:
-            targets = raw_targets[action]
-            if (
-                type(targets) is not list
-                or not targets
-                or len(targets) > _MAX_DESCRIPTOR_IDENTITIES
-                or any(type(item) is not str or item not in logical_agents for item in targets)
-                or len(targets) != len(set(targets))
-                or type(raw_floors[action]) is not str
-                or raw_floors[action] not in _EFFORT_CLASSES
-            ):
-                raise ValueError("wire descriptor action recovery projections are invalid")
-            action_targets[action] = tuple(targets)
-            effort_floors[action] = raw_floors[action]
-        if schema_version >= 9:
-            raw_timeout_modes = descriptor["logical_action_timeout_modes"]
-            if (
-                type(raw_timeout_modes) is not dict
-                or set(raw_timeout_modes) != set(actions_value)
-                or any(
-                    type(mode) is not str or mode not in _TIMEOUT_MODES
-                    for mode in raw_timeout_modes.values()
-                )
-            ):
-                raise ValueError("wire descriptor action timeout modes are invalid")
-            timeout_modes = dict(raw_timeout_modes)
-
-    artifacts = descriptor["artifacts"]
-    if type(artifacts) is not dict or frozenset(artifacts) != _ARTIFACT_SCHEMAS:
-        raise ValueError("wire descriptor artifact schemas are invalid")
-    schema_fields = (
-        "semantic_request",
-        "success_response",
-        "advisory_response",
-        "failure_response",
-        "execution_receipt",
-        "bounded_diagnostics",
-    )
-    if any(type(descriptor[name]) is not dict or not descriptor[name] for name in schema_fields):
-        raise ValueError("wire descriptor contains an invalid JSON schema")
-    if any(type(schema) is not dict or not schema for schema in artifacts.values()):
-        raise ValueError("wire descriptor contains an invalid artifact schema")
-    for name in schema_fields:
-        _validate_schema_document(descriptor[name])
-    for schema in artifacts.values():
-        _validate_schema_document(schema)
-    if schema_version in {7, 8, 9, 10}:
-        repository_probe = {"mode": "repository", "repo_root": "/"}
-        for variant in descriptor["semantic_request"]["properties"]["source"]["oneOf"]:
-            if variant.get("properties", {}).get("mode") == {"const": "repository"}:
-                if "expected_repo_head" in variant["properties"]:
-                    repository_probe["expected_repo_head"] = "1" * 40
-                break
-        if (
-            schema_version in {8, 9, 10}
-            and "expected_repo_head" not in repository_probe
-        ):
-            raise ValueError(
-                f"wire descriptor v{schema_version} repository source is not head-bound"
-            )
-        semantic_probe = {
-            "wire_contract_sha256": expected_sha256,
-            "request_id": f"descriptor-v{schema_version}-probe",
-            "logical_action": "review.repository",
-            "quality_profile": "frontier",
-            "effort_class": "maximum",
-            "target_agent": None,
-            "author_lineage": None,
-            "timeout_ms": 1,
-            "prompt": "Probe.",
-            "source": repository_probe,
-            "occupied_model_lineages": [next(iter(model_lineages))],
-            "evidence_anchors": [{"id": "probe", "path": "README.md"}],
-        }
-        try:
-            _validate_schema(semantic_probe, descriptor["semantic_request"])
-        except ValueError as exc:
-            raise ValueError(
-                "wire descriptor semantic request is inconsistent with identity projections"
-            ) from exc
-        if schema_version in {8, 9, 10}:
-            for invalid_head in (None, "0" * 40, "0" * 64):
-                invalid_probe = dict(semantic_probe)
-                invalid_source = dict(repository_probe)
-                if invalid_head is None:
-                    invalid_source.pop("expected_repo_head")
-                else:
-                    invalid_source["expected_repo_head"] = invalid_head
-                invalid_probe["source"] = invalid_source
-                try:
-                    _validate_schema(invalid_probe, descriptor["semantic_request"])
-                except ValueError:
-                    continue
-                raise ValueError(
-                    f"wire descriptor v{schema_version} repository source admits an unbound head"
-                )
-    readiness = descriptor["zero_inference_readiness"]
-    if (
-        type(readiness) is not dict
-        or set(readiness) != {"request", "response"}
-        or any(type(readiness[name]) is not dict or not readiness[name] for name in readiness)
-    ):
-        raise ValueError("wire descriptor readiness contract is invalid")
-    _validate_schema_document(readiness["request"])
-    _validate_schema_document(readiness["response"])
+        raise ValueError("wire descriptor logical agents are invalid")
+    for name in ("routing_request", "content_frame", "terminal_planning_record"):
+        if type(descriptor[name]) is not dict or not descriptor[name]:
+            raise ValueError("wire descriptor routing schema is invalid")
+    if type(descriptor["$defs"]) is not dict:
+        raise ValueError("wire descriptor definitions are invalid")
     return WireDescriptorSnapshot(
         sha256=expected_sha256,
         logical_actions=frozenset(actions_value),
-        logical_action_source_modes=dict(action_source_modes),
-        transport_actions=frozenset(transports),
-        action_source_pairs=frozenset(pairs),
-        semantic_request=descriptor["semantic_request"],
-        success_response=descriptor["success_response"],
-        advisory_response=descriptor["advisory_response"],
-        failure_response=descriptor["failure_response"],
-        artifact_schemas=artifacts,
-        execution_receipt=descriptor["execution_receipt"],
-        readiness_request=readiness["request"],
-        readiness_response=readiness["response"],
-        bounded_diagnostics=descriptor["bounded_diagnostics"],
         routing_source_sha256=routing_sha,
-        logical_agents=logical_agents,
-        model_lineages=model_lineages,
-        logical_action_targets=action_targets,
-        logical_action_effort_floors=effort_floors,
-        logical_action_timeout_modes=timeout_modes,
+        logical_agents=frozenset(raw_agents),
+        routing_request=descriptor["routing_request"],
+        content_frame=descriptor["content_frame"],
+        terminal_planning_record=descriptor["terminal_planning_record"],
     )
 
 
@@ -914,244 +739,6 @@ def resolve_runtime() -> RuntimeResolution:
     return result
 
 
-def _json_type(value: object, expected: object) -> bool:
-    values = expected if type(expected) is list else [expected]
-    return any(
-        (kind == "object" and type(value) is dict)
-        or (kind == "array" and type(value) is list)
-        or (kind == "string" and type(value) is str)
-        or (kind == "integer" and type(value) is int)
-        or (kind == "number" and type(value) in {int, float})
-        or (kind == "boolean" and type(value) is bool)
-        or (kind == "null" and value is None)
-        for kind in values
-    )
-
-
-def _validate_schema_document(schema: object, *, depth: int = 0) -> None:
-    """Reject schema vocabulary outside the canonical descriptor subset."""
-
-    if depth > 128 or type(schema) is not dict:
-        raise ValueError("wire descriptor contains an invalid JSON schema")
-    unsupported = set(schema) - _SCHEMA_KEYWORDS
-    if unsupported:
-        raise ValueError("wire descriptor uses an unsupported JSON schema keyword")
-    schema_type = schema.get("type")
-    if schema_type is not None:
-        values = schema_type if type(schema_type) is list else [schema_type]
-        if (
-            not values
-            or any(type(value) is not str or value not in _SCHEMA_TYPES for value in values)
-            or len(values) != len(set(values))
-        ):
-            raise ValueError("wire descriptor contains an invalid JSON schema type")
-    if "additionalProperties" in schema and schema["additionalProperties"] is not False:
-        raise ValueError("wire descriptor contains an invalid JSON schema closure")
-    required = schema.get("required")
-    if required is not None and (
-        type(required) is not list
-        or any(type(name) is not str or not name for name in required)
-        or len(required) != len(set(required))
-    ):
-        raise ValueError("wire descriptor contains invalid JSON schema requirements")
-    enum = schema.get("enum")
-    if enum is not None and (
-        type(enum) is not list
-        or not enum
-        or len(enum) != len({_canonical_json(value) for value in enum})
-    ):
-        raise ValueError("wire descriptor contains an invalid JSON schema enum")
-    for key in _SCHEMA_INTEGER_KEYWORDS:
-        if key in schema and not _exact_int(schema[key]):
-            raise ValueError("wire descriptor contains an invalid JSON schema bound")
-    for key in _SCHEMA_TRUE_KEYWORDS:
-        if key in schema and schema[key] is not True:
-            raise ValueError("wire descriptor contains an invalid JSON schema flag")
-    pattern = schema.get("pattern")
-    if pattern is not None:
-        if type(pattern) is not str:
-            raise ValueError("wire descriptor contains an invalid JSON schema pattern")
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError("wire descriptor contains an invalid JSON schema pattern") from exc
-    properties = schema.get("properties")
-    if properties is not None:
-        if type(properties) is not dict:
-            raise ValueError("wire descriptor contains an invalid JSON schema")
-        for child in properties.values():
-            _validate_schema_document(child, depth=depth + 1)
-    for key in ("oneOf", "allOf", "prefixItems"):
-        children = schema.get(key)
-        if children is None:
-            continue
-        if type(children) is not list or not children:
-            raise ValueError("wire descriptor contains an invalid JSON schema")
-        for child in children:
-            _validate_schema_document(child, depth=depth + 1)
-    for key in ("not", "items"):
-        child = schema.get(key)
-        if child is not None:
-            _validate_schema_document(child, depth=depth + 1)
-
-
-def _exact_json_value(left: object, right: object) -> bool:
-    return type(left) is type(right) and left == right
-
-
-def _utf8_total(value: object) -> int:
-    if type(value) is str:
-        return len(value.encode("utf-8"))
-    if type(value) is list:
-        return sum(_utf8_total(item) for item in value)
-    if type(value) is dict:
-        return sum(_utf8_total(item) for item in value.values())
-    return 0
-
-
-def _bounded_total(schema: Mapping[str, Any], name: str, total: int) -> None:
-    limit = schema.get(name)
-    if _exact_int(limit) and total > limit:
-        raise ValueError(f"wire schema aggregate exceeds {name}")
-
-
-def _validate_schema(value: object, schema: Mapping[str, Any], *, depth: int = 0) -> None:
-    """Validate the JSON-Schema subset emitted by the fixed wire descriptor."""
-
-    if depth > 128:
-        raise ValueError("wire schema nesting limit exceeded")
-    if "oneOf" in schema:
-        matches = 0
-        for variant in schema["oneOf"]:
-            try:
-                _validate_schema(value, variant, depth=depth + 1)
-            except ValueError:
-                continue
-            matches += 1
-        if matches != 1:
-            raise ValueError("value does not match exactly one wire schema variant")
-    for part in schema.get("allOf", []):
-        _validate_schema(value, part, depth=depth + 1)
-    if "not" in schema:
-        try:
-            _validate_schema(value, schema["not"], depth=depth + 1)
-        except ValueError:
-            pass
-        else:
-            raise ValueError("value matches a prohibited wire schema")
-    if "const" in schema and not _exact_json_value(value, schema["const"]):
-        raise ValueError("value differs from wire schema constant")
-    if "enum" in schema and not any(
-        _exact_json_value(value, item) for item in schema["enum"]
-    ):
-        raise ValueError("value is outside wire schema enum")
-    if "type" in schema and not _json_type(value, schema["type"]):
-        raise ValueError("value has wrong wire schema type")
-    if type(value) is dict:
-        required = schema.get("required", [])
-        if any(name not in value for name in required):
-            raise ValueError("wire schema required field is absent")
-        properties = schema.get("properties", {})
-        if schema.get("additionalProperties") is False and not set(value) <= set(properties):
-            raise ValueError("wire schema object is not closed")
-        for name, item in value.items():
-            if name in properties:
-                _validate_schema(item, properties[name], depth=depth + 1)
-        if schema.get("x-inspectedPathsEqualSuccessfulEvidence") is True:
-            events = value.get("repository_evidence")
-            inspected = value.get("inspected_paths")
-            if type(events) is not list or inspected != [
-                event.get("path") if type(event) is dict else None
-                for event in events
-            ]:
-                raise ValueError("wire schema inspected paths differ from evidence")
-    if type(value) is list:
-        if _exact_int(schema.get("minItems")) and len(value) < schema["minItems"]:
-            raise ValueError("wire schema array is too short")
-        if _exact_int(schema.get("maxItems")) and len(value) > schema["maxItems"]:
-            raise ValueError("wire schema array is too long")
-        if schema.get("uniqueItems") is True and len({_canonical_json(item) for item in value}) != len(value):
-            raise ValueError("wire schema array items are not unique")
-        item_schema = schema.get("items")
-        if type(item_schema) is dict:
-            for item in value:
-                _validate_schema(item, item_schema, depth=depth + 1)
-        prefix_items = schema.get("prefixItems")
-        if type(prefix_items) is list:
-            for item, item_schema in zip(value, prefix_items):
-                if type(item_schema) is not dict:
-                    raise ValueError("wire schema prefix item is invalid")
-                _validate_schema(item, item_schema, depth=depth + 1)
-        if schema.get("x-uniqueSuccessfulPaths") is True:
-            paths = [
-                item.get("path") if type(item) is dict else None for item in value
-            ]
-            if None in paths or len(paths) != len(set(paths)):
-                raise ValueError("wire schema evidence paths are not unique")
-        _bounded_total(schema, "x-maxTotalUtf8Bytes", _utf8_total(value))
-        _bounded_total(schema, "x-maxTotalFindingUtf8Bytes", _utf8_total(value))
-        _bounded_total(
-            schema,
-            "x-maxTotalPathUtf8Bytes",
-            sum(
-                len(item["path"].encode("utf-8"))
-                for item in value
-                if type(item) is dict and type(item.get("path")) is str
-            ),
-        )
-        _bounded_total(
-            schema,
-            "x-maxTotalLabelUtf8Bytes",
-            sum(
-                len(item["label"].encode("utf-8"))
-                for item in value
-                if type(item) is dict and type(item.get("label")) is str
-            ),
-        )
-        _bounded_total(
-            schema,
-            "x-maxTotalContentUtf8Bytes",
-            sum(
-                len(item["content"].encode("utf-8"))
-                for item in value
-                if type(item) is dict and type(item.get("content")) is str
-            ),
-        )
-        _bounded_total(
-            schema,
-            "x-maxTotalDeclaredBytes",
-            sum(
-                item["declared_bytes"]
-                for item in value
-                if type(item) is dict and _exact_int(item.get("declared_bytes"))
-            ),
-        )
-    if type(value) is str:
-        if _exact_int(schema.get("minLength")) and len(value) < schema["minLength"]:
-            raise ValueError("wire schema string is too short")
-        if _exact_int(schema.get("maxLength")) and len(value) > schema["maxLength"]:
-            raise ValueError("wire schema string is too long")
-        if _exact_int(schema.get("x-maxUtf8Bytes")) and len(value.encode("utf-8")) > schema["x-maxUtf8Bytes"]:
-            raise ValueError("wire schema string exceeds UTF-8 bound")
-        component_limit = schema.get("x-maxUtf8ComponentBytes")
-        if _exact_int(component_limit) and any(
-            len(component.encode("utf-8")) > component_limit
-            for component in value.split("/")
-        ):
-            raise ValueError("wire schema string component exceeds UTF-8 bound")
-        pattern = schema.get("pattern")
-        if type(pattern) is str and re.search(pattern, value) is None:
-            raise ValueError("wire schema string does not match pattern")
-    if type(value) in {int, float}:
-        if "minimum" in schema and value < schema["minimum"]:
-            raise ValueError("wire schema number is below minimum")
-        if "maximum" in schema and value > schema["maximum"]:
-            raise ValueError("wire schema number exceeds maximum")
-    canonical_limit = schema.get("x-maxCanonicalUtf8Bytes")
-    if _exact_int(canonical_limit) and len(_canonical_json(value)) > canonical_limit:
-        raise ValueError("wire schema canonical JSON exceeds UTF-8 bound")
-
-
 def _envelope_document(envelope: object, wire: WireDescriptorSnapshot) -> dict[str, Any]:
     if is_dataclass(envelope):
         document = asdict(envelope)
@@ -1161,89 +748,33 @@ def _envelope_document(envelope: object, wire: WireDescriptorSnapshot) -> dict[s
         raise ValueError("runtime envelope is not an object")
     if document.get("wire_contract_sha256") != wire.sha256:
         raise ValueError("runtime envelope wire discriminator differs")
-    _validate_schema(document, wire.semantic_request)
-    if document.get("logical_action") not in wire.logical_actions:
-        raise ValueError("runtime envelope logical action is not admitted")
+    required = {
+        "wire_contract_sha256", "request_id", "quality_profile",
+        "effort_class", "max_parallel", "dispatch_requested", "work_units",
+    }
+    allowed = required | {"budget_limit", "deadline_ms", "latency_value"}
+    if set(document) - allowed or not required.issubset(document):
+        raise ValueError("runtime envelope fields are invalid")
+    request_id = document.get("request_id")
+    if type(request_id) is not str or not request_id or len(request_id) > 128:
+        raise ValueError("runtime envelope request identifier is invalid")
+    deadline_ms = document.get("deadline_ms")
+    if deadline_ms is not None and (
+        not _exact_int(deadline_ms) or not 0 <= deadline_ms <= MAX_TIMEOUT_MS
+    ):
+        raise ValueError("runtime envelope deadline is invalid")
+    units = document.get("work_units")
+    if type(units) is not list or not 1 <= len(units) <= 128:
+        raise ValueError("runtime envelope work units are invalid")
+    for unit in units:
+        if (
+            type(unit) is not dict
+            or type(unit.get("id")) is not str
+            or not unit["id"]
+            or unit.get("capability") not in wire.logical_actions
+        ):
+            raise ValueError("runtime envelope work unit is invalid")
     return document
-
-
-def _readiness_envelope_document(
-    envelope: object, wire: WireDescriptorSnapshot
-) -> dict[str, Any]:
-    if is_dataclass(envelope):
-        document = asdict(envelope)
-    elif isinstance(envelope, Mapping):
-        document = dict(envelope)
-    else:
-        raise ValueError("runtime readiness envelope is not an object")
-    if document.get("wire_contract_sha256") != wire.sha256:
-        raise ValueError("runtime readiness wire discriminator differs")
-    _validate_schema(document, wire.readiness_request)
-    return document
-
-
-def validate_readiness_response(
-    value: object,
-    wire: WireDescriptorSnapshot,
-    *,
-    request_id: str,
-    author_lineage: str,
-) -> dict[str, Any]:
-    """Validate one complete native all-action readiness response."""
-
-    if type(value) is not dict:
-        raise ValueError("runtime readiness response is not an object")
-    _validate_schema(value, wire.readiness_response)
-    if value.get("wire_contract_sha256") != wire.sha256:
-        raise ValueError("runtime readiness wire discriminator differs")
-    if value.get("request_id") != request_id:
-        raise ValueError("runtime readiness request identifier differs")
-    if value.get("author_lineage") != author_lineage:
-        raise ValueError("runtime readiness author lineage differs")
-    actions = value["result"]["actions"]
-    if [group["logical_action"] for group in actions] != sorted(wire.logical_actions):
-        raise ValueError("runtime readiness actions are not the admitted ordered set")
-    for group in actions:
-        logical_action = group["logical_action"]
-        expected_source = wire.logical_action_source_modes[logical_action]
-        if group["source_mode"] != expected_source:
-            raise ValueError("runtime readiness source mode differs from its action")
-        candidates = group["candidates"]
-        agents = [candidate["logical_agent"] for candidate in candidates]
-        if len(agents) != len(set(agents)):
-            raise ValueError("runtime readiness contains duplicate logical agents")
-        for candidate in candidates:
-            ready = candidate["status"] == "ready"
-            if not ready:
-                continue
-            if (
-                any(
-                    candidate[field] is None
-                    for field in (
-                        "implementation_fingerprint",
-                        "executable_content_sha256",
-                        "adapter_wire_sha256",
-                    )
-                )
-                or candidate["diagnostic_code"] is not None
-            ):
-                raise ValueError("ready runtime identity is incomplete")
-            resolution_method = candidate["model_resolution_method"]
-            if resolution_method == "provider_catalog":
-                catalog_identity_valid = (
-                    candidate["observed_model"] is not None
-                    and candidate["catalog_digest"] is not None
-                )
-            elif resolution_method == "provider_default":
-                # Provider-default routes may still bind the provider's
-                # observed catalog bytes (Gemini does) without selecting a
-                # model from that catalog.  The model must remain unclaimed.
-                catalog_identity_valid = candidate["observed_model"] is None
-            else:
-                catalog_identity_valid = False
-            if not catalog_identity_valid:
-                raise ValueError("runtime catalog identity is inconsistent")
-    return dict(value)
 
 
 @contextmanager
@@ -1505,9 +1036,41 @@ def _collect_bounded(
         selector.close()
 
 
-def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
-    if operation not in {"invoke", "readiness"}:
-        raise RuntimeError("unsupported internal runtime operation")
+def _reject_nonfinite(_value: str) -> None:
+    raise ValueError("runtime output contains a non-finite number")
+
+
+def _parse_routing_records(raw: bytes) -> tuple[list[dict[str, object]], str]:
+    records: list[dict[str, object]] = []
+    malformed = False
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="ignore")
+        malformed = True
+    for line in text.splitlines():
+        if not line:
+            continue
+        try:
+            record = json.loads(line, parse_constant=_reject_nonfinite)
+            if type(record) is dict:
+                json.dumps(
+                    record,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+        except (TypeError, ValueError, RecursionError):
+            malformed = True
+            continue
+        if type(record) is dict:
+            records.append(record)
+        else:
+            malformed = True
+    return records, "malformed runtime output was excluded" if malformed else ""
+
+
+def _call_runtime(*, envelope: object) -> RuntimeResult:
     resolution = resolve_runtime()
     if resolution.status is not RuntimeStatus.OK or resolution.wire is None or resolution.path is None:
         return RuntimeResult(
@@ -1517,34 +1080,19 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             artifact_digest=resolution.artifact_digest,
         )
     try:
-        document = (
-            _envelope_document(envelope, resolution.wire)
-            if operation == "invoke"
-            else _readiness_envelope_document(envelope, resolution.wire)
-        )
+        document = _envelope_document(envelope, resolution.wire)
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error=str(exc), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-    timeout_ms = document.get("timeout_ms")
-    if not _exact_int(timeout_ms) or not 0 < timeout_ms <= MAX_TIMEOUT_MS:
-        return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error="runtime timeout is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+    timeout_ms = document.get("deadline_ms", MAX_TIMEOUT_MS)
     deadline = time.monotonic() + timeout_ms / 1000.0
-    admitted_progress = (
-        operation == "invoke"
-        and resolution.wire.logical_action_timeout_modes.get(
-            document.get("logical_action")
-        ) == "admitted_progress_inactivity"
-    )
     reserve_ms = min(
         int(PROCESS_CLEANUP_RESERVE_SECONDS * 1000),
         max(1, timeout_ms // 2),
     )
-    outer_cleanup_ms = max(1, reserve_ms // 2)
     runtime_deadline = deadline - reserve_ms / 1000.0
-    collection_deadline = deadline - outer_cleanup_ms / 1000.0
     remaining_runtime_ms = int(max(
         0.0,
-        (collection_deadline if admitted_progress else runtime_deadline)
-        - time.monotonic(),
+        runtime_deadline - time.monotonic(),
     ) * 1000)
     if remaining_runtime_ms < 1:
         return RuntimeResult(
@@ -1554,8 +1102,7 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
             artifact_digest=resolution.artifact_digest,
         )
     document = dict(document)
-    if not admitted_progress:
-        document["timeout_ms"] = remaining_runtime_ms
+    document["deadline_ms"] = remaining_runtime_ms
     try:
         request = _canonical_json(document) + b"\n"
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
@@ -1565,27 +1112,12 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
     if _identity(resolution.path, executable=True) != resolution.identity:
         return RuntimeResult(RuntimeStatus.INTEGRITY_ERROR, error="runtime identity changed before launch", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
     teardown_note = ""
-    stdout = None
-    terminal = None
+    stdout = b""
+    terminal = ""
     returncode = None
-    progress_reader: int | None = None
-    progress_writer: int | None = None
     try:
         with _isolated_tmpdir() as tmpdir:
             environment = _scrubbed_env(tmpdir)
-            launch_kwargs: dict[str, object] = {}
-            if admitted_progress:
-                try:
-                    progress_reader, progress_writer = _progress_pipe()
-                except OSError:
-                    return RuntimeResult(
-                        RuntimeStatus.UNAVAILABLE,
-                        error="runtime progress channel could not be created",
-                        manifest_digest=resolution.manifest_digest,
-                        artifact_digest=resolution.artifact_digest,
-                    )
-                environment[_PROGRESS_FD_ENV] = str(progress_writer)
-                launch_kwargs["pass_fds"] = (progress_writer,)
             try:
                 process = subprocess.Popen(
                     [str(resolution.path), "invoke", "--protocol", str(PROTOCOL_VERSION)],
@@ -1595,47 +1127,15 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                     cwd=tmpdir,
                     env=environment,
                     start_new_session=True,
-                    **launch_kwargs,
                 )
             except OSError:
                 return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="direct runtime could not be launched", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            finally:
-                _close_fd(progress_writer)
-                progress_writer = None
             try:
-                if admitted_progress:
-                    stdout, _stderr, terminal = _collect_bounded(
-                        process,
-                        request,
-                        collection_deadline,
-                        progress_reader=progress_reader,
-                        stall_interval=timeout_ms / 1000.0,
-                    )
-                else:
-                    stdout, _stderr, terminal = _collect_bounded(
-                        process, request, collection_deadline
-                    )
+                stdout, _stderr, terminal = _collect_bounded(
+                    process, request, runtime_deadline
+                )
             except OSError:
-                if not admitted_progress:
-                    raise
-                stdout, _stderr, terminal = b"", b"", "progress_pipe_lost"
-            _close_fd(progress_reader)
-            progress_reader = None
-            if admitted_progress and terminal in {"progress_pipe_lost", "timeout"}:
-                # Closing the read end is the cancellation signal.  The
-                # runtime supervises its provider in a separate process
-                # group, so let that supervisor observe EPIPE (or its own
-                # stall), terminate/reap the provider, and flush a terminal
-                # response before force-killing only the runtime group.
-                try:
-                    _collect_bounded(
-                        process,
-                        b"",
-                        time.monotonic()
-                        + PROCESS_CLEANUP_RESERVE_SECONDS,
-                    )
-                except Exception:
-                    pass
+                terminal = "runtime_io_error"
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream is not None and not stream.closed:
                     stream.close()
@@ -1644,151 +1144,59 @@ def _call_runtime(*, envelope: object, operation: str) -> RuntimeResult:
                     process,
                     deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
                 )
-                status = {
-                    "timeout": RuntimeStatus.TIMEOUT,
-                    "progress_pipe_lost": RuntimeStatus.CANCELLED,
-                    "output_limit": RuntimeStatus.OUTPUT_LIMIT,
-                }[terminal]
                 if not reaped:
-                    status = RuntimeStatus.TEARDOWN_ERROR
-                return RuntimeResult(status, error=terminal.replace("_", " "), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-            try:
-                returncode = process.wait(
-                    timeout=(
-                        0
-                        if admitted_progress
-                        else max(0.0, deadline - time.monotonic())
-                    )
-                )
-            except subprocess.TimeoutExpired:
-                reaped = _terminate_and_reap(
-                    process,
-                    deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
-                )
-                return RuntimeResult(
-                    RuntimeStatus.TIMEOUT if reaped else RuntimeStatus.TEARDOWN_ERROR,
-                    error=(
-                        "runtime exit exceeded its deadline"
-                        if reaped
-                        else "process group teardown unproven"
-                    ),
-                    manifest_digest=resolution.manifest_digest,
-                    artifact_digest=resolution.artifact_digest,
-                )
-            # The runtime child exited on its own and the response bytes are
-            # in hand. Teardown of any remaining process-group descendants is
-            # bounded hygiene, never a reason to void a valid response: the
-            # group is SIGTERM/SIGKILLed either way, and an unproven death
-            # within the budget degrades to a client-side diagnostic note
-            # (the wire's cleanup facts already model unproven cleanup).
-            try:
-                if not _terminate_and_reap(
-                    process,
-                    deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
-                ):
                     teardown_note = "process group teardown unproven"
-            except Exception:
-                teardown_note = "process group teardown unproven"
+            else:
+                try:
+                    returncode = process.wait(timeout=max(0.0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    terminal = "timeout"
+                try:
+                    if not _terminate_and_reap(
+                        process,
+                        deadline=time.monotonic() + TEARDOWN_REAP_SECONDS,
+                    ):
+                        teardown_note = "process group teardown unproven"
+                except Exception:
+                    teardown_note = "process group teardown unproven"
     except _PrivateTmpCleanupError as exc:
-        if not stdout or terminal is not None or returncode != 0:
-            return RuntimeResult(
-                RuntimeStatus.TEARDOWN_ERROR,
-                error=str(exc),
-                manifest_digest=resolution.manifest_digest,
-                artifact_digest=resolution.artifact_digest,
-            )
-        # A collected, cleanly exited response survives a private-tmp
-        # cleanup failure; the residue is recorded, not converted into a
-        # false provider failure.
         teardown_note = teardown_note or str(exc)
-    finally:
-        _close_fd(progress_writer)
-        _close_fd(progress_reader)
-    try:
-        response = runtime_bundle.load_closed_json_object(
-            stdout, max_bytes=MAX_RESPONSE_BYTES
-        )
-        status = RuntimeStatus(response.get("status"))
-        if status not in _RUNTIME_RESPONSE_STATUSES:
-            raise ValueError("unknown runtime status")
-        if response.get("request_id") != document["request_id"]:
-            raise ValueError("runtime response request identifier differs")
-        if status is RuntimeStatus.OK and operation == "readiness":
-            validate_readiness_response(
-                response,
-                resolution.wire,
-                request_id=document["request_id"],
-                author_lineage=document["author_lineage"],
-            )
-        else:
-            schema = (
-                resolution.wire.success_response
-                if status is RuntimeStatus.OK
-                else (
-                    resolution.wire.advisory_response
-                    if status is RuntimeStatus.ADVISORY
-                    else resolution.wire.failure_response
-                )
-            )
-            _validate_schema(response, schema)
-            if response.get("wire_contract_sha256") != resolution.wire.sha256:
-                raise ValueError("runtime response wire discriminator differs")
-    except (ValueError, runtime_bundle.BundleContractError, UnicodeError, RecursionError):
-        status = (
-            RuntimeStatus.PROVIDER_ERROR
-            if returncode != 0
-            else RuntimeStatus.PROTOCOL_ERROR
-        )
-        return RuntimeResult(status, error="direct runtime response is invalid", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-    if status is RuntimeStatus.OK:
-        if operation == "readiness":
-            return RuntimeResult(
-                status,
-                result=response["result"],
-                provenance={"wire_contract_sha256": resolution.wire.sha256},
-                error=teardown_note,
-                manifest_digest=resolution.manifest_digest,
-                artifact_digest=resolution.artifact_digest,
-            )
+    records, parse_note = _parse_routing_records(stdout)
+    notes = [
+        note for note in (
+            parse_note,
+            terminal.replace("_", " ") if terminal else "",
+            f"runtime exited with status {returncode}" if returncode not in {None, 0} else "",
+            teardown_note,
+        ) if note
+    ]
+    if records:
         return RuntimeResult(
-            status,
-            result=response["result"],
-            provenance={
-                "wire_contract_sha256": resolution.wire.sha256,
-                "execution_receipt": response["execution_receipt"],
-                "diagnostics": response["diagnostics"],
-            },
-            error=teardown_note,
+            RuntimeStatus.OK,
+            result=records,
+            provenance={"wire_contract_sha256": resolution.wire.sha256},
+            error="; ".join(notes),
             manifest_digest=resolution.manifest_digest,
             artifact_digest=resolution.artifact_digest,
         )
-    if status is RuntimeStatus.ADVISORY:
-        return RuntimeResult(
-            status,
-            result=response["advisory"],
-            provenance={
-                "wire_contract_sha256": resolution.wire.sha256,
-                "diagnostics": response["diagnostics"],
-            },
-            manifest_digest=resolution.manifest_digest,
-            artifact_digest=resolution.artifact_digest,
-        )
+    status = {
+        "timeout": RuntimeStatus.TIMEOUT,
+        "output_limit": RuntimeStatus.OUTPUT_LIMIT,
+        "runtime_io_error": RuntimeStatus.UNAVAILABLE,
+    }.get(terminal, RuntimeStatus.PROVIDER_ERROR if returncode else RuntimeStatus.PROTOCOL_ERROR)
     return RuntimeResult(
         status,
-        provenance={"wire_contract_sha256": resolution.wire.sha256, "diagnostics": response["diagnostics"]},
-        error=response["error_code"],
+        result=[],
+        provenance={"wire_contract_sha256": resolution.wire.sha256},
+        error="; ".join(notes) or "direct runtime returned no records",
         manifest_digest=resolution.manifest_digest,
         artifact_digest=resolution.artifact_digest,
     )
 
 
 def invoke(*, envelope: object) -> RuntimeResult:
-    return _call_runtime(envelope=envelope, operation="invoke")
-
-
-def readiness(*, envelope: object) -> RuntimeResult:
-    return _call_runtime(envelope=envelope, operation="readiness")
+    return _call_runtime(envelope=envelope)
 
 
 if __name__ == "__main__":
-    raise SystemExit("runtime_client.py is a library; use coordinator.py")
+    raise SystemExit("runtime_client.py is a library; import invoke")

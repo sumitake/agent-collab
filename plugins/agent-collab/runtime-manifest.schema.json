@@ -15,39 +15,28 @@
   ],
   "properties": {
     "schema_version": {"const": 4},
-    "protocol_version": {"const": 4},
+    "protocol_version": {"const": 5},
     "contract_version": {"const": 4},
     "wire_contract_sha256": {
-      "const": "05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8"
+      "const": "3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741"
     },
     "wire_contract": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "artifacts",
-        "advisory_response",
-        "base_transport_actions",
-        "bounded_diagnostics",
-        "execution_receipt",
-        "failure_response",
-        "logical_action_effort_floors",
-        "logical_action_source_modes",
-        "logical_action_targets",
-        "logical_action_timeout_modes",
+        "$defs",
+        "content_frame",
         "logical_actions",
         "logical_agents",
-        "model_lineages",
+        "routing_request",
         "routing_source_sha256",
         "runtime_protocol_version",
         "schema_version",
-        "semantic_request",
-        "success_response",
-        "valid_action_source_pairs",
-        "zero_inference_readiness"
+        "terminal_planning_record"
       ],
       "properties": {
-        "schema_version": {"const": 10},
-        "runtime_protocol_version": {"const": 4},
+        "schema_version": {"const": 11},
+        "runtime_protocol_version": {"const": 5},
         "routing_source_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
@@ -57,7 +46,22 @@
           "minItems": 12,
           "maxItems": 12,
           "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "enum": [
+              "architecture.conceptual",
+              "architecture.repository",
+              "codegen.repository",
+              "context.documents.extract",
+              "context.documents.intent",
+              "context.documents.reason",
+              "context.repository.extract",
+              "context.repository.reason",
+              "frontend_codegen.repository",
+              "frontend_review.repository",
+              "governance.repository",
+              "review.repository"
+            ]
+          }
         },
         "logical_agents": {
           "type": "array",
@@ -65,238 +69,22 @@
           "maxItems": 8,
           "uniqueItems": true,
           "items": {
-            "enum": ["alibaba", "claude", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"]
+            "enum": [
+              "alibaba",
+              "claude",
+              "codex",
+              "deepseek",
+              "gemini",
+              "grok",
+              "moonshot",
+              "zhipu"
+            ]
           }
         },
-        "model_lineages": {
-          "type": "array",
-          "minItems": 8,
-          "maxItems": 8,
-          "uniqueItems": true,
-          "items": {
-            "enum": ["alibaba", "anthropic", "deepseek", "google", "moonshot", "openai", "xai", "zhipu"]
-          }
-        },
-        "logical_action_targets": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "architecture.conceptual",
-            "architecture.repository",
-            "codegen.repository",
-            "context.documents.extract",
-            "context.documents.intent",
-            "context.documents.reason",
-            "context.repository.extract",
-            "context.repository.reason",
-            "frontend_codegen.repository",
-            "frontend_review.repository",
-            "governance.repository",
-            "review.repository"
-          ],
-          "properties": {
-            "architecture.conceptual": {
-              "type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true,
-              "items": {"enum": ["grok"]}
-            },
-            "architecture.repository": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "deepseek", "grok", "moonshot", "zhipu"]}
-            },
-            "codegen.repository": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "deepseek", "grok", "moonshot", "zhipu"]}
-            },
-            "context.documents.extract": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "context.documents.intent": {
-              "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
-              "items": {"enum": ["claude", "gemini", "grok"]}
-            },
-            "context.documents.reason": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "context.repository.extract": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "context.repository.reason": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "frontend_codegen.repository": {
-              "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "grok", "moonshot", "zhipu"]}
-            },
-            "frontend_review.repository": {
-              "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "governance.repository": {
-              "type": "array", "minItems": 7, "maxItems": 7, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            },
-            "review.repository": {
-              "type": "array", "minItems": 7, "maxItems": 7, "uniqueItems": true,
-              "items": {"enum": ["alibaba", "codex", "deepseek", "gemini", "grok", "moonshot", "zhipu"]}
-            }
-          }
-        },
-        "logical_action_effort_floors": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "architecture.conceptual",
-            "architecture.repository",
-            "codegen.repository",
-            "context.documents.extract",
-            "context.documents.intent",
-            "context.documents.reason",
-            "context.repository.extract",
-            "context.repository.reason",
-            "frontend_codegen.repository",
-            "frontend_review.repository",
-            "governance.repository",
-            "review.repository"
-          ],
-          "properties": {
-            "architecture.conceptual": {"const": "maximum"},
-            "architecture.repository": {"const": "maximum"},
-            "codegen.repository": {"const": "standard"},
-            "context.documents.extract": {"const": "minimal"},
-            "context.documents.intent": {"const": "standard"},
-            "context.documents.reason": {"const": "maximum"},
-            "context.repository.extract": {"const": "minimal"},
-            "context.repository.reason": {"const": "maximum"},
-            "frontend_codegen.repository": {"const": "standard"},
-            "frontend_review.repository": {"const": "maximum"},
-            "governance.repository": {"const": "maximum"},
-            "review.repository": {"const": "maximum"}
-          }
-        },
-        "logical_action_timeout_modes": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "architecture.conceptual",
-            "architecture.repository",
-            "codegen.repository",
-            "context.documents.extract",
-            "context.documents.intent",
-            "context.documents.reason",
-            "context.repository.extract",
-            "context.repository.reason",
-            "frontend_codegen.repository",
-            "frontend_review.repository",
-            "governance.repository",
-            "review.repository"
-          ],
-          "properties": {
-            "architecture.conceptual": {"const": "total_deadline"},
-            "architecture.repository": {"const": "admitted_progress_inactivity"},
-            "codegen.repository": {"const": "admitted_progress_inactivity"},
-            "context.documents.extract": {"const": "total_deadline"},
-            "context.documents.intent": {"const": "total_deadline"},
-            "context.documents.reason": {"const": "total_deadline"},
-            "context.repository.extract": {"const": "total_deadline"},
-            "context.repository.reason": {"const": "total_deadline"},
-            "frontend_codegen.repository": {"const": "admitted_progress_inactivity"},
-            "frontend_review.repository": {"const": "admitted_progress_inactivity"},
-            "governance.repository": {"const": "admitted_progress_inactivity"},
-            "review.repository": {"const": "admitted_progress_inactivity"}
-          }
-        },
-        "logical_action_source_modes": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "architecture.conceptual",
-            "architecture.repository",
-            "codegen.repository",
-            "context.documents.extract",
-            "context.documents.intent",
-            "context.documents.reason",
-            "context.repository.extract",
-            "context.repository.reason",
-            "frontend_codegen.repository",
-            "frontend_review.repository",
-            "governance.repository",
-            "review.repository"
-          ],
-          "properties": {
-            "architecture.conceptual": {"const": "conceptual_prompt"},
-            "architecture.repository": {"const": "repository"},
-            "codegen.repository": {"const": "repository"},
-            "context.documents.extract": {"const": "documents"},
-            "context.documents.intent": {"const": "documents"},
-            "context.documents.reason": {"const": "documents"},
-            "context.repository.extract": {"const": "repository"},
-            "context.repository.reason": {"const": "repository"},
-            "frontend_codegen.repository": {"const": "repository"},
-            "frontend_review.repository": {"const": "repository"},
-            "governance.repository": {"const": "repository"},
-            "review.repository": {"const": "repository"}
-          }
-        },
-        "base_transport_actions": {
-          "type": "array",
-          "minItems": 15,
-          "maxItems": 15,
-          "uniqueItems": true,
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {"type": "string", "minLength": 1},
-              {"type": "string", "minLength": 1}
-            ],
-            "items": false,
-            "minItems": 2,
-            "maxItems": 2
-          }
-        },
-        "valid_action_source_pairs": {
-          "type": "array",
-          "minItems": 19,
-          "maxItems": 19,
-          "uniqueItems": true,
-          "items": {
-            "type": "array",
-            "prefixItems": [
-              {"type": "string", "minLength": 1},
-              {"type": "string", "minLength": 1},
-              {"enum": ["conceptual_prompt", "documents", "repository"]}
-            ],
-            "items": false,
-            "minItems": 3,
-            "maxItems": 3
-          }
-        },
-        "semantic_request": {"type": "object", "minProperties": 1},
-        "success_response": {"type": "object", "minProperties": 1},
-        "advisory_response": {"type": "object", "minProperties": 1},
-        "failure_response": {"type": "object", "minProperties": 1},
-        "artifacts": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "review_findings",
-            "governance_verdict",
-            "context_text",
-            "private_patch"
-          ],
-          "properties": {
-            "review_findings": {"type": "object", "minProperties": 1},
-            "governance_verdict": {"type": "object", "minProperties": 1},
-            "context_text": {"type": "object", "minProperties": 1},
-            "private_patch": {"type": "object", "minProperties": 1}
-          }
-        },
-        "execution_receipt": {"type": "object", "minProperties": 1},
-        "zero_inference_readiness": {"type": "object", "minProperties": 1},
-        "bounded_diagnostics": {"type": "object", "minProperties": 1}
+        "routing_request": {"type": "object", "minProperties": 1},
+        "content_frame": {"type": "object", "minProperties": 1},
+        "terminal_planning_record": {"type": "object", "minProperties": 1},
+        "$defs": {"type": "object"}
       }
     },
     "channel": {"const": "production"},
@@ -379,8 +167,8 @@
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"const": "5.0.3"},
-          "wire_contract_sha256": {"const": "05aaa8a128f69502bb8bd4a38a5eda0716268ac95524e41cc07ba091b8162be8"},
+          "provider_runtime_version": {"const": "5.0.4"},
+          "wire_contract_sha256": {"const": "3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741"},
           "files": {
             "type": "array",
             "minItems": 1,
@@ -389,9 +177,7 @@
             "contains": {
               "type": "object",
               "required": ["role"],
-              "properties": {
-                "role": {"const": "entrypoint"}
-              }
+              "properties": {"role": {"const": "entrypoint"}}
             },
             "minContains": 1,
             "maxContains": 1,

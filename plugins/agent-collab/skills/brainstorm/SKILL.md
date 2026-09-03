@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -10,7 +10,7 @@ description: Use the reviewer as a divergent-thinking partner to widen the optio
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Brainstorm — divergent ideation with the cross-family partner
 
@@ -50,10 +50,10 @@ economical quality with minimal effort through the fastest eligible independent 
 for highly nuanced creative work where reasoning depth on each candidate idea
 is more valuable than candidate breadth.
 
-The public coordinator accepts no brainstorm-specific fields. Put the
-following as labeled sections inside the single `prompt` string and dispatch
-only through an advertised read-only advisory contract. If the native route
-is unavailable, return typed unavailable; do not invent coordinator fields or
+The routing contract accepts no brainstorm-specific fields. Put the following
+as labeled sections inside the work unit's opaque prompt and dispatch only
+through an advertised read-only advisory capability. If the native route is
+unavailable, report it; do not invent routing fields or
 reconstruct a provider invocation:
 
 - `prompt` — the framed problem statement.
@@ -64,7 +64,9 @@ reconstruct a provider invocation:
 - `methodology` — see § Methodology selection below; default `auto` lets the tool pick.
 - `includeAnalysis` — whether the tool should produce its own grouping/analysis alongside the ideas; default true is usually right, but turn off if you intend to do the synthesis yourself in step 4.
 
-Always specify the **output shape** in the prompt — a numbered list with one candidate per line, no preamble, no closing commentary. Free-form prose responses are hard to synthesize across.
+Request a numbered list with one candidate per line as presentation guidance,
+not as a runtime gate. Preserve and synthesize any nonempty response even when
+its formatting differs.
 
 ### 3. Ask for variation along axes, not a flat list
 
@@ -78,7 +80,7 @@ Axes-based prompts produce systematic coverage of the option space; flat prompts
 
 ### 4. Do not pre-filter; let the weird ones through
 
-If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the list is uniformly safe or uniformly variations on the same theme, say so. Show and synthesize the current signed artifact. Do not issue a follow-up automatically. Only after the caller selects a cluster or explicitly authorizes a new request may you request a more divergent batch.
+If the tool returns three or four ideas that seem strange or impractical, **do not silently drop them** before showing the user. Pre-filtering at this stage destroys the value of the brainstorm — the user is often the one best positioned to spot the unexpected gem. If the list is uniformly safe or uniformly variations on the same theme, say so. Show and synthesize the full raw response. Do not issue a follow-up automatically. Only after the caller selects a cluster or explicitly authorizes a new request may you request a more divergent batch.
 
 ### 5. Synthesize, then close
 

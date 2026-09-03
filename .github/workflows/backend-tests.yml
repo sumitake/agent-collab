@@ -19,11 +19,12 @@ jobs:
         with: { python-version: '3.12' }
       - name: Run runtime, migration, and export-safety tests
         run: |
-          python3 -m unittest tests.test_agent_collab_runtime_client -v
+          python3 -m unittest tests.test_routing_runtime_client -v
+          python3 -m unittest tests.test_protocol5_runtime_lifecycle -v
           python3 -m unittest tests.test_agent_collab_migration -v
-          python3 -m unittest tests.test_agent_collab_coordinator -v
+          python3 -m unittest tests.test_routing_coordinator -v
           python3 -m unittest tests.test_public_export_safety -v
-          python3 -m unittest tests.test_direct_runtime_public_contract -v
-          python3 -m unittest tests.test_execution_receipt_contract -v
+          python3 -m unittest tests.test_protocol5_public_contract -v
+          python3 -m unittest tests.test_unified_skill_runtime_contract -v
       - name: Verify active source tree
         run: python3 scripts/check-public-export-safety.py --active-tree

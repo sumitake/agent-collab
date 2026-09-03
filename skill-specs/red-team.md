@@ -36,7 +36,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -70,18 +70,13 @@ A focused objective produces focused output. "Find security issues" produces a g
 
 ### 3. Call the verifier
 
-Submit the sealed red-team role through `{{ mcp_tool_ask }}` using the
-documented closed coordinator request below. Central policy chooses an eligible
-independent reviewer. Frontmatter `effort` is host guidance and is never a
-coordinator request field.
+Submit one `review.repository` work unit through `{{ mcp_tool_ask }}`. Central
+policy chooses an eligible independent reviewer. The caller seals and verifies
+the exact repository head and supplies the bounded red-team prompt as opaque
+payload.
 
-```json coordinator-request
-{"request_id":"red-team-1","logical_action":"review.repository","quality_profile":"frontier","effort_class":"maximum","target_agent":null,"timeout_ms":120000,"prompt":"Attack the supplied repository artifact using the red-team contract below.","repo_root":"<canonical-repo-root>","expected_repo_head":"<verified-repo-head>"}
-```
-
-Use this prompt template for adversarial content. The signed descriptor's
-`review_findings` schema is the sole output contract; do not add a second JSON,
-JSONL, heading, or trailing-prose envelope:
+Use this prompt template for adversarial content. Provider formatting is not an
+output contract; the caller reasons over the complete raw response:
 
 ```
 You are a red-team agent. Your objective: break the [validation logic / API contract / parser / prompt pipeline / policy] below. Generate exactly N adversarial inputs — exact strings, payloads, or scenarios — designed to bypass, crash, or trigger misbehavior in the target system.
@@ -89,18 +84,17 @@ You are a red-team agent. Your objective: break the [validation logic / API cont
 Threat model: [unauthenticated external attacker / authenticated low-privilege user / privileged insider / model-output adversary / ...]
 Success criterion: [bypass / crash / misbehavior — choose one or "any of the three"]
 
-Record each viable adversarial input, predicted result, and mechanism in a
-descriptor-owned finding message. If fewer than N meet the criterion, return
-only the viable findings and explain the shortfall in the artifact summary.
+Describe each viable adversarial input, predicted result, and mechanism. If
+fewer than N meet the criterion, return only the viable findings and explain
+the shortfall in the response.
 
 --- TARGET ---
 [Specification + code/rule definition]
 ```
 
-An `invalid_final` result is terminal for this request. Surface the failure
-explicitly; do not fabricate an artifact around prose and do not replay the
-coordinator request. It may signal a content-policy guardrail and must remain
-visible as evidence of the verifier's limits.
+Read and reason over every nonempty raw response, including a refusal or partial
+answer, and preserve it as evidence of the verifier's limits. Never fabricate a
+finding or replay for formatting.
 
 ### 4. Verify each finding, then close the loop
 
@@ -133,7 +127,7 @@ Red-teaming applies wherever a control surface exists with adversarial inputs. A
 | Embedded / IoT | Firmware-update signature checker on a smart-thermostat | Signature-stripping with valid-checksum padding; rollback-to-vulnerable-version exploit; partial-write power-fail to forced-recovery-mode |
 | Distributed systems | Leader-election protocol in a coordination service | Network-partition-induced split-brain; clock-jump-induced false leader; message-reordering-induced log divergence |
 
-The signed artifact schema and threat-model + success-criterion framing stay constant across domains; the attack categories shift to match the surface.
+The threat-model and success-criterion framing stay constant across domains; the attack categories shift to match the surface, while provider formatting stays non-authoritative.
 
 ## Anti-patterns
 

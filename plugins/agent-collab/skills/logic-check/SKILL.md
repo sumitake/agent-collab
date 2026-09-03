@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,7 +10,7 @@ description: Audit a verifiable, step-wise computation (arithmetic, financial ca
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON request on stdin. Before constructing it, read the **Coordinator request schema** in `<plugin-root>/README.md`; never invent fields or route/action pairs. The public coordinator re-observes the active host, validates the semantic request, and verifies the co-packaged native manifest and wire descriptor. It runs standalone from the installed plugin. Never discover a provider executable or reconstruct a raw command. `provider_error` and `teardown_error` are attempt-local diagnostics: they invalidate only that request's artifact and evidence. They must not quarantine a route, exclude it from later selection, or establish route or provider unavailability. The caller must not automatically replay the failed request; a later caller-authorized request is a new attempt whose eligibility is recomputed from fresh readiness. The public request names one logical action and optional target agent; provider transport actions are internal descriptor data. For every repository action, pass the canonical `repo_root` and its exact `expected_repo_head`. The signed artifact schema is the sole terminal output contract: prompts may state review criteria but must not append a `VERDICT:` line, alternate JSON envelope, or trailing prose. Preserve `invalid_final` as a terminal failure without salvage or replay. For document context, pass bounded `documents` and no repository source.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on stdin. Before constructing it, read the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit for this skill's logical action, with a bounded opaque payload. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 
 # Logic check — independent re-derivation of a verifiable computation
 
@@ -46,7 +46,7 @@ Skip this skill when:
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -72,8 +72,8 @@ Submit the sealed logic-check role through `python3 "<plugin-root>/coordinator.p
 `quality_profile='frontier'` and `effort_class='maximum'`. Central policy resolves an independent eligible
 reviewer; Claude/Anthropic is ineligible for this review action, and its
 document-intent route is not a substitute. Use this prompt template for
-substantive derivation. The signed `context_text` artifact is the sole output
-contract; do not add another terminal envelope:
+substantive derivation. The caller reasons over the complete raw response;
+provider formatting is not an output contract:
 
 ```
 Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.
@@ -92,8 +92,9 @@ CONSTRAINTS (do not deviate):
 Include enough intermediate work for independent comparison.
 ```
 
-If the runtime returns `invalid_final`, surface it and fall back to manual
-inspection. Do not infer an answer from salvaged prose or replay the request.
+Reason over every nonempty raw response, including recovered partial prose, and
+deduce the best-supported result. Verify its steps manually before relying on
+it; never replay for formatting.
 
 ### 3. For very large structured traces — switch to transition critique
 

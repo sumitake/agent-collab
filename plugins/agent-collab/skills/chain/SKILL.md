@@ -1,6 +1,6 @@
 ---
 name: chain
-version: 7.0.1
+version: 7.0.2
 defaults:
   quality_profile: standard
   effort_class: standard

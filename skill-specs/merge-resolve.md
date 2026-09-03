@@ -34,7 +34,7 @@ This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: seman
 A review is independent only when its observed author family differs from both
 the immutable primary snapshot and artifact-author snapshot. The shared policy
 recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through `coordinator.py`
+OpenCode itself is a transport, not a family. Resolve through the routing runtime
 immediately before every call. Governance fails closed when either snapshot is
 unknown or no distinct-family advisory route is eligible. Non-governance work
 may proceed only with an independence warning. Claude is ineligible for these
@@ -82,10 +82,10 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 ### 4. Cross-check prompt
 
 Submit the sealed merge-review role through `{{ mcp_tool_ask }}`
-{{ merge_resolve_call_params }}. Central policy chooses an eligible
-independent reviewer. The signed `context_text` artifact is the sole output
-contract; do not impose another terminal envelope. Ask the reviewer to address
-these disagreement-first criteria within that artifact:
+{{ merge_resolve_call_params }}. Central policy chooses an eligible independent
+reviewer. Provider formatting is not an output contract; reason over the
+complete raw response. Ask the reviewer to address these disagreement-first
+criteria:
 
 - summarize each side's intent;
 - decide `COMPATIBLE`, `INCOMPATIBLE`, or `NEEDS-HUMAN`, with a reason;
@@ -105,14 +105,13 @@ compatible, identify risks, and state confidence. Cap the analysis at 500 words.
 {structured hunk + commit-context + surrounding-±20-lines}
 ```
 
-If the runtime returns `invalid_final`, or the artifact does not clearly state
-compatibility and a proposed resolution when compatible, surface the terminal
-result or incomplete artifact and refuse to proceed. Do not salvage prose or
-replay the request merely to repair formatting.
+Reason over the full raw response and deduce whether it supports compatibility
+and a concrete resolution. If it does not, refuse to proceed and explain the
+missing basis. Preserve partial prose and never replay for formatting.
 
 ### 5. Operator-confirm gate (DEFAULT)
 
-UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's signed artifact text for the operator. The operator chooses:
+UNLESS `auto_apply=true` AND **all** the auto-apply preconditions in Safety constraints below are met, present the proposed resolution as a clear diff with the reviewer's full raw response for the operator. The operator chooses:
 
 - **`apply`** — apply the resolution to the working tree
 - **`apply-and-amend`** — apply AND amend the in-progress merge commit (only valid mid-merge)
@@ -205,7 +204,7 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | Failure | Skill behavior |
 |---|---|
 | Conflict markers malformed | REFUSE; surface raw conflict + line number that failed parsing |
-| Signed artifact is `invalid_final` or contains no compatible proposed resolution | REFUSE; surface the typed result or incomplete artifact; do not replay for formatting |
+| Raw response supports no compatible proposed resolution | REFUSE; surface the missing basis; preserve the response and do not replay for formatting |
 | `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |
