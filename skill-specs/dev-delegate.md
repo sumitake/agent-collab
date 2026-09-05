@@ -13,12 +13,13 @@ budget, and stop conditions. The caller creates a disposable repository copy,
 records its identity and source head, and supplies that directory as the work
 unit's native cwd. One provider session may edit only that copy.
 
-Resolve the plugin root, read `<plugin-root>/README.md`, and submit one bounded
-work unit through the routing runtime. An explicit target is honored or fails typed;
+Resolve the plugin root, read `<plugin-root>/README.md`, and split independently
+useful deliverables into bounded work units. An explicit target is honored or fails typed;
 never substitute a different agent or reconstruct a provider command. Model and
 CLI identities are observed diagnostics, not request pins.
-Use `quality_profile="standard"` and `effort_class="standard"` by default;
-raise either only for a genuinely more demanding patch. The runtime resolves a
+Choose quality and effort from the scope, reasoning, and validation required;
+the frontmatter defaults suit a small routine patch. Supply token estimates
+when known, and use dependencies only for real ordering. The runtime resolves a
 current compatible portfolio member without persisting a model selection.
 
 After the attempt, the caller captures a binary-safe diff from the disposable

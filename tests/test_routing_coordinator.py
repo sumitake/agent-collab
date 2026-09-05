@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib.util
 import io
+import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -115,7 +118,7 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
         load_client.assert_not_called()
         self.assertIn("tty", written[0]["error"])
 
-    def test_client_exception_is_bounded_unavailable_without_detail_leak(self) -> None:
+    def test_client_exception_does_not_claim_provider_unavailability(self) -> None:
         secret = "provider-internal-secret"
         fake = types.SimpleNamespace(
             invoke=mock.Mock(side_effect=RuntimeError(secret))
@@ -127,13 +130,72 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
             code = self.coordinator.main()
         self.assertEqual(code, 1)
         self.assertEqual(written, [{
-            "status": "unavailable",
+            "status": "client_error",
             "result": [],
-            "error": "routing client failed before a result was available",
+            "error": "routing client failed; provider execution and state are unknown",
         }])
         self.assertNotIn(secret, str(written))
         self.assertNotIn("execution_receipt", written[0])
         self.assertNotIn("verdict", written[0])
+
+    def test_internal_value_error_is_not_mislabeled_as_bad_caller_input(self) -> None:
+        written = []
+        with (
+            mock.patch.object(self.coordinator, "_read_request", return_value={}),
+            mock.patch.object(self.coordinator, "_load_client", side_effect=ValueError("private detail")),
+            mock.patch.object(self.coordinator, "_write", side_effect=written.append),
+        ):
+            code = self.coordinator.main()
+        self.assertEqual(code, 1)
+        self.assertEqual(written[0]["status"], "client_error")
+        self.assertNotIn("private detail", str(written))
+
+    def test_stdin_read_error_is_sanitized_before_runtime_invocation(self) -> None:
+        written = []
+        with (
+            mock.patch.object(self.coordinator, "_read_request", side_effect=OSError("private input error")),
+            mock.patch.object(self.coordinator, "_load_client") as load_client,
+            mock.patch.object(self.coordinator, "_write", side_effect=written.append),
+        ):
+            code = self.coordinator.main()
+        self.assertEqual(code, 1)
+        load_client.assert_not_called()
+        self.assertEqual(written[0]["status"], "client_error")
+        self.assertNotIn("private input error", str(written))
+
+    def test_documented_invocation_preserves_payload_and_reads_current_identity(self) -> None:
+        readme = (COORDINATOR.parent / "README.md").read_text()
+        recipe = readme.split("```python\n", 1)[1].split("\n```", 1)[0]
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            plugin = root / "plugin with spaces"
+            repository = root / "repository with spaces"
+            plugin.mkdir()
+            repository.mkdir()
+            digest = "a" * 64
+            (plugin / "runtime-manifest.json").write_text(json.dumps({"wire_contract_sha256": digest}))
+            (plugin / "coordinator.py").write_text(
+                "import json, sys\nprint(json.dumps(json.load(sys.stdin)))\n"
+            )
+            prompt = "Keep `literal` $(text) and Unicode 雪\nNext line."
+            prompt_file = root / "prompt.txt"
+            prompt_file.write_text(prompt)
+            caller = root / "caller.py"
+            caller.write_text(recipe)
+            result = subprocess.run(
+                [sys.executable, str(caller), str(plugin), str(repository), str(prompt_file)],
+                capture_output=True, check=True, timeout=10,
+            )
+            request = json.loads(result.stdout)
+            identity = repository.stat()
+            unit = request["work_units"][0]
+            self.assertEqual(request["wire_contract_sha256"], digest)
+            self.assertEqual(unit["payload"], prompt)
+            self.assertEqual(unit["native_restrictions"], {
+                "cwd": str(repository.resolve()), "cwd_device": identity.st_dev,
+                "cwd_inode": identity.st_ino,
+            })
+            self.assertNotIn("explicit_target", unit)
 
     def test_no_retired_semantic_or_provider_surface_exists(self) -> None:
         for name in (

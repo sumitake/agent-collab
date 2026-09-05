@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -27,10 +28,15 @@ def _load():
 
 def _descriptor() -> tuple[dict[str, object], str]:
     descriptor = {
-        "schema_version": 11,
+        "schema_version": 12,
         "runtime_protocol_version": 5,
         "routing_source_sha256": "a" * 64,
         "logical_actions": [f"action-{index}" for index in range(12)],
+        "logical_action_timeout_modes": {
+            f"action-{index}": (
+                "admitted_progress_inactivity" if index == 0 else "total_deadline"
+            ) for index in range(12)
+        },
         "logical_agents": ["claude", "codex", "gemini", "grok", "opencode"],
         "routing_request": {"type": "object"},
         "content_frame": {"type": "object"},
@@ -51,6 +57,103 @@ class RoutingRuntimeClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.client = _load()
+
+    def test_progressing_runtime_outlives_initial_deadline_without_replay(self) -> None:
+        result, calls = self._timed_runtime(progress=True)
+        self.assertEqual(calls, 1)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertEqual(result.result, [{"content": "finished"}])
+        self.assertEqual(result.error, "")
+
+    def test_silent_runtime_expires_once(self) -> None:
+        result, calls = self._timed_runtime(progress=False)
+        self.assertEqual(calls, 1)
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+        self.assertEqual(result.result, [])
+
+    def test_total_deadline_does_not_inherit_progress_channel(self) -> None:
+        result, calls = self._timed_runtime(progress=True, action="action-1")
+        self.assertEqual(calls, 1)
+        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+
+    def test_local_io_failure_preserves_already_received_content(self) -> None:
+        native_read = os.read
+        received_content = False
+        content_fd = None
+
+        def fail_after_content(fd, size):
+            nonlocal received_content, content_fd
+            if fd == content_fd:
+                raise OSError("synthetic local I/O failure")
+            value = native_read(fd, size)
+            if b'"content"' in value:
+                received_content = True
+                content_fd = fd
+            return value
+
+        with mock.patch.object(self.client.os, "read", side_effect=fail_after_content):
+            result, calls = self._timed_runtime(progress=True, early_content=True)
+        self.assertEqual(calls, 1)
+        self.assertTrue(received_content)
+        self.assertEqual(result.result, [{"content": "partial"}])
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+        self.assertIn("runtime io error", result.error)
+
+    def _timed_runtime(self, *, progress: bool, action: str = "action-0", early_content: bool = False):
+        descriptor, digest = _descriptor()
+        wire = self.client.validate_wire_descriptor(descriptor, expected_sha256=digest)
+        request = {
+            "wire_contract_sha256": digest, "request_id": "progress-fixture",
+            "quality_profile": "standard", "effort_class": "standard",
+            "deadline_ms": 2_000, "max_parallel": 1, "dispatch_requested": True,
+            "work_units": [{"id": "one", "capability": action,
+                            "depends_on": [], "payload": "work"}],
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            executable = Path(raw) / "runtime"
+            executable.write_text(
+                f"#!{sys.executable}\nimport json, os, sys, time\n"
+                "request = json.load(sys.stdin)\n"
+                "fd = os.environ.get('AGENT_COLLAB_RUNTIME_PROGRESS_FD')\n"
+                + ("print(json.dumps({'content': 'partial'}), flush=True)\n" if early_content else "")
+                + "for _ in range(30):\n"
+                + ("    if fd: os.write(int(fd), b'\\x01')\n" if progress else "")
+                + "    time.sleep(0.1)\n"
+                "print(json.dumps({'content': 'finished'}), flush=True)\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o700)
+            resolution = self.client.RuntimeResolution(
+                self.client.RuntimeStatus.OK, path=executable, bundle_path=Path(raw),
+                identity=self.client._identity(executable, executable=True), wire=wire,
+            )
+            with (
+                mock.patch.object(self.client, "resolve_runtime", return_value=resolution),
+                mock.patch.object(self.client.subprocess, "Popen", wraps=self.client.subprocess.Popen) as launch,
+            ):
+                result = self.client.invoke(envelope=request)
+            return result, launch.call_count
+
+    def test_null_deadline_uses_default_instead_of_crashing(self) -> None:
+        descriptor, digest = _descriptor()
+        wire = self.client.validate_wire_descriptor(descriptor, expected_sha256=digest)
+        request = {
+            "wire_contract_sha256": digest, "request_id": "null-deadline",
+            "quality_profile": "standard", "effort_class": "standard",
+            "deadline_ms": None, "max_parallel": 1, "dispatch_requested": False,
+            "work_units": [{"id": "one", "capability": "action-1", "depends_on": []}],
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "runtime"
+            path.write_text('#!/bin/sh\necho \'{"frame_type":"terminal"}\'\n')
+            path.chmod(0o700)
+            resolution = self.client.RuntimeResolution(
+                self.client.RuntimeStatus.OK, path=path, bundle_path=Path(raw),
+                identity=self.client._identity(path, executable=True), wire=wire,
+            )
+            with mock.patch.object(self.client, "resolve_runtime", return_value=resolution):
+                result = self.client.invoke(envelope=request)
+        self.assertEqual(result.status, self.client.RuntimeStatus.OK)
 
     def test_protocol5_client_returns_opaque_routing_records(self) -> None:
         descriptor, digest = _descriptor()

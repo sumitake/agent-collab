@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -43,7 +44,22 @@ def wire_descriptor() -> tuple[dict[str, object], str]:
     manifest = json.loads(
         (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
     )
-    return copy.deepcopy(manifest["wire_contract"]), manifest["wire_contract_sha256"]
+    descriptor = copy.deepcopy(manifest["wire_contract"])
+    return descriptor, manifest["wire_contract_sha256"]
+
+
+def synthetic_wire_descriptor() -> tuple[dict[str, object], str]:
+    """Build the schema-12 wire fixture used by lifecycle-only tests."""
+    descriptor, _ = wire_descriptor()
+    descriptor["schema_version"] = 12
+    descriptor["logical_action_timeout_modes"] = {
+        action: "total_deadline" for action in descriptor["logical_actions"]
+    }
+    encoded = json.dumps(
+        descriptor, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8")
+    return descriptor, hashlib.sha256(encoded).hexdigest()
 
 
 class ProtocolFivePublicContractTests(unittest.TestCase):
@@ -56,14 +72,14 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
             (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
         )
 
-    def test_manifest_and_client_are_one_protocol_five_generation(self) -> None:
+    def test_manifest_protocol_and_source_client_are_protocol_five_generation(self) -> None:
         self.assertEqual(self.manifest["schema_version"], 4)
         self.assertEqual(self.manifest["protocol_version"], 5)
         self.assertEqual(self.manifest["contract_version"], 4)
         self.assertEqual(self.manifest["channel"], "production")
         self.assertEqual(self.client.PROTOCOL_VERSION, 5)
         self.assertEqual(self.client.CONTRACT_VERSION, 4)
-        self.assertEqual(self.client.PROVIDER_RUNTIME_VERSION, "5.0.4")
+        self.assertEqual(self.client.PROVIDER_RUNTIME_VERSION, "5.0.5")
 
     def test_wire_is_routing_only_and_descriptor_derived(self) -> None:
         descriptor, digest = wire_descriptor()
@@ -72,7 +88,7 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
         )
         self.assertEqual(snapshot.sha256, digest)
         self.assertEqual(snapshot.logical_actions, LOGICAL_ACTIONS)
-        self.assertEqual(descriptor["schema_version"], 11)
+        self.assertEqual(descriptor["schema_version"], 12)
         self.assertEqual(descriptor["runtime_protocol_version"], 5)
         self.assertEqual(
             set(descriptor),
@@ -80,6 +96,7 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
                 "$defs",
                 "content_frame",
                 "logical_actions",
+                "logical_action_timeout_modes",
                 "logical_agents",
                 "routing_request",
                 "routing_source_sha256",
@@ -131,14 +148,14 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
             self.manifest["wire_contract_sha256"],
         )
 
-    def test_distribution_metadata_is_version_7_0_2(self) -> None:
+    def test_distribution_metadata_is_version_7_0_3(self) -> None:
         for host in (".claude-plugin", ".codex-plugin"):
             value = json.loads((PLUGIN / host / "plugin.json").read_text())
-            self.assertEqual(value["version"], "7.0.2")
+            self.assertEqual(value["version"], "7.0.3")
         config = json.loads(
             (ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.2")
+        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.3")
 
     def test_routed_skills_publish_provider_neutral_quality_and_effort(self) -> None:
         build = load_module("protocol5_build_skills", ROOT / "scripts" / "build_skills.py")

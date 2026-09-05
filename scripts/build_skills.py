@@ -211,16 +211,27 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "a receipt from process exit or missing diagnostics. "
     )
     block = prefix + (
-        "routing request on stdin. Before constructing it, read the **Routing "
+        "routing request on EOF-delimited stdin, without a PTY. Use the Python "
+        "invocation example in the **Routing "
         "request** section in `<plugin-root>/README.md` and the co-packaged "
         "manifest's signed `wire_contract`; never invent fields or provider "
-        "actions. Supply one caller-defined work unit for this skill's logical "
-        "action, with a bounded opaque payload. Repository identity, source-head "
+        "actions. Supply one caller-defined work unit per independently useful "
+        "deliverable, with this skill's logical action and a bounded opaque payload. "
+        "Use `depends_on` only for actual dependencies. Set `explicit_target` "
+        "only when the operator names a provider. Choose quality and effort for "
+        "the workload; include context/output token estimates when known. "
+        "Read the current manifest digest and actual cwd device/inode; do not "
+        "copy example values. The runtime owns its timeout; do not wrap it in a "
+        "shorter fixed timeout. Repository identity, source-head "
         "verification, disposable copies, patch capture, and cleanup remain "
         "caller-owned where applicable. "
     ) + suffix + (
         "A planning-only request sets `dispatch_requested=false`; a live request "
         "sets it true and consumes at most one provider attempt per work unit.\n"
+        "Planning reports route eligibility, not live availability or authentication. "
+        "Report a caller/client failure at that layer; provider state remains unknown "
+        "unless native evidence establishes it. Content availability and each work "
+        "unit's `execution_status` are separate facts.\n"
     )
     return rendered[: match.end()] + block + rendered[match.end() :]
 

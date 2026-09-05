@@ -1,14 +1,14 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.2 pairs a routing-only public client with the
+compatible hosts. Version 7.0.3 pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.2).
+This public repository's current source is **agent-collab** (v7.0.3).
 
 Current published release: **7.0.1** ([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)).
-It carries signed provider runtime `5.0.3`. The 7.0.2 source is a staged
+It carries signed provider runtime `5.0.3`. The 7.0.3 source is a staged
 candidate until its governed pull request, tag, assets, and host installation
 are each positively verified.
 
@@ -19,9 +19,16 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.2
+## What's new - v7.0.3
 
-- **Opaque provider content.** Wire schema 11 removes provider-authored JSON,
+- **Caller recovery and native configuration.** Preserve bounded provider
+  content, distinguish local client failures from provider health, and carry
+  native login/configuration locations through the caller and supervisor.
+- **Paired runtime requirement.** The source targets provider runtime `5.0.5`
+  and wire schema `12`; signed runtime handoffs for both macOS architectures
+  remain required before release qualification.
+
+- **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
   verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
   content gates. Every bounded nonempty final or recovered partial reaches the
   caller for ordinary reasoning.

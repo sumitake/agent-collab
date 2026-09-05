@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_2(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_3(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.2\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.3\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.2")
+            self.assertEqual(manifest["version"], "7.0.3")
 
     def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
