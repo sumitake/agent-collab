@@ -24,9 +24,10 @@ installation, and readiness claims separate.
 - **Caller recovery and native configuration.** Preserve bounded provider
   content, distinguish local client failures from provider health, and carry
   native login/configuration locations through the caller and supervisor.
-- **Paired runtime requirement.** The source targets provider runtime `5.0.5`
-  and wire schema `12`; signed runtime handoffs for both macOS architectures
-  remain required before release qualification.
+- **Paired runtime requirement.** The source candidate targets provider runtime
+  `5.0.5` and wire schema `12`. The checked-in signed artifact rows remain the
+  previous `5.0.4`/wire-schema-11 generation; replacement signed handoffs for
+  both macOS architectures remain required before release qualification.
 
 - **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
   verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
@@ -35,9 +36,12 @@ installation, and readiness claims separate.
 - **Routing-only public boundary.** The public shim accepts the signed routing
   request and returns runtime records without semantic normalization, provider
   command reconstruction, retry, replay, or fallback.
-- **One paired runtime generation.** Signed provider runtime `5.0.4` carries
-  the recovery change for both macOS architectures under wire digest
-  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`.
+- **Source candidate versus signed artifact.** The caller-recovery and native
+  configuration changes are source-candidate behavior for runtime `5.0.5`.
+  The inherited signed `5.0.4` bundles remain prior-generation artifact
+  material under wire digest
+  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`; they do
+  not make the `7.0.3` candidate release-qualified.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -123,15 +127,26 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The public source expects:
+The public source candidate expects:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.4`;
+- provider runtime version `5.0.5`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
-- wire schema 11 with 12 logical actions.
+- wire schema 12 with 12 logical actions and per-action timeout modes.
+
+The checked-in signed artifact rows still describe the previous
+`5.0.4`/wire-schema-11 generation.  The source client intentionally rejects
+that mismatched manifest until the replacement signed handoffs are imported.
+
+Production provider work uses admitted progress inactivity so active work is
+not killed by a strict elapsed timer. Homogeneous `total_deadline` requests
+remain a descriptor-compatibility mode; mixed timeout-mode envelopes are
+rejected before launch because one process cannot safely combine lifecycle
+contracts. Each accepted request still gets one process attempt with no
+automatic replay or retry.
 
 The public client verifies fixed plugin-relative path, exact membership and
 digests, Mach-O architecture/minimum macOS, hardened Developer ID identity,

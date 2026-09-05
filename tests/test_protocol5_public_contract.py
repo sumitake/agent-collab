@@ -49,7 +49,7 @@ def wire_descriptor() -> tuple[dict[str, object], str]:
 
 
 def synthetic_wire_descriptor() -> tuple[dict[str, object], str]:
-    """Build the schema-12 wire fixture used by lifecycle-only tests."""
+    """Build the schema-12 source-candidate fixture from the old artifact."""
     descriptor, _ = wire_descriptor()
     descriptor["schema_version"] = 12
     descriptor["logical_action_timeout_modes"] = {
@@ -82,7 +82,11 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
         self.assertEqual(self.client.PROVIDER_RUNTIME_VERSION, "5.0.5")
 
     def test_wire_is_routing_only_and_descriptor_derived(self) -> None:
-        descriptor, digest = wire_descriptor()
+        # The checked-in signed bundles are the previous 5.0.4/schema-11
+        # generation.  Validate the 5.0.5/schema-12 source client against an
+        # explicit candidate fixture instead of silently treating old release
+        # artifacts as if they were the candidate generation.
+        descriptor, digest = synthetic_wire_descriptor()
         snapshot = self.client.validate_wire_descriptor(
             descriptor, expected_sha256=digest
         )
@@ -121,6 +125,14 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
         self.assertEqual(
             {item["provider_runtime_version"] for item in artifacts}, {"5.0.4"}
         )
+        self.assertNotEqual(
+            self.client.PROVIDER_RUNTIME_VERSION,
+            next(iter({item["provider_runtime_version"] for item in artifacts})),
+        )
+        self.assertEqual(self.manifest["wire_contract"]["schema_version"], 11)
+        self.assertNotIn(
+            "logical_action_timeout_modes", self.manifest["wire_contract"]
+        )
         self.assertEqual(
             {item["wire_contract_sha256"] for item in artifacts},
             {self.manifest["wire_contract_sha256"]},
@@ -147,6 +159,13 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
             schema["properties"]["wire_contract_sha256"]["const"],
             self.manifest["wire_contract_sha256"],
         )
+
+    def test_previous_signed_manifest_is_rejected_by_source_candidate_client(self) -> None:
+        with self.assertRaisesRegex(ValueError, "wire descriptor is not closed"):
+            self.client.parse_manifest_bytes(
+                (PLUGIN / "runtime-manifest.json").read_bytes(),
+                require_artifact=True,
+            )
 
     def test_distribution_metadata_is_version_7_0_3(self) -> None:
         for host in (".claude-plugin", ".codex-plugin"):

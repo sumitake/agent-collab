@@ -58,7 +58,7 @@ class RoutingRuntimeClientTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = _load()
 
-    def test_progressing_runtime_outlives_initial_deadline_without_replay(self) -> None:
+    def test_homogeneous_inactivity_keeps_long_progressing_content(self) -> None:
         result, calls = self._timed_runtime(progress=True)
         self.assertEqual(calls, 1)
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
@@ -75,6 +75,15 @@ class RoutingRuntimeClientTests(unittest.TestCase):
         result, calls = self._timed_runtime(progress=True, action="action-1")
         self.assertEqual(calls, 1)
         self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+
+    def test_mixed_timeout_modes_are_rejected_before_launch(self) -> None:
+        result, calls = self._timed_runtime(
+            progress=True, actions=("action-0", "action-1")
+        )
+        self.assertEqual(calls, 0)
+        self.assertEqual(result.status, self.client.RuntimeStatus.INVALID_REQUEST)
+        self.assertIsNone(result.result)
+        self.assertIn("mixed timeout modes", result.error)
 
     def test_local_io_failure_preserves_already_received_content(self) -> None:
         native_read = os.read
@@ -99,15 +108,27 @@ class RoutingRuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, self.client.RuntimeStatus.OK)
         self.assertIn("runtime io error", result.error)
 
-    def _timed_runtime(self, *, progress: bool, action: str = "action-0", early_content: bool = False):
+    def _timed_runtime(
+        self,
+        *,
+        progress: bool,
+        action: str = "action-0",
+        actions: tuple[str, ...] | None = None,
+        early_content: bool = False,
+    ):
         descriptor, digest = _descriptor()
         wire = self.client.validate_wire_descriptor(descriptor, expected_sha256=digest)
+        selected_actions = actions or (action,)
         request = {
             "wire_contract_sha256": digest, "request_id": "progress-fixture",
             "quality_profile": "standard", "effort_class": "standard",
-            "deadline_ms": 2_000, "max_parallel": 1, "dispatch_requested": True,
-            "work_units": [{"id": "one", "capability": action,
-                            "depends_on": [], "payload": "work"}],
+            "deadline_ms": 2_000, "max_parallel": len(selected_actions),
+            "dispatch_requested": True,
+            "work_units": [
+                {"id": f"unit-{index}", "capability": capability,
+                 "depends_on": [], "payload": "work"}
+                for index, capability in enumerate(selected_actions)
+            ],
         }
         with tempfile.TemporaryDirectory() as raw:
             executable = Path(raw) / "runtime"

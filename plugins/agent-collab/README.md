@@ -137,11 +137,15 @@ and size estimates are optional.
 Use one work unit per independently useful deliverable and `depends_on` only
 for actual ordering. Choose quality and effort for the work, and supply
 `context_size_estimate` / `output_size_estimate` in tokens when known.
-Omitting `deadline_ms` uses the runtime's default bound. When supplied, it is a
-total deadline for actions marked `total_deadline` and an inactivity interval
-for actions marked `admitted_progress_inactivity` in the signed descriptor.
-Do not place a shorter fixed deadline around the caller: it would terminate
-healthy progressing work. The runtime still bounds silence and cleanup.
+Omitting `deadline_ms` uses the runtime's default bound. Production provider
+work uses `admitted_progress_inactivity` for every listed logical action, so
+admitted progress renews the inactivity lease and active work is not killed by
+a strict elapsed timer. Homogeneous `total_deadline` requests remain supported
+only as an explicit descriptor-compatibility mode; mixed timeout-mode envelopes
+are rejected before launch because one process cannot combine lifecycle
+contracts. Startup and cleanup remain bounded, and partial output is retained
+when a process later times out. Do not place a shorter fixed deadline around
+the caller: it would terminate healthy progressing work.
 
 Set `dispatch_requested=false` for a planning-only routing decision and `true`
 for live dispatch. One selected work unit is never automatically replayed,

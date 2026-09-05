@@ -1137,10 +1137,24 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
     timeout_ms = document.get("deadline_ms")
     if timeout_ms is None:
         timeout_ms = MAX_TIMEOUT_MS
-    admitted_progress = document["dispatch_requested"] and any(
+    # One process carries every selected work unit, so it cannot safely combine
+    # lifecycle contracts. Reject mixed mode envelopes before Popen; production
+    # provider actions use admitted progress inactivity, while homogeneous
+    # total-deadline requests remain a compatibility mode.
+    timeout_modes = {
         resolution.wire.logical_action_timeout_modes[unit["capability"]]
-        == "admitted_progress_inactivity"
         for unit in document["work_units"]
+    }
+    if len(timeout_modes) > 1:
+        return RuntimeResult(
+            RuntimeStatus.INVALID_REQUEST,
+            error="mixed timeout modes are unsupported; use one lifecycle contract",
+            manifest_digest=resolution.manifest_digest,
+            artifact_digest=resolution.artifact_digest,
+        )
+    admitted_progress = (
+        document["dispatch_requested"]
+        and "admitted_progress_inactivity" in timeout_modes
     )
     deadline = time.monotonic() + timeout_ms / 1000.0
     reserve_ms = min(
