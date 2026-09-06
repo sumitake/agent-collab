@@ -24,10 +24,9 @@ installation, and readiness claims separate.
 - **Caller recovery and native configuration.** Preserve bounded provider
   content, distinguish local client failures from provider health, and carry
   native login/configuration locations through the caller and supervisor.
-- **Paired runtime requirement.** The source candidate targets provider runtime
-  `5.0.5` and wire schema `12`. The checked-in signed artifact rows remain the
-  previous `5.0.4`/wire-schema-11 generation; replacement signed handoffs for
-  both macOS architectures remain required before release qualification.
+- **Paired runtime requirement.** This candidate now carries signed provider
+  runtime `5.0.5` and wire schema `12` for both macOS architectures (`arm64`
+  and `x86_64`). Staged live qualification is still required before release.
 
 - **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
   verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
@@ -36,12 +35,11 @@ installation, and readiness claims separate.
 - **Routing-only public boundary.** The public shim accepts the signed routing
   request and returns runtime records without semantic normalization, provider
   command reconstruction, retry, replay, or fallback.
-- **Source candidate versus signed artifact.** The caller-recovery and native
-  configuration changes are source-candidate behavior for runtime `5.0.5`.
-  The inherited signed `5.0.4` bundles remain prior-generation artifact
-  material under wire digest
-  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`; they do
-  not make the `7.0.3` candidate release-qualified.
+- **Signed dual-architecture runtime.** The imported 5.0.5 bundles are bound
+  by wire digest
+  `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`.
+  Staged live qualification remains required before the `7.0.3` unit is
+  release-qualified.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -137,9 +135,8 @@ The public source candidate expects:
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-The checked-in signed artifact rows still describe the previous
-`5.0.4`/wire-schema-11 generation.  The source client intentionally rejects
-that mismatched manifest until the replacement signed handoffs are imported.
+The checked-in signed artifact rows are the imported 5.0.5 / wire-schema-12
+generation for both macOS architectures.
 
 Production provider work uses admitted progress inactivity so active work is
 not killed by a strict elapsed timer. Homogeneous `total_deadline` requests

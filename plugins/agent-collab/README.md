@@ -28,10 +28,9 @@ General users should start with the public
 
 ## Skills
 
-**Recovery branch status:** the caller changes target runtime 5.0.5 and wire
-schema 12. The checked-in 5.0.4 bundles remain the previous generation until
-both replacement signed handoffs are imported together. This branch is not
-release-qualified or installable as a complete generation yet.
+**Recovery branch status:** this candidate now includes signed runtime 5.0.5
+and wire schema 12 for both macOS architectures. Staged live qualification is
+still required before the unit is release-qualified.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
@@ -172,14 +171,10 @@ review.repository
 
 ## Direct runtime boundary
 
-The source-candidate build emits one schema-4 manifest with wire schema 12,
-runtime protocol 5, native contract 4, and provider runtime `5.0.5`. The
-candidate manifest binds the canonical wire digest and one replacement
-signed/notarized standalone bundle for each supported macOS architecture
-(`arm64` and `x86_64`). The checked-in signed bundles remain the inherited
-5.0.4/schema-11 generation until that replacement handoff is imported; the
-source candidate rejects those older rows as stale rather than treating them as
-release-qualified candidate artifacts.
+The package emits one schema-4 manifest with wire schema 12, runtime protocol
+5, native contract 4, and provider runtime `5.0.5`. The manifest binds the
+canonical wire digest and one signed/notarized standalone bundle for each
+supported macOS architecture (`arm64` and `x86_64`).
 
 The public client verifies fixed plugin-relative paths, exact bundle membership
 and digests, thin architecture, minimum macOS, hardened Developer ID identity,

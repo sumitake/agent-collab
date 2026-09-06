@@ -63,12 +63,15 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertNotIn("execute-output-contract-v1.json", archive.REQUIRED_ROOTS)
         self.assertNotIn("failure_evidence.py", archive.REQUIRED_ROOTS)
 
-    def test_inherited_signed_manifest_is_rejected_by_archive_parser(self) -> None:
+    def test_imported_signed_manifest_is_accepted_by_archive_parser(self) -> None:
         archive = _load()
-        with self.assertRaisesRegex(ValueError, "runtime manifest is unreadable"):
-            archive._parse_manifest(
-                (ROOT / "plugins" / "agent-collab" / "runtime-manifest.json").read_bytes()
-            )
+        parsed = archive._parse_manifest(
+            (ROOT / "plugins" / "agent-collab" / "runtime-manifest.json").read_bytes()
+        )
+        versions = {
+            item["provider_runtime_version"] for item in parsed["artifacts"]
+        }
+        self.assertEqual(versions, {"5.0.5"})
 
     def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
         archive = _load()

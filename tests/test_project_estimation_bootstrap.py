@@ -158,18 +158,11 @@ class ProducerByteContractTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertTrue(any("canonical" in line or "inventory" in line for line in lines), lines)
 
-    def test_inherited_maintenance_is_rejected_by_public_archive_build(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
-            output = Path(temporary) / "agent-collab.plugin"
-            with self.assertRaisesRegex(
-                ValueError, "maintenance receipt schema/version is invalid"
-            ), mock.patch.object(
-                self.archive,
-                "_read_manifest_bytes",
-                return_value=synthetic_candidate_manifest(),
-            ):
-                self.archive.build_archive(ROOT, plugin="agent-collab", output=output)
-            self.assertFalse(output.exists())
+    def test_current_maintenance_is_admitted_for_version_7_0_3(self) -> None:
+        ok, lines = self.verifier.verify_maintenance(
+            ROOT, expected_version="7.0.3"
+        )
+        self.assertTrue(ok, lines)
 
     def test_receipt_state_backtest_baseline_and_aggregate_state_are_cross_bound(self) -> None:
         mutations = (

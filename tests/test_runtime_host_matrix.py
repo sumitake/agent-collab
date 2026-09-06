@@ -36,8 +36,8 @@ class RuntimeHostMatrixTests(unittest.TestCase):
         )
 
     def _matrix(self) -> dict[str, object]:
-        # Synthesize the pending schema-12 candidate for selector-only tests;
-        # the signed manifest remains the schema-11 source of truth.
+        # Selector tests use the signed schema-12 manifest as the base and
+        # keep a local digest rewrite only for the synthesized dual-arch copy.
         manifest = deepcopy(self.base)
         descriptor = manifest["wire_contract"]
         descriptor["schema_version"] = 12
