@@ -172,10 +172,14 @@ review.repository
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with wire schema 11, runtime
-protocol 5, native contract 4, and provider runtime `5.0.4`. The manifest binds
-the canonical wire digest and one signed/notarized standalone bundle for each
-supported macOS architecture (`arm64` and `x86_64`).
+The source-candidate build emits one schema-4 manifest with wire schema 12,
+runtime protocol 5, native contract 4, and provider runtime `5.0.5`. The
+candidate manifest binds the canonical wire digest and one replacement
+signed/notarized standalone bundle for each supported macOS architecture
+(`arm64` and `x86_64`). The checked-in signed bundles remain the inherited
+5.0.4/schema-11 generation until that replacement handoff is imported; the
+source candidate rejects those older rows as stale rather than treating them as
+release-qualified candidate artifacts.
 
 The public client verifies fixed plugin-relative paths, exact bundle membership
 and digests, thin architecture, minimum macOS, hardened Developer ID identity,

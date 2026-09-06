@@ -53,13 +53,30 @@ def synthetic_wire_descriptor() -> tuple[dict[str, object], str]:
     descriptor, _ = wire_descriptor()
     descriptor["schema_version"] = 12
     descriptor["logical_action_timeout_modes"] = {
-        action: "total_deadline" for action in descriptor["logical_actions"]
+        action: "admitted_progress_inactivity" for action in descriptor["logical_actions"]
     }
     encoded = json.dumps(
         descriptor, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False, allow_nan=False,
     ).encode("utf-8")
     return descriptor, hashlib.sha256(encoded).hexdigest()
+
+
+def synthetic_candidate_manifest() -> bytes:
+    """Build a coherent schema-12 candidate manifest from inherited bytes."""
+    manifest = json.loads(
+        (PLUGIN / "runtime-manifest.json").read_text(encoding="utf-8")
+    )
+    descriptor, digest = synthetic_wire_descriptor()
+    manifest["wire_contract"] = descriptor
+    manifest["wire_contract_sha256"] = digest
+    for artifact in manifest["artifacts"]:
+        artifact["provider_runtime_version"] = "5.0.5"
+        artifact["wire_contract_sha256"] = digest
+    return json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8")
 
 
 class ProtocolFivePublicContractTests(unittest.TestCase):

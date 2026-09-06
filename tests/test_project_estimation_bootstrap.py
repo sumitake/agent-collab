@@ -9,11 +9,14 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+from unittest import mock
 import shutil
 import sys
 import tarfile
 import tempfile
 import unittest
+
+from tests.test_protocol5_public_contract import synthetic_candidate_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,7 +124,7 @@ class ProducerByteContractTests(unittest.TestCase):
                 ok, lines = self.verifier.verify_maintenance(root, expected_version="6.2.0", today=date(2026, 8, 21))
                 self.assertTrue(ok, lines)
                 maintenance = self.archive.admit_maintenance(root, expected_version="6.2.0", today=date(2026, 8, 21))
-                frozen_manifest = self.archive._read_manifest_bytes(PLUGIN)
+                frozen_manifest = synthetic_candidate_manifest()
                 mode, bundles = self.archive._classify_from_manifest(PLUGIN, frozen_manifest)
                 plan = self.archive._member_plan(PLUGIN, mode=mode, bundles=bundles, maintenance=maintenance)
                 record_by_name = {
@@ -155,15 +158,18 @@ class ProducerByteContractTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertTrue(any("canonical" in line or "inventory" in line for line in lines), lines)
 
-    def test_live_bootstrap_bytes_pass_public_archive_build_and_readback(self) -> None:
+    def test_inherited_maintenance_is_rejected_by_public_archive_build(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
             output = Path(temporary) / "agent-collab.plugin"
-            self.archive.build_archive(ROOT, plugin="agent-collab", output=output)
-            with tarfile.open(output, mode="r:gz") as archive:
-                for member in MANIFEST["fixtures"]["bootstrap"]["members"]:
-                    stored = archive.extractfile("project-estimation-data/" + member["name"])
-                    self.assertIsNotNone(stored)
-                    self.assertEqual(stored.read(), (DATA / member["name"]).read_bytes())
+            with self.assertRaisesRegex(
+                ValueError, "maintenance receipt schema/version is invalid"
+            ), mock.patch.object(
+                self.archive,
+                "_read_manifest_bytes",
+                return_value=synthetic_candidate_manifest(),
+            ):
+                self.archive.build_archive(ROOT, plugin="agent-collab", output=output)
+            self.assertFalse(output.exists())
 
     def test_receipt_state_backtest_baseline_and_aggregate_state_are_cross_bound(self) -> None:
         mutations = (
