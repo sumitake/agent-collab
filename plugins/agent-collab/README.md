@@ -6,16 +6,16 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.2**
+Current repository source: **7.0.3**
 
 Current published release: **7.0.1**
 ([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)); it
-carries signed provider runtime `5.0.3`. Repository source 7.0.2 is staged
+carries signed provider runtime `5.0.3`. Repository source 7.0.3 is staged
 until its governed pull request, signed tag, release assets, installation, and
 installed matrix are each positively verified.
 
-Version 7.0.2 pairs signed provider runtime `5.0.4` with manifest schema 4,
-runtime protocol 5, native contract 4, and wire schema 11. The descriptor
+Version 7.0.3 targets provider runtime `5.0.5` with manifest schema 4,
+runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. It replaces the semantic
 coordinator with a bounded routing-only shim and removes provider-authored
 schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
@@ -27,6 +27,10 @@ General users should start with the public
 [lifecycle guide](../../docs/architecture/lifecycle-and-operations.md).
 
 ## Skills
+
+**Recovery branch status:** this candidate now includes signed runtime 5.0.5
+and wire schema 12 for both macOS architectures. Staged live qualification is
+still required before the unit is release-qualified.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
@@ -67,46 +71,86 @@ passes the object through once, and writes one canonical JSON result. It adds
 no provider command, semantic schema, verdict parser, retry, replay, fallback,
 receipt, or authority claim.
 
-The request shape is signed in `runtime-manifest.json`:
+The request shape is signed in `runtime-manifest.json`. This Python example
+constructs a repository review from current values. Save it as `caller.py` and
+run `python3 caller.py <plugin-root> <review-repository> <prompt-file>`:
 
-```json
-{
-  "wire_contract_sha256": "3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741",
-  "request_id": "review-123",
-  "quality_profile": "frontier",
-  "effort_class": "maximum",
-  "deadline_ms": 120000,
-  "max_parallel": 1,
-  "dispatch_requested": true,
-  "work_units": [
-    {
-      "id": "review",
-      "capability": "review.repository",
-      "depends_on": [],
-      "payload": {"prompt": "Review the exact checked-out change."},
-      "explicit_target": "grok",
-      "native_restrictions": {
-        "cwd": "/caller/controlled/repository",
-        "cwd_device": 0,
-        "cwd_inode": 0
-      }
-    }
-  ]
+```python
+import json
+from pathlib import Path
+import subprocess
+import sys
+import uuid
+
+plugin = Path(sys.argv[1]).resolve(strict=True)
+repository = Path(sys.argv[2]).resolve(strict=True)
+prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
+manifest = json.loads((plugin / "runtime-manifest.json").read_text())
+identity = repository.stat()
+request = {
+    "wire_contract_sha256": manifest["wire_contract_sha256"],
+    "request_id": str(uuid.uuid4()),
+    "quality_profile": "frontier",
+    "effort_class": "maximum",
+    "max_parallel": 1,
+    "dispatch_requested": True,
+    "work_units": [{
+        "id": "review",
+        "capability": "review.repository",
+        "depends_on": [],
+        "payload": prompt,
+        "native_restrictions": {
+            "cwd": str(repository),
+            "cwd_device": identity.st_dev,
+            "cwd_inode": identity.st_ino,
+        },
+    }],
 }
+completed = subprocess.run(
+    [sys.executable, str(plugin / "coordinator.py")],
+    input=json.dumps(request, ensure_ascii=False, allow_nan=False).encode("utf-8"),
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+sys.stdout.buffer.write(completed.stdout)
+sys.stderr.buffer.write(completed.stderr)
+raise SystemExit(completed.returncode)
 ```
 
-Read the installed manifest before constructing a request; the example's
-digest and filesystem identity values are illustrative. Required common fields
+`subprocess.run(input=...)` closes stdin after the JSON and uses pipes rather
+than a PTY. It preserves the full response without shell interpolation or an
+outer timeout. Adapt the logical action and workload to the task; omit native
+cwd restrictions for document-only work. For code generation, pass a disposable
+copy rather than the canonical repository and retain the patch before cleanup.
+Set `explicit_target` only when the operator names a provider.
+
+Required common fields
 are `wire_contract_sha256`, `request_id`, `quality_profile`, `effort_class`,
 `max_parallel`, `dispatch_requested`, and one or more `work_units`.
 `deadline_ms`, `budget_limit`, and `latency_value` are optional bounded routing
 inputs. A work unit requires `id`, descriptor-admitted `capability`, and
-`depends_on`; its opaque `payload`, `explicit_target`, `native_restrictions`,
+`depends_on`, and exactly one of `payload` or `payload_ref`. Live dispatch
+requires a materialized `payload`; `explicit_target`, `native_restrictions`,
 and size estimates are optional.
+
+Use one work unit per independently useful deliverable and `depends_on` only
+for actual ordering. Choose quality and effort for the work, and supply
+`context_size_estimate` / `output_size_estimate` in tokens when known.
+Omitting `deadline_ms` uses the runtime's default bound. Production provider
+work uses `admitted_progress_inactivity` for every listed logical action, so
+admitted progress renews the inactivity lease and active work is not killed by
+a strict elapsed timer. Homogeneous `total_deadline` requests remain supported
+only as an explicit descriptor-compatibility mode; mixed timeout-mode envelopes
+are rejected before launch because one process cannot combine lifecycle
+contracts. Startup and cleanup remain bounded, and partial output is retained
+when a process later times out. Do not place a shorter fixed deadline around
+the caller: it would terminate healthy progressing work.
 
 Set `dispatch_requested=false` for a planning-only routing decision and `true`
 for live dispatch. One selected work unit is never automatically replayed,
 retried, or failed over after provider access.
+Planning is a policy result; it does not check provider authentication or
+prove live availability.
 
 The 12 logical actions are:
 
@@ -127,9 +171,9 @@ review.repository
 
 ## Direct runtime boundary
 
-The workspace build emits one schema-4 manifest with wire schema 11, runtime
-protocol 5, native contract 4, and provider runtime `5.0.4`. The manifest binds
-the canonical wire digest and one signed/notarized standalone bundle for each
+The package emits one schema-4 manifest with wire schema 12, runtime protocol
+5, native contract 4, and provider runtime `5.0.5`. The manifest binds the
+canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 
 The public client verifies fixed plugin-relative paths, exact bundle membership
@@ -139,6 +183,12 @@ notarization. Each request runs in a new process group with bounded stdin,
 stdout, stderr, deadline, TERM/KILL/reap, and private temporary-directory
 cleanup. There is no daemon, broker, socket, installed runtime copy, provider
 fallback, or automatic whole-request replay.
+
+The client preserves configured native CLI login, configuration, and catalog
+locations so the packaged caller can use the same local profile as the normal
+CLI. It continues to exclude credential values and inline provider
+configuration, does not enable API-key fallback, and does not establish that a
+profile is authenticated or available.
 
 The runtime returns newline-delimited routing records. Content records carry an
 explicit final or bounded recovered deltas. Terminal planning and provider
@@ -152,6 +202,11 @@ diagnostic does not discard already observed content.
 The public result has a bounded status, decoded `result` records, manifest and
 artifact digests, optional provenance, and a diagnostic error string. Status
 describes transport execution; it never judges provider prose.
+`client_error` identifies a failure in local invocation or transport. It does
+not establish provider availability or authentication, and a failure after
+dispatch may have consumed the attempt. Preserve native evidence and each
+work unit's `execution_status` separately from retained content. Do not turn
+a local setup, caller, or protocol error into a provider-wide health verdict.
 
 The runtime does not require or interpret JSON inside provider content, verdict
 fields, aliases, keywords, confidence, findings shape, prose style, terminal

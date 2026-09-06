@@ -142,6 +142,26 @@ def _write_json(path: Path, value: object) -> None:
     path.write_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode())
 
 
+def _candidate_runtime_manifest(plugin: Path) -> None:
+    """Update only copied release metadata for archive-admission fixtures."""
+    path = plugin / "runtime-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    wire = manifest["wire_contract"]
+    wire["schema_version"] = 12
+    wire["logical_action_timeout_modes"] = {
+        action: "total_deadline" for action in wire["logical_actions"]
+    }
+    encoded = json.dumps(
+        wire, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    manifest["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
+    for artifact in manifest["artifacts"]:
+        artifact["provider_runtime_version"] = "5.0.5"
+        artifact["wire_contract_sha256"] = manifest["wire_contract_sha256"]
+    _write_json(path, manifest)
+
+
 def _fixture(
     root: Path,
     *,
@@ -820,6 +840,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
         repo = self.root / "fresh-admission"
         plugin = repo / "plugins" / "agent-collab"
         shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+        _candidate_runtime_manifest(plugin)
         shutil.rmtree(plugin / "project-estimation-data")
         _fixture(repo)
         original_admit = archive.admit_maintenance
@@ -844,6 +865,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
                 repo = self.root / case
                 plugin = repo / "plugins" / "agent-collab"
                 shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+                _candidate_runtime_manifest(plugin)
                 shutil.rmtree(repo / "plugins" / "agent-collab" / "project-estimation-data")
                 data = _fixture(repo, notification=case == "notification-optional", generated="2026-06-20" if case == "stale" else "2026-08-20")
                 if case == "malformed":
@@ -872,6 +894,7 @@ class MaintenanceVerifierTests(unittest.TestCase):
         repo = self.root / "mutation"
         plugin = repo / "plugins" / "agent-collab"
         shutil.copytree(ROOT / "plugins" / "agent-collab", plugin)
+        _candidate_runtime_manifest(plugin)
         shutil.rmtree(repo / "plugins" / "agent-collab" / "project-estimation-data")
         plugin_version = json.loads(
             (plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")

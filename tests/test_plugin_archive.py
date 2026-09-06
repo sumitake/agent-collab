@@ -13,7 +13,7 @@ import unittest
 from datetime import date
 from unittest import mock
 
-from tests.test_protocol5_public_contract import wire_descriptor
+from tests.test_protocol5_public_contract import synthetic_wire_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +48,7 @@ class PluginArchiveTests(unittest.TestCase):
 
     def test_policy_manifest_uses_the_single_top_level_descriptor(self) -> None:
         archive = _load()
-        descriptor, digest = wire_descriptor()
+        descriptor, digest = synthetic_wire_descriptor()
         manifest = {
             "schema_version": 4,
             "protocol_version": 5,
@@ -63,9 +63,19 @@ class PluginArchiveTests(unittest.TestCase):
         self.assertNotIn("execute-output-contract-v1.json", archive.REQUIRED_ROOTS)
         self.assertNotIn("failure_evidence.py", archive.REQUIRED_ROOTS)
 
+    def test_imported_signed_manifest_is_accepted_by_archive_parser(self) -> None:
+        archive = _load()
+        parsed = archive._parse_manifest(
+            (ROOT / "plugins" / "agent-collab" / "runtime-manifest.json").read_bytes()
+        )
+        versions = {
+            item["provider_runtime_version"] for item in parsed["artifacts"]
+        }
+        self.assertEqual(versions, {"5.0.5"})
+
     def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
         archive = _load()
-        descriptor, digest = wire_descriptor()
+        descriptor, digest = synthetic_wire_descriptor()
         manifest = {
             "schema_version": 4,
             "protocol_version": 5,

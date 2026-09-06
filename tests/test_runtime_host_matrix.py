@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -35,8 +36,21 @@ class RuntimeHostMatrixTests(unittest.TestCase):
         )
 
     def _matrix(self) -> dict[str, object]:
+        # Selector tests use the signed schema-12 manifest as the base and
+        # keep a local digest rewrite only for the synthesized dual-arch copy.
         manifest = deepcopy(self.base)
+        descriptor = manifest["wire_contract"]
+        descriptor["schema_version"] = 12
+        descriptor["logical_action_timeout_modes"] = {
+            action: "total_deadline" for action in descriptor["logical_actions"]
+        }
+        encoded = json.dumps(
+            descriptor, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, allow_nan=False,
+        ).encode("utf-8")
+        manifest["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
         arm64 = manifest["artifacts"][0]
+        arm64["provider_runtime_version"] = self.client.PROVIDER_RUNTIME_VERSION
         arm64["wire_contract_sha256"] = manifest["wire_contract_sha256"]
         x86_64 = deepcopy(arm64)
         x86_64["arch"] = "x86_64"

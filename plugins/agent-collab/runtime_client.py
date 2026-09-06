@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 5
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "5.0.4"
+PROVIDER_RUNTIME_VERSION = "5.0.5"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -189,6 +189,7 @@ class RuntimeStatus(str, Enum):
     OK = "ok"
     ADVISORY = "advisory"
     INVALID_REQUEST = "invalid_request"
+    CLIENT_ERROR = "client_error"
     UNAVAILABLE = "unavailable"
     AUTH_ERROR = "auth_error"
     QUOTA_ERROR = "quota_error"
@@ -228,6 +229,7 @@ _RUNTIME_RESPONSE_STATUSES = frozenset(
 class WireDescriptorSnapshot:
     sha256: str
     logical_actions: frozenset[str]
+    logical_action_timeout_modes: Mapping[str, str]
     routing_source_sha256: str
     logical_agents: frozenset[str]
     routing_request: Mapping[str, Any]
@@ -314,6 +316,7 @@ def validate_wire_descriptor(
         "$defs",
         "content_frame",
         "logical_actions",
+        "logical_action_timeout_modes",
         "logical_agents",
         "routing_request",
         "routing_source_sha256",
@@ -328,7 +331,7 @@ def validate_wire_descriptor(
         raise ValueError("wire descriptor is not canonical JSON") from exc
     if hashlib.sha256(encoded).hexdigest() != expected_sha256:
         raise ValueError("wire descriptor digest does not match")
-    if not _exact_int(descriptor["schema_version"], 11):
+    if not _exact_int(descriptor["schema_version"], 12):
         raise ValueError("wire descriptor schema version is unsupported")
     if not _exact_int(descriptor["runtime_protocol_version"], PROTOCOL_VERSION):
         raise ValueError("wire descriptor runtime protocol is unsupported")
@@ -344,6 +347,14 @@ def validate_wire_descriptor(
         or len(set(actions_value)) != 12
     ):
         raise ValueError("wire descriptor logical actions are invalid")
+    timeout_modes = descriptor["logical_action_timeout_modes"]
+    if (
+        type(timeout_modes) is not dict
+        or set(timeout_modes) != set(actions_value)
+        or any(type(mode) is not str or mode not in _TIMEOUT_MODES
+               for mode in timeout_modes.values())
+    ):
+        raise ValueError("wire descriptor action timeout modes are invalid")
     raw_agents = descriptor["logical_agents"]
     if (
         type(raw_agents) is not list
@@ -365,6 +376,7 @@ def validate_wire_descriptor(
     return WireDescriptorSnapshot(
         sha256=expected_sha256,
         logical_actions=frozenset(actions_value),
+        logical_action_timeout_modes=MappingProxyType(dict(timeout_modes)),
         routing_source_sha256=routing_sha,
         logical_agents=frozenset(raw_agents),
         routing_request=descriptor["routing_request"],
@@ -825,6 +837,25 @@ def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
         value = os.environ.get(name)
         if value:
             env[name] = value
+    # Preserve only native-client configuration locations.  These let the
+    # packaged carrier locate the same subscription login and local catalog as
+    # the operator's CLI without forwarding credential material or inline
+    # provider configuration (which could select a metered API-key route).
+    for name in (
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "GEMINI_HOME",
+        "GROK_AUTH_PATH",
+        "GROK_HOME",
+        "OPENCODE_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+    ):
+        value = os.environ.get(name)
+        if value:
+            env[name] = value
     return env
 
 
@@ -1048,6 +1079,9 @@ def _collect_bounded(
                         return bytes(stdout), bytes(stderr), "output_limit"
                     target.extend(chunk)
         return bytes(stdout), bytes(stderr), ""
+    except OSError:
+        # Transport failure cannot erase records collected before it.
+        return bytes(stdout), bytes(stderr), "runtime_io_error"
     finally:
         selector.close()
 
@@ -1100,7 +1134,28 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
         document = _envelope_document(envelope, resolution.wire)
     except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
         return RuntimeResult(RuntimeStatus.INVALID_REQUEST, error=str(exc), manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
-    timeout_ms = document.get("deadline_ms", MAX_TIMEOUT_MS)
+    timeout_ms = document.get("deadline_ms")
+    if timeout_ms is None:
+        timeout_ms = MAX_TIMEOUT_MS
+    # One process carries every selected work unit, so it cannot safely combine
+    # lifecycle contracts. Reject mixed mode envelopes before Popen; production
+    # provider actions use admitted progress inactivity, while homogeneous
+    # total-deadline requests remain a compatibility mode.
+    timeout_modes = {
+        resolution.wire.logical_action_timeout_modes[unit["capability"]]
+        for unit in document["work_units"]
+    }
+    if len(timeout_modes) > 1:
+        return RuntimeResult(
+            RuntimeStatus.INVALID_REQUEST,
+            error="mixed timeout modes are unsupported; use one lifecycle contract",
+            manifest_digest=resolution.manifest_digest,
+            artifact_digest=resolution.artifact_digest,
+        )
+    admitted_progress = (
+        document["dispatch_requested"]
+        and "admitted_progress_inactivity" in timeout_modes
+    )
     deadline = time.monotonic() + timeout_ms / 1000.0
     reserve_ms = min(
         int(PROCESS_CLEANUP_RESERVE_SECONDS * 1000),
@@ -1132,10 +1187,14 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
     stdout = b""
     terminal = ""
     returncode = None
+    progress_reader = progress_writer = None
     try:
         with _isolated_tmpdir() as tmpdir:
             environment = _scrubbed_env(tmpdir)
             try:
+                if admitted_progress:
+                    progress_reader, progress_writer = _progress_pipe()
+                    environment[_PROGRESS_FD_ENV] = str(progress_writer)
                 process = subprocess.Popen(
                     [str(resolution.path), "invoke", "--protocol", str(PROTOCOL_VERSION)],
                     stdin=subprocess.PIPE,
@@ -1144,12 +1203,18 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
                     cwd=tmpdir,
                     env=environment,
                     start_new_session=True,
+                    pass_fds=(progress_writer,) if progress_writer is not None else (),
                 )
             except OSError:
-                return RuntimeResult(RuntimeStatus.UNAVAILABLE, error="direct runtime could not be launched", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+                return RuntimeResult(RuntimeStatus.CLIENT_ERROR, error="local runtime launch failed; provider state is unknown", manifest_digest=resolution.manifest_digest, artifact_digest=resolution.artifact_digest)
+            finally:
+                _close_fd(progress_writer)
+                progress_writer = None
             try:
                 stdout, _stderr, terminal = _collect_bounded(
-                    process, request, runtime_deadline
+                    process, request, runtime_deadline,
+                    progress_reader=progress_reader,
+                    stall_interval=(remaining_runtime_ms / 1000.0 if admitted_progress else None),
                 )
             except OSError:
                 terminal = "runtime_io_error"
@@ -1178,6 +1243,9 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
                     teardown_note = "process group teardown unproven"
     except _PrivateTmpCleanupError as exc:
         teardown_note = teardown_note or str(exc)
+    finally:
+        _close_fd(progress_reader)
+        _close_fd(progress_writer)
     records, parse_note = _parse_routing_records(stdout)
     notes = [
         note for note in (
@@ -1199,8 +1267,9 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
     status = {
         "timeout": RuntimeStatus.TIMEOUT,
         "output_limit": RuntimeStatus.OUTPUT_LIMIT,
-        "runtime_io_error": RuntimeStatus.UNAVAILABLE,
-    }.get(terminal, RuntimeStatus.PROVIDER_ERROR if returncode else RuntimeStatus.PROTOCOL_ERROR)
+        "runtime_io_error": RuntimeStatus.CLIENT_ERROR,
+        "progress_pipe_lost": RuntimeStatus.CLIENT_ERROR,
+    }.get(terminal, RuntimeStatus.CLIENT_ERROR if returncode else RuntimeStatus.PROTOCOL_ERROR)
     return RuntimeResult(
         status,
         result=[],
