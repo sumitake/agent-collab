@@ -10,10 +10,8 @@ the contribution contract remain authoritative for their respective claims.
 When two generations differ, use the status vocabulary below instead of
 silently treating them as the same thing.
 
-The current published release is v7.0.1 with signed provider runtime 5.0.3,
-manifest schema 4, runtime protocol 4, native contract 4, and wire schema 10.
-Repository source 7.0.3 stages protocol 5, wire schema 12, and runtime 5.0.5;
-those claims remain staged until release and installed qualification complete.
+The current published release is v7.0.3 with signed provider runtime 5.0.5,
+manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12.
 
 ## Read this handbook in order
 

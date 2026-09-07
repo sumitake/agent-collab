@@ -8,13 +8,12 @@ interpreted by the calling agent with ordinary reasoning.
 
 Current repository source: **7.0.3**
 
-Current published release: **7.0.1**
-([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)); it
-carries signed provider runtime `5.0.3`. Repository source 7.0.3 is staged
-until its governed pull request, signed tag, release assets, installation, and
-installed matrix are each positively verified.
+Current published release: **7.0.3**
+([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)); it
+carries signed provider runtime `5.0.5`. Host installation, readiness, and
+provider availability remain separate evidence planes.
 
-Version 7.0.3 targets provider runtime `5.0.5` with manifest schema 4,
+Version 7.0.3 pairs provider runtime `5.0.5` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. It replaces the semantic
 coordinator with a bounded routing-only shim and removes provider-authored
@@ -28,9 +27,8 @@ General users should start with the public
 
 ## Skills
 
-**Recovery branch status:** this candidate now includes signed runtime 5.0.5
-and wire schema 12 for both macOS architectures. Staged live qualification is
-still required before the unit is release-qualified.
+This published package includes signed runtime 5.0.5 and wire schema 12 for
+both macOS architectures.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
