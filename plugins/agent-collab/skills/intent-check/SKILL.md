@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 7.0.3
+version: 7.0.4
 defaults:
   quality_profile: standard
   effort_class: standard

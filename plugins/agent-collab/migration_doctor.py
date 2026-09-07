@@ -329,8 +329,6 @@ class DoctorReport:
     native_runtime: str
     wire_contract_sha256: str
     logical_actions: int
-    transport_actions: int
-    action_source_pairs: int
     provider_routing: str
     actions: tuple[str, ...]
 
@@ -500,19 +498,17 @@ def inventory_legacy_packages(home: Path) -> LegacyInventory:
     )
 
 
-def _runtime_state() -> tuple[str, str, int, int, int]:
+def _runtime_state() -> tuple[str, str, int]:
     client = _load_runtime_client()
     resolution = client.resolve_runtime()
     if resolution.status == client.RuntimeStatus.OK:
         wire = resolution.wire
         if wire is None:
-            return "invalid: wire descriptor absent", "", 0, 0, 0
+            return "invalid: wire descriptor absent", "", 0
         return (
             "available",
             wire.sha256,
             len(wire.logical_actions),
-            len(wire.transport_actions),
-            len(wire.action_source_pairs),
         )
     if resolution.status == client.RuntimeStatus.UNAVAILABLE:
         wire = resolution.wire
@@ -520,10 +516,8 @@ def _runtime_state() -> tuple[str, str, int, int, int]:
             "typed unavailable" + (f": {resolution.error}" if resolution.error else ""),
             wire.sha256 if wire else "",
             len(wire.logical_actions) if wire else 0,
-            len(wire.transport_actions) if wire else 0,
-            len(wire.action_source_pairs) if wire else 0,
         )
-    return f"invalid: {resolution.status.value}", "", 0, 0, 0
+    return f"invalid: {resolution.status.value}", "", 0
 
 
 def build_report(
@@ -532,7 +526,7 @@ def build_report(
     inventory = inventory_legacy_packages(home)
     policy = _load_policy()
     profile = policy.resolve_profile(explicit_config)
-    runtime, wire_sha256, logical_count, transport_count, pair_count = _runtime_state()
+    runtime, wire_sha256, logical_count = _runtime_state()
     blocked = bool(inventory.active_packages or inventory.errors)
     host = profile.host_runtime
     if host == "claude-code":
@@ -591,8 +585,6 @@ def build_report(
         native_runtime=runtime,
         wire_contract_sha256=wire_sha256,
         logical_actions=logical_count,
-        transport_actions=transport_count,
-        action_source_pairs=pair_count,
         provider_routing="READY" if routing_ready else "BLOCKED",
         actions=tuple(actions),
     )
@@ -615,7 +607,7 @@ def render_report(report: DoctorReport) -> str:
         f"HOST PROFILE: {report.host_profile['primary_id']} / {report.host_profile['primary_family']}",
         f"NATIVE RUNTIME: {report.native_runtime}",
         f"WIRE CONTRACT: {report.wire_contract_sha256 or 'unavailable'}",
-        f"ACTIONS: logical={report.logical_actions} transport={report.transport_actions} source-qualified={report.action_source_pairs}",
+        f"ACTIONS: logical={report.logical_actions}",
         *report.actions,
     ]
     return "\n".join(lines)

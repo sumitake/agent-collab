@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -28,10 +31,9 @@ class DirectMigrationDoctorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.doctor = _load("direct_migration_doctor", PLUGIN / "migration_doctor.py")
-
-    def test_report_has_no_broker_runtime_or_lifecycle_requirement(self) -> None:
+        cls.client = _load("migration_test_runtime_client", PLUGIN / "runtime_client.py")
         policy_module = _load("migration_test_policy", PLUGIN / "host_policy.py")
-        fake_profile = policy_module.HostProfile(
+        cls.profile = policy_module.HostProfile(
             primary_id="codex",
             primary_family="openai",
             active_model="observed",
@@ -41,20 +43,97 @@ class DirectMigrationDoctorTests(unittest.TestCase):
             governance_ready=True,
             identity_conflict=False,
         )
-        fake_policy = types.SimpleNamespace(resolve_profile=lambda _config: fake_profile)
+
+    @classmethod
+    def _wire(cls):
+        return cls.client.WireDescriptorSnapshot(
+            sha256="b" * 64,
+            logical_actions=frozenset({"review.repository"}),
+            logical_action_timeout_modes={"review.repository": "admitted_progress_inactivity"},
+            routing_source_sha256="c" * 64,
+            logical_agents=frozenset({"codex"}),
+            routing_request={"type": "routing_request"},
+            content_frame={"type": "content"},
+            terminal_planning_record={"type": "terminal"},
+        )
+
+    def _client_with_resolution(self, resolution):
+        return types.SimpleNamespace(
+            RuntimeStatus=self.client.RuntimeStatus,
+            resolve_runtime=lambda: resolution,
+        )
+
+    def test_runtime_state_uses_current_wire_snapshot_shape(self) -> None:
+        cases = (
+            (
+                "available",
+                types.SimpleNamespace(
+                    status=self.client.RuntimeStatus.OK,
+                    wire=self._wire(),
+                    error=None,
+                ),
+                ("available", "b" * 64, 1),
+            ),
+            (
+                "unavailable",
+                types.SimpleNamespace(
+                    status=self.client.RuntimeStatus.UNAVAILABLE,
+                    wire=self._wire(),
+                    error="notarization unavailable",
+                ),
+                ("typed unavailable: notarization unavailable", "b" * 64, 1),
+            ),
+            (
+                "missing wire",
+                types.SimpleNamespace(
+                    status=self.client.RuntimeStatus.OK,
+                    wire=None,
+                    error=None,
+                ),
+                ("invalid: wire descriptor absent", "", 0),
+            ),
+        )
+        for label, resolution, expected in cases:
+            with self.subTest(label=label), mock.patch.object(
+                self.doctor,
+                "_load_runtime_client",
+                return_value=self._client_with_resolution(resolution),
+            ):
+                self.assertEqual(self.doctor._runtime_state(), expected)
+
+    def test_report_json_and_text_use_logical_actions_only(self) -> None:
+        resolution = types.SimpleNamespace(
+            status=self.client.RuntimeStatus.OK,
+            wire=self._wire(),
+            error=None,
+        )
+        fake_policy = types.SimpleNamespace(resolve_profile=lambda _config: self.profile)
         with tempfile.TemporaryDirectory() as raw_home, mock.patch.object(
             self.doctor, "_load_policy", return_value=fake_policy
         ), mock.patch.object(
             self.doctor,
-            "_runtime_state",
-            return_value=("available", "b" * 64, 11, 12, 16),
+            "_load_runtime_client",
+            return_value=self._client_with_resolution(resolution),
         ):
-            report = self.doctor.build_report(home=Path(raw_home), explicit_config=None)
-        self.assertEqual(report.provider_routing, "READY")
-        self.assertEqual(report.logical_actions, 11)
-        self.assertEqual(report.transport_actions, 12)
-        self.assertEqual(report.action_source_pairs, 16)
-        self.assertFalse(hasattr(report, "broker_runtime"))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(
+                    self.doctor.main(["--home", raw_home, "--json"]),
+                    0,
+                )
+            report_json = json.loads(output.getvalue())
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(self.doctor.main(["--home", raw_home]), 0)
+            report_text = output.getvalue()
+
+        self.assertEqual(report_json["provider_routing"], "READY")
+        self.assertEqual(report_json["logical_actions"], 1)
+        self.assertEqual(report_json["wire_contract_sha256"], "b" * 64)
+        self.assertIn("ACTIONS: logical=1", report_text)
+        self.assertNotIn("transport=", report_text)
+        self.assertNotIn("source-qualified=", report_text)
 
 
 if __name__ == "__main__":

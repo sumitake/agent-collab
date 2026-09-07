@@ -1,11 +1,11 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.3 pairs a routing-only public client with the
+compatible hosts. Version 7.0.4 pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.3).
+This public repository's current source is **agent-collab** (v7.0.4).
 
 Current published release: **7.0.3** ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)).
 It carries signed provider runtime `5.0.5`. Host installation, readiness, and
@@ -18,27 +18,12 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.3
+## What's new - v7.0.4
 
-- **Caller recovery and native configuration.** Preserve bounded provider
-  content, distinguish local client failures from provider health, and carry
-  native login/configuration locations through the caller and supervisor.
-- **Paired runtime requirement.** This release carries signed provider
-  runtime `5.0.5` and wire schema `12` for both macOS architectures (`arm64`
-  and `x86_64`).
-
-- **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
-  verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
-  content gates. Every bounded nonempty final or recovered partial reaches the
-  caller for ordinary reasoning.
-- **Routing-only public boundary.** The public shim accepts the signed routing
-  request and returns runtime records without semantic normalization, provider
-  command reconstruction, retry, replay, or fallback.
-- **Signed dual-architecture runtime.** The imported 5.0.5 bundles are bound
-  by wire digest
-  `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`.
-  Four-host installation and bounded qualification are recorded in the
-  [status and evidence snapshot](docs/architecture/status-and-evidence.md).
+The source candidate restores migration-doctor JSON and text reports against
+wire schema 12. It reports the logical action count without reading removed
+transport and source-pair fields. The signed runtime remains `5.0.5`;
+publication and installation of this source change are pending.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
