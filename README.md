@@ -1,14 +1,14 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.2 pairs a routing-only public client with the
+compatible hosts. Version 7.0.3 pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.2).
+This public repository's current source is **agent-collab** (v7.0.3).
 
 Current published release: **7.0.1** ([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)).
-It carries signed provider runtime `5.0.3`. The 7.0.2 source is a staged
+It carries signed provider runtime `5.0.3`. The 7.0.3 source is a staged
 candidate until its governed pull request, tag, assets, and host installation
 are each positively verified.
 
@@ -19,18 +19,27 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.2
+## What's new - v7.0.3
 
-- **Opaque provider content.** Wire schema 11 removes provider-authored JSON,
+- **Caller recovery and native configuration.** Preserve bounded provider
+  content, distinguish local client failures from provider health, and carry
+  native login/configuration locations through the caller and supervisor.
+- **Paired runtime requirement.** This candidate now carries signed provider
+  runtime `5.0.5` and wire schema `12` for both macOS architectures (`arm64`
+  and `x86_64`). Staged live qualification is still required before release.
+
+- **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
   verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
   content gates. Every bounded nonempty final or recovered partial reaches the
   caller for ordinary reasoning.
 - **Routing-only public boundary.** The public shim accepts the signed routing
   request and returns runtime records without semantic normalization, provider
   command reconstruction, retry, replay, or fallback.
-- **One paired runtime generation.** Signed provider runtime `5.0.4` carries
-  the recovery change for both macOS architectures under wire digest
-  `3086682df8cdc5feaad429ec1ec27325afdc6ee8b7955d1e24d46759cd481741`.
+- **Signed dual-architecture runtime.** The imported 5.0.5 bundles are bound
+  by wire digest
+  `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`.
+  Staged live qualification remains required before the `7.0.3` unit is
+  release-qualified.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -116,15 +125,25 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The public source expects:
+The public source candidate expects:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.4`;
+- provider runtime version `5.0.5`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
-- wire schema 11 with 12 logical actions.
+- wire schema 12 with 12 logical actions and per-action timeout modes.
+
+The checked-in signed artifact rows are the imported 5.0.5 / wire-schema-12
+generation for both macOS architectures.
+
+Production provider work uses admitted progress inactivity so active work is
+not killed by a strict elapsed timer. Homogeneous `total_deadline` requests
+remain a descriptor-compatibility mode; mixed timeout-mode envelopes are
+rejected before launch because one process cannot safely combine lifecycle
+contracts. Each accepted request still gets one process attempt with no
+automatic replay or retry.
 
 The public client verifies fixed plugin-relative path, exact membership and
 digests, Mach-O architecture/minimum macOS, hardened Developer ID identity,

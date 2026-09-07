@@ -20,7 +20,7 @@ class PublicDistributionContractTests(unittest.TestCase):
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["plugins"][0]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))["metadata"]["version"])
         versions.add(json.loads((ROOT / ".claude-plugin" / "marketplace.base.json").read_text(encoding="utf-8"))["metadata"]["version"])
-        self.assertEqual(versions, {"7.0.2"})
+        self.assertEqual(versions, {"7.0.3"})
 
     def test_current_release_documentation_matches_published_evidence(self) -> None:
         status = (

@@ -28,7 +28,7 @@ observations. Active retired packages block direct routing. Cache-only residue
 does not become an executable route.
 
 The current source package unit is manifest schema 4, runtime protocol 5,
-native contract 4, provider runtime `5.0.4`, and descriptor schema 11. The generated
+native contract 4, provider runtime `5.0.5`, and descriptor schema 12. The generated
 manifest carries one top-level `wire_contract` and
 `wire_contract_sha256`. A mixed unit fails typed.
 

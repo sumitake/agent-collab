@@ -12,7 +12,7 @@ import time
 import unittest
 from unittest import mock
 
-from tests.test_protocol5_public_contract import wire_descriptor
+from tests.test_protocol5_public_contract import synthetic_wire_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +32,7 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.client = load_client()
-        descriptor, digest = wire_descriptor()
+        descriptor, digest = synthetic_wire_descriptor()
         cls.wire = cls.client.validate_wire_descriptor(
             descriptor, expected_sha256=digest
         )
@@ -182,7 +182,7 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
 
         observed: dict[str, object] = {}
 
-        def collect(_process, request: bytes, deadline: float):
+        def collect(_process, request: bytes, deadline: float, **_kwargs):
             observed["request"] = json.loads(request)
             observed["remaining"] = deadline - time.monotonic()
             return b"", b"", "timeout"
