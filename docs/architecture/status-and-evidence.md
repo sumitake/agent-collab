@@ -17,11 +17,35 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.1
+## Current snapshot — v7.0.3
+
+The public [`v7.0.3` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)
+is published and its immutable release workflow succeeded. Installation and
+readiness remain host-specific evidence planes.
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| The signed annotated v7.0.3 tag object `0eecfa51babc471b53ec517b96112dd10616d5de` identifies public commit `be57e89e7f8d4638bdd87e13b99fc1e5d08e0efc`; exact-tag workflow run `34070031974` succeeded and the GitHub Release was published on 2026-09-07 UTC. | published | The immutable release commit contains package 7.0.3 and provider runtime **5.0.5**. |
+| The release contains `agent-collab.v7.0.3.plugin`, its checksum, and `agent-collab-v7.0.3.spdx.json`, with SHA-256 digests `15fec88ca6bab108c96ba8e6410cedff8acd2fe91cc90e7f508e0e6da2e62ee8`, `ae5bf1195974da669e0a594499836c2ff232781cc654c5b3ae8a62f2609c7bd4`, and `cd880d1a2d62a7d321fa7f764b16e5077a5eb73eaae7cdc1c790b0a9564f0c82`. | verified release evidence | Downloaded archive checksum verified; the published asset set is fixed. |
+| Manifest SHA-256 `464fd39e2a2830b7ef992aa1716d7604c6818c0d735cac188a0a4e62d4bc2ae2` binds wire digest `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a` and arm64/x86_64 bundle digests `ffbb8f1ddeea95fb97c16ad972b62b54bbd7ddc577e0818bebf75c436780d755` / `dc6901023adf68dbcbe6a6618d1658b2f3cbe451736183f2857c1ebc2ce6c4d0`. | verified release evidence | Manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12 bind the paired release. |
+| Claude, Codex, Antigravity, and Grok each resolve package 7.0.3 through their supported plugin CLIs. All 178 released archive members matched every host-resolved package root; extras were host-generated (`.in_use`, `marketplace-fragment.json`, Antigravity `plugin.json`). | verified host installation | Grok registry pins `git_ref=v7.0.3` and commit `be57e89e…`. Installation does not prove future provider availability. |
+| Provider-free readiness from the installed Claude 7.0.3 coordinator returned `ok` for 12/12 actions with zero model calls. The installed packaged Grok qualifier returned schema 4 `qualified`. | verified loaded runtime bytes | Zero-model readiness is not a semantic canary. |
+| Installed canaries: Gemini extract, Grok review, and Moonshot extract quoted unique fixture tokens with native ok/rc0 and cleanup. Codex review returned native ok/rc0 with `content_kind=none` (not replayed). Claude remains an intentional unauthenticated unavailable-CLI case. | verified invocation result / environmental UNAVAILABLE | One bounded request each; no replay. Claude unavailability is not a signed-runtime defect. |
+
+### v7.0.3 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root `README.md` | **updated** | Current published release is v7.0.3 / runtime 5.0.5. |
+| `plugins/agent-collab/README.md` | **updated** | Package reference matches published 7.0.3 and runtime 5.0.5. |
+| Public architecture handbook | **updated** | This snapshot records the exact tag, workflow, assets, four-host installation, readiness, and bounded canaries. |
+| Generated `CHANGELOG.md` | **verified current** | Compiled on main by the mechanical changelog PR before the signed tag; this closeout does not rewrite generated release history. |
+
+## v7.0.1 release closeout snapshot
 
 The public [`v7.0.1` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)
-is published and its immutable release workflow succeeded. Repository source
-7.0.2 is a later staged candidate and is not collapsed into this snapshot.
+is published and its immutable release workflow succeeded. It is retained as a
+dated snapshot; v7.0.3 is the current published release.
 
 | Observation | Status | Interpretation |
 | --- | --- | --- |

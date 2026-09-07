@@ -7,10 +7,9 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.3).
 
-Current published release: **7.0.1** ([`v7.0.1`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)).
-It carries signed provider runtime `5.0.3`. The 7.0.3 source is a staged
-candidate until its governed pull request, tag, assets, and host installation
-are each positively verified.
+Current published release: **7.0.3** ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)).
+It carries signed provider runtime `5.0.5`. Host installation, readiness, and
+provider availability remain separate evidence planes.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
