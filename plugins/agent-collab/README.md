@@ -6,20 +6,23 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.3**
+Current repository source: **7.0.4**
 
 Current published release: **7.0.3**
 ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)); it
 carries signed provider runtime `5.0.5`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
-Version 7.0.3 pairs provider runtime `5.0.5` with manifest schema 4,
+Version 7.0.4 pairs provider runtime `5.0.5` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. It replaces the semantic
 coordinator with a bounded routing-only shim and removes provider-authored
 schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
 content-availability gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
+
+The 7.0.4 source candidate restores migration-doctor reports for this descriptor.
+The current published package remains 7.0.3.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and

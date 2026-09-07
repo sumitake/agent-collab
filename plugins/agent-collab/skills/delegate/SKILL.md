@@ -1,6 +1,6 @@
 ---
 name: delegate
-version: 7.0.3
+version: 7.0.4
 defaults:
   quality_profile: economical
   effort_class: minimal
