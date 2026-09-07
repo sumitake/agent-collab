@@ -23,9 +23,9 @@ installation, and readiness claims separate.
 - **Caller recovery and native configuration.** Preserve bounded provider
   content, distinguish local client failures from provider health, and carry
   native login/configuration locations through the caller and supervisor.
-- **Paired runtime requirement.** This candidate now carries signed provider
+- **Paired runtime requirement.** This release carries signed provider
   runtime `5.0.5` and wire schema `12` for both macOS architectures (`arm64`
-  and `x86_64`). Staged live qualification is still required before release.
+  and `x86_64`).
 
 - **Opaque provider content.** Wire schema 12 removes provider-authored JSON,
   verdict, findings, receipt, telemetry, and terminal-wrapper requirements as
@@ -37,8 +37,8 @@ installation, and readiness claims separate.
 - **Signed dual-architecture runtime.** The imported 5.0.5 bundles are bound
   by wire digest
   `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`.
-  Staged live qualification remains required before the `7.0.3` unit is
-  release-qualified.
+  Four-host installation and bounded qualification are recorded in the
+  [status and evidence snapshot](docs/architecture/status-and-evidence.md).
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -197,7 +197,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v7.0.1 closeout is recorded in the
+The v7.0.3 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing

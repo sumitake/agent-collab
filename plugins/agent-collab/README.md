@@ -27,9 +27,8 @@ General users should start with the public
 
 ## Skills
 
-**Recovery branch status:** this candidate now includes signed runtime 5.0.5
-and wire schema 12 for both macOS architectures. Staged live qualification is
-still required before the unit is release-qualified.
+This published package includes signed runtime 5.0.5 and wire schema 12 for
+both macOS architectures.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
