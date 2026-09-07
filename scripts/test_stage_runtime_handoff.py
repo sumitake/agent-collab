@@ -35,10 +35,29 @@ def _load_importer():
     return module
 
 
+def _candidate_manifest(base: dict[str, object]) -> dict[str, object]:
+    """Upgrade copied release metadata only for these synthetic handoffs."""
+    base = json.loads(json.dumps(base))
+    wire = base["wire_contract"]
+    wire["schema_version"] = 12
+    wire["logical_action_timeout_modes"] = {
+        action: "total_deadline" for action in wire["logical_actions"]
+    }
+    encoded = json.dumps(
+        wire, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    base["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
+    for artifact in base.get("artifacts", []):
+        artifact["provider_runtime_version"] = "5.0.5"
+        artifact["wire_contract_sha256"] = base["wire_contract_sha256"]
+    return base
+
+
 def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
-    base = json.loads(
+    base = _candidate_manifest(json.loads(
         (ROOT / PLUGIN_REL / "runtime-manifest.json").read_text(encoding="utf-8")
-    )
+    ))
     record = {
         "architecture": arch,
         "install_mode": 0o500,
@@ -61,7 +80,7 @@ def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "5.0.4",
+            "provider_runtime_version": "5.0.5",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -101,9 +120,9 @@ def _make_handoff(
 def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, bytes]]:
     root = parent / name
     payloads = {BUNDLE_REL: b"arm runtime", X86_BUNDLE_REL: b"x86 runtime"}
-    base = json.loads(
+    base = _candidate_manifest(json.loads(
         (ROOT / PLUGIN_REL / "runtime-manifest.json").read_text(encoding="utf-8")
-    )
+    ))
     artifacts = []
     for bundle, payload in payloads.items():
         architecture = "x86_64" if bundle == X86_BUNDLE_REL else "arm64"
@@ -130,7 +149,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "5.0.4",
+                "provider_runtime_version": "5.0.5",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -393,7 +412,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-            "provider version mismatch: expected 5\\.0\\.4, received 9\\.9\\.9",
+            "provider version mismatch: expected 5\\.0\\.5, received 9\\.9\\.9",
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 

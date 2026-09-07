@@ -86,19 +86,20 @@ def _write(value: object) -> None:
 
 def main() -> int:
     try:
-        request = _read_request()
-        if type(request) is not dict:
-            raise ValueError("request root must be an object")
+        try:
+            request = _read_request()
+            if type(request) is not dict:
+                raise ValueError("request root must be an object")
+        except ValueError as exc:
+            _write({"status": "invalid_request", "result": [], "error": str(exc)})
+            return 2
         _write(_response(_load_client().invoke(envelope=request)))
         return 0
-    except ValueError as exc:
-        _write({"status": "invalid_request", "result": [], "error": str(exc)})
-        return 2
     except Exception:
         _write({
-            "status": "unavailable",
+            "status": "client_error",
             "result": [],
-            "error": "routing client failed before a result was available",
+            "error": "routing client failed; provider execution and state are unknown",
         })
         return 1
 

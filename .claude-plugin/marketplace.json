@@ -10,7 +10,7 @@
     {
       "name": "agent-collab",
       "description": "Unified collaboration package with semantic actions, source-grounded context, empirical project estimation, and a verified plugin-relative direct native runtime.",
-      "version": "7.0.2",
+      "version": "7.0.3",
       "author": {
         "name": "John Osumi"
       },
@@ -34,7 +34,7 @@
   ],
   "metadata": {
     "description": "Agent collaboration plugin marketplace",
-    "version": "7.0.2",
+    "version": "7.0.3",
     "repository": "https://github.com/sumitake/agent-collab"
   }
 }
