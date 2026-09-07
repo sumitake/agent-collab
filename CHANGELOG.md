@@ -64,6 +64,44 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### Changed
+
+- Import signed and notarized provider runtime 5.0.5 for macOS arm64 and
+  x86_64, bound to workspace merge `9299a6fd` and wire digest
+  `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`.
+  Native Intel smoke and signed Rosetta execution passed. Staged live
+  qualification remains required before publication.
+
+### agent-collab 7.0.3 — 2026-09-05
+
+#### Changed
+
+- All 12 logical provider actions use admitted progress inactivity in the
+  source candidate, so active work can continue while it reports progress.
+  Homogeneous total-deadline requests remain an explicit compatibility mode;
+  mixed timeout-mode requests are rejected before launch.
+
+### Fixed
+
+- Connect the existing progress channel for descriptor-admitted work so the
+  outer client does not terminate a provider that is still making progress.
+- Accept a null optional deadline consistently with omission, and preserve
+  collected content if local I/O fails later.
+- Report local client exceptions as `client_error`, without claiming provider
+  unavailability, authentication failure, or an unconsumed attempt.
+- Preserve configured native CLI login, configuration, and catalog locations
+  while continuing to exclude credential values and inline API configuration.
+- Generate caller guidance with current manifest and filesystem identities,
+  EOF-delimited input, workload-appropriate work units, and no accidental
+  provider pin or competing outer timeout. Planning proves route eligibility,
+  not provider health or authentication.
+
+### Changed
+
+- Prepare the agent-collab 7.0.3 candidate for runtime 5.0.5 and wire schema
+  12. This change requires both signed runtime handoffs before release
+  qualification.
+
 ### agent-collab 7.0.2 — 2026-09-02
 
 - Replace the strict semantic coordinator with a routing-only protocol-5 shim.
