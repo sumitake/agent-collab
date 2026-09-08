@@ -9,7 +9,7 @@ description: Cast {{ verifier_agent }} into a strict roleplay as a user persona 
 
 Unlike `second-opinion` or `code-review`, this skill is not an analytical critique. It is a **strict in-character roleplay**: the verifier becomes a specific persona reading the artifact and reacts as that persona would — confused, impatient, suspicious, enthusiastic, missing the ask, snagging on a phrase — without breaking character to deliver a "review." The point is to see how the artifact lands with the intended audience, not how a model thinks about the artifact in the abstract.
 
-Cross-family does not have the verifier-independence semantics it has in cross-check skills; this is collaborative roleplay. {{ verifier_agent }} ({{ verifier_family }} family) can inhabit personas {{ primary_agent }} ({{ primary_family }} family) would not naturally inhabit, which is part of the value, but no formal independence rule applies.
+This is collaborative roleplay, not a governance review. A selected simulation partner may inhabit a persona or offer a reaction the primary would not. No family difference is assumed or required; same-family and unknown-lineage responses remain available as clearly labelled advisory roleplay, not independent governance evidence.
 
 ## When to use
 

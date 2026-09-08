@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_5(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.5\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.6\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.5")
+            self.assertEqual(manifest["version"], "7.0.6")
 
     def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -82,6 +82,74 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertTrue("verdict" in text or "recommendation" in text)
                 self.assertNotIn("invalid_final", text)
 
+    def test_independence_consumers_share_caller_verified_contract(self) -> None:
+        consumers = (
+            "code-review",
+            "debate",
+            "logic-check",
+            "merge-resolve",
+            "qa-verify",
+            "red-team",
+            "second-opinion",
+        )
+        marker_start = "<!-- verifier-independence:start -->"
+        marker_end = "<!-- verifier-independence:end -->"
+        expected = None
+        for name in consumers:
+            spec_text = (ROOT / "skill-specs" / f"{name}.md").read_text(
+                encoding="utf-8"
+            )
+            block = spec_text.split(marker_start, 1)[1].split(marker_end, 1)[0]
+            if expected is None:
+                expected = block
+            with self.subTest(source=name):
+                self.assertEqual(block, expected)
+                self.assertIn("caller-verified governance evidence", block)
+                self.assertIn("using `explicit_target`", block)
+                self.assertIn("Carry that same target into planning and live", block)
+                self.assertIn("Honor an operator-named provider", block)
+                self.assertNotIn("only when the operator names", block)
+                self.assertIn("all three\nlineages are known", block)
+                self.assertIn("OpenCode name is transport information", block)
+                self.assertNotIn("shared policy", block)
+                self.assertNotIn("same_family_blocked", block)
+                self.assertNotIn("unknown_family", block)
+
+            rendered = (PLUGIN / "skills" / name / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            rendered_block = rendered.split(marker_start, 1)[1].split(marker_end, 1)[0]
+            with self.subTest(generated=name):
+                self.assertEqual(rendered_block, expected)
+
+    def test_intro_does_not_assume_reviewer_family_or_promote_intent_authority(self) -> None:
+        for name in ("code-review", "qa-verify", "red-team", "debate", "logic-check", "merge-resolve", "second-opinion"):
+            text = (ROOT / "skill-specs" / (name + ".md")).read_text()
+            intro = text.split("## When to use", 1)[0]
+            with self.subTest(skill=name):
+                self.assertNotIn("{{ primary_family }}", intro)
+                self.assertNotIn("{{ verifier_family }}", intro)
+                self.assertNotIn("for an independent cross-family", intro)
+                self.assertRegex(intro, r"caller.{0,80}verif|caller establishes")
+        intent = " ".join((ROOT / "skill-specs" / "intent-check.md").read_text().split())
+        self.assertNotIn("Dispatch as independent governance", intent)
+        self.assertIn("document intent remains context only", intent)
+        self.assertIn("cannot satisfy a review or governance evidence contract", intent)
+
+    def test_code_review_allows_advisory_without_clearing_independent_approval(self) -> None:
+        for path in (ROOT / "skill-specs" / "code-review.md", PLUGIN / "skills" / "code-review" / "SKILL.md"):
+            text = " ".join(path.read_text().split())
+            with self.subTest(path=path):
+                self.assertIn("Prefer an eligible reviewer whose known lineage differs", text)
+                self.assertIn("When Gemini is the primary and only Gemini is available", text)
+                self.assertIn("same-family advisory", text)
+                self.assertIn("lineage-unverified advisory", text)
+                self.assertIn("subscription name alone does not establish", text)
+                self.assertIn("independent approval is required by the task or workflow", text)
+                self.assertIn("approval requirement explicitly unmet", text)
+                self.assertIn("do not keep attempting a provider", text)
+                self.assertNotIn("terminal typed failure", text)
+
     def test_runtime_status_uses_one_zero_inference_all_action_request(self) -> None:
         text = " ".join((
             PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"
@@ -105,6 +173,77 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("optional diagnostics", invocation)
                 self.assertIn("at most one provider attempt per work unit", invocation)
                 self.assertIn("never synthesize approval", invocation)
+                self.assertIn("for an authorized independent review or governance task", invocation)
+                self.assertIn("bind the caller-verified distinct reviewer", invocation)
+                self.assertIn("carry the same target into planning and live dispatch", invocation)
+                self.assertIn("otherwise use normal untargeted routing", invocation)
+                self.assertNotIn("only when the operator names", invocation)
+
+
+    def test_complete_rendered_skills_do_not_invent_family_or_role_independence(self) -> None:
+        names = ("code-review", "debate", "logic-check", "merge-resolve", "qa-verify", "red-team", "second-opinion", "brainstorm", "simulate-user")
+        for name in names:
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().split())
+            with self.subTest(skill=name):
+                for fictional in ("independent family", "independent-family", "resolved family", "independent vs. resolved", "only when the operator names"):
+                    self.assertNotIn(fictional, text)
+        merge = " ".join((PLUGIN / "skills" / "merge-resolve" / "SKILL.md").read_text().split())
+        self.assertIn("authors of both sides", merge)
+        self.assertIn("Switching to the primary cannot clear that requirement", merge)
+        self.assertNotIn("switch the independent-resolver direction", merge)
+        debate = (PLUGIN / "skills" / "debate" / "SKILL.md").read_text()
+        self.assertIn("Assigning sides does not establish reviewer lineage", debate)
+        self.assertNotIn("assignment to keep the debate cross-family", debate)
+
+    def test_shared_tiers_and_nonreview_skills_do_not_require_independence(self) -> None:
+        config = json.loads((ROOT / "scripts" / "skill-build-config.json").read_text())["agent-collab"]
+        for key in ("tier_pro_resolves_to", "tier_flash_resolves_to"):
+            self.assertNotIn("independen", config[key])
+            self.assertNotIn("reviewer", config[key])
+        self.assertNotIn("verifier_family", config)
+        self.assertNotIn("primary_family", config)
+        for name in ("brainstorm", "simulate-user"):
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().split())
+            with self.subTest(skill=name):
+                self.assertIn("No family difference is assumed or required", text)
+                self.assertIn("unknown-lineage", text)
+                self.assertIn("not independent governance evidence", text)
+                self.assertNotIn("whose independence the caller verifies", text)
+                self.assertNotIn("sits in a different model family", text)
+                self.assertNotIn("cross-family partner", text)
+
+    def test_all_routed_skills_avoid_automatic_family_exclusion_claims(self) -> None:
+        build_skills = self._load_build_skills()
+        for name in sorted(build_skills.ROUTED_SPECS):
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().lower().split())
+            with self.subTest(skill=name):
+                for stale in ("central policy resolves the eligible worker after family exclusion", "central policy selects an independent", "independent-family route", "independent family", "independent-family-authored"):
+                    self.assertNotIn(stale, text)
+        intent = " ".join((PLUGIN / "skills" / "intent-check" / "SKILL.md").read_text().split())
+        self.assertIn("advisory context comparison and has no pre-dispatch family gate", intent)
+        self.assertNotIn("Dispatch an independent intent comparison", intent)
+        self.assertNotIn("Before dispatch, establish", intent)
+        self.assertIn("cannot satisfy a review or governance evidence contract", intent)
+        delegate = " ".join((PLUGIN / "skills" / "delegate" / "SKILL.md").read_text().split())
+        self.assertIn("Normal untargeted routing is appropriate for ordinary advisory delegation", delegate)
+        self.assertIn("do not claim dual-family coverage without positive observed-lineage evidence", delegate)
+        self.assertNotIn("The cross-family value is the gating criterion", delegate)
+        self.assertNotIn("Format mismatch is a typed failure", delegate)
+        dev = " ".join((PLUGIN / "skills" / "dev-delegate" / "SKILL.md").read_text().split())
+        self.assertNotIn("eligible cross-family worker", dev)
+        self.assertIn("does not prevent ordinary development work", dev)
+        teamwork = " ".join((PLUGIN / "skills" / "teamwork" / "SKILL.md").read_text().split())
+        self.assertIn("role or action alone does not prove independence", teamwork)
+        self.assertIn("independent approval requirement unmet", teamwork)
+
+    def test_delegate_examples_require_the_context_source_contract(self) -> None:
+        for path in (ROOT / "skill-specs" / "delegate.md", PLUGIN / "skills" / "delegate" / "SKILL.md"):
+            text = " ".join(path.read_text().split())
+            with self.subTest(path=path):
+                for required in ("`label` and `content`", "`repo_root` and exact `expected_repo_head`", "Do not submit prompt-only topics", "does not discover or browse for new sources", "Every example requires supplied document contents", "Multiple workers do not imply multiple model families"):
+                    self.assertIn(required, text)
+                for stale in ("Research the 3 [items]", "Two families surface", "Different families", "one family's category boundaries"):
+                    self.assertNotIn(stale, text)
 
     def test_route_uses_protocol_five_explicit_target_field(self) -> None:
         text = (

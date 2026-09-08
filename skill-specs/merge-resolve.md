@@ -5,11 +5,13 @@ version: {{ skill_version }}
 description: Use when a user asks to resolve a git merge conflict or conflicting patch, says "ai-merge" or "AI-resolve," when merge or rebase exits with conflict markers and next steps are requested, when parallel worktrees need integration, or when a chain diff targets a file being edited.
 ---
 
-# Merge resolve — cross-family merge-conflict resolution, operator-gated by default
+# Merge resolve — merge-conflict resolution, operator-gated by default
 
-This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a cross-family read on the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
+This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a review of the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
 
 **The default is operator-confirm. Auto-apply is opt-in, gated by a multi-condition policy file, and refuses for high-sensitivity paths regardless of operator opt-in.** These are the operator's risk-acceptance posture; they are not stylistic prose, and the skill enforces them at runtime.
+
+Reviewer independence is conditional on the caller verifying the observed families and sources under the contract below; the role or branch name does not establish it.
 
 ## When to use
 
@@ -31,15 +33,29 @@ This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: seman
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Inputs
@@ -58,7 +74,7 @@ If the operator only said "resolve this conflict" without listing files, START w
 
 ### 1. Verifier-independence check
 
-Per the section above. If both sides are {{ primary_agent }}-authored, proceed; otherwise switch the independent-resolver direction or refuse if cross-family independence is required.
+Record the observed lineage of the primary and the authors of both sides. For independent review, select and verify a resolver distinct from the primary and every known side-author family; unknown author lineage leaves independence unverified. Primary-authored sides alone do not prove independence. If no eligible distinct resolver can be established, keep required independent approval unmet. Advisory merge analysis may proceed when the task does not require independent evidence; changing roles cannot create independence.
 
 ### 2. Hunk extraction
 
@@ -81,11 +97,12 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 
 ### 4. Cross-check prompt
 
-Submit the sealed merge-review role through `{{ mcp_tool_ask }}`
-{{ merge_resolve_call_params }}. Central policy chooses an eligible independent
-reviewer. Provider formatting is not an output contract; reason over the
-complete raw response. Ask the reviewer to address these disagreement-first
-criteria:
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and authors of both sides for independent review. For advisory analysis, label the contribution accordingly. Submit the sealed merge-review role through
+`{{ mcp_tool_ask }}` {{ merge_resolve_call_params }}. Verify the observed
+reviewer lineage before treating its response as independent governance evidence.
+Provider formatting is not an output contract; reason over the complete raw
+response. Ask the reviewer to address these disagreement-first criteria:
 
 - summarize each side's intent;
 - decide `COMPATIBLE`, `INCOMPATIBLE`, or `NEEDS-HUMAN`, with a reason;
@@ -175,7 +192,7 @@ Mitigations:
 - Operator-confirm default (the single biggest one).
 - Multi-condition auto-apply preconditions (policy file + min_confidence + forbidden_paths + required_gates).
 - `CONFIDENCE: H` floor.
-- Cross-family verifier-independence (enforced).
+- Caller-verified reviewer independence where required, with missing evidence left explicitly unmet.
 - Post-apply validator gates (operator-defined).
 
 These shift residual risk down but do not eliminate it. Operators adopting `auto_apply=true` accept the residual risk explicitly via the policy file's presence-as-acknowledgment.
@@ -208,7 +225,7 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |
-| Verifier-independence check fails (both sides {{ verifier_family }}-family-authored) | Switch to {{ primary_agent }}-as-resolver, or surface and ASK operator |
+| Reviewer shares a primary or side-author family, or required lineage is unknown | Keep independent approval unmet; retain useful advisory analysis where permitted. Switching to the primary cannot establish independence |
 | Policy file is syntactically invalid | REFUSE auto-apply; fall back to operator-confirm; surface YAML error |
 | Post-apply marker-integrity check finds remaining markers | REFUSE to mark merge resolved; surface failed line(s) to operator |
 
@@ -236,6 +253,6 @@ merge-resolve summary:
 - **Treating `apply-and-amend` as the default.** It rewrites the in-progress merge commit. Use only when the operator explicitly chose it; default `apply` leaves the apply uncommitted so the operator can review one more time.
 - **Pushing or committing from this skill.** Out of scope; the skill ends at "applied to working tree, operator confirms."
 - **Re-running the same `revise` instruction repeatedly without operator input.** `revise` is a single-iteration instruction; if it fails, ASK the operator for next direction rather than looping.
-- **Resolving merges where one side was authored by a {{ verifier_family }}-family agent without flipping the resolver direction.** Same-family resolution defeats the verifier-independence guarantee that downstream consumers (operator decisions, audit logs, compliance reviews) rely on.
+- **Using role switching as proof of independence.** A resolver must have observed lineage distinct from the primary and authors of both sides when independent review is required. Switching to the primary cannot clear that requirement; same-family or unknown-lineage analysis remains advisory.
 - **Skipping the marker-integrity check** after apply. A silent apply failure leaves markers in the file; the merge appears resolved in the skill's response but the working tree is still in conflict. The check is one Read; never skip it.
 - **Adding `forbidden_paths` to the policy without versioning the change in source control.** The policy is the operator's risk-acceptance posture; its history is auditable evidence. Edit, commit, push — don't `chmod 644 && vim` it in place.

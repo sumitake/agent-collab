@@ -1,6 +1,6 @@
 ---
 name: visual-review
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum

@@ -2,14 +2,14 @@
 name: qa-verify
 version: {{ skill_version }}
 {{ qa_verify_defaults_block }}
-description: Ask {{ verifier_agent }} to independently QA the output of a completed execution against the original request — did the work actually meet the spec, or are there ignored constraints, off-by-one errors, hallucinated fields, or silent partial successes. Use when the user says "did this actually do what I asked," "verify my work with {{ verifier_agent }}," "QA check this," "sanity-check the output," "did the execution meet the spec," "did we actually complete the task," or "validate the result." Also offer this proactively when {{ primary_agent }} has just finished a complex multi-step execution (data transformation, large refactor, batched file edits, multi-API workflow, deploy script) and is about to report success — an independent QA pass before claim-of-completion catches the silent-success-with-missing-constraint failure mode that visual inspection often misses.
+description: Ask {{ verifier_agent }} to QA the output of a completed execution against the original request — did the work actually meet the spec, or are there ignored constraints, off-by-one errors, hallucinated fields, or silent partial successes. Use when the user says "did this actually do what I asked," "verify my work with {{ verifier_agent }}," "QA check this," "sanity-check the output," "did the execution meet the spec," "did we actually complete the task," or "validate the result." Also offer this proactively when {{ primary_agent }} has just finished a complex multi-step execution (data transformation, large refactor, batched file edits, multi-API workflow, deploy script) and is about to report success — a QA pass with caller-verified independence before claim-of-completion catches the silent-success-with-missing-constraint failure mode that visual inspection often misses.
 ---
 
-# QA verify — independent verification of a completed execution
+# QA verify — verification of a completed execution
 
 A second-opinion is a review of a *plan*. A code-review is a critique of a *code artifact*. **qa-verify is verification of a completed *execution* against the original request.** The point is to catch the gap between "the script ran" and "the script accomplished what was actually asked for" — missed constraints, off-by-one results, hallucinated output fields, silent partial successes that look complete at a glance.
 
-The cross-family setup matters because {{ primary_agent }} just *did* the work — its reasoning is anchored to its own implementation choices. {{ verifier_agent }} sees the original request, the work product, and the output with fresh eyes and no commitment to the path that was taken.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -32,15 +32,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -57,10 +71,11 @@ If any of the three is missing, gather it before invoking. A QA pass on incomple
 
 ### 2. Instruct the verifier as a strict QA inspector
 
-Submit the sealed QA role through `{{ mcp_tool_ask }}` with
-{{ qa_verify_call_params }} ({{ qa_verify_call_note }}). Central policy selects
-an independent eligible reviewer; Claude/Anthropic is ineligible for this
-review action, and its document-intent route is not a substitute.
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit the sealed QA role through
+`{{ mcp_tool_ask }}` with {{ qa_verify_call_params }} ({{ qa_verify_call_note }}).
+After the response, verify the observed reviewer lineage before treating it as
+independent governance evidence.
 
 Use this prompt template for QA content. Provider formatting is not an output
 contract; the caller reasons over the complete raw response:
@@ -141,7 +156,7 @@ The descriptor-owned review verdict applies to all of these uniformly; what shif
 - **Sending only the final output without the original constraints.** The verifier cannot QA against a spec it has never seen. The triple-evidence requirement (request + work product + output) is non-negotiable.
 - **Using this for simple tasks where success is visually obvious.** Wastes a verifier call and adds noise to the audit log.
 - **Overstating an approval as "verified correct."** It means "no issues flagged on this independent review." Independent reviewers also miss bugs. Phrasing matters; precision protects the user from over-trusting the layer.
-- **Skipping the verifier-independence check** when the work was executed by a {{ verifier_family }}-family agent. Same-family QA is correlated blind spots, not independent verification.
+- **Claiming independent QA when the observed reviewer shares the executing author or primary family, or lineage is unknown.** Such findings remain advisory and cannot clear required independent verification.
 - **Replaying for formatting.** Preserve the raw result; never ask a second
   provider attempt merely to obtain different formatting.
 - **Treating a hallucinated FAIL as a real fail.** Verify each FAILED CONSTRAINT against the actual output before alarming the user. Hallucinations happen in QA too.

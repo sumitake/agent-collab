@@ -1,25 +1,25 @@
 ---
 name: logic-check
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
 
-description: Audit a verifiable, step-wise computation (arithmetic, financial calculation, algorithm trace, constraint solve, scheduling problem) by having the reviewer independently re-derive the answer from the original problem statement and comparing — not by asking the reviewer to "check the work," which anchors on the existing derivation. Use when the user says "audit this calculation," "double-check my math with the reviewer," "verify these computations," "check this trace," "is this cap table right," "re-derive this with the reviewer," "audit my arithmetic," "logic-check this," or "is this number right." Also offer this proactively when the active primary has just performed a long multi-step calculation, an algorithmic trace (DP table, graph traversal, constraint propagation), a financial computation (cap table, tax math, unit conversion, currency-adjusted aggregate), or any computation where a wrong intermediate state silently corrupts the final answer.
+description: Audit a verifiable, step-wise computation (arithmetic, financial calculation, algorithm trace, constraint solve, scheduling problem) by having the reviewer separately re-derive the answer from the original problem statement and comparing — not by asking the reviewer to "check the work," which anchors on the existing derivation. Use when the user says "audit this calculation," "double-check my math with the reviewer," "verify these computations," "check this trace," "is this cap table right," "re-derive this with the reviewer," "audit my arithmetic," "logic-check this," or "is this number right." Also offer this proactively when the active primary has just performed a long multi-step calculation, an algorithmic trace (DP table, graph traversal, constraint propagation), a financial computation (cap table, tax math, unit conversion, currency-adjusted aggregate), or any computation where a wrong intermediate state silently corrupts the final answer.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Logic check — independent re-derivation of a verifiable computation
+# Logic check — separate re-derivation of a verifiable computation
 
 Some tasks have a definite right answer reachable through mechanical steps where each step locks in state for the next. **A logic check catches the compounding-error class** that a free-form `second-opinion` review of the conclusion does not — because the conclusion looks plausible while a hidden intermediate step is wrong.
 
-The **mechanism is independent re-derivation**, not "review my reasoning." Asking a model to audit another model's stated reasoning trace tends to anchor on the trace rather than check the math — the verifier reads the steps, finds them locally coherent, and signs off. Two independent derivations from the same problem statement diverge cleanly when one is wrong; the divergence point is the bug.
+The **mechanism is separate re-derivation**, not "review my reasoning." Asking a model to audit another model's stated reasoning trace tends to anchor on the trace rather than check the math — the verifier reads the steps, finds them locally coherent, and signs off. Two separate derivations from the same problem statement diverge cleanly when one is wrong; the divergence point is the bug.
 
-The cross-family setup matters here in a specific way: same-family verifiers are more likely to share systematic computational biases (e.g., recurring off-by-one in particular index conventions, recurring rounding-direction defaults). the reviewer (independent family) brings different defaults; its re-derivation is genuinely independent of the active primary's (resolved-family) computation.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -44,15 +44,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -69,12 +83,12 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 
 But: **do send the constraints and assumptions** the active primary used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance the active primary was solving.
 
-Submit the sealed logic-check role through `python3 "<plugin-root>/coordinator.py"` with
-`quality_profile='frontier'` and `effort_class='maximum'`. Central policy resolves an independent eligible
-reviewer; Claude/Anthropic is ineligible for this review action, and its
-document-intent route is not a substitute. Use this prompt template for
-substantive derivation. The caller reasons over the complete raw response;
-provider formatting is not an output contract:
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit the sealed logic-check role through
+`python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Verify the observed
+reviewer lineage before treating its response as independent governance evidence.
+Use this prompt template for substantive derivation. The caller reasons over the
+complete raw response; provider formatting is not an output contract:
 
 ```
 Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.
@@ -164,6 +178,6 @@ The constraints-explicit final-answer pattern applies uniformly across all of th
 - **Using this skill for non-verifiable judgment work.** Open-ended reasoning, strategy, recommendations belong in `second-opinion`. The re-derivation mechanism requires a definite right answer.
 - **Treating final-answer agreement as proof.** Two models can both be wrong in the same way, especially on textbook-style problems with well-known wrong answers (or on problems where the constraint statement is ambiguous in the same way to both models). Agreement is one signal, not a guarantee.
 - **Using economical/minimal for multi-step calculations.** Computational care benefits from reasoning depth; use frontier/maximum unless the check is genuinely trivial.
-- **Skipping the verifier-independence check** when the original computation came from a independent-family agent. Same-family re-derivation may share systematic computational biases.
+- **Claiming independent verification when observed reviewer and computation-author lineages match or are unknown.** Re-derivation may still provide useful advisory findings, but cannot clear an independent verification requirement.
 - **Silently switching the answer** if the audit disagrees and the verifier is right. Show the user what changed and why; the source-of-error attribution is the deliverable, not just the corrected number.
 - **Re-deriving a 30+ step trace blindly when transition critique would work.** Incomparable parallel derivations waste both turns; fall back to step-by-step transition verification for large traces.

@@ -1,6 +1,6 @@
 ---
 name: red-team
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,14 +10,14 @@ description: Task the reviewer with actively breaking a system, API, validation 
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Red team — adversarial input generation by the cross-family agent
+# Red team — adversarial input generation
 
 Red-teaming is **active and adversarial**: the verifier's job is not to *look for* defects in the artifact (`code-review` does that), but to **generate specific inputs that break it**. The output is concrete, ready-to-use attack vectors — exact payloads, exact malformed inputs, exact prompt-injection strings — not generic "the parser might be vulnerable to malformed input" observations.
 
-The cross-family setup is load-bearing for the same reason it is in `code-review`: the active primary (the author, in the resolved family) shares blind spots with itself — it will not generate the adversarial inputs that exploit its own assumptions. the reviewer (independent family) brings different priors on what looks "obviously safe," which is exactly the set of inputs likely to be unguarded.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -41,15 +41,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -78,10 +92,11 @@ A focused objective produces focused output. "Find security issues" produces a g
 
 ### 3. Call the verifier
 
-Submit one `review.repository` work unit through `python3 "<plugin-root>/coordinator.py"`. Central
-policy chooses an eligible independent reviewer. The caller seals and verifies
-the exact repository head and supplies the bounded red-team prompt as opaque
-payload.
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit one `review.repository` work unit through
+`python3 "<plugin-root>/coordinator.py"`. The caller seals and verifies the exact repository head,
+supplies the bounded red-team prompt as opaque payload, and verifies the
+observed reviewer lineage before treating it as independent governance evidence.
 
 Use this prompt template for adversarial content. Provider formatting is not an
 output contract; the caller reasons over the complete raw response:
@@ -144,7 +159,7 @@ The threat-model and success-criterion framing stay constant across domains; the
 - **Skipping the actually-test-each-input step.** Hallucinations are common; relaying unverified attack claims wastes the user's time and may mislead them about real exposure. Test in a local reproduction before reporting.
 - **Asking the verifier to also fix the vulnerabilities.** Generate attacks (this skill) and propose defenses (the user or the active primary acts on them) are separate steps. The verifier's job is to find attacks, not write the fixes — those are likely to be same-family-correlated patches.
 - **Using economical/minimal.** Adversarial creativity benefits from depth; use frontier/maximum so the review goes beyond obvious, commonly listed inputs.
-- **Skipping the verifier-independence check** when the artifact came from a independent-family agent. Same-family red-teams produce inputs the author would have anticipated.
+- **Claiming an independent red-team pass when observed reviewer and author or primary lineages match, or lineage is unknown.** Preserve useful advisory findings without clearing required independent review.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
   second request or fabricating an artifact.

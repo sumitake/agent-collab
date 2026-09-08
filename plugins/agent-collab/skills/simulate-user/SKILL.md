@@ -1,6 +1,6 @@
 ---
 name: simulate-user
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -10,14 +10,14 @@ description: Cast the reviewer into a strict roleplay as a user persona or stake
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
 # Simulate-user — in-character persona reaction to an artifact
 
 Unlike `second-opinion` or `code-review`, this skill is not an analytical critique. It is a **strict in-character roleplay**: the verifier becomes a specific persona reading the artifact and reacts as that persona would — confused, impatient, suspicious, enthusiastic, missing the ask, snagging on a phrase — without breaking character to deliver a "review." The point is to see how the artifact lands with the intended audience, not how a model thinks about the artifact in the abstract.
 
-Cross-family does not have the verifier-independence semantics it has in cross-check skills; this is collaborative roleplay. the reviewer (independent family) can inhabit personas the active primary (resolved family) would not naturally inhabit, which is part of the value, but no formal independence rule applies.
+This is collaborative roleplay, not a governance review. A selected simulation partner may inhabit a persona or offer a reaction the primary would not. No family difference is assumed or required; same-family and unknown-lineage responses remain available as clearly labelled advisory roleplay, not independent governance evidence.
 
 ## When to use
 
@@ -54,7 +54,7 @@ Instruct the verifier to stay entirely in character and **not break the fourth w
 ### 3. Call the verifier
 
 Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
-(economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy — the skill default; raise both closed profiles for nuanced personas — short
+(economical quality with minimal effort through an eligible provider — the skill default; raise both closed profiles for nuanced personas — short
 in-character responses do not need depth). Use frontier/maximum only for
 personas requiring nuanced reasoning, such as a litigator parsing a contract
 clause or a detail-focused engineer reading a specification.

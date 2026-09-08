@@ -1,21 +1,21 @@
 ---
 name: brainstorm
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: economical
   effort_class: minimal
 
-description: Use the reviewer as a divergent-thinking partner to widen the option space on an open-ended problem — generate alternatives, surface unfamiliar angles, or pressure-test an idea against a different model's priors. Use when the user says "brainstorm with the reviewer," "let's ideate," "what are some options," "think this through with the reviewer," "thinking partner," "give me alternatives," or asks any "what could we do about X" type question with no single right answer. Also offer this proactively when the user is early in an open-ended task with no clear answer, when the active primary has already proposed one approach and a fresh divergent angle would help, when a list of options would serve better than a single recommendation, or when the user is visibly stuck in a single line of thinking and a different model's priors could break the rut.
+description: Use the reviewer as a divergent-thinking partner to widen the option space on an open-ended problem — generate alternatives, surface unfamiliar angles, or pressure-test an idea from another perspective. Use when the user says "brainstorm with the reviewer," "let's ideate," "what are some options," "think this through with the reviewer," "thinking partner," "give me alternatives," or asks any "what could we do about X" type question with no single right answer. Also offer this proactively when the user is early in an open-ended task with no clear answer, when the active primary has already proposed one approach and a fresh divergent angle would help, when a list of options would serve better than a single recommendation, or when the user is visibly stuck in a single line of thinking and another perspective could break the rut.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Brainstorm — divergent ideation with the cross-family partner
+# Brainstorm — divergent ideation with a selected partner
 
-Brainstorming is for **widening the option space**, not narrowing it. Convergence and decisions happen after. The point of using the reviewer as the brainstorming partner is that the reviewer sits in a different model family from the active primary (independent vs. resolved) — so its priors, training corpora emphases, and default failure modes are different. Those differences are exactly what generates ideas the active primary would not have surfaced on its own.
+Brainstorming widens the option space before convergence and decisions. A selected brainstorming partner may offer different priors or surface options the primary did not consider. No family difference is assumed or required: same-family or unknown-lineage contributions remain available as clearly labelled advisory ideation, not independent governance evidence.
 
 ## When to use
 
@@ -25,7 +25,7 @@ Use this skill when one or more of the following are true:
 - **The user poses an open-ended question** with no obviously-correct answer — "what could we do about X," "how should we frame Y," "what are some ways to Z."
 - **The problem is early-stage and exploratory** — naming, positioning, structuring, organizational design, hypothesis generation, methodology choice, candidate-feature-set generation.
 - **the active primary has already proposed one approach to an open-ended question** and the user is weighing whether to commit. Surface alternatives rather than defending the existing proposal.
-- **The user appears stuck in one line of thinking on an open-ended problem** and a different model family's priors would break the rut. Offer the brainstorm even if they did not ask — but only when the problem is genuinely open-ended; do not propose brainstorming during routine fact-finding, debugging, or step-by-step execution work.
+- **The user appears stuck in one line of thinking on an open-ended problem** and an outside perspective or differing priors could break the rut. Offer the brainstorm even if they did not ask — but only when the problem is genuinely open-ended; do not propose brainstorming during routine fact-finding, debugging, or step-by-step execution work.
 
 ## When to skip
 
@@ -47,7 +47,7 @@ If the user's question is too vague to call the tool productively, ask one targe
 ### 2. Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
 
 Divergent generation favors **throughput over depth** —
-economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy is the default. Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy only
+economical quality with minimal effort through an eligible provider is the default. Use frontier quality with maximum effort through an eligible provider only
 for highly nuanced creative work where reasoning depth on each candidate idea
 is more valuable than candidate breadth.
 
@@ -122,7 +122,7 @@ Iteration ends when the user converges on a direction or explicitly steps out of
 
 ## Examples across domains
 
-Brainstorming is broadly applicable. A representative sample of where cross-family ideation pays off:
+Brainstorming is broadly applicable. A representative sample of where divergent ideation pays off:
 
 | Domain | Problem framing | What the brainstorm typically surfaces |
 |---|---|---|

@@ -5,11 +5,11 @@ version: {{ skill_version }}
 description: Task {{ verifier_agent }} with actively breaking a system, API, validation layer, prompt pipeline, policy boundary, or logic flow that {{ primary_agent }} (or the user) has just built. The verifier generates concrete adversarial inputs — exact strings, payloads, scenarios — designed to bypass controls, crash the system, or trigger misbehavior. Use when the user says "red-team this," "try to break this," "attack this," "stress-test this," "adversarial test this," "find ways this could fail," "what could go wrong with this validation," "break my parser," "break my prompt," "find bypasses," or similar break-this-system framings. Also offer this proactively when {{ primary_agent }} has just shipped or is about to ship a security boundary, input validation, authentication flow, content-moderation policy, prompt pipeline, rate-limiting rule, payment validator, or any control surface where the cost of an undiscovered bypass is high.
 ---
 
-# Red team — adversarial input generation by the cross-family agent
+# Red team — adversarial input generation
 
 Red-teaming is **active and adversarial**: the verifier's job is not to *look for* defects in the artifact (`code-review` does that), but to **generate specific inputs that break it**. The output is concrete, ready-to-use attack vectors — exact payloads, exact malformed inputs, exact prompt-injection strings — not generic "the parser might be vulnerable to malformed input" observations.
 
-The cross-family setup is load-bearing for the same reason it is in `code-review`: {{ primary_agent }} (the author, in the {{ primary_family }} family) shares blind spots with itself — it will not generate the adversarial inputs that exploit its own assumptions. {{ verifier_agent }} ({{ verifier_family }} family) brings different priors on what looks "obviously safe," which is exactly the set of inputs likely to be unguarded.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -33,15 +33,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -70,10 +84,11 @@ A focused objective produces focused output. "Find security issues" produces a g
 
 ### 3. Call the verifier
 
-Submit one `review.repository` work unit through `{{ mcp_tool_ask }}`. Central
-policy chooses an eligible independent reviewer. The caller seals and verifies
-the exact repository head and supplies the bounded red-team prompt as opaque
-payload.
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit one `review.repository` work unit through
+`{{ mcp_tool_ask }}`. The caller seals and verifies the exact repository head,
+supplies the bounded red-team prompt as opaque payload, and verifies the
+observed reviewer lineage before treating it as independent governance evidence.
 
 Use this prompt template for adversarial content. Provider formatting is not an
 output contract; the caller reasons over the complete raw response:
@@ -136,7 +151,7 @@ The threat-model and success-criterion framing stay constant across domains; the
 - **Skipping the actually-test-each-input step.** Hallucinations are common; relaying unverified attack claims wastes the user's time and may mislead them about real exposure. Test in a local reproduction before reporting.
 - **Asking the verifier to also fix the vulnerabilities.** Generate attacks (this skill) and propose defenses (the user or {{ primary_agent }} acts on them) are separate steps. The verifier's job is to find attacks, not write the fixes — those are likely to be same-family-correlated patches.
 - **Using economical/minimal.** Adversarial creativity benefits from depth; use frontier/maximum so the review goes beyond obvious, commonly listed inputs.
-- **Skipping the verifier-independence check** when the artifact came from a {{ verifier_family }}-family agent. Same-family red-teams produce inputs the author would have anticipated.
+- **Claiming an independent red-team pass when observed reviewer and author or primary lineages match, or lineage is unknown.** Preserve useful advisory findings without clearing required independent review.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
   second request or fabricating an artifact.

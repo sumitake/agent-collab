@@ -1,7 +1,7 @@
 ---
 name: route
 version: {{ skill_version }}
-description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs primary-family exclusion or a truthful typed availability decision.
+description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs a provider-neutral plan or a truthful typed availability decision.
 ---
 
 # Route a semantic collaboration request
@@ -32,11 +32,17 @@ identity. Document-context actions carry bounded document content in the opaque
 payload. For code generation, the caller owns the disposable copy, captures the
 binary-safe diff after the attempt, and verifies cleanup.
 
-An explicit work-unit `explicit_target` is honored or fails typed; it is never silently
-replaced. Automatic selection uses the runtime's compiled routing policy. One selected
-provider attempt is not replayed after a model call. The skill contains no
-provider command, model name, version gate, or transport membership table. A
-route-local diagnostic never triggers a hidden provider fallback. Preserve
-every nonempty raw or recovered content record and interpret it with ordinary
-model reasoning; structured fields are optional diagnostics and do not gate
-content availability.
+Honor an operator-named provider with the work-unit `explicit_target`; it is
+honored or fails typed and is never silently replaced. For an authorized
+independent review or governance task without an operator-named provider, also
+use `explicit_target` to bind the caller-verified distinct reviewer selected by
+the caller or designated by the workflow. Carry the same target into planning
+and live dispatch; untargeted planning does not bind a later live request.
+Otherwise use normal economic routing. The caller may use provider-free planning
+to inspect known family evidence before dispatch. A route, provider name, status, receipt,
+or self-assertion alone does not prove lineage. One selected provider attempt is
+not replayed after a model call. The skill contains no provider command, model
+name, version gate, or transport membership table. A route-local diagnostic
+never triggers a hidden provider fallback. Preserve every nonempty raw or
+recovered content record and interpret it with ordinary model reasoning;
+structured fields are optional diagnostics and do not gate content availability.

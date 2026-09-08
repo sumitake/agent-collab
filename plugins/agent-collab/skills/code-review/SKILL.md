@@ -1,23 +1,23 @@
 ---
 name: code-review
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
 
-description: Send a code diff, pull request, file, or directory to the reviewer for an independent cross-family code review focused on security vulnerabilities, edge cases, concurrency hazards, performance bottlenecks, and architectural smells. Use when the user says "code review with the reviewer," "have the reviewer review this code," "have the reviewer review this PR," "have the reviewer review this diff," "check this for security flaws," "security audit," "concurrency audit," or "performance review." Also offer this proactively when the active primary is about to commit a change that touches authentication, authorization, cryptography, financial calculations, payment flows, concurrency primitives, schema migrations, or any module where a class of bug — not just an instance — could have user-visible consequences.
+description: Send a code diff, pull request, file, or directory to the reviewer for code review with caller-assessed independence focused on security vulnerabilities, edge cases, concurrency hazards, performance bottlenecks, and architectural smells. Use when the user says "code review with the reviewer," "have the reviewer review this code," "have the reviewer review this PR," "have the reviewer review this diff," "check this for security flaws," "security audit," "concurrency audit," or "performance review." Also offer this proactively when the active primary is about to commit a change that touches authentication, authorization, cryptography, financial calculations, payment flows, concurrency primitives, schema migrations, or any module where a class of bug — not just an instance — could have user-visible consequences.
 ---
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Code review — independent cross-family deep-read on a code artifact
+# Code review — critique of a code artifact
 
-A code review is a structured, lens-driven critique of a code artifact (diff, pull request, file, directory) by a model from the other family. The point is to surface defects the active primary would not have caught — security flaws, race conditions, missing rollback paths, edge cases the author normalized — not to confirm the code "looks fine." A review that returns no findings on a non-trivial change is usually a failed review; either the prompt was too soft or the code is genuinely trivial.
+A code review is a structured, lens-driven critique of a code artifact (diff, pull request, file, directory) by a selected reviewer whose independence the caller assesses. The point is to surface defects the active primary would not have caught — security flaws, race conditions, missing rollback paths, edge cases the author normalized — not to confirm the code "looks fine."
 
-The cross-family setup is load-bearing. the active primary (resolved family) authored the code (the common case) and is therefore not the right reviewer for its own work. the reviewer (independent family) brings different training corpora, different default failure-mode emphases, and a clean read on the artifact unconstrained by the implementation choices that led to the current state.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -42,15 +42,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -113,16 +127,39 @@ review instructions.
 
 ### 3. Call the verifier
 
-Submit one `review.repository` work unit through `python3 "<plugin-root>/coordinator.py"`. Central
-policy chooses an eligible independent reviewer. The caller seals and verifies
-the exact repository head, supplies the bounded review prompt as opaque payload,
-and rechecks that head before using the response.
+First determine whether the task or applicable workflow requires independent
+approval, or only an ordinary advisory code review. Prefer an eligible reviewer
+whose known lineage differs from the primary and artifact author when available.
+Do not make Grok, Codex, or any other absent provider mandatory, and do not keep
+attempting a provider already observed to be unavailable.
+
+For an ordinary advisory code review, if no eligible distinct-family reviewer
+can be established, use an available descriptor-admitted reviewer such as Gemini.
+When Gemini is the primary and only Gemini is available, code review may proceed
+with the result labelled **same-family advisory**. If the reviewer's lineage is
+unknown, label it **lineage-unverified advisory**. An OpenCode or ZCode transport
+or subscription name alone does not establish the underlying model family.
+
+If independent approval is required by the task or workflow, same-family or
+lineage-unverified output cannot satisfy that requirement. Keep the independent
+approval requirement explicitly unmet and explain the missing eligible reviewer;
+advisory findings may still inform the work. Do not silently downgrade the gate.
+
+Submit one `review.repository` work unit through `python3 "<plugin-root>/coordinator.py"`.
+Honor an operator-named provider. For independent approval, bind the verified
+reviewer with `explicit_target` as described above. Ordinary advisory review uses
+normal economic routing unless the operator names a provider. The caller seals
+and verifies the exact repository head, supplies the bounded review prompt as
+opaque payload, rechecks the head before using the response, and records the
+observed reviewer lineage and the result's advisory or independent status.
+Preserve the single-attempt, no-replay contract; selecting an advisory mode does
+not authorize replay of a consumed provider attempt.
 
 Use this prompt template for review content. Provider formatting is not an
 output contract; the caller reasons over the complete raw response:
 
 ```
-Review the attached code as a senior security and performance engineer for the resolved-family-authored change below. Focus areas in priority order:
+Review the attached code as a senior security and performance engineer for the exact source change below. Focus areas in priority order:
 
 1. Security vulnerabilities (injection, XSS, SSRF, deserialization, path traversal, broken access control, insecure crypto, weak randomness, secrets exposure)
 2. Unhandled edge cases or missing error handling (null paths, empty collections, integer overflow, timezone / locale / unicode hazards, swallowed exceptions, partial-failure states)
@@ -192,10 +229,10 @@ The review lens shifts with the domain (clinical software emphasizes dosing safe
 - **Using economical/minimal.** Security and performance reasoning benefit from depth; use frontier/maximum to avoid a checklist-level read that misses subtle bugs.
 - **Relaying the raw artifact to the user.** Its findings are input to the synthesis step, not the user-facing deliverable. Group, prioritize, quote, recommend.
 - **Reviewing the wrong artifact.** A PR URL is not the diff; materialize `git diff <base>..<head>` before sending, using pathspec exclusions to filter out routine files (like lockfiles or generated assets; see step 1). A file is not the change; isolate the changed hunks when the change is small.
-- **Skipping the verifier-independence check** when the code under review was authored by a independent-family agent. That review is correlated with its author; the audit log will record a review that did not, in substance, occur.
-- **Replaying a malformed request.** Treat malformed output as the terminal typed
-  failure returned by the managed runtime. Surface it instead of issuing a
-  second request or fabricating an artifact around prose.
+- **Confusing useful review with independent approval.** Same-family or lineage-unverified advisory findings may be useful, but never label them independent or use them to clear a required independent approval gate.
+- **Replaying to repair formatting or lineage evidence.** Preserve and interpret
+  the complete raw response separately from execution diagnostics. Do not replay
+  a consumed review or fabricate approval.
 - **Reviewing for style.** Linters do that. This skill is for defect-class surfacing.
 - **Asking the verifier to "fix" the code rather than review it.** This skill is review-only; remediation is a separate step (the user decides which findings to act on; another tool — or the active primary directly — implements the fix).
 

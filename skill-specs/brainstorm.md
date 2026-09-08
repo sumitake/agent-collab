@@ -2,12 +2,12 @@
 name: brainstorm
 version: {{ skill_version }}
 {{ brainstorm_defaults_block }}
-description: Use {{ verifier_agent }} as a divergent-thinking partner to widen the option space on an open-ended problem — generate alternatives, surface unfamiliar angles, or pressure-test an idea against a different model's priors. Use when the user says "brainstorm with {{ verifier_agent }}," "let's ideate," "what are some options," "think this through with {{ verifier_agent }}," "thinking partner," "give me alternatives," or asks any "what could we do about X" type question with no single right answer. Also offer this proactively when the user is early in an open-ended task with no clear answer, when {{ primary_agent }} has already proposed one approach and a fresh divergent angle would help, when a list of options would serve better than a single recommendation, or when the user is visibly stuck in a single line of thinking and a different model's priors could break the rut.
+description: Use {{ verifier_agent }} as a divergent-thinking partner to widen the option space on an open-ended problem — generate alternatives, surface unfamiliar angles, or pressure-test an idea from another perspective. Use when the user says "brainstorm with {{ verifier_agent }}," "let's ideate," "what are some options," "think this through with {{ verifier_agent }}," "thinking partner," "give me alternatives," or asks any "what could we do about X" type question with no single right answer. Also offer this proactively when the user is early in an open-ended task with no clear answer, when {{ primary_agent }} has already proposed one approach and a fresh divergent angle would help, when a list of options would serve better than a single recommendation, or when the user is visibly stuck in a single line of thinking and another perspective could break the rut.
 ---
 
-# Brainstorm — divergent ideation with the cross-family partner
+# Brainstorm — divergent ideation with a selected partner
 
-Brainstorming is for **widening the option space**, not narrowing it. Convergence and decisions happen after. The point of using {{ verifier_agent }} as the brainstorming partner is that {{ verifier_agent }} sits in a different model family from {{ primary_agent }} ({{ verifier_family }} vs. {{ primary_family }}) — so its priors, training corpora emphases, and default failure modes are different. Those differences are exactly what generates ideas {{ primary_agent }} would not have surfaced on its own.
+Brainstorming widens the option space before convergence and decisions. A selected brainstorming partner may offer different priors or surface options the primary did not consider. No family difference is assumed or required: same-family or unknown-lineage contributions remain available as clearly labelled advisory ideation, not independent governance evidence.
 
 ## When to use
 
@@ -17,7 +17,7 @@ Use this skill when one or more of the following are true:
 - **The user poses an open-ended question** with no obviously-correct answer — "what could we do about X," "how should we frame Y," "what are some ways to Z."
 - **The problem is early-stage and exploratory** — naming, positioning, structuring, organizational design, hypothesis generation, methodology choice, candidate-feature-set generation.
 - **{{ primary_agent }} has already proposed one approach to an open-ended question** and the user is weighing whether to commit. Surface alternatives rather than defending the existing proposal.
-- **The user appears stuck in one line of thinking on an open-ended problem** and a different model family's priors would break the rut. Offer the brainstorm even if they did not ask — but only when the problem is genuinely open-ended; do not propose brainstorming during routine fact-finding, debugging, or step-by-step execution work.
+- **The user appears stuck in one line of thinking on an open-ended problem** and an outside perspective or differing priors could break the rut. Offer the brainstorm even if they did not ask — but only when the problem is genuinely open-ended; do not propose brainstorming during routine fact-finding, debugging, or step-by-step execution work.
 
 ## When to skip
 
@@ -114,7 +114,7 @@ Iteration ends when the user converges on a direction or explicitly steps out of
 
 ## Examples across domains
 
-Brainstorming is broadly applicable. A representative sample of where cross-family ideation pays off:
+Brainstorming is broadly applicable. A representative sample of where divergent ideation pays off:
 
 | Domain | Problem framing | What the brainstorm typically surfaces |
 |---|---|---|

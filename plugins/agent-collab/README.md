@@ -6,14 +6,14 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.5**
+Current repository source: **7.0.6**
 
 Current published release: **7.0.5**
 ([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)); it
 carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
-Version 7.0.5 pairs provider runtime `5.0.7` with manifest schema 4,
+Version 7.0.6 retains provider runtime `5.0.7` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. It replaces the semantic
 coordinator with a bounded routing-only shim and removes provider-authored
@@ -21,7 +21,13 @@ schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
 content-availability gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
 
-The 7.0.5 release restores migration-doctor reports for this descriptor
+The 7.0.6 content update corrects reviewer-independence instructions: the caller
+establishes the primary and artifact-author families, checks an eligible
+reviewer before dispatch, and verifies observed lineage before accepting
+independent evidence. Routing does not perform that check. Publication and host
+refresh for 7.0.6 are pending.
+
+The 7.0.5 release restored migration-doctor reports for this descriptor
 and retains bounded opaque native output when final-answer extraction finds no
 text, including bytes observed during completion and cleanup. Native execution
 status remains separate from retained content, which the caller interprets.
@@ -122,12 +128,32 @@ sys.stderr.buffer.write(completed.stderr)
 raise SystemExit(completed.returncode)
 ```
 
+**Host sandbox composition.** A native provider's command sandbox may not
+initialize beneath the caller's macOS sandbox, even when file reads work. Once
+that host constraint is established, use the host's approved per-command
+execution for the normal coordinator so the provider can apply its own sandbox.
+Preserve native sandboxing, permission decisions, and ordinary capabilities.
+This is a caller invocation requirement, not a provider failure or permission
+bypass. If host approval is unavailable, stop the dependent work. Do not change
+global permissions, disable the native sandbox, or automatically retry a
+consumed attempt under a different execution mode. Verify native shell
+capability with a fresh authorized task; a successful file read alone is
+insufficient.
+
 `subprocess.run(input=...)` closes stdin after the JSON and uses pipes rather
 than a PTY. It preserves the full response without shell interpolation or an
 outer timeout. Adapt the logical action and workload to the task; omit native
 cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
-Set `explicit_target` only when the operator names a provider.
+Honor an operator-named provider with `explicit_target`. For an authorized
+independent review or governance task without an operator-named provider, use
+that same field to bind the caller-verified distinct reviewer selected by the
+caller or designated by the workflow. Carry the same target into planning and
+live dispatch; untargeted planning does not bind a later live request. Target
+unavailability is reported without silent substitution or replay. Ordinary
+advisory calls otherwise use normal economic routing. Target binding does not
+prove independence: verify the returned native lineage before accepting review
+or governance evidence.
 
 Required common fields
 are `wire_contract_sha256`, `request_id`, `quality_profile`, `effort_class`,

@@ -1,6 +1,6 @@
 ---
 name: debate
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -10,14 +10,14 @@ description: Stage a structured multi-round adversarial debate between the activ
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
 # Debate — structured adversarial advocacy with synthesis
 
-A debate is not a second opinion. A second opinion asks one independent reader to find blind spots. A debate asks **both sides to advocate maximally** for opposing positions, then asks the agent — stepping out of advocacy — to render a verdict. The point is to **stress-test conviction**, not to manufacture consensus. If the debate ends with "both sides have good points," it failed.
+A debate is not a second opinion. A second opinion asks a selected reviewer to find blind spots. A debate asks **both sides to advocate maximally** for opposing positions, then asks the agent — stepping out of advocacy — to render a verdict. The point is to **stress-test conviction**, not to manufacture consensus. If the debate ends with "both sides have good points," it failed.
 
-The cross-family setup matters: the active primary (resolved family) and the reviewer (independent family) bring different priors. Each side defending its assigned position with the full weight of its model family's reasoning surfaces objections and framings that a same-family debate would smooth over.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
@@ -42,15 +42,29 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -68,13 +82,13 @@ If the user's framing is fuzzy, distill it into a sharp proposition and confirm 
 
 ### 2. Assign sides
 
-Default assignment: **the active primary argues PRO; the reviewer argues CON.** This puts the reviewer in the contrarian seat, which is usually the more valuable framing — the user has typically been hearing the active primary's view in the surrounding conversation, so the cross-family contrarian read is what they have not yet seen.
+Default assignment: **the active primary argues PRO; the reviewer argues CON.** This puts the reviewer in the contrarian seat, which is usually the more valuable framing — the user has typically been hearing the active primary's view in the surrounding conversation, so a contrarian argument can add a useful perspective. Assigning sides does not establish reviewer lineage. Independent evidence requires the shared reviewer-selection contract; same-family or unverified contributions remain advisory.
 
 Override the default when:
 
 - The user has already heard the active primary lean one way in the surrounding context. Assign the active primary the *opposite* of its prior lean — force it to defend the position it has been arguing against.
 - The user explicitly asks for a specific side assignment.
-- The verifier-independence rule (above) requires a particular assignment to keep the debate cross-family.
+- The argument benefits from a different role assignment. Role assignment never substitutes for selecting and verifying an independent reviewer.
 
 State the assignment clearly to the user before starting: "the active primary will argue [X]. the reviewer will argue [Y]. Three rounds, then synthesis."
 
@@ -82,10 +96,12 @@ State the assignment clearly to the user before starting: "the active primary wi
 
 **the active primary's opening:** Write the strongest case for the active primary's assigned side. Not a hedge, not "on balance" — the *strongest* case. Three to five specific points with evidence or reasoning. Treat it like a debate brief, not an analysis.
 
-**the reviewer's opening:** Submit the sealed debate role through
-`python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Central policy selects an
-eligible independent advocate. Use this prompt template for debate content;
-the returned content remains opaque to the runtime:
+**the reviewer's opening:** Before dispatch, select a reviewer with
+known lineage distinct from the observed primary and artifact author. Submit the
+sealed debate role through `python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`.
+Verify the observed reviewer lineage before treating its response as independent
+governance evidence. Use this prompt template for debate content; the returned
+content remains opaque to the runtime:
 
 ```
 You are in a structured debate. Proposition: "[proposition]"
@@ -230,6 +246,6 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
 - **Letting the reviewer hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," record that limitation and weigh it in the synthesis rather than steering a replacement round automatically.
 - **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
-- **Skipping the verifier-independence check** when the user's pre-existing position came from a independent-family agent. Same-family debate is correlated; structurally one-sided. Apply the independence rule before assigning sides.
+- **Treating opposing positions as independent model evidence.** Verify the observed reviewer, primary, and position-author lineages under the shared contract. Same-family or unknown-lineage arguments remain advisory regardless of side assignment.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.
 - **Debating an empirically-decidable question.** "Did our churn rate go up" is a data question. Run the numbers; do not argue the answer.

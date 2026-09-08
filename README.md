@@ -1,11 +1,11 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.5 pairs a routing-only public client with the
+compatible hosts. Version 7.0.6 pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.5).
+This public repository's current source is **agent-collab** (v7.0.6).
 
 Current published release: **7.0.5** ([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)).
 It carries signed provider runtime `5.0.7`. Host installation, readiness, and
@@ -18,16 +18,19 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.5
+## What's new - v7.0.6
 
-The release pairs runtime `5.0.7` with the migration-doctor reporting
-fix. Native output remains available when final-answer extraction finds no
-text, including output observed during normal completion and cleanup. The
-caller interprets that content separately from native execution status.
-Normal native invocation and the existing wire schema 12 remain in place.
-The signed release and its downloaded assets are verified. See the dated
-status snapshot for installation, native qualification, and the explicit
-Claude subscription deferral.
+Review skills now make reviewer independence a caller responsibility. Before
+dispatch, the caller establishes the primary and artifact-author families and
+checks the proposed reviewer. Afterward, it verifies the observed reviewer
+family and source before accepting independent evidence. Unknown lineage stays
+unknown; a routing result alone does not establish independence.
+Ordinary code review can still use available Gemini when no eligible independent
+reviewer exists, with an explicit advisory label and no independent-approval claim.
+
+This content update retains the signed runtime `5.0.7` and wire schema 12
+unchanged. Publication and host refresh for 7.0.6 are pending; the dated status
+snapshot remains the verified 7.0.5 release record.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
