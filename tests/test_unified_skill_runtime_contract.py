@@ -236,6 +236,15 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertIn("role or action alone does not prove independence", teamwork)
         self.assertIn("independent approval requirement unmet", teamwork)
 
+    def test_delegate_examples_require_the_context_source_contract(self) -> None:
+        for path in (ROOT / "skill-specs" / "delegate.md", PLUGIN / "skills" / "delegate" / "SKILL.md"):
+            text = " ".join(path.read_text().split())
+            with self.subTest(path=path):
+                for required in ("`label` and `content`", "`repo_root` and exact `expected_repo_head`", "Do not submit prompt-only topics", "does not discover or browse for new sources", "Every example requires supplied document contents", "Multiple workers do not imply multiple model families"):
+                    self.assertIn(required, text)
+                for stale in ("Research the 3 [items]", "Two families surface", "Different families", "one family's category boundaries"):
+                    self.assertNotIn(stale, text)
+
     def test_route_uses_protocol_five_explicit_target_field(self) -> None:
         text = (
             PLUGIN / "skills" / "route" / "SKILL.md"

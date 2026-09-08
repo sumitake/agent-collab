@@ -2,14 +2,17 @@
 name: delegate
 version: {{ skill_version }}
 {{ delegate_defaults_block }}
-description: Fan out independent research, summary, extraction, or fact-finding subtasks to an eligible delegate — {{ verifier_agent }} by default — for parallel execution alongside {{ primary_agent }} where parallel coverage adds value. Use when the user says "delegate to {{ verifier_agent }}," "split this with {{ verifier_agent }}," "fan this out," "have {{ verifier_agent }} take half of these," "research these in parallel with {{ verifier_agent }}," "divide and conquer with {{ verifier_agent }}," or when {{ primary_agent }} would otherwise process many independent items serially and additional source coverage or lower serial latency would help.
+description: Fan out summary, extraction, or analysis subtasks over supplied bounded documents or a sealed repository to an eligible delegate — {{ verifier_agent }} by default — for parallel execution alongside {{ primary_agent }} where parallel coverage adds value. Use when the user says "delegate to {{ verifier_agent }}," "split this with {{ verifier_agent }}," "fan this out," "have {{ verifier_agent }} take half of these," "research these in parallel with {{ verifier_agent }}," "divide and conquer with {{ verifier_agent }}," or when {{ primary_agent }} would otherwise process many independent items serially and additional source coverage or lower serial latency would help.
 ---
 
 # Delegate — fan out independent subtasks for parallel advisory work
 
 When the work applies the same operation across independent items, splitting it
-between the primary and an eligible worker can reduce serial work and add source
-coverage. Delegation does not establish a different model family or independent
+between the primary and an eligible worker can reduce serial work and improve
+coverage of the supplied sources. This skill does not discover or browse for new
+sources. A bare topic or list of names is not a valid context request; first
+obtain a bounded corpus through an already authorized source-reading mechanism,
+or request the missing source material before dispatch. Delegation does not establish a different model family or independent
 governance evidence. Compare the coverage and latency benefit against the cost
 of doing the same work to the same standard with the host's native parallel tool.
 Use the route when that benefit justifies the coordination overhead.
@@ -19,9 +22,9 @@ Use the route when that benefit justifies the coordination overhead.
 Use this skill when:
 
 - **The user explicitly asks for it** — "delegate to {{ verifier_agent }}," "split this with {{ verifier_agent }}," "fan this out," "have {{ verifier_agent }} take half of these," "research these in parallel with {{ verifier_agent }}," "divide and conquer with {{ verifier_agent }}."
-- **A list of independent research items** needs coverage — competitors, companies, candidates, regulatory citations, academic papers — where additional sources or framings are useful.
+- **A supplied set of source documents** needs per-item extraction or analysis — competitor reports, company filings, candidate profiles, regulatory excerpts, or academic papers. Topic names and links alone are not document contents.
 - **A set of independent documents** needs parallel summarization where two readers may surface different signal.
-- **Any map-reduce task** where the subtasks don't depend on each other AND additional coverage is useful.
+- **A bounded repository inventory or tracing task** can be split into independent questions about the same sealed repository.
 
 ## When to skip
 
@@ -38,15 +41,23 @@ Decide how to divide the items. A reasonable default: roughly even split, with {
 
 Avoid pathological splits: giving {{ verifier_agent }} a single item alone wastes the parallelism; giving {{ verifier_agent }} all items should be justified by the workload and integration plan.
 
-### 2. Frame {{ verifier_agent }}'s portion with strict formatting
+### 2. Bind the sources and request a useful output format
 
-The killer failure mode of delegation is **inconsistent output formats** between {{ primary_agent }}'s portion and {{ verifier_agent }}'s portion. The merge step then has to normalize them, which loses signal and adds latency. Avoid this by giving {{ verifier_agent }} a strict format that exactly matches what {{ primary_agent }} will produce on its own portion.
+Choose exactly one admitted source mode for each work unit, following `context`:
 
-Pick a structured output format that both halves will share:
+- Documents: bounded UTF-8 `documents` objects with `label` and `content`, using
+  `context.documents.extract` or `context.documents.reason`.
+- Repository: canonical `repo_root` and exact `expected_repo_head`, using
+  `context.repository.extract` or `context.repository.reason`.
 
-- **Markdown table** for tabular comparisons (competitor research, candidate calibration, vendor evaluation)
-- **Numbered records with consistent fields** for downstream programmatic consumption
-- **Numbered list with consistent fields** for human-readable summaries
+Do not submit prompt-only topics, hybrid source modes, document paths/globs/file
+handles, unextracted binaries, or requests to escape the supplied source boundary.
+If a source is missing, report the gap before dispatch; do not imply that the
+worker will browse for it. Each portion must have the source material needed to
+answer its assigned questions.
+
+Request a shared table or numbered-record format to ease synthesis. This is a
+presentation preference; useful native prose remains available for interpretation.
 
 ### 3. Dispatch {{ verifier_agent }}'s portion
 
@@ -68,14 +79,16 @@ provider name, status, receipt, and target selection do not establish a differen
 family. Label same-family or unknown-lineage contributions as advisory, and do
 not claim dual-family coverage without positive observed-lineage evidence.
 
-Example prompt:
+Example document work unit:
+
+Supply three source reports as bounded `documents` objects, then use this
+payload with `context.documents.extract`:
 
 ```
-Research the 3 [items] below. Return a Markdown table with columns: [Column A | Column B | Column C | Column D].
-
-ITEMS: [Item 1, Item 2, Item 3]
-
-For each row, [domain-specific instruction — e.g., "use publicly verifiable sources only" or "cite the year of the data point in parentheses"].
+Extract the stated product, audience, price and reporting date from each supplied
+report. Return a Markdown table with those columns plus the document label and
+supporting passage. Mark missing information as absent from the supplied corpus.
+Use only the supplied contents; do not infer current facts or find new sources.
 ```
 
 If the returned output does not match the requested format, preserve and interpret
@@ -84,39 +97,41 @@ content gate. Do not replay the provider request to repair formatting.
 
 ### 4. Execute {{ primary_agent }}'s portion in parallel
 
-While the verifier works, process {{ primary_agent }}'s assigned items using the same output format. The parallel execution is the whole point of the skill; serializing {{ primary_agent }}'s work after the verifier returns defeats the latency reduction.
+While the worker works, process {{ primary_agent }}'s assigned items using the same output format. The parallel execution is the whole point of the skill; serializing {{ primary_agent }}'s work after the worker returns defeats the latency reduction.
 
 ### 5. Synthesize and ANNOTATE attribution
 
-Merge the two halves into a unified response. **Mark which items came from {{ verifier_agent }}** — either inline (`*(via {{ verifier_agent }})*` beside each item) or in a footer (`Items 3–5 researched by {{ verifier_agent }}; items 1–2 by {{ primary_agent }}`). The user has different calibration on each model's outputs; they need to know which is which.
+Merge the two halves into a unified response. **Mark which items came from {{ verifier_agent }}** — either inline (`*(via {{ verifier_agent }})*` beside each item) or in a footer (`Items 3–5 analyzed by {{ verifier_agent }}; items 1–2 by {{ primary_agent }}`). The user has different calibration on each model's outputs; they need to know which is which.
 
 The annotation also matters for the user's audit trail. If a downstream fact turns out to be wrong, the user needs to know which model produced it so they know which side's reliability they're recalibrating.
 
 ## Examples across domains
 
-| Domain | List to fan out | Per-item output | Why dual coverage helps |
-|---|---|---|---|
-| Competitive research | 6 competitors to profile | Markdown row per competitor (name, value prop, audience, pricing, last funding round) | Two families surface different sources; one may catch a recent funding round the other missed |
-| Vendor evaluation | 8 vendors against a 5-criterion rubric | Markdown table (vendor × criterion) | Different families weight criteria differently; surfacing both reads catches single-family bias |
-| Hiring / sourcing | 12 candidate profiles to screen against a JD | One paragraph per candidate (fit / red flags / questions to ask in screen) | Different families flag different red flags; coverage on a long list reduces miss rate |
-| Multi-document summarization | 10 customer-interview transcripts | One structured summary per interview (themes / quotes / open questions) | Two readers surface different framings; merge produces broader coverage of insights |
-| Regulatory research | 5 jurisdictions' rules on a specific topic | Markdown table (jurisdiction × rule × source citation) | Per-jurisdiction sources differ in coverage; dual reads catch more accurately-cited material |
-| Academic literature scan | 8 papers on a methodology | One summary per paper (method / findings / limitations / relevance) | Different families weight what's "relevant" differently; coverage is broader |
-| Clinical trial landscape | 6 active trials in an indication | One row per trial (phase, endpoint, eligibility, primary investigator) | Additional source coverage can find different trial registries |
-| Patent landscape | 10 patents to summarize | One row per patent (claim summary / freedom-to-operate impact / status) | Patent databases have different coverage; dual reads improve completeness |
-| Financial peer benchmarking | 7 peer companies' last-quarter metrics | Table (company × revenue × growth × margin × cap structure) | Source disagreement is itself a signal; dual reads surface the disagreements |
-| Customer ticket categorization | 50 recent tickets to label | Per-ticket label (category, severity, suggested-routing) | High-volume bulk categorization where one family's category boundaries differ from the other's; the disagreements are the interesting cases |
+Every example requires supplied document contents or the repository source mode
+above. These are corpus-analysis tasks, not open-ended source discovery.
 
-The pattern is constant: list of independent items, structured output per item, split between workers, annotate attribution in the merge.
+| Supplied corpus | Per-item output | Benefit of splitting the work |
+|---|---|---|
+| Six competitor reports with dates | Product, audience and price with source passages | Cover every supplied report and expose conflicting claims |
+| Eight vendor proposals and a rubric | Criterion-by-criterion evidence | Reduce serial reading while preserving the same rubric |
+| Ten customer-interview transcripts | Themes, quotes and unanswered questions | Cover the full interview set with traceable attribution |
+| Five jurisdictions' supplied regulatory excerpts | Stated rule, effective date and citation | Preserve jurisdiction-specific sources and flag missing material |
+| Eight supplied academic papers | Method, findings and limitations | Extract comparable fields from every paper |
+| Seven supplied company filings | Reported metrics, period and currency | Keep period differences and absent data explicit |
+| Fifty supplied customer tickets | Category and supporting text | Split high-volume categorization and examine disagreements |
+| One sealed repository at an exact commit | Per-module inventory or control-flow traces | Divide source-reading questions against a common source identity |
+
+Split independent items, keep their source bindings, and annotate attribution in
+the synthesis. Multiple workers do not imply multiple model families.
 
 ## Anti-patterns
 
 - **Hiding the split.** Always annotate which items came from {{ verifier_agent }}. The user's calibration on each model is different; conflating the sources misleads them.
 - **Delegating sequential work** where one subtask depends on another's output. The skill is for independent fan-out only.
-- **Failing to give {{ verifier_agent }} strict formatting instructions.** Mismatched format requires manual normalization in the merge step, which adds latency and loses signal.
+- **Omitting source contents or treating a requested format as a gate.** Bind the corpus before dispatch and interpret all returned content, including prose that differs from the preferred format.
 - **Using this when a single {{ primary_agent }} parallel-subagent call would do the same job** with no additional coverage or latency benefit. The orchestration overhead is unjustified.
 - **Pathological splits** (give {{ verifier_agent }} a single item or all the items). The first wastes parallelism; the second needs a workload and integration justification. Aim for roughly even.
 - **Using frontier/maximum on bulk extraction or lookups.** Economical/minimal is the right default — throughput matters more than depth on each item. Reserve frontier/maximum for items genuinely requiring analysis.
-- **Asking {{ verifier_agent }} for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
+- **Asking {{ verifier_agent }} for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the worker produces per-item structured output only.
 - **Silently replaying for formatting.** Preserve and interpret the raw output;
   formatting alone is not a provider failure or authorization for another attempt.
