@@ -20,7 +20,7 @@ organizes that inventory by user outcome.
 | Planning, architecture, and estimation | `architect`, `brainstorm`, `compose-skills`, `intent-check`, `project-estimation`, `second-opinion` | Clarify a design, widen options, select workflows, obtain an independent read, or forecast agent-led delivery. |
 | Governance and assurance | `autonomy-readiness`, `code-review`, `governance-review`, `logic-check`, `qa-verify`, `red-team`, `untrusted-audit` | Test correctness, independence, security, provenance, and completion evidence. |
 | Deliberation and stakeholder lenses | `debate`, `simulate-user` | Expose conflicting arguments or test a proposal against a persona. |
-| Delegation and implementation | `delegate`, `dev-delegate`, `worker` | Return bounded research or output for the primary to integrate. |
+| Delegation and implementation | `delegate`, `dev-delegate`, `worker` | Analyze supplied sources or return a development artifact for the primary to integrate. |
 | Context and knowledge work | `context`, `knowledge-compile`, `project-knowledge` | Extract or synthesize bounded documents/repositories, or maintain an explicit project knowledge layer, with provenance. |
 | Reproducible workflows | `chain`, `chain-configurator`, `orchestrate` | Define and execute repeatable multi-step coordination. |
 | Integration and conflict handling | `merge-resolve` | Analyze and resolve a bounded merge conflict while preserving intent. |
@@ -86,34 +86,43 @@ the primary for integration.
 
 ## Common workflows
 
-### Independent review
+### Code review and independent approval
 
-1. Identify the exact artifact and its author lineage.
-2. Invoke `second-opinion`, `code-review`, `governance-review`, `red-team`, or
-   `qa-verify` according to the risk.
-3. The skill/repository workflow requires a reviewer outside the primary and
-   artifact-author families. The primary verifies that independence; the
-   current routing request does not dynamically enforce those lineages.
-4. Preserve the raw finding and typed status.
-5. The primary adjudicates, changes the artifact if needed, and re-verifies the
-   exact head.
+1. Identify the artifact, primary, authors and whether the task requires
+   independent approval.
+2. Use the appropriate review skill. For required independence, verify a
+   reviewer outside the primary and author families and bind that selection to
+   the live call. Verify observed reviewer lineage and exact source afterward.
+3. For ordinary code review, an available Gemini reviewer can still help when
+   no distinct-family reviewer is available. Label same-family or unknown
+   lineage as advisory; leave any independent approval requirement unmet.
+4. Preserve and adjudicate the raw findings. Do not infer independence from
+   routing, role names or a subscription, repeatedly attempt an unavailable
+   provider, or replay a consumed request to repair formatting or evidence.
+
+This is caller-owned behavior in the [released code-review
+skill](../../skill-specs/code-review.md). The routing request has no dynamic
+primary/artifact-author lineage exclusion fields.
 
 ### Bounded delegation
 
-1. The primary keeps objective interpretation and integration ownership.
-2. A worker receives a bounded scope, authority, evidence contract, and stop
-   condition.
-3. Read-heavy work can use a cheaper capable tier; judgment and landing stay
-   with the primary.
-4. The caller supplies a disposable repository or copy, captures any patch,
-   and verifies it before application; the runtime does not apply output.
-5. The primary reviews and tests all delegated output before it becomes source.
+The primary keeps objective interpretation and integration ownership. Ordinary
+`delegate` work analyzes supplied bounded documents or an exact sealed
+repository through an admitted context action. A list of names, links or topics
+alone is not a document corpus, and this route does not promise source discovery.
+Each worker receives the relevant sources, scope and stop condition. Results
+remain advisory; multiple workers do not imply multiple model families.
+
+Development delegation uses the separate admitted code-generation actions.
+The caller supplies a disposable repository or copy, captures any returned
+patch, and reviews and tests it before application. A worker does not gain
+permission to apply output or make landing decisions through successful routing.
 
 ### Architecture and planning
 
-Use `brainstorm` to widen the option space, `architect` for an independent
+Use `brainstorm` to widen the option space, `architect` for an additional
 read-only architecture consultation, `architecture-review` for a primary-led
-codebase sweep, `intent-check` to validate task interpretation, and
+codebase sweep, `intent-check` for an advisory task-interpretation comparison, and
 `decision-map` when the effort is too large for one session.
 
 `project-estimation` adds a deterministic delivery forecast once a formal
@@ -124,7 +133,7 @@ workflows explicitly compose the checkpoint before final presentation. A host
 without contextual skill selection uses explicit invocation and reports that
 the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
-semantics, and the published v7.0.5 maintenance evidence.
+semantics, and the published v7.0.6 maintenance evidence.
 
 The packaged prior is currently an explicit bootstrap: enhancement duration is
 descriptive, bootstrap confidence cannot be high, and unsupported greenfield,
@@ -145,7 +154,7 @@ authority.
 | --- | --- | --- |
 | Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official native CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
-| Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. It is not a coordinator `target_agent` unless the current signed descriptor explicitly admits it. |
+| Antigravity | Compatible plugin import, logical Gemini managed routes, and separate host-owned async coordination; no separate package. | Gemini repository review uses the co-packaged coordinator and action-scoped readiness. Async readiness is a different surface; neither host name nor reviewer role proves independence. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |
 | Custom host | Explicit primary identity fields and the closed package contract. | If the host cannot load the package safely, it is unsupported; do not recreate provider-specific shims. |
 
@@ -161,9 +170,11 @@ A capability is usable only when all applicable gates pass:
 - the native boundary and provider-free readiness checks pass; and
 - provider authentication, quota, and request execution succeed.
 
-Failing one gate produces a typed result such as `unavailable`,
-`same_family_blocked`, `unknown_family`, or a runtime error category. Do not
-turn that result into a raw-provider fallback or broader authority.
+Runtime and planning diagnostics describe the attempted route; they do not
+perform the caller's family-exclusion check or establish provider-wide failure.
+Missing independent-review evidence leaves that requirement unmet. Preserve
+available advisory content without claiming broader authority, silently
+substituting an operator-named target, or replaying a consumed request.
 
 For installation and recovery, continue to
 [Lifecycle and operations](lifecycle-and-operations.md).
