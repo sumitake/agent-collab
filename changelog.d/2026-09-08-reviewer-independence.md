@@ -8,3 +8,5 @@
   its manifest, and the routing wire unchanged.
 
 - Clarify compatible macOS caller execution when a native command sandbox cannot nest beneath the caller sandbox, preserving native permissions and consumed-attempt boundaries.
+
+- Allow ordinary Gemini code review when no eligible distinct-family reviewer is available, explicitly label same-family or unverified advisory results, preserve required independent approval gates, and stop repeated attempts against unavailable providers.

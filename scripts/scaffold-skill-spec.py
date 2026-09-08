@@ -104,8 +104,8 @@ VERIFIER_INDEPENDENCE_BLOCK = """<!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
 Independence is caller-verified governance evidence, not a routing guarantee.
-Before dispatch, record the observed lineage and source for both the active
-primary and artifact author. Select a reviewer only when its known lineage is
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
 distinct from both. The caller may use provider-free planning to inspect known
 family evidence and sets `explicit_target` only when the operator names a
 provider. If no known-distinct eligible reviewer is established, do not dispatch
@@ -207,11 +207,11 @@ TODO: full prompt template here. Include the literal section anchors that downst
 [paste the full artifact verbatim]
 ```
 
-**Retry-on-malformed.** If the response does not contain all required sections, retry exactly once with:
-
-> Previous response did not include all required sections. Re-emit strictly per the template above, no preamble.
-
-If the second attempt is also malformed, surface that explicitly when you report back — do not silently paper over the format failure with a fabricated structure. A malformed cross-check is itself a signal worth reporting.
+**Preserve and interpret the response.** The template organizes the request;
+it does not impose a provider-output contract. Retain every nonempty raw or
+recovered response and reason over its content separately from execution
+diagnostics. Do not replay a consumed attempt for formatting, missing sections,
+or missing lineage, and never fabricate approval.
 
 ### 3. Adjudicate, then close
 
@@ -243,7 +243,7 @@ When picking the right example to share with the user mid-invocation, match the 
 - **TODO misuse pattern 1** — what goes wrong, and why.
 - **TODO misuse pattern 2** — what goes wrong, and why.
 - **Using this for tasks the underlying tool handles directly** — call `{{{{ mcp_tool_ask_short }}}}` instead. The framing overhead is not worth it for routine queries.
-- **Skipping the retry on malformed output** — if the verifier returns a wall of prose without the structured sections, parity tests and audit logs cannot consume it. Retry once; if it fails again, report the failure rather than fabricating structure around the prose.
+- **Using provider formatting as a gate** — prose and unexpected structure remain caller-interpreted content. Do not replay a consumed attempt or fabricate a structured approval.
 """
 
 

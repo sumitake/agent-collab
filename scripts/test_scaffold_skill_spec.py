@@ -116,7 +116,7 @@ class RenderTemplateTests(unittest.TestCase):
         )
         normalized = " ".join(body.split())
         for required in (
-            "Before dispatch, record the observed lineage and source",
+            "For independent governance evidence, before dispatch record the observed lineage",
             "After the response returns, record the observed reviewer lineage",
             "all three lineages are known",
             "OpenCode name is transport information, not lineage",
@@ -130,6 +130,8 @@ class RenderTemplateTests(unittest.TestCase):
             "route_cross_check",
             "central policy",
             "performs the critique itself",
+            "Retry-on-malformed",
+            "Skipping the retry on malformed output",
         ):
             with self.subTest(stale_claim=stale_claim):
                 self.assertNotIn(stale_claim, body)

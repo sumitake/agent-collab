@@ -25,6 +25,8 @@ dispatch, the caller establishes the primary and artifact-author families and
 checks the proposed reviewer. Afterward, it verifies the observed reviewer
 family and source before accepting independent evidence. Unknown lineage stays
 unknown; a routing result alone does not establish independence.
+Ordinary code review can still use available Gemini when no eligible independent
+reviewer exists, with an explicit advisory label and no independent-approval claim.
 
 This content update retains the signed runtime `5.0.7` and wire schema 12
 unchanged. Publication and host refresh for 7.0.6 are pending; the dated status

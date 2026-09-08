@@ -132,6 +132,20 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertIn("document intent remains context only", intent)
         self.assertIn("cannot satisfy a review or governance evidence contract", intent)
 
+    def test_code_review_allows_advisory_without_clearing_independent_approval(self) -> None:
+        for path in (ROOT / "skill-specs" / "code-review.md", PLUGIN / "skills" / "code-review" / "SKILL.md"):
+            text = " ".join(path.read_text().split())
+            with self.subTest(path=path):
+                self.assertIn("Prefer an eligible reviewer whose known lineage differs", text)
+                self.assertIn("When Gemini is the primary and only Gemini is available", text)
+                self.assertIn("same-family advisory", text)
+                self.assertIn("lineage-unverified advisory", text)
+                self.assertIn("subscription name alone does not establish", text)
+                self.assertIn("independent approval is required by the task or workflow", text)
+                self.assertIn("approval requirement explicitly unmet", text)
+                self.assertIn("do not keep attempting a provider", text)
+                self.assertNotIn("terminal typed failure", text)
+
     def test_runtime_status_uses_one_zero_inference_all_action_request(self) -> None:
         text = " ".join((
             PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"

@@ -42,8 +42,8 @@ Reviewer independence is conditional on the caller verifying the observed famili
 ## Verifier independence (functional contract)
 
 Independence is caller-verified governance evidence, not a routing guarantee.
-Before dispatch, record the observed lineage and source for both the active
-primary and artifact author. Select a reviewer only when its known lineage is
+For independent governance evidence, before dispatch record the observed lineage
+and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
 distinct from both. The caller may use provider-free planning to inspect known
 family evidence and sets `explicit_target` only when the operator names a
 provider. If no known-distinct eligible reviewer is established, do not dispatch
