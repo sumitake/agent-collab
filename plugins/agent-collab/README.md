@@ -145,7 +145,15 @@ than a PTY. It preserves the full response without shell interpolation or an
 outer timeout. Adapt the logical action and workload to the task; omit native
 cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
-Set `explicit_target` only when the operator names a provider.
+Honor an operator-named provider with `explicit_target`. For an authorized
+independent review or governance task without an operator-named provider, use
+that same field to bind the caller-verified distinct reviewer selected by the
+caller or designated by the workflow. Carry the same target into planning and
+live dispatch; untargeted planning does not bind a later live request. Target
+unavailability is reported without silent substitution or replay. Ordinary
+advisory calls otherwise use normal economic routing. Target binding does not
+prove independence: verify the returned native lineage before accepting review
+or governance evidence.
 
 Required common fields
 are `wire_contract_sha256`, `request_id`, `quality_profile`, `effort_class`,

@@ -37,10 +37,14 @@ identity. Document-context actions carry bounded document content in the opaque
 payload. For code generation, the caller owns the disposable copy, captures the
 binary-safe diff after the attempt, and verifies cleanup.
 
-Set an explicit work-unit `explicit_target` only when the operator names a
-provider; it is honored or fails typed and is never silently replaced. Otherwise
-the caller may make an untargeted provider-free planning request and inspect
-known family evidence before dispatch. A route, provider name, status, receipt,
+Honor an operator-named provider with the work-unit `explicit_target`; it is
+honored or fails typed and is never silently replaced. For an authorized
+independent review or governance task without an operator-named provider, also
+use `explicit_target` to bind the caller-verified distinct reviewer selected by
+the caller or designated by the workflow. Carry the same target into planning
+and live dispatch; untargeted planning does not bind a later live request.
+Otherwise use normal economic routing. The caller may use provider-free planning
+to inspect known family evidence before dispatch. A route, provider name, status, receipt,
 or self-assertion alone does not prove lineage. One selected provider attempt is
 not replayed after a model call. The skill contains no provider command, model
 name, version gate, or transport membership table. A route-local diagnostic

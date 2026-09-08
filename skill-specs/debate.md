@@ -38,8 +38,13 @@ Independence is caller-verified governance evidence, not a routing guarantee.
 For independent governance evidence, before dispatch record the observed lineage
 and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
 distinct from both. The caller may use provider-free planning to inspect known
-family evidence and sets `explicit_target` only when the operator names a
-provider. If no known-distinct eligible reviewer is established, do not dispatch
+family evidence. Honor an operator-named provider; do not silently replace it.
+For an authorized independent review or governance task without an operator-named
+provider, bind the verified reviewer selected by the caller or designated by the
+workflow using `explicit_target`. Carry that same target into planning and live
+dispatch; untargeted planning does not bind a later live request. If the target
+becomes unavailable, report it without silent substitution or replay.
+If no known-distinct eligible reviewer is established, do not dispatch
 as independent governance; explain the missing lineage or selection evidence.
 An OpenCode name is transport information, not lineage. Use only a
 descriptor-admitted review or governance action; never substitute document

@@ -105,6 +105,10 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             with self.subTest(source=name):
                 self.assertEqual(block, expected)
                 self.assertIn("caller-verified governance evidence", block)
+                self.assertIn("using `explicit_target`", block)
+                self.assertIn("Carry that same target into planning and live", block)
+                self.assertIn("Honor an operator-named provider", block)
+                self.assertNotIn("only when the operator names", block)
                 self.assertIn("all three\nlineages are known", block)
                 self.assertIn("OpenCode name is transport information", block)
                 self.assertNotIn("shared policy", block)
