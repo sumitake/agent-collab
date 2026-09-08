@@ -173,6 +173,44 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("optional diagnostics", invocation)
                 self.assertIn("at most one provider attempt per work unit", invocation)
                 self.assertIn("never synthesize approval", invocation)
+                self.assertIn("for an authorized independent review or governance task", invocation)
+                self.assertIn("bind the caller-verified distinct reviewer", invocation)
+                self.assertIn("carry the same target into planning and live dispatch", invocation)
+                self.assertIn("otherwise use normal untargeted routing", invocation)
+                self.assertNotIn("only when the operator names", invocation)
+
+
+    def test_complete_rendered_skills_do_not_invent_family_or_role_independence(self) -> None:
+        names = ("code-review", "debate", "logic-check", "merge-resolve", "qa-verify", "red-team", "second-opinion", "brainstorm", "simulate-user")
+        for name in names:
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().split())
+            with self.subTest(skill=name):
+                for fictional in ("independent family", "independent-family", "resolved family", "independent vs. resolved", "only when the operator names"):
+                    self.assertNotIn(fictional, text)
+        merge = " ".join((PLUGIN / "skills" / "merge-resolve" / "SKILL.md").read_text().split())
+        self.assertIn("authors of both sides", merge)
+        self.assertIn("Switching to the primary cannot clear that requirement", merge)
+        self.assertNotIn("switch the independent-resolver direction", merge)
+        debate = (PLUGIN / "skills" / "debate" / "SKILL.md").read_text()
+        self.assertIn("Assigning sides does not establish reviewer lineage", debate)
+        self.assertNotIn("assignment to keep the debate cross-family", debate)
+
+    def test_shared_tiers_and_nonreview_skills_do_not_require_independence(self) -> None:
+        config = json.loads((ROOT / "scripts" / "skill-build-config.json").read_text())["agent-collab"]
+        for key in ("tier_pro_resolves_to", "tier_flash_resolves_to"):
+            self.assertNotIn("independen", config[key])
+            self.assertNotIn("reviewer", config[key])
+        self.assertNotIn("verifier_family", config)
+        self.assertNotIn("primary_family", config)
+        for name in ("brainstorm", "simulate-user"):
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().split())
+            with self.subTest(skill=name):
+                self.assertIn("No family difference is assumed or required", text)
+                self.assertIn("unknown-lineage", text)
+                self.assertIn("not independent governance evidence", text)
+                self.assertNotIn("whose independence the caller verifies", text)
+                self.assertNotIn("sits in a different model family", text)
+                self.assertNotIn("cross-family partner", text)
 
     def test_route_uses_protocol_five_explicit_target_field(self) -> None:
         text = (

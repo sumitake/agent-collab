@@ -25,7 +25,7 @@ Use this skill when one or more of the following are true:
 Skip this skill when:
 
 - The artifact is a routine lookup or factual query — invoke the underlying console backend (`{{ mcp_tool_ask_short }}`) directly.
-- The artifact was authored by a model in the {{ verifier_family }} family (see Verifier independence below).
+- Independent approval is required but no reviewer with known lineage distinct from the primary and artifact author can be established (see Verifier independence below).
 - The cost of being wrong is trivially recoverable (a draft no one has seen, a sketch of a sketch). The framing overhead is not worth it.
 - The user has *already* received a second opinion this cycle and is asking for a third — at that point the issue is decision avoidance, not under-scrutiny.
 
@@ -211,7 +211,7 @@ When picking the right example to share with the user mid-invocation, match the 
 - **Paraphrasing the panel's critiques of your own work.** When the authoring model summarizes the verifiers' objections, it tends — even unintentionally — to soften the sharpest ones. Surface the raw four-section reads (or faithful direct quotes), attributed; let the operator see the actual critiques.
 - **Firing a tiebreaker on agreement.** A tiebreaker resolves a verdict conflict;
   it does not ratify a panel or adjudicate additive compatible notes.
-- **Skipping the verifier-independence check** when the artifact came from work authored within the {{ verifier_family }} family. That "review" is correlated with its author; the audit log will record a cross-check that did not, in substance, occur.
+- **Claiming independent review without observed lineage.** When the reviewer shares the author or primary family, or lineage is unknown, retain the response as advisory and keep required independent approval unmet.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
 - **Replaying for formatting.** Preserve every nonempty raw response and reason
   over it; a second attempt is not a formatting repair.

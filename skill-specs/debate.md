@@ -74,13 +74,13 @@ If the user's framing is fuzzy, distill it into a sharp proposition and confirm 
 
 ### 2. Assign sides
 
-Default assignment: **{{ primary_agent }} argues PRO; {{ verifier_agent }} argues CON.** This puts {{ verifier_agent }} in the contrarian seat, which is usually the more valuable framing — the user has typically been hearing {{ primary_agent }}'s view in the surrounding conversation, so the cross-family contrarian read is what they have not yet seen.
+Default assignment: **{{ primary_agent }} argues PRO; {{ verifier_agent }} argues CON.** This puts {{ verifier_agent }} in the contrarian seat, which is usually the more valuable framing — the user has typically been hearing {{ primary_agent }}'s view in the surrounding conversation, so a contrarian argument can add a useful perspective. Assigning sides does not establish reviewer lineage. Independent evidence requires the shared reviewer-selection contract; same-family or unverified contributions remain advisory.
 
 Override the default when:
 
 - The user has already heard {{ primary_agent }} lean one way in the surrounding context. Assign {{ primary_agent }} the *opposite* of its prior lean — force it to defend the position it has been arguing against.
 - The user explicitly asks for a specific side assignment.
-- The verifier-independence rule (above) requires a particular assignment to keep the debate cross-family.
+- The argument benefits from a different role assignment. Role assignment never substitutes for selecting and verifying an independent reviewer.
 
 State the assignment clearly to the user before starting: "{{ primary_agent }} will argue [X]. {{ verifier_agent }} will argue [Y]. Three rounds, then synthesis."
 
@@ -238,6 +238,6 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
 - **Letting {{ verifier_agent }} hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," record that limitation and weigh it in the synthesis rather than steering a replacement round automatically.
 - **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
-- **Skipping the verifier-independence check** when the user's pre-existing position came from a {{ verifier_family }}-family agent. Same-family debate is correlated; structurally one-sided. Apply the independence rule before assigning sides.
+- **Treating opposing positions as independent model evidence.** Verify the observed reviewer, primary, and position-author lineages under the shared contract. Same-family or unknown-lineage arguments remain advisory regardless of side assignment.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.
 - **Debating an empirically-decidable question.** "Did our churn rate go up" is a data question. Run the numbers; do not argue the answer.

@@ -12,3 +12,5 @@
 - Allow ordinary Gemini code review when no eligible distinct-family reviewer is available, explicitly label same-family or unverified advisory results, preserve required independent approval gates, and stop repeated attempts against unavailable providers.
 
 - Bind a caller-verified independent reviewer to the live request using the existing target field, respecting operator selection and avoiding unbound planning-to-dispatch changes.
+
+- Align injected invocation text with reviewer binding, keep shared quality descriptions neutral for creative work, and remove fictional family and role-switch independence claims from complete generated skills.

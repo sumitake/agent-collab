@@ -74,7 +74,7 @@ If the operator only said "resolve this conflict" without listing files, START w
 
 ### 1. Verifier-independence check
 
-Per the section above. If both sides are {{ primary_agent }}-authored, proceed; otherwise switch the independent-resolver direction or refuse if cross-family independence is required.
+Record the observed lineage of the primary and the authors of both sides. For independent review, select and verify a resolver distinct from the primary and every known side-author family; unknown author lineage leaves independence unverified. Primary-authored sides alone do not prove independence. If no eligible distinct resolver can be established, keep required independent approval unmet. Advisory merge analysis may proceed when the task does not require independent evidence; changing roles cannot create independence.
 
 ### 2. Hunk extraction
 
@@ -98,7 +98,7 @@ If `intent_a` / `intent_b` were not supplied, derive them from the commit messag
 ### 4. Cross-check prompt
 
 Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and artifact author. Submit the sealed merge-review role through
+primary and authors of both sides for independent review. For advisory analysis, label the contribution accordingly. Submit the sealed merge-review role through
 `{{ mcp_tool_ask }}` {{ merge_resolve_call_params }}. Verify the observed
 reviewer lineage before treating its response as independent governance evidence.
 Provider formatting is not an output contract; reason over the complete raw
@@ -192,7 +192,7 @@ Mitigations:
 - Operator-confirm default (the single biggest one).
 - Multi-condition auto-apply preconditions (policy file + min_confidence + forbidden_paths + required_gates).
 - `CONFIDENCE: H` floor.
-- Cross-family verifier-independence (enforced).
+- Caller-verified reviewer independence where required, with missing evidence left explicitly unmet.
 - Post-apply validator gates (operator-defined).
 
 These shift residual risk down but do not eliminate it. Operators adopting `auto_apply=true` accept the residual risk explicitly via the policy file's presence-as-acknowledgment.
@@ -225,7 +225,7 @@ For the first 10–20 real merges, run with the policy file present but `shadow_
 | `git apply --3way --check` fails on the proposed resolution | Use the same artifact for the Step 6 in-place check; if that is invalid, REFUSE without another provider request |
 | Operator gives empty / ambiguous response to confirm gate | Default to `reject` (safe) |
 | `CONFIDENCE: L` on a file matching `forbidden_paths` | REFUSE auto-mode; require operator-confirm |
-| Verifier-independence check fails (both sides {{ verifier_family }}-family-authored) | Switch to {{ primary_agent }}-as-resolver, or surface and ASK operator |
+| Reviewer shares a primary or side-author family, or required lineage is unknown | Keep independent approval unmet; retain useful advisory analysis where permitted. Switching to the primary cannot establish independence |
 | Policy file is syntactically invalid | REFUSE auto-apply; fall back to operator-confirm; surface YAML error |
 | Post-apply marker-integrity check finds remaining markers | REFUSE to mark merge resolved; surface failed line(s) to operator |
 
@@ -253,6 +253,6 @@ merge-resolve summary:
 - **Treating `apply-and-amend` as the default.** It rewrites the in-progress merge commit. Use only when the operator explicitly chose it; default `apply` leaves the apply uncommitted so the operator can review one more time.
 - **Pushing or committing from this skill.** Out of scope; the skill ends at "applied to working tree, operator confirms."
 - **Re-running the same `revise` instruction repeatedly without operator input.** `revise` is a single-iteration instruction; if it fails, ASK the operator for next direction rather than looping.
-- **Resolving merges where one side was authored by a {{ verifier_family }}-family agent without flipping the resolver direction.** Same-family resolution defeats the verifier-independence guarantee that downstream consumers (operator decisions, audit logs, compliance reviews) rely on.
+- **Using role switching as proof of independence.** A resolver must have observed lineage distinct from the primary and authors of both sides when independent review is required. Switching to the primary cannot clear that requirement; same-family or unknown-lineage analysis remains advisory.
 - **Skipping the marker-integrity check** after apply. A silent apply failure leaves markers in the file; the merge appears resolved in the skill's response but the working tree is still in conflict. The check is one Read; never skip it.
 - **Adding `forbidden_paths` to the policy without versioning the change in source control.** The policy is the operator's risk-acceptance posture; its history is auditable evidence. Edit, commit, push — don't `chmod 644 && vim` it in place.

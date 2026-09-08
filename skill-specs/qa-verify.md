@@ -156,7 +156,7 @@ The descriptor-owned review verdict applies to all of these uniformly; what shif
 - **Sending only the final output without the original constraints.** The verifier cannot QA against a spec it has never seen. The triple-evidence requirement (request + work product + output) is non-negotiable.
 - **Using this for simple tasks where success is visually obvious.** Wastes a verifier call and adds noise to the audit log.
 - **Overstating an approval as "verified correct."** It means "no issues flagged on this independent review." Independent reviewers also miss bugs. Phrasing matters; precision protects the user from over-trusting the layer.
-- **Skipping the verifier-independence check** when the work was executed by a {{ verifier_family }}-family agent. Same-family QA is correlated blind spots, not independent verification.
+- **Claiming independent QA when the observed reviewer shares the executing author or primary family, or lineage is unknown.** Such findings remain advisory and cannot clear required independent verification.
 - **Replaying for formatting.** Preserve the raw result; never ask a second
   provider attempt merely to obtain different formatting.
 - **Treating a hallucinated FAIL as a real fail.** Verify each FAILED CONSTRAINT against the actual output before alarming the user. Hallucinations happen in QA too.

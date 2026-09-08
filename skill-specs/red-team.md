@@ -151,7 +151,7 @@ The threat-model and success-criterion framing stay constant across domains; the
 - **Skipping the actually-test-each-input step.** Hallucinations are common; relaying unverified attack claims wastes the user's time and may mislead them about real exposure. Test in a local reproduction before reporting.
 - **Asking the verifier to also fix the vulnerabilities.** Generate attacks (this skill) and propose defenses (the user or {{ primary_agent }} acts on them) are separate steps. The verifier's job is to find attacks, not write the fixes — those are likely to be same-family-correlated patches.
 - **Using economical/minimal.** Adversarial creativity benefits from depth; use frontier/maximum so the review goes beyond obvious, commonly listed inputs.
-- **Skipping the verifier-independence check** when the artifact came from a {{ verifier_family }}-family agent. Same-family red-teams produce inputs the author would have anticipated.
+- **Claiming an independent red-team pass when observed reviewer and author or primary lineages match, or lineage is unknown.** Preserve useful advisory findings without clearing required independent review.
 - **Replaying a malformed request.** Treat malformed output as the terminal typed
   failure returned by the managed runtime. Surface it instead of issuing a
   second request or fabricating an artifact.
