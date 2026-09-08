@@ -71,7 +71,7 @@ class PluginArchiveTests(unittest.TestCase):
         versions = {
             item["provider_runtime_version"] for item in parsed["artifacts"]
         }
-        self.assertEqual(versions, {"5.0.5"})
+        self.assertEqual(versions, {"5.0.7"})
 
     def test_manifest_parser_rejects_duplicate_keys_and_runtime_oversize(self) -> None:
         archive = _load()

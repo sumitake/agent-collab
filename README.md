@@ -1,11 +1,11 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.4 pairs a routing-only public client with the
+compatible hosts. Version 7.0.5 pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.4).
+This public repository's current source is **agent-collab** (v7.0.5).
 
 Current published release: **7.0.3** ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)).
 It carries signed provider runtime `5.0.5`. Host installation, readiness, and
@@ -18,12 +18,14 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.4
+## What's new - v7.0.5
 
-The source candidate restores migration-doctor JSON and text reports against
-wire schema 12. It reports the logical action count without reading removed
-transport and source-pair fields. The signed runtime remains `5.0.5`;
-publication and installation of this source change are pending.
+The source candidate pairs runtime `5.0.7` with the migration-doctor reporting
+fix. Native output remains available when final-answer extraction finds no
+text, including output observed during normal completion and cleanup. The
+caller interprets that content separately from native execution status.
+Normal native invocation and the existing wire schema 12 remain in place.
+Publication and installed-runtime verification of this candidate are pending.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -114,12 +116,12 @@ The public source candidate expects:
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.5`;
+- provider runtime version `5.0.7`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-The checked-in signed artifact rows are the imported 5.0.5 / wire-schema-12
+The checked-in signed artifact rows are the imported 5.0.7 / wire-schema-12
 generation for both macOS architectures.
 
 Production provider work uses admitted progress inactivity so active work is

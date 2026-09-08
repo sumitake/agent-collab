@@ -157,7 +157,7 @@ def _candidate_runtime_manifest(plugin: Path) -> None:
     ).encode("utf-8")
     manifest["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
     for artifact in manifest["artifacts"]:
-        artifact["provider_runtime_version"] = "5.0.5"
+        artifact["provider_runtime_version"] = "5.0.7"
         artifact["wire_contract_sha256"] = manifest["wire_contract_sha256"]
     _write_json(path, manifest)
 

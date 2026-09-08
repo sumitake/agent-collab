@@ -6,14 +6,14 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.4**
+Current repository source: **7.0.5**
 
 Current published release: **7.0.3**
 ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)); it
 carries signed provider runtime `5.0.5`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
-Version 7.0.4 pairs provider runtime `5.0.5` with manifest schema 4,
+Version 7.0.5 pairs provider runtime `5.0.7` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. It replaces the semantic
 coordinator with a bounded routing-only shim and removes provider-authored
@@ -21,7 +21,10 @@ schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
 content-availability gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
 
-The 7.0.4 source candidate restores migration-doctor reports for this descriptor.
+The 7.0.5 source candidate restores migration-doctor reports for this descriptor
+and retains bounded opaque native output when final-answer extraction finds no
+text, including bytes observed during completion and cleanup. Native execution
+status remains separate from retained content, which the caller interprets.
 The current published package remains 7.0.3.
 
 General users should start with the public
@@ -30,7 +33,7 @@ General users should start with the public
 
 ## Skills
 
-This published package includes signed runtime 5.0.5 and wire schema 12 for
+This source candidate includes signed runtime 5.0.7 and wire schema 12 for
 both macOS architectures.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
@@ -173,7 +176,7 @@ review.repository
 ## Direct runtime boundary
 
 The package emits one schema-4 manifest with wire schema 12, runtime protocol
-5, native contract 4, and provider runtime `5.0.5`. The manifest binds the
+5, native contract 4, and provider runtime `5.0.7`. The manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 
