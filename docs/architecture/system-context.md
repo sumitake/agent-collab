@@ -25,7 +25,8 @@ to land the result.
 - A public policy boundary that defines lineage and independence requirements
   for repository and skill workflows, and seals route authority.
 - A verified client for an optional co-packaged native runtime.
-- A migration and safe-mode boundary for retiring older package generations.
+- A separate migration inventory and fail-closed native-artifact boundary for
+  retiring older package generations.
 - A deterministic offline project-estimation component with a released,
   privacy-safe bootstrap aggregate and no provider dependency.
 - A public contribution, CI, and release contract that can be applied without

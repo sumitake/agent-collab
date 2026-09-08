@@ -153,7 +153,7 @@ and its evidence is verified.
   remain uncertain; neither is converted into successful governance evidence.
 - **Separation of duties:** authoring, reviewing, integrating, merging, and
   releasing remain distinct accountable acts.
-- **Recoverability:** safe mode and retained verified state stop execution
+- **Recoverability:** an unavailable native artifact stops execution
   without reviving retired packages or bypassing migration checks.
 
 For operational application of these rules, continue to
