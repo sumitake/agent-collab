@@ -128,6 +128,18 @@ sys.stderr.buffer.write(completed.stderr)
 raise SystemExit(completed.returncode)
 ```
 
+**Host sandbox composition.** A native provider's command sandbox may not
+initialize beneath the caller's macOS sandbox, even when file reads work. Once
+that host constraint is established, use the host's approved per-command
+execution for the normal coordinator so the provider can apply its own sandbox.
+Preserve native sandboxing, permission decisions, and ordinary capabilities.
+This is a caller invocation requirement, not a provider failure or permission
+bypass. If host approval is unavailable, stop the dependent work. Do not change
+global permissions, disable the native sandbox, or automatically retry a
+consumed attempt under a different execution mode. Verify native shell
+capability with a fresh authorized task; a successful file read alone is
+insufficient.
+
 `subprocess.run(input=...)` closes stdin after the JSON and uses pipes rather
 than a PTY. It preserves the full response without shell interpolation or an
 outer timeout. Adapt the logical action and workload to the task; omit native

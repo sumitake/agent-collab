@@ -118,6 +118,20 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
             with self.subTest(generated=name):
                 self.assertEqual(rendered_block, expected)
 
+    def test_intro_does_not_assume_reviewer_family_or_promote_intent_authority(self) -> None:
+        for name in ("code-review", "qa-verify", "red-team", "debate", "logic-check", "merge-resolve", "second-opinion"):
+            text = (ROOT / "skill-specs" / (name + ".md")).read_text()
+            intro = text.split("## When to use", 1)[0]
+            with self.subTest(skill=name):
+                self.assertNotIn("{{ primary_family }}", intro)
+                self.assertNotIn("{{ verifier_family }}", intro)
+                self.assertNotIn("for an independent cross-family", intro)
+                self.assertRegex(intro, r"caller.{0,80}verif|caller establishes")
+        intent = " ".join((ROOT / "skill-specs" / "intent-check.md").read_text().split())
+        self.assertNotIn("Dispatch as independent governance", intent)
+        self.assertIn("document intent remains context only", intent)
+        self.assertIn("cannot satisfy a review or governance evidence contract", intent)
+
     def test_runtime_status_uses_one_zero_inference_all_action_request(self) -> None:
         text = " ".join((
             PLUGIN / "skills" / "agent-runtime-status" / "SKILL.md"

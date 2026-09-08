@@ -6,3 +6,5 @@
   and a consumed review is never replayed to repair its evidence.
 - Regenerate skill instructions while retaining signed provider runtime 5.0.7,
   its manifest, and the routing wire unchanged.
+
+- Clarify compatible macOS caller execution when a native command sandbox cannot nest beneath the caller sandbox, preserving native permissions and consumed-attempt boundaries.

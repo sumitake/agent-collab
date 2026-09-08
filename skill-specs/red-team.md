@@ -5,11 +5,11 @@ version: {{ skill_version }}
 description: Task {{ verifier_agent }} with actively breaking a system, API, validation layer, prompt pipeline, policy boundary, or logic flow that {{ primary_agent }} (or the user) has just built. The verifier generates concrete adversarial inputs — exact strings, payloads, scenarios — designed to bypass controls, crash the system, or trigger misbehavior. Use when the user says "red-team this," "try to break this," "attack this," "stress-test this," "adversarial test this," "find ways this could fail," "what could go wrong with this validation," "break my parser," "break my prompt," "find bypasses," or similar break-this-system framings. Also offer this proactively when {{ primary_agent }} has just shipped or is about to ship a security boundary, input validation, authentication flow, content-moderation policy, prompt pipeline, rate-limiting rule, payment validator, or any control surface where the cost of an undiscovered bypass is high.
 ---
 
-# Red team — adversarial input generation by the cross-family agent
+# Red team — adversarial input generation
 
 Red-teaming is **active and adversarial**: the verifier's job is not to *look for* defects in the artifact (`code-review` does that), but to **generate specific inputs that break it**. The output is concrete, ready-to-use attack vectors — exact payloads, exact malformed inputs, exact prompt-injection strings — not generic "the parser might be vulnerable to malformed input" observations.
 
-The cross-family setup is load-bearing for the same reason it is in `code-review`: {{ primary_agent }} (the author, in the {{ primary_family }} family) shares blind spots with itself — it will not generate the adversarial inputs that exploit its own assumptions. {{ verifier_agent }} ({{ verifier_family }} family) brings different priors on what looks "obviously safe," which is exactly the set of inputs likely to be unguarded.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 

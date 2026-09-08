@@ -2,12 +2,14 @@
 name: second-opinion
 version: {{ skill_version }}
 {{ second_opinion_defaults_block }}
-description: Send a draft, analysis, plan, or decision to {{ verifier_agent }} for an independent cross-family read before {{ primary_agent }} commits. Use when the user says "second opinion," "what does {{ verifier_agent }} think," "sanity check this," "cross-check," or "have {{ verifier_agent }} review," and before any consequential, hard-to-reverse choice — architecture commitment, clinical protocol, contract clause, pricing change, finalized strategy, hiring decision, launch go/no-go. Also offer this proactively when the user is about to ship, sign, or send something the same draft will not easily walk back, especially when {{ primary_agent }} has reasoned its way to a confident answer without outside friction.
+description: Send a draft, analysis, plan, or decision to {{ verifier_agent }} for a review with caller-verified independence before {{ primary_agent }} commits. Use when the user says "second opinion," "what does {{ verifier_agent }} think," "sanity check this," "cross-check," or "have {{ verifier_agent }} review," and before any consequential, hard-to-reverse choice — architecture commitment, clinical protocol, contract clause, pricing change, finalized strategy, hiring decision, launch go/no-go. Also offer this proactively when the user is about to ship, sign, or send something the same draft will not easily walk back, especially when {{ primary_agent }} has reasoned its way to a confident answer without outside friction.
 ---
 
-# Second opinion — independent cross-family read
+# Second opinion — review with caller-verified independence
 
-A second opinion is an explicitly *adversarial* read on a piece of {{ primary_agent }}'s reasoning by an eligible model from a distinct family. Its job is to expose disagreements and blind spots, not to ratify.
+A second opinion is an explicitly *adversarial* read on a piece of {{ primary_agent }}'s reasoning by an eligible reviewer whose observed family the caller verifies as distinct. Its job is to expose disagreements and blind spots, not to ratify.
+
+Reviewer independence remains unverified until the caller applies the contract below.
 
 ## When to use
 

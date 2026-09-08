@@ -38,13 +38,15 @@ known family distinct from both; a planned route name alone does not prove it.
 3. Put the two frozen documents in the payload and ask the reviewer to compare
    missed constraints, added scope, ambiguities, and a recommended interpretation.
    Do not add unsupported identity or family-exclusion fields.
-4. Dispatch as independent governance only after the caller has established a
+4. Dispatch an independent intent comparison only after the caller has established a
    known-distinct eligible reviewer. If that cannot be established, explain the
    missing lineage or selection evidence without dispatching a claimed
-   independent review. After the response, verify its observed reviewer family
+   independent comparison. After the response, verify its observed reviewer family
    differs from both recorded families and that it addresses the frozen
    documents. If family or source evidence is missing, retain the response as
-   advisory and do not claim an independent intent check. Preserve the complete
+   advisory and do not claim an independent intent check. Even with verified
+   lineage, document intent remains context only: it cannot satisfy a review or
+   governance evidence contract. Preserve the complete
    raw response; do not require a verdict line or alternate envelope.
 5. Adjudicate the returned text as match, drift, or ambiguity. On a match,
    proceed. On drift, revise the interpretation and recheck only when a new

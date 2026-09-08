@@ -5,7 +5,7 @@ defaults:
   quality_profile: frontier
   effort_class: maximum
 
-description: Send a draft, analysis, plan, or decision to the reviewer for an independent cross-family read before the active primary commits. Use when the user says "second opinion," "what does the reviewer think," "sanity check this," "cross-check," or "have the reviewer review," and before any consequential, hard-to-reverse choice — architecture commitment, clinical protocol, contract clause, pricing change, finalized strategy, hiring decision, launch go/no-go. Also offer this proactively when the user is about to ship, sign, or send something the same draft will not easily walk back, especially when the active primary has reasoned its way to a confident answer without outside friction.
+description: Send a draft, analysis, plan, or decision to the reviewer for a review with caller-verified independence before the active primary commits. Use when the user says "second opinion," "what does the reviewer think," "sanity check this," "cross-check," or "have the reviewer review," and before any consequential, hard-to-reverse choice — architecture commitment, clinical protocol, contract clause, pricing change, finalized strategy, hiring decision, launch go/no-go. Also offer this proactively when the user is about to ship, sign, or send something the same draft will not easily walk back, especially when the active primary has reasoned its way to a confident answer without outside friction.
 ---
 
 ## Unified runtime invocation
@@ -13,9 +13,11 @@ description: Send a draft, analysis, plan, or decision to the reviewer for an in
 Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Set `explicit_target` only when the operator names a provider. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Second opinion — independent cross-family read
+# Second opinion — review with caller-verified independence
 
-A second opinion is an explicitly *adversarial* read on a piece of the active primary's reasoning by an eligible model from a distinct family. Its job is to expose disagreements and blind spots, not to ratify.
+A second opinion is an explicitly *adversarial* read on a piece of the active primary's reasoning by an eligible reviewer whose observed family the caller verifies as distinct. Its job is to expose disagreements and blind spots, not to ratify.
+
+Reviewer independence remains unverified until the caller applies the contract below.
 
 ## When to use
 

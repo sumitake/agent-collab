@@ -2,14 +2,14 @@
 name: code-review
 version: {{ skill_version }}
 {{ code_review_defaults_block }}
-description: Send a code diff, pull request, file, or directory to {{ verifier_agent }} for an independent cross-family code review focused on security vulnerabilities, edge cases, concurrency hazards, performance bottlenecks, and architectural smells. Use when the user says "code review with {{ verifier_agent }}," "have {{ verifier_agent }} review this code," "have {{ verifier_agent }} review this PR," "have {{ verifier_agent }} review this diff," "check this for security flaws," "security audit," "concurrency audit," or "performance review." Also offer this proactively when {{ primary_agent }} is about to commit a change that touches authentication, authorization, cryptography, financial calculations, payment flows, concurrency primitives, schema migrations, or any module where a class of bug — not just an instance — could have user-visible consequences.
+description: Send a code diff, pull request, file, or directory to {{ verifier_agent }} for a code review with caller-verified independence focused on security vulnerabilities, edge cases, concurrency hazards, performance bottlenecks, and architectural smells. Use when the user says "code review with {{ verifier_agent }}," "have {{ verifier_agent }} review this code," "have {{ verifier_agent }} review this PR," "have {{ verifier_agent }} review this diff," "check this for security flaws," "security audit," "concurrency audit," or "performance review." Also offer this proactively when {{ primary_agent }} is about to commit a change that touches authentication, authorization, cryptography, financial calculations, payment flows, concurrency primitives, schema migrations, or any module where a class of bug — not just an instance — could have user-visible consequences.
 ---
 
-# Code review — independent cross-family deep-read on a code artifact
+# Code review — critique of a code artifact
 
-A code review is a structured, lens-driven critique of a code artifact (diff, pull request, file, directory) by a model from the other family. The point is to surface defects {{ primary_agent }} would not have caught — security flaws, race conditions, missing rollback paths, edge cases the author normalized — not to confirm the code "looks fine." A review that returns no findings on a non-trivial change is usually a failed review; either the prompt was too soft or the code is genuinely trivial.
+A code review is a structured, lens-driven critique of a code artifact (diff, pull request, file, directory) by a selected reviewer whose independence the caller must verify. The point is to surface defects {{ primary_agent }} would not have caught — security flaws, race conditions, missing rollback paths, edge cases the author normalized — not to confirm the code "looks fine."
 
-The cross-family setup is load-bearing. {{ primary_agent }} ({{ primary_family }} family) authored the code (the common case) and is therefore not the right reviewer for its own work. {{ verifier_agent }} ({{ verifier_family }} family) brings different training corpora, different default failure-mode emphases, and a clean read on the artifact unconstrained by the implementation choices that led to the current state.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 

@@ -2,16 +2,16 @@
 name: logic-check
 version: {{ skill_version }}
 {{ logic_check_defaults_block }}
-description: Audit a verifiable, step-wise computation (arithmetic, financial calculation, algorithm trace, constraint solve, scheduling problem) by having {{ verifier_agent }} independently re-derive the answer from the original problem statement and comparing — not by asking {{ verifier_agent }} to "check the work," which anchors on the existing derivation. Use when the user says "audit this calculation," "double-check my math with {{ verifier_agent }}," "verify these computations," "check this trace," "is this cap table right," "re-derive this with {{ verifier_agent }}," "audit my arithmetic," "logic-check this," or "is this number right." Also offer this proactively when {{ primary_agent }} has just performed a long multi-step calculation, an algorithmic trace (DP table, graph traversal, constraint propagation), a financial computation (cap table, tax math, unit conversion, currency-adjusted aggregate), or any computation where a wrong intermediate state silently corrupts the final answer.
+description: Audit a verifiable, step-wise computation (arithmetic, financial calculation, algorithm trace, constraint solve, scheduling problem) by having {{ verifier_agent }} separately re-derive the answer from the original problem statement and comparing — not by asking {{ verifier_agent }} to "check the work," which anchors on the existing derivation. Use when the user says "audit this calculation," "double-check my math with {{ verifier_agent }}," "verify these computations," "check this trace," "is this cap table right," "re-derive this with {{ verifier_agent }}," "audit my arithmetic," "logic-check this," or "is this number right." Also offer this proactively when {{ primary_agent }} has just performed a long multi-step calculation, an algorithmic trace (DP table, graph traversal, constraint propagation), a financial computation (cap table, tax math, unit conversion, currency-adjusted aggregate), or any computation where a wrong intermediate state silently corrupts the final answer.
 ---
 
-# Logic check — independent re-derivation of a verifiable computation
+# Logic check — separate re-derivation of a verifiable computation
 
 Some tasks have a definite right answer reachable through mechanical steps where each step locks in state for the next. **A logic check catches the compounding-error class** that a free-form `second-opinion` review of the conclusion does not — because the conclusion looks plausible while a hidden intermediate step is wrong.
 
-The **mechanism is independent re-derivation**, not "review my reasoning." Asking a model to audit another model's stated reasoning trace tends to anchor on the trace rather than check the math — the verifier reads the steps, finds them locally coherent, and signs off. Two independent derivations from the same problem statement diverge cleanly when one is wrong; the divergence point is the bug.
+The **mechanism is separate re-derivation**, not "review my reasoning." Asking a model to audit another model's stated reasoning trace tends to anchor on the trace rather than check the math — the verifier reads the steps, finds them locally coherent, and signs off. Two separate derivations from the same problem statement diverge cleanly when one is wrong; the divergence point is the bug.
 
-The cross-family setup matters here in a specific way: same-family verifiers are more likely to share systematic computational biases (e.g., recurring off-by-one in particular index conventions, recurring rounding-direction defaults). {{ verifier_agent }} ({{ verifier_family }} family) brings different defaults; its re-derivation is genuinely independent of {{ primary_agent }}'s ({{ primary_family }}-family) computation.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 

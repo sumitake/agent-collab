@@ -5,11 +5,13 @@ version: {{ skill_version }}
 description: Use when a user asks to resolve a git merge conflict or conflicting patch, says "ai-merge" or "AI-resolve," when merge or rebase exits with conflict markers and next steps are requested, when parallel worktrees need integration, or when a chain diff targets a file being edited.
 ---
 
-# Merge resolve — cross-family merge-conflict resolution, operator-gated by default
+# Merge resolve — merge-conflict resolution, operator-gated by default
 
-This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a cross-family read on the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
+This skill is the inter-branch analogue of `chain`'s semantic gate (`kind: semantic, check: ai_cross_check`): a review of the two sides' intent + commit context, a proposed unified resolution as a diff, and an **operator-confirm gate** before any change touches the working tree. The cross-check is the engine; the operator-confirm and the validator gates are the safety net.
 
 **The default is operator-confirm. Auto-apply is opt-in, gated by a multi-condition policy file, and refuses for high-sensitivity paths regardless of operator opt-in.** These are the operator's risk-acceptance posture; they are not stylistic prose, and the skill enforces them at runtime.
+
+Reviewer independence is conditional on the caller verifying the observed families and sources under the contract below; the role or branch name does not establish it.
 
 ## When to use
 

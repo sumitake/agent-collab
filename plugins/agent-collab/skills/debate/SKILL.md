@@ -15,9 +15,9 @@ Planning reports route eligibility, not live availability or authentication. Rep
 
 # Debate — structured adversarial advocacy with synthesis
 
-A debate is not a second opinion. A second opinion asks one independent reader to find blind spots. A debate asks **both sides to advocate maximally** for opposing positions, then asks the agent — stepping out of advocacy — to render a verdict. The point is to **stress-test conviction**, not to manufacture consensus. If the debate ends with "both sides have good points," it failed.
+A debate is not a second opinion. A second opinion asks a selected reviewer to find blind spots. A debate asks **both sides to advocate maximally** for opposing positions, then asks the agent — stepping out of advocacy — to render a verdict. The point is to **stress-test conviction**, not to manufacture consensus. If the debate ends with "both sides have good points," it failed.
 
-The cross-family setup matters: the active primary (resolved family) and the reviewer (independent family) bring different priors. Each side defending its assigned position with the full weight of its model family's reasoning surfaces objections and framings that a same-family debate would smooth over.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 

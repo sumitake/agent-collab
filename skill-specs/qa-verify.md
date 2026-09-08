@@ -2,14 +2,14 @@
 name: qa-verify
 version: {{ skill_version }}
 {{ qa_verify_defaults_block }}
-description: Ask {{ verifier_agent }} to independently QA the output of a completed execution against the original request — did the work actually meet the spec, or are there ignored constraints, off-by-one errors, hallucinated fields, or silent partial successes. Use when the user says "did this actually do what I asked," "verify my work with {{ verifier_agent }}," "QA check this," "sanity-check the output," "did the execution meet the spec," "did we actually complete the task," or "validate the result." Also offer this proactively when {{ primary_agent }} has just finished a complex multi-step execution (data transformation, large refactor, batched file edits, multi-API workflow, deploy script) and is about to report success — an independent QA pass before claim-of-completion catches the silent-success-with-missing-constraint failure mode that visual inspection often misses.
+description: Ask {{ verifier_agent }} to QA the output of a completed execution against the original request — did the work actually meet the spec, or are there ignored constraints, off-by-one errors, hallucinated fields, or silent partial successes. Use when the user says "did this actually do what I asked," "verify my work with {{ verifier_agent }}," "QA check this," "sanity-check the output," "did the execution meet the spec," "did we actually complete the task," or "validate the result." Also offer this proactively when {{ primary_agent }} has just finished a complex multi-step execution (data transformation, large refactor, batched file edits, multi-API workflow, deploy script) and is about to report success — a QA pass with caller-verified independence before claim-of-completion catches the silent-success-with-missing-constraint failure mode that visual inspection often misses.
 ---
 
-# QA verify — independent verification of a completed execution
+# QA verify — verification of a completed execution
 
 A second-opinion is a review of a *plan*. A code-review is a critique of a *code artifact*. **qa-verify is verification of a completed *execution* against the original request.** The point is to catch the gap between "the script ran" and "the script accomplished what was actually asked for" — missed constraints, off-by-one results, hallucinated output fields, silent partial successes that look complete at a glance.
 
-The cross-family setup matters because {{ primary_agent }} just *did* the work — its reasoning is anchored to its own implementation choices. {{ verifier_agent }} sees the original request, the work product, and the output with fresh eyes and no commitment to the path that was taken.
+Treat reviewer independence as unverified until the caller establishes the observed families and sources under the verifier-independence contract below. Role names and an opposing position do not establish a different model family.
 
 ## When to use
 
