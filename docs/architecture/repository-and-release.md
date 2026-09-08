@@ -13,7 +13,7 @@ contributors do not need access to it.
 | --- | --- | --- | --- |
 | `skill-specs/` | current | Editable source for collaboration skills. | Edit here; do not hand-edit generated copies. |
 | `plugins/agent-collab/skills/` | generated/current | Host-readable installed skill contracts. | Regenerate with `scripts/build_skills.py`. |
-| `plugins/agent-collab/` public Python modules | current | Coordinator, identity/authority policy, migration, runtime verification/management, and signing policy. | Keep the public module inventory closed. |
+| `plugins/agent-collab/` public Python modules | current | Routing transport, host observations, migration reporting, runtime verification, and signing policy; workflow authority remains caller-owned. | Keep the public module inventory closed. |
 | `plugins/agent-collab/project-estimation-data/` | current bootstrap contracts and evidence | Strict request/result and maintenance schemas plus one privacy-safe aggregate/pricing/quota handoff and version-bound receipt. | Never add raw evidence; admit only closed, receipt-declared members. |
 | `plugins/agent-collab/.claude-plugin/` and `.codex-plugin/` | current | Host manifests for the same name and version. | Update together. |
 | `.claude-plugin/` and `.agents/plugins/` | generated/current | Claude-compatible and Codex marketplace views. | Regenerate with `scripts/build_marketplace.py`. |
@@ -56,8 +56,8 @@ fragment.
 
 The public repository owns:
 
-- request and result policy;
-- model-family and authority decisions;
+- public request/result schemas and caller workflow policy;
+- skills that require caller verification of reviewer family and authority;
 - skills and generated host-facing documentation;
 - runtime client, manifest schema, migration, and management contracts;
 - artifact verification and signing-policy anchors;
@@ -66,7 +66,7 @@ The public repository owns:
 
 The private producer owns:
 
-- native provider implementation source;
+- native provider implementation and compiled route-admission logic;
 - build credentials and signing keys;
 - private build/sign infrastructure; and
 - any secret-bearing provider integration material.
@@ -135,20 +135,25 @@ flowchart LR
     Source --> Generated["Regenerated package views"]
     Generated --> Fragment["Unique changelog fragment"]
     Fragment --> Local["Local validation"]
-    Local --> Review["Independent exact-head review"]
+    Local --> Staged["Required staged artifact qualification"]
+    Staged --> Review["Review required by the change tier"]
     Review --> PR["Governed pull request"]
     PR --> Main["Merged source baseline"]
     Main --> Tag["Signed annotated tag"]
     Tag --> Release["Verified release assets and evidence"]
     Release --> Install["Host install/update"]
     Install --> Ready["Provider-free readiness"]
-    Ready --> Closeout["Final documentation closeout"]
+    Ready --> Live["Required installed native qualification"]
+    Live --> Closeout["Final documentation closeout"]
     Closeout --> Complete["Release complete"]
 ```
 
 Each arrow needs its own evidence. A merged pull request does not create a tag;
 a tag does not create a release; a release does not update a host; installation
-does not prove readiness.
+does not prove readiness, and provider-free planning does not prove native
+execution or fresh-session skill loading. The required qualification scope
+depends on the changed artifacts; unchanged runtime evidence retains its date
+and identity. A documentation-only correction does not itself cut a release.
 
 ## Validation layers
 

@@ -62,6 +62,9 @@ codex plugin marketplace add sumitake/agent-collab
 codex plugin add agent-collab@agent-collab
 ```
 
+For other supported hosts and update verification, follow
+[Lifecycle and operations](docs/architecture/lifecycle-and-operations.md).
+
 ### Post-install setup (agent-performed, consent-gated)
 
 When an agent performs the installation inside a user project, it completes
@@ -162,7 +165,7 @@ setup step exists.
 ```text
 python3 scripts/build_skills.py --check
 python3 scripts/build_marketplace.py --check
-python3 scripts/build-changelog.py --check
+python3 scripts/build-changelog.py --dry-run
 python3 -m unittest discover -s tests -t . -v
 python3 -m unittest discover -s scripts -p 'test_*.py' -v
 python3 scripts/check_release_consistency.py
