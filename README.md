@@ -7,8 +7,8 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.5).
 
-Current published release: **7.0.3** ([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)).
-It carries signed provider runtime `5.0.5`. Host installation, readiness, and
+Current published release: **7.0.5** ([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)).
+It carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
@@ -20,12 +20,14 @@ installation, and readiness claims separate.
 
 ## What's new - v7.0.5
 
-The source candidate pairs runtime `5.0.7` with the migration-doctor reporting
+The release pairs runtime `5.0.7` with the migration-doctor reporting
 fix. Native output remains available when final-answer extraction finds no
 text, including output observed during normal completion and cleanup. The
 caller interprets that content separately from native execution status.
 Normal native invocation and the existing wire schema 12 remain in place.
-Publication and installed-runtime verification of this candidate are pending.
+The signed release and its downloaded assets are verified. See the dated
+status snapshot for installation, native qualification, and the explicit
+Claude subscription deferral.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -111,7 +113,7 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The public source candidate expects:
+The published package carries:
 
 - manifest schema 4;
 - runtime protocol 5;

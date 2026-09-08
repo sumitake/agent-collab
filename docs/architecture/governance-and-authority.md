@@ -9,17 +9,16 @@ tool call is not evidence that the caller should receive broader permissions.
 
 ## Independence model
 
-For governance-grade review, the public policy requires a complete,
-trustworthy primary identity and known artifact-author lineage. It excludes
-both of these families from eligible reviewer selection:
+For governance-grade review, repository and skill policy requires a recorded
+active-primary lineage and artifact-author lineage. The primary must select
+and preserve evidence from a reviewer outside both required families. If either
+lineage is unknown, the governance workflow fails closed. OpenCode is a
+transport/host surface; the selected model's lineage supplies family provenance.
 
-1. the active primary's model family; and
-2. the reviewed artifact author's model family.
-
-If either family is unknown, governance fails closed. Non-governance work may
-continue only where the contract permits it and carries an independence
-warning. OpenCode is a host/runtime surface, not a model family; the selected
-model's lineage supplies family provenance.
+The current public runtime request has no primary or artifact-author-lineage
+field. It does not dynamically perform this exclusion. The skill and repository
+workflow require it, and the primary verifies the selected reviewer and the
+substance of the exact-head review.
 
 ```mermaid
 flowchart LR
@@ -37,23 +36,24 @@ operator remain responsible for its substance.
 
 ## Authority classes
 
-The current repository policy uses closed route/action pairs with explicit
-authorities:
+Repository and skill workflows assign these responsibilities; they must not
+be mistaken for additional sandbox guarantees in the routing envelope:
 
 | Authority | Meaning | Examples in the current public contract |
 | --- | --- | --- |
 | **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude document intent, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
-| **output-only** | May work in a private temporary workspace and return a patch or code artifact for the primary to inspect and apply. | Codex code generation, OpenCode build, and Grok code generation. |
+| **output-only** | The caller supplies a disposable repository or copy, captures output or patches, reviews/tests them, and owns application and cleanup. | Admitted code-generation work; inspect the current descriptor for eligible targets. |
 | **unavailable** | The contract name is recognized but no hardened backend currently satisfies it on the observing host or runtime. | Any route whose typed readiness result is unavailable; this is not inferred from the descriptor alone. |
 | **primary-executed** | The active primary follows the skill locally; no independent managed route is implied. | Self-executed engineering-process skills and primary-only visual guidance where typed media transport is absent. |
-| **async readiness** | Reports whether a host-owned async target is currently addressable. | Explicit Claude or Antigravity target/session readiness. This is not a coordinator `target_agent`; the public coordinator never sends. |
+| **async readiness** | Host tooling checks whether an explicitly authorized async target is addressable. | Separate from the public routing request; the coordinator does not send or report async readiness. |
 
 No failure converts one row to another. In particular:
 
 - an advisory route cannot become a worker because another worker is
   unavailable;
-- output-only code cannot write the caller's checkout;
-- a governance call cannot accept an unknown primary or artifact family;
+- the runtime does not itself apply output; callers must supply a disposable
+  copy and verify it before application;
+- the governance workflow cannot accept an unknown primary or artifact family;
 - an explicit target is not silently replaced by a different provider; and
 - a successful result does not gain merge, deployment, release, or policy
   authority.
@@ -96,8 +96,8 @@ The trace proves that required evidence was recorded in the expected form. It
 does **not** cryptographically prove that quoted review prose came from the
 claimed reviewer. This is an intentional, documented residual boundary:
 
-- coordinator policy enforces family independence when it selects a managed
-  route;
+- skill and repository policy require family independence, verified by the
+  primary against the actual selected reviewer;
 - repository automation validates trace form and presence; and
 - the primary, independent reviewer, and operator validate substance and exact
   head before merge.

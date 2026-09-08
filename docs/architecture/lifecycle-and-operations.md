@@ -74,14 +74,18 @@ Installation, selection, and readiness are separate checks.
    second opinion on a short draft, and verify the returned family is eligible
    and independent.
 
-For an activation package, the installed package can report status without
-model inference. Run the provider-free doctor and the single readiness
-snapshot:
+For an activation package, inspect the provider-free migration report:
 
 ```text
 python3 "<installed-plugin-root>/migration_doctor.py" --json
-printf '%s\n' '{"operation":"readiness","request_id":"runtime-status-1","quality_profile":"frontier","effort_class":"maximum","timeout_ms":120000}' | python3 "<installed-plugin-root>/coordinator.py"
 ```
+
+For zero-inference routing, use the manifest-bound example in the package
+README's **Canonical routing request** section and set
+`dispatch_requested=false`. Keep its wire digest, request identity, quality,
+effort, and logical work units. The retired `operation=readiness` request
+shape is not supported. Planning returns route decisions; it does not check
+provider authentication or establish live task completion.
 
 Use the exact installed plugin root supplied by the host or migration doctor.
 Do not search for provider executables, substitute a binary, or add path/model
@@ -115,7 +119,7 @@ Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v7.0.0
+`project-estimation` is offline and read-only by default. The packaged v7.0.5
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an

@@ -19,7 +19,7 @@ consents to an output path.
 ## Current status
 
 The skill, helper, schemas, planning checkpoints, and release-verification
-source ship in the published v7.0.0 release. A governed, content-addressed
+source ship in the published v7.0.5 release. A governed, content-addressed
 bootstrap handoff is admitted from the frozen producer. It contains a supported
 enhancement duration hierarchy but no greenfield root and no published token,
 wait, rework, quota-delay, or marginal-cash metrics.
