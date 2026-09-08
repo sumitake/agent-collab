@@ -1,6 +1,6 @@
 ---
 name: intent-check
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: standard
   effort_class: standard
@@ -20,21 +20,31 @@ plain-language interpretation. Do not include an implementation plan; this
 step checks understanding, not design quality.
 
 Resolve the **plugin root** from this loaded file and invoke only
-`python3 "<plugin-root>/coordinator.py"` with one untargeted
+`python3 "<plugin-root>/coordinator.py"` with one normally untargeted
 `context.documents.intent` work unit. Put the verbatim operator request and
-plain-language primary interpretation in its bounded opaque payload. The runtime
-selects an eligible independent route; the caller does not construct an
-agent/action pair.
+plain-language primary interpretation in its bounded opaque payload. Use a
+provider-free planning request to inspect known family evidence before dispatch;
+set `explicit_target` only when the operator names a provider. The caller does
+not construct an agent/action pair or invent primary/author exclusion fields.
+Record the active-primary and interpretation-author families from session and
+artifact evidence. Before dispatch, establish that the proposed reviewer has a
+known family distinct from both; a planned route name alone does not prove it.
 
 ## Workflow
 
 1. Quote the original request exactly, preserving negations and scope limits.
 2. Write the interpretation as objective, in-scope work, out-of-scope work,
    constraints, success criteria, and stop conditions.
-3. Replace only the two document contents with the frozen artifacts. Preserve
-   every other request field exactly and do not add identity or routing fields.
-4. Ask the selected independent reviewer to compare missed constraints, added
-   scope, ambiguities, and a recommended interpretation. Preserve the complete
+3. Put the two frozen documents in the payload and ask the reviewer to compare
+   missed constraints, added scope, ambiguities, and a recommended interpretation.
+   Do not add unsupported identity or family-exclusion fields.
+4. Dispatch as independent governance only after the caller has established a
+   known-distinct eligible reviewer. If that cannot be established, explain the
+   missing lineage or selection evidence without dispatching a claimed
+   independent review. After the response, verify its observed reviewer family
+   differs from both recorded families and that it addresses the frozen
+   documents. If family or source evidence is missing, retain the response as
+   advisory and do not claim an independent intent check. Preserve the complete
    raw response; do not require a verdict line or alternate envelope.
 5. Adjudicate the returned text as match, drift, or ambiguity. On a match,
    proceed. On drift, revise the interpretation and recheck only when a new
@@ -42,6 +52,6 @@ agent/action pair.
    load-bearing question. Preserve and reason over the full raw route result;
    never replay it for formatting.
 
-Never reconstruct a raw provider command, choose a target, invoke Claude
-synchronously, or turn a route-local typed failure into a claim that global
-governance is unavailable.
+Never reconstruct a raw provider command, choose an explicit target unless the
+operator names its provider, invoke Claude synchronously, or turn a route-local
+typed failure into a claim that global governance is unavailable.

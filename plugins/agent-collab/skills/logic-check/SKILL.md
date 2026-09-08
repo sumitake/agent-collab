@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -44,15 +44,24 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+Before dispatch, record the observed lineage and source for both the active
+primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence and sets `explicit_target` only when the operator names a
+provider. If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -69,12 +78,12 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 
 But: **do send the constraints and assumptions** the active primary used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance the active primary was solving.
 
-Submit the sealed logic-check role through `python3 "<plugin-root>/coordinator.py"` with
-`quality_profile='frontier'` and `effort_class='maximum'`. Central policy resolves an independent eligible
-reviewer; Claude/Anthropic is ineligible for this review action, and its
-document-intent route is not a substitute. Use this prompt template for
-substantive derivation. The caller reasons over the complete raw response;
-provider formatting is not an output contract:
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit the sealed logic-check role through
+`python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Verify the observed
+reviewer lineage before treating its response as independent governance evidence.
+Use this prompt template for substantive derivation. The caller reasons over the
+complete raw response; provider formatting is not an output contract:
 
 ```
 Solve this problem from scratch. Show step-by-step work and clearly identify the final answer.

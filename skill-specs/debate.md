@@ -34,15 +34,24 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+Before dispatch, record the observed lineage and source for both the active
+primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence and sets `explicit_target` only when the operator names a
+provider. If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -74,10 +83,12 @@ State the assignment clearly to the user before starting: "{{ primary_agent }} w
 
 **{{ primary_agent }}'s opening:** Write the strongest case for {{ primary_agent }}'s assigned side. Not a hedge, not "on balance" — the *strongest* case. Three to five specific points with evidence or reasoning. Treat it like a debate brief, not an analysis.
 
-**{{ verifier_agent }}'s opening:** Submit the sealed debate role through
-`{{ mcp_tool_ask }}` with {{ debate_call_params }}. Central policy selects an
-eligible independent advocate. Use this prompt template for debate content;
-the returned content remains opaque to the runtime:
+**{{ verifier_agent }}'s opening:** Before dispatch, select a reviewer with
+known lineage distinct from the observed primary and artifact author. Submit the
+sealed debate role through `{{ mcp_tool_ask }}` with {{ debate_call_params }}.
+Verify the observed reviewer lineage before treating its response as independent
+governance evidence. Use this prompt template for debate content; the returned
+content remains opaque to the runtime:
 
 ```
 You are in a structured debate. Proposition: "[proposition]"

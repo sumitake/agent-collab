@@ -1,6 +1,6 @@
 ---
 name: simulate-user
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -54,7 +54,7 @@ Instruct the verifier to stay entirely in character and **not break the fourth w
 ### 3. Call the verifier
 
 Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
-(economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy — the skill default; raise both closed profiles for nuanced personas — short
+(economical quality with minimal effort through an eligible reviewer whose independence the caller verifies — the skill default; raise both closed profiles for nuanced personas — short
 in-character responses do not need depth). Use frontier/maximum only for
 personas requiring nuanced reasoning, such as a litigator parsing a contract
 clause or a detail-focused engineer reading a specification.

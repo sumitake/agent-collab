@@ -1,7 +1,9 @@
 # Skill-spec authoring brief
 
-Author every collaboration skill for a dynamically resolved primary and an
-independent reviewer or worker chosen by central policy.
+Author every collaboration skill for a dynamically resolved primary. Where
+independence matters, require the caller to establish the primary, artifact
+author, and reviewer lineages before accepting a response as independent
+governance evidence; routing does not establish that fact.
 
 Required frontmatter:
 

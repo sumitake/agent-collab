@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_5(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_6(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.5\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.6\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.5")
+            self.assertEqual(manifest["version"], "7.0.6")
 
     def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -81,6 +81,42 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("response", text)
                 self.assertTrue("verdict" in text or "recommendation" in text)
                 self.assertNotIn("invalid_final", text)
+
+    def test_independence_consumers_share_caller_verified_contract(self) -> None:
+        consumers = (
+            "code-review",
+            "debate",
+            "logic-check",
+            "merge-resolve",
+            "qa-verify",
+            "red-team",
+            "second-opinion",
+        )
+        marker_start = "<!-- verifier-independence:start -->"
+        marker_end = "<!-- verifier-independence:end -->"
+        expected = None
+        for name in consumers:
+            spec_text = (ROOT / "skill-specs" / f"{name}.md").read_text(
+                encoding="utf-8"
+            )
+            block = spec_text.split(marker_start, 1)[1].split(marker_end, 1)[0]
+            if expected is None:
+                expected = block
+            with self.subTest(source=name):
+                self.assertEqual(block, expected)
+                self.assertIn("caller-verified governance evidence", block)
+                self.assertIn("all three\nlineages are known", block)
+                self.assertIn("OpenCode name is transport information", block)
+                self.assertNotIn("shared policy", block)
+                self.assertNotIn("same_family_blocked", block)
+                self.assertNotIn("unknown_family", block)
+
+            rendered = (PLUGIN / "skills" / name / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            rendered_block = rendered.split(marker_start, 1)[1].split(marker_end, 1)[0]
+            with self.subTest(generated=name):
+                self.assertEqual(rendered_block, expected)
 
     def test_runtime_status_uses_one_zero_inference_all_action_request(self) -> None:
         text = " ".join((

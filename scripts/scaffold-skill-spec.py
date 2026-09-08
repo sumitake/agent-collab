@@ -103,18 +103,24 @@ NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 VERIFIER_INDEPENDENCE_BLOCK = """<!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A cross-check is *independent* only when the verifier and the author come from different model families. The families this platform recognizes:
+Independence is caller-verified governance evidence, not a routing guarantee.
+Before dispatch, record the observed lineage and source for both the active
+primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence and sets `explicit_target` only when the operator names a
+provider. If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
 
-- **Anthropic**: Claude.
-- **Google**: Gemini, Antigravity.
-
-Before invoking, identify who authored the artifact under review:
-
-- **Authored by {{ primary_agent }}** (this package's primary, in the {{ primary_family }} family) — {{ verifier_agent }} sits in the {{ verifier_family }} family and is therefore cross-family. The cross-check is independent. Proceed normally.
-- **Authored by a model in the {{ verifier_family }} family** (the verifier's own family) — a {{ verifier_agent }} review here is same-family and shares correlated training biases. It is **not** an independent verification. The independent reviewer in this case is a model from the {{ primary_family }} family: **{{ primary_agent }} performs the critique itself, without delegating to {{ verifier_agent }}.** {{ verifier_agent }} may still be consulted, but its output is filed as a clearly-labelled supplementary, non-independent view — never as, nor instead of, the independent verification.
-- **Author unclear** — ask the user one question before sending.
-
-This rule mirrors the orchestrator's Router (`route_cross_check`), which refuses a verifier whose `model_family` equals the artifact author's. Skipping it produces an audit-log entry that looks like cross-checking but cannot bear the weight of the decisions downstream consumers may make from it.
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->"""
 
 

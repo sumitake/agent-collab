@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -47,7 +47,7 @@ If the user's question is too vague to call the tool productively, ask one targe
 ### 2. Invoke `python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'`
 
 Divergent generation favors **throughput over depth** —
-economical quality with minimal effort through the fastest eligible independent reviewer allowed by central policy is the default. Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy only
+economical quality with minimal effort through an eligible reviewer whose independence the caller verifies is the default. Use frontier quality with maximum effort through an eligible reviewer whose independence the caller verifies only
 for highly nuanced creative work where reasoning depth on each candidate idea
 is more valuable than candidate breadth.
 

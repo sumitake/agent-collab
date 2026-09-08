@@ -110,6 +110,30 @@ class RenderTemplateTests(unittest.TestCase):
         self.assertIn("<!-- verifier-independence:end -->", body)
         self.assertIn("Verifier independence", body)
 
+    def test_verifier_block_requires_caller_lineage_evidence(self):
+        body = scaffold.render_template(
+            "test-skill", include_verifier_independence=True, default_tier="pro"
+        )
+        normalized = " ".join(body.split())
+        for required in (
+            "Before dispatch, record the observed lineage and source",
+            "After the response returns, record the observed reviewer lineage",
+            "all three lineages are known",
+            "OpenCode name is transport information, not lineage",
+            "provider-free planning to inspect known family evidence",
+            "If no known-distinct eligible reviewer is established, do not dispatch",
+            "Do not replay a consumed review",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, normalized)
+        for stale_claim in (
+            "route_cross_check",
+            "central policy",
+            "performs the critique itself",
+        ):
+            with self.subTest(stale_claim=stale_claim):
+                self.assertNotIn(stale_claim, body)
+
     def test_omits_verifier_block_when_not_requested(self):
         body = scaffold.render_template(
             "test-skill",
@@ -150,15 +174,18 @@ class RenderTemplateTests(unittest.TestCase):
             default_tier="pro",
         )
         for placeholder in (
-            "{{ primary_agent }}",
-            "{{ primary_family }}",
-            "{{ verifier_agent }}",
-            "{{ verifier_family }}",
             "{{ mcp_tool_ask }}",
             "{{ mcp_tool_ask_short }}",
             "{{ tier_pro_resolves_to }}",
         ):
             self.assertIn(placeholder, body, f"missing placeholder: {placeholder}")
+        for independence_placeholder in (
+            "{{ primary_agent }}",
+            "{{ primary_family }}",
+            "{{ verifier_agent }}",
+            "{{ verifier_family }}",
+        ):
+            self.assertNotIn(independence_placeholder, body)
 
     def test_classification_hint_appears_in_body(self):
         body = scaffold.render_template(

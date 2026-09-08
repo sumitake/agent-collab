@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -38,15 +38,24 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+Before dispatch, record the observed lineage and source for both the active
+primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence and sets `explicit_target` only when the operator names a
+provider. If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -68,25 +77,19 @@ Do not dump the artifact at the reviewer with a vague "thoughts?" — that produ
 
 Send the **same** framed request (the four-section template below) to **every available cross-family panelist at once**, not sequentially — the reads are independent, so issue them concurrently and collect all responses before synthesizing. Each panelist gets the identical artifact + template, so their outputs are directly comparable.
 
-The panel is **every eligible managed advisory route whose observed family
-differs from both snapshots**. A raw binary or legacy plugin is never a route.
-An absent signed route is typed unavailable and reported from current
-readiness, not from a fixed inventory in this skill. Claude/Anthropic is not
-eligible for the review action: its only managed route is read-only document
-intent, whose authority and evidence cannot satisfy this panel. An Anthropic
-governance peer review may occur only through a separately configured
-host-owned async transport after its readiness is observed; the public routing
-runtime neither sends nor accepts governance over `inbox/async`. It is
-therefore a supplementary async view, never a managed review panelist. Callers
-must not bypass the managed route with a raw `claude -p` invocation.
+Build the panel from reviewers whose observed lineage is known and differs from
+both the recorded primary and artifact author. A route result does not establish
+that fact. If no known-distinct eligible reviewer can be established, do not
+dispatch an independent governance review; explain the missing lineage or
+selection evidence. A raw binary or legacy plugin is never a route. Host-owned
+async coordination is supplementary advisory content, never a managed review
+panelist. Callers must not bypass the managed route with a raw `claude -p`
+invocation.
 
-Per-panelist invocation is centralized: submit the sealed review role through
-the managed runtime, exclude the active primary and artifact-author families,
-and use only preflight-eligible routes. Claude/Anthropic is ineligible for this
-review action; its document-intent route is not a substitute. An absent native
-route is typed unavailable and omitted; never restore a retired package or
-provider command. Hold one eligible independent reviewer as the tiebreaker
-rather than including it in the first wave.
+For every panelist and tiebreaker, select the reviewer before dispatch and
+verify its observed lineage after the response. Do not replay a consumed review
+to repair incomplete lineage evidence. Hold one known-distinct eligible reviewer
+as the tiebreaker rather than including it in the first wave.
 
 Use one documented routing work unit for each panelist with
 `quality_profile="frontier"` and `effort_class="maximum"`; never name a model
@@ -94,7 +97,7 @@ member. The caller seals and verifies the exact repository head, supplies the
 bounded review prompt as opaque payload, and rechecks that head before using
 the response.
 
-Use frontier quality with maximum effort through the strongest eligible independent reviewer allowed by central policy for slow, skeptical analysis. The economical,
+Use frontier quality with maximum effort through an eligible reviewer whose independence the caller verifies for slow, skeptical analysis. The economical,
 minimal-effort profile optimizes for throughput rather than finding objections.
 Ensure each panelist receives the **whole** artifact — a divergence that is
 actually an artifact of one model truncating the context is a false signal,

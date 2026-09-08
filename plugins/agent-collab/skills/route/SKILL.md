@@ -1,7 +1,7 @@
 ---
 name: route
-version: 7.0.5
-description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs primary-family exclusion or a truthful typed availability decision.
+version: 7.0.6
+description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs a provider-neutral plan or a truthful typed availability decision.
 ---
 
 ## Unified runtime invocation
@@ -37,11 +37,13 @@ identity. Document-context actions carry bounded document content in the opaque
 payload. For code generation, the caller owns the disposable copy, captures the
 binary-safe diff after the attempt, and verifies cleanup.
 
-An explicit work-unit `explicit_target` is honored or fails typed; it is never silently
-replaced. Automatic selection uses the runtime's compiled routing policy. One selected
-provider attempt is not replayed after a model call. The skill contains no
-provider command, model name, version gate, or transport membership table. A
-route-local diagnostic never triggers a hidden provider fallback. Preserve
-every nonempty raw or recovered content record and interpret it with ordinary
-model reasoning; structured fields are optional diagnostics and do not gate
-content availability.
+Set an explicit work-unit `explicit_target` only when the operator names a
+provider; it is honored or fails typed and is never silently replaced. Otherwise
+the caller may make an untargeted provider-free planning request and inspect
+known family evidence before dispatch. A route, provider name, status, receipt,
+or self-assertion alone does not prove lineage. One selected provider attempt is
+not replayed after a model call. The skill contains no provider command, model
+name, version gate, or transport membership table. A route-local diagnostic
+never triggers a hidden provider fallback. Preserve every nonempty raw or
+recovered content record and interpret it with ordinary model reasoning;
+structured fields are optional diagnostics and do not gate content availability.

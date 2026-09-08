@@ -1,6 +1,6 @@
 ---
 name: qa-verify
-version: 7.0.5
+version: 7.0.6
 defaults:
   quality_profile: economical
   effort_class: minimal
@@ -40,15 +40,24 @@ Skip this skill when:
 <!-- verifier-independence:start -->
 ## Verifier independence (functional contract)
 
-A review is independent only when its observed author family differs from both
-the immutable primary snapshot and artifact-author snapshot. The shared policy
-recognizes Anthropic, Google, OpenAI, xAI, Zhipu, and genuinely unknown lineage;
-OpenCode itself is a transport, not a family. Resolve through the routing runtime
-immediately before every call. Governance fails closed when either snapshot is
-unknown or no distinct-family advisory route is eligible. Non-governance work
-may proceed only with an independence warning. Claude is ineligible for these
-review and governance routes; its only managed route is document intent, and
-host-owned async coordination is separate.
+Independence is caller-verified governance evidence, not a routing guarantee.
+Before dispatch, record the observed lineage and source for both the active
+primary and artifact author. Select a reviewer only when its known lineage is
+distinct from both. The caller may use provider-free planning to inspect known
+family evidence and sets `explicit_target` only when the operator names a
+provider. If no known-distinct eligible reviewer is established, do not dispatch
+as independent governance; explain the missing lineage or selection evidence.
+An OpenCode name is transport information, not lineage. Use only a
+descriptor-admitted review or governance action; never substitute document
+intent for review.
+
+After the response returns, record the observed reviewer lineage and source.
+Accept the response as independent governance evidence only when all three
+lineages are known and the reviewer differs from both the primary and artifact
+author. A route, provider name, status, receipt, or self-assertion alone does
+not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage; retain it only as clearly labelled
+advisory content.
 <!-- verifier-independence:end -->
 
 ## Procedure
@@ -65,10 +74,11 @@ If any of the three is missing, gather it before invoking. A QA pass on incomple
 
 ### 2. Instruct the verifier as a strict QA inspector
 
-Submit the sealed QA role through `python3 "<plugin-root>/coordinator.py"` with
-`quality_profile='economical'` and `effort_class='minimal'` (the skill default; raise the closed quality and effort profiles only for subtle correctness constraints). Central policy selects
-an independent eligible reviewer; Claude/Anthropic is ineligible for this
-review action, and its document-intent route is not a substitute.
+Before dispatch, select a reviewer with known lineage distinct from the observed
+primary and artifact author. Submit the sealed QA role through
+`python3 "<plugin-root>/coordinator.py"` with `quality_profile='economical'` and `effort_class='minimal'` (the skill default; raise the closed quality and effort profiles only for subtle correctness constraints).
+After the response, verify the observed reviewer lineage before treating it as
+independent governance evidence.
 
 Use this prompt template for QA content. Provider formatting is not an output
 contract; the caller reasons over the complete raw response:
