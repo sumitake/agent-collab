@@ -22,8 +22,12 @@ decisions.
 - Explorer: read-only research or architecture.
 - Worker: bounded `codegen.repository` or `frontend_codegen.repository`,
   returning a private patch.
-- Reviewer: independent `review.repository`, `frontend_review.repository`, or
-  `governance.repository` with the exact required authority.
+- Reviewer: `review.repository`, `frontend_review.repository`, or
+  `governance.repository` with the exact required authority. The role or action
+  alone does not prove independence: establish primary, author, and observed
+  reviewer lineages, source identity, and required authority before accepting
+  independent evidence. Otherwise retain advisory findings and keep any
+  independent approval requirement unmet.
 - Integrator: the primary, which verifies and combines accepted outputs.
 
 State decomposition economics, ownership, budgets, source roots, authority,

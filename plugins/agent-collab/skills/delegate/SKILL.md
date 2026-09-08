@@ -5,7 +5,7 @@ defaults:
   quality_profile: economical
   effort_class: minimal
 
-description: Fan out independent research, summary, extraction, or fact-finding subtasks to a cross-family delegate — the reviewer by default — for parallel execution alongside the active primary where dual-model coverage adds value. Use when the user says "delegate to the reviewer," "split this with the reviewer," "fan this out," "have the reviewer take half of these," "research these in parallel with the reviewer," "divide and conquer with the reviewer," or when the active primary would otherwise process many independent items serially and cross-family coverage would help.
+description: Fan out independent research, summary, extraction, or fact-finding subtasks to an eligible delegate — the reviewer by default — for parallel execution alongside the active primary where parallel coverage adds value. Use when the user says "delegate to the reviewer," "split this with the reviewer," "fan this out," "have the reviewer take half of these," "research these in parallel with the reviewer," "divide and conquer with the reviewer," or when the active primary would otherwise process many independent items serially and additional source coverage or lower serial latency would help.
 ---
 
 ## Unified runtime invocation
@@ -13,25 +13,28 @@ description: Fan out independent research, summary, extraction, or fact-finding 
 Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 
-# Delegate — fan out independent subtasks for parallel cross-family coverage
+# Delegate — fan out independent subtasks for parallel advisory work
 
-When the work is **the same operation across many independent items**, splitting the workload between the active primary and the reviewer cuts latency AND adds cross-family coverage value (the two families surface different sources, framings, defaults). This is **map-reduce with two readers**, not just parallel dispatch — the latter is what the active primary's native parallel tool (e.g., subagent fan-out) does without the cross-model coordination overhead.
-
-The cross-family value is the gating criterion. If the items can be processed identically by one family with no coverage benefit from a second, prefer the native parallel tool. The delegate skill is for when **two perspectives across the list** is the point.
+When the work applies the same operation across independent items, splitting it
+between the primary and an eligible worker can reduce serial work and add source
+coverage. Delegation does not establish a different model family or independent
+governance evidence. Compare the coverage and latency benefit against the cost
+of doing the same work to the same standard with the host's native parallel tool.
+Use the route when that benefit justifies the coordination overhead.
 
 ## When to use
 
 Use this skill when:
 
 - **The user explicitly asks for it** — "delegate to the reviewer," "split this with the reviewer," "fan this out," "have the reviewer take half of these," "research these in parallel with the reviewer," "divide and conquer with the reviewer."
-- **A list of independent research items** needs coverage — competitors, companies, candidates, regulatory citations, academic papers — where two model families surfacing different sources or framings is valuable.
+- **A list of independent research items** needs coverage — competitors, companies, candidates, regulatory citations, academic papers — where additional sources or framings are useful.
 - **A set of independent documents** needs parallel summarization where two readers may surface different signal.
-- **Any map-reduce task** where the subtasks don't depend on each other AND dual-model coverage is desirable.
+- **Any map-reduce task** where the subtasks don't depend on each other AND additional coverage is useful.
 
 ## When to skip
 
 - **The subtasks have sequential dependencies** (Step 2 needs Step 1's output). The skill is for independent fan-out only.
-- **The task is "do this N times" with no cross-model coverage value.** Use the active primary's native parallel-subagent tool — it avoids the cross-model coordination overhead, has lower latency, and produces uniform output without annotation.
+- **The task is "do this N times" with no additional coverage or latency benefit.** Use the active primary's native parallel-subagent tool — it avoids the coordination overhead, has lower latency, and produces uniform output while retaining source attribution.
 - **The list has only 1–2 items.** The orchestration overhead exceeds the benefit; just do them serially.
 - **The user wants a single source-grounded synthesis** rather than per-item output. Use `context` for a bounded corpus or `second-opinion` for an authored draft.
 
@@ -41,7 +44,7 @@ Use this skill when:
 
 Decide how to divide the items. A reasonable default: roughly even split, with the active primary taking the items that benefit most from context the user has already shared with this session and the reviewer taking the rest. For a list of 5 items, that's typically 2 to the active primary + 3 to the reviewer (or the inverse).
 
-Avoid pathological splits: giving the reviewer a single item alone wastes the parallelism; giving the reviewer all items defeats the dual-coverage purpose.
+Avoid pathological splits: giving the reviewer a single item alone wastes the parallelism; giving the reviewer all items should be justified by the workload and integration plan.
 
 ### 2. Frame the reviewer's portion with strict formatting
 
@@ -55,19 +58,23 @@ Pick a structured output format that both halves will share:
 
 ### 3. Dispatch the reviewer's portion
 
-Submit the sealed delegate role through `python3 "<plugin-root>/coordinator.py"`. Use
-economical-quality, minimal-effort advisory rows for bulk extraction and
-frontier-quality, maximum-effort advisory rows for judgment-heavy items. Central policy
-resolves the eligible worker after family exclusion. Claude/Anthropic is
-ineligible for delegation and other worker actions; its only managed route is
-read-only document intent, and host-owned async coordination is separate.
+Select an existing descriptor-admitted context extraction or reasoning action
+that matches the bounded documents or repository being supplied. Do not invent
+a logical `delegate` action. Submit the bounded work unit through
+`python3 "<plugin-root>/coordinator.py"`. Use economical-quality, minimal-effort advisory rows for bulk extraction and
+frontier-quality, maximum-effort advisory rows for reasoning-heavy items. The runtime selects an
+eligible worker; it does not perform primary/author family exclusion for the
+caller. These context results remain advisory, not review or governance evidence.
 
-**Grok delegation is native-runtime-only.** The standalone worker plugin and
-its raw CLI recipe are retired. Do not invoke `grok` directly, reconstruct the
-removed recipe, or silently substitute a same-family delegate. If the signed
-runtime does not advertise the required Grok role, state that portion is
-temporarily unavailable and continue only with another preflight-eligible,
-independent-family route.
+Use only the co-packaged coordinator. Do not make Grok or any absent provider
+mandatory, reconstruct a provider command, or silently replace an operator-named
+target. A consumed work unit is never replayed or failed over. Normal untargeted
+routing is appropriate for ordinary advisory delegation.
+
+Record observed worker lineage and its source when available. Role, route,
+provider name, status, receipt, and target selection do not establish a different
+family. Label same-family or unknown-lineage contributions as advisory, and do
+not claim dual-family coverage without positive observed-lineage evidence.
 
 Example prompt:
 
@@ -79,8 +86,9 @@ ITEMS: [Item 1, Item 2, Item 3]
 For each row, [domain-specific instruction — e.g., "use publicly verifiable sources only" or "cite the year of the data point in parentheses"].
 ```
 
-If the returned output does not match the requested format, preserve the typed
-failure or malformed artifact and surface it. Do not replay the provider request.
+If the returned output does not match the requested format, preserve and interpret
+the full raw response. A formatting preference is not a native failure or a
+content gate. Do not replay the provider request to repair formatting.
 
 ### 4. Execute the active primary's portion in parallel
 
@@ -102,21 +110,21 @@ The annotation also matters for the user's audit trail. If a downstream fact tur
 | Multi-document summarization | 10 customer-interview transcripts | One structured summary per interview (themes / quotes / open questions) | Two readers surface different framings; merge produces broader coverage of insights |
 | Regulatory research | 5 jurisdictions' rules on a specific topic | Markdown table (jurisdiction × rule × source citation) | Per-jurisdiction sources differ in coverage; dual reads catch more accurately-cited material |
 | Academic literature scan | 8 papers on a methodology | One summary per paper (method / findings / limitations / relevance) | Different families weight what's "relevant" differently; coverage is broader |
-| Clinical trial landscape | 6 active trials in an indication | One row per trial (phase, endpoint, eligibility, primary investigator) | Cross-family sourcing catches different trial registries |
+| Clinical trial landscape | 6 active trials in an indication | One row per trial (phase, endpoint, eligibility, primary investigator) | Additional source coverage can find different trial registries |
 | Patent landscape | 10 patents to summarize | One row per patent (claim summary / freedom-to-operate impact / status) | Patent databases have different coverage; dual reads improve completeness |
 | Financial peer benchmarking | 7 peer companies' last-quarter metrics | Table (company × revenue × growth × margin × cap structure) | Source disagreement is itself a signal; dual reads surface the disagreements |
 | Customer ticket categorization | 50 recent tickets to label | Per-ticket label (category, severity, suggested-routing) | High-volume bulk categorization where one family's category boundaries differ from the other's; the disagreements are the interesting cases |
 
-The pattern is constant: list of independent items, structured output per item, split between families, annotate attribution in the merge.
+The pattern is constant: list of independent items, structured output per item, split between workers, annotate attribution in the merge.
 
 ## Anti-patterns
 
 - **Hiding the split.** Always annotate which items came from the reviewer. The user's calibration on each model is different; conflating the sources misleads them.
 - **Delegating sequential work** where one subtask depends on another's output. The skill is for independent fan-out only.
 - **Failing to give the reviewer strict formatting instructions.** Mismatched format requires manual normalization in the merge step, which adds latency and loses signal.
-- **Using this when a single the active primary parallel-subagent call would do the same job** with no cross-family coverage value. The orchestration overhead is unjustified.
-- **Pathological splits** (give the reviewer a single item or all the items). The first wastes parallelism; the second defeats dual coverage. Aim for roughly even.
+- **Using this when a single the active primary parallel-subagent call would do the same job** with no additional coverage or latency benefit. The orchestration overhead is unjustified.
+- **Pathological splits** (give the reviewer a single item or all the items). The first wastes parallelism; the second needs a workload and integration justification. Aim for roughly even.
 - **Using frontier/maximum on bulk extraction or lookups.** Economical/minimal is the right default — throughput matters more than depth on each item. Reserve frontier/maximum for items genuinely requiring analysis.
 - **Asking the reviewer for *judgment* synthesis** across its items (e.g., "rank these 3 competitors"). The judgment should happen in the merge step where the user can see both halves; the verifier produces per-item structured output only.
-- **Silently replaying malformed output.** Format mismatch is a typed failure;
-  do not spend a second inference behind the user's back.
+- **Silently replaying for formatting.** Preserve and interpret the raw output;
+  formatting alone is not a provider failure or authorization for another attempt.

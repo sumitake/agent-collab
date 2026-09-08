@@ -212,6 +212,30 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertNotIn("sits in a different model family", text)
                 self.assertNotIn("cross-family partner", text)
 
+    def test_all_routed_skills_avoid_automatic_family_exclusion_claims(self) -> None:
+        build_skills = self._load_build_skills()
+        for name in sorted(build_skills.ROUTED_SPECS):
+            text = " ".join((PLUGIN / "skills" / name / "SKILL.md").read_text().lower().split())
+            with self.subTest(skill=name):
+                for stale in ("central policy resolves the eligible worker after family exclusion", "central policy selects an independent", "independent-family route", "independent family", "independent-family-authored"):
+                    self.assertNotIn(stale, text)
+        intent = " ".join((PLUGIN / "skills" / "intent-check" / "SKILL.md").read_text().split())
+        self.assertIn("advisory context comparison and has no pre-dispatch family gate", intent)
+        self.assertNotIn("Dispatch an independent intent comparison", intent)
+        self.assertNotIn("Before dispatch, establish", intent)
+        self.assertIn("cannot satisfy a review or governance evidence contract", intent)
+        delegate = " ".join((PLUGIN / "skills" / "delegate" / "SKILL.md").read_text().split())
+        self.assertIn("Normal untargeted routing is appropriate for ordinary advisory delegation", delegate)
+        self.assertIn("do not claim dual-family coverage without positive observed-lineage evidence", delegate)
+        self.assertNotIn("The cross-family value is the gating criterion", delegate)
+        self.assertNotIn("Format mismatch is a typed failure", delegate)
+        dev = " ".join((PLUGIN / "skills" / "dev-delegate" / "SKILL.md").read_text().split())
+        self.assertNotIn("eligible cross-family worker", dev)
+        self.assertIn("does not prevent ordinary development work", dev)
+        teamwork = " ".join((PLUGIN / "skills" / "teamwork" / "SKILL.md").read_text().split())
+        self.assertIn("role or action alone does not prove independence", teamwork)
+        self.assertIn("independent approval requirement unmet", teamwork)
+
     def test_route_uses_protocol_five_explicit_target_field(self) -> None:
         text = (
             PLUGIN / "skills" / "route" / "SKILL.md"
