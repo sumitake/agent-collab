@@ -10,7 +10,7 @@ the contribution contract remain authoritative for their respective claims.
 When two generations differ, use the status vocabulary below instead of
 silently treating them as the same thing.
 
-The current published release is v7.0.5 with signed provider runtime 5.0.7,
+The current published release is v7.0.6 with signed provider runtime 5.0.7,
 manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12.
 
 ## Read this handbook in order
@@ -105,7 +105,7 @@ not a public issue or pull request.
 | --- | --- | --- |
 | What does the package install? | [System context](system-context.md) | Host manifests, generated marketplaces, package tree, and distribution tests. |
 | Which workflows exist? | [Capabilities and workflows](capabilities-and-workflows.md) | `skill-specs/`, generated skills, package reference, and skill-contract tests. |
-| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v7.0.5 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
+| How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v7.0.6 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
 | Who may review, write, or merge? | [Governance and authority](governance-and-authority.md) | Host policy, coordinator, public governance contract, PR template, and compliance checks. |
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
 | How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |

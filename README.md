@@ -7,7 +7,7 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.6).
 
-Current published release: **7.0.5** ([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)).
+Current published release: **7.0.6** ([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)).
 It carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
@@ -20,17 +20,20 @@ installation, and readiness claims separate.
 
 ## What's new - v7.0.6
 
-Review skills now make reviewer independence a caller responsibility. Before
-dispatch, the caller establishes the primary and artifact-author families and
-checks the proposed reviewer. Afterward, it verifies the observed reviewer
+When independent review is required, the skills make reviewer independence a
+caller responsibility. Before dispatch, the caller establishes the primary and
+artifact-author families and checks the proposed reviewer. Afterward, it verifies the observed reviewer
 family and source before accepting independent evidence. Unknown lineage stays
 unknown; a routing result alone does not establish independence.
 Ordinary code review can still use available Gemini when no eligible independent
 reviewer exists, with an explicit advisory label and no independent-approval claim.
 
 This content update retains the signed runtime `5.0.7` and wire schema 12
-unchanged. Publication and host refresh for 7.0.6 are pending; the dated status
-snapshot remains the verified 7.0.5 release record.
+unchanged. The release is published, and all 178 released files match each of
+the four observed local installations. Provider-free planning and migration
+checks passed from the control session against those roots; existing tasks
+still need a fresh session to load updated skills. The dated status snapshot
+records those limits and the unresolved Claude subscription-access denial.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -189,7 +192,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v7.0.5 closeout is recorded in the
+The v7.0.6 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing

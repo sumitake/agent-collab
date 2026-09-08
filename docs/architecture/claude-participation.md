@@ -52,6 +52,12 @@ The 7.0.5 host qualification explicitly deferred restoration of local Claude
 subscription access and live Claude intent qualification. That deferral does
 not enable another Claude action and is not a passed native inference check.
 
+During the 7.0.6 follow-up, one fresh admitted document-intent attempt returned
+an organization subscription-access denial. Package installation and
+provider-free readiness did not establish inference access. Omitted Claude
+profiles remain unqualified in [#162](https://github.com/sumitake/agent-collab/issues/162);
+the attempt was not replayed, and no billing or credential change was made.
+
 ## Host and resident-primary role
 
 Claude Code remains a fully supported host: the package installs natively,

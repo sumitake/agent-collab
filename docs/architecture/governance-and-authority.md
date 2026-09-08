@@ -20,12 +20,31 @@ field. It does not dynamically perform this exclusion. The skill and repository
 workflow require it, and the primary verifies the selected reviewer and the
 substance of the exact-head review.
 
+For an authorized independent review, the caller binds its verified reviewer
+selection to the actual request, honors an operator-named provider, and checks
+observed native lineage afterward. Planning an untargeted call does not reserve
+that selection for a later call. Role names, receipts and routing success do
+not establish independence, and a consumed request is not replayed to improve
+its evidence. The [released review skill](../../skill-specs/code-review.md)
+contains the caller procedure.
+
+Ordinary code review remains useful when no independent reviewer is available.
+For example, a Gemini primary with only Gemini available can receive a
+same-family advisory review. Unknown lineage is labeled unverified advisory.
+Neither clears an independent approval required by the task or repository, and
+the caller does not repeatedly try an absent Grok installation. An OpenCode or
+ZCode subscription name alone establishes no model lineage.
+
+Intent comparison, creative ideation, persona simulation and bounded context
+delegation are advisory work. They need no family difference to proceed and
+cannot become governance evidence through a role assignment or successful call.
+
 ```mermaid
 flowchart LR
-    Artifact["Artifact plus author lineage"] --> Eligibility["Eligibility policy"]
+    Artifact["Artifact plus author lineage"] --> Eligibility["Caller verifies required lineages"]
     Primary["Active primary lineage"] --> Eligibility
-    Eligibility --> Exclude["Exclude primary and author families"]
-    Exclude --> Reviewer["Eligible independent reviewer"]
+    Eligibility --> Exclude["Caller excludes primary and author families"]
+    Exclude --> Reviewer["Caller selects an independent reviewer"]
     Reviewer --> Evidence["Review artifact or governance verdict"]
     Evidence --> PrimaryGate["Primary integration and repository gates"]
 ```

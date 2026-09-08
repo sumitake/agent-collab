@@ -72,7 +72,7 @@ Installation, selection, and readiness are separate checks.
    snapshot. A listed route is not proof of readiness.
 5. **Bounded smoke test:** invoke one low-risk read-only workflow, such as a
    second opinion on a short draft, and verify the returned family is eligible
-   and independent.
+   and independent where the task requires independent approval.
 
 For an activation package, inspect the provider-free migration report:
 
@@ -99,7 +99,7 @@ Invoke the skills in normal language or by their host command. Examples:
 /agent-collab:second-opinion Review this architecture decision.
 /agent-collab:code-review Review the current diff against the task.
 /agent-collab:qa-verify Verify the completed work against these acceptance criteria.
-/agent-collab:delegate Split this read-only research list with an independent reviewer.
+/agent-collab:delegate Extract comparable facts from these supplied reports in parallel.
 /agent-collab:agent-runtime-status
 ```
 
@@ -119,7 +119,7 @@ Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v7.0.5
+`project-estimation` is offline and read-only by default. The packaged v7.0.6
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
@@ -217,6 +217,18 @@ a fresh session only after the host reports the intended package version. Do
 not reconstruct a lifecycle path, copy a runtime out of another package, or
 fall back to a retired provider-specific plugin.
 
+## Caller sandbox compatibility
+
+A caller's macOS sandbox can prevent a native provider from initializing its
+own command sandbox, even though file reads work. Once this composition problem
+is established, use the host's approved execution path for the normal
+coordinator while preserving native sandboxing and permission decisions. Treat
+it as a caller invocation constraint, not a provider failure. If approval is
+unavailable, stop the dependent action; do not disable native protections or
+replay a consumed request under different permissions. The
+[package reference](../../plugins/agent-collab/README.md#routing-request)
+contains the invocation guidance.
+
 ## Troubleshoot
 
 | Symptom or status | Meaning | Safe response |
@@ -224,7 +236,7 @@ fall back to a retired provider-specific plugin.
 | Skill is missing | The package may not be installed, enabled, or loaded in this session. | Check host plugin inventory, then start a new session/task. |
 | `duplicate_blocked` or migration conflict | A retired package remains active or installed. | Run migration doctor, apply only its host-specific removal actions, and run it again. |
 | `unavailable` | The route, runtime, provider prerequisite, or observed readiness is not currently usable. | Run runtime status and migration doctor; check supported vendor authentication separately. Do not use a raw-provider fallback. |
-| Reviewer shares a required excluded family | The primary cannot count that output as independent governance evidence. | Select an eligible different family before dispatch or record the existing review as non-independent; the current routing wire does not enforce lineage exclusion. |
+| Reviewer shares a required excluded family | The primary cannot count that output as independent governance evidence. | Where independence is required, select an eligible different family before dispatch. Ordinary review may retain the output as advisory; the current routing wire does not enforce lineage exclusion. |
 | Reviewer or author lineage is unknown | The primary cannot establish governance independence. | Verify the actual model lineage and authorship; do not guess from a host nickname or installation path. |
 | `config_error` | Request fields, host identity, or route/action pairing violate the closed schema. | Use the installed skill/package reference; remove unsupported fields rather than widening the schema. |
 | `auth_error` or `quota_error` | The managed provider prerequisite failed after routing. | Use the provider's supported login/account interface or wait for quota. Keep the same authority. |

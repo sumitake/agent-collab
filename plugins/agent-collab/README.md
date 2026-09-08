@@ -8,8 +8,8 @@ interpreted by the calling agent with ordinary reasoning.
 
 Current repository source: **7.0.6**
 
-Current published release: **7.0.5**
-([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)); it
+Current published release: **7.0.6**
+([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)); it
 carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
@@ -24,15 +24,17 @@ partial remains available to the caller.
 The 7.0.6 content update corrects reviewer-independence instructions: the caller
 establishes the primary and artifact-author families, checks an eligible
 reviewer before dispatch, and verifies observed lineage before accepting
-independent evidence. Routing does not perform that check. Publication and host
-refresh for 7.0.6 are pending.
+independent evidence. Routing does not perform that check. Version 7.0.6 is
+published; the dated status snapshot records verified installed bytes and
+provider-free planning separately from fresh host-session loading or inference.
 
 The 7.0.5 release restored migration-doctor reports for this descriptor
 and retains bounded opaque native output when final-answer extraction finds no
 text, including bytes observed during completion and cleanup. Native execution
 status remains separate from retained content, which the caller interprets.
 The dated status snapshot records host verification and the explicit Claude
-subscription/live-qualification deferral.
+subscription/live-qualification deferral for that release and the later
+7.0.6 task's observed subscription-access denial.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and

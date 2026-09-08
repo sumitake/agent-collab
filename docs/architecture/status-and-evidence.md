@@ -17,7 +17,47 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.5
+## Current snapshot — v7.0.6
+
+The [`v7.0.6` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6) was published on
+2026-09-08 at 13:54:44 UTC.
+The signed annotated v7.0.6 tag object `849599dd73911635bc19bb58ed7a0c32a46d79b6` identifies public commit `fc8d66b3978dc1f2a177e9447b45915bb3486f84`.
+The [exact release workflow](https://github.com/sumitake/agent-collab/actions/runs/34234609927)
+succeeded; the release command compared all three published assets with its
+locally built canonical archive, checksum and SPDX evidence.
+
+| Published asset | Verified SHA-256 |
+| --- | --- |
+| `agent-collab.v7.0.6.plugin` | `b7928573b1e2e38af10baeadb97fdeb3fbab3b883e56be9cdbd3e7b12b3c4e4c` |
+| `agent-collab-v7.0.6.spdx.json` | `862607efcc0e33ed4c116e9e2b0b54eb65e7baff60c2fc2869b153ada3bf4a72` |
+| `agent-collab.v7.0.6.plugin.sha256` | `7d393dcec7042252a43a132c499e17469790066ab8dd36bad62f7872ef4be7a0` |
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| Package 7.0.6 retains signed runtime 5.0.7, manifest schema 4, protocol 5, native contract 4 and wire schema 12. All 86 runtime/manifest files are unchanged from 7.0.5. | verified release identity | No runtime rebuild or new provider capability is claimed. Both shipped macOS architectures passed release signature/notarization verification. |
+| The released manifest lists 12 logical actions, eight logical agents and two macOS architecture artifacts; the released package contains 53 generated skills. | verified current inventory | Legacy transport-action/source-pair counts in older snapshots describe those older protocols, not this routing-only interface. |
+| All released files match the observed supported local installations. | verified installed bytes | Supported managers performed the updates; no released file was excluded from comparison. Host-created metadata is outside the release inventory. |
+| Each observed installation returned provider-free planning decisions for all advertised intents with no dispatch results. JSON and text migration doctor reported READY, with no inventory errors or active legacy packages. Gemini was selected for repository-review planning. | verified planning from one control session | These checks used each installation from one current session. They do not prove fresh desktop-session loading, authentication or model inference on each host. |
+| Ordinary Gemini code review can proceed with same-family or unverified advisory labels when no eligible independent reviewer is available. Independent approval remains a caller-verified requirement where applicable. | released skill behavior | [PR #204](https://github.com/sumitake/agent-collab/pull/204) corrects the full generated instruction path. Gemini repository review was already admitted in 7.0.5; this is a caller-guidance correction. |
+| The source task obtained fresh Gemini repository-review and exact-commit governance results, with observed Google lineage and retained raw findings. | bounded prepublication execution evidence | These calls exercised the unchanged installed runtime before the content release; they are not new post-install carrier qualifications or permission to replay earlier attempts. |
+| Caller sandbox composition guidance preserves native permissions and normal capabilities. | released operational guidance | The demonstrated nested-sandbox problem is a caller invocation constraint, not a provider failure. |
+| One fresh Claude document-intent attempt returned an organization subscription-access denial; [#162](https://github.com/sumitake/agent-collab/issues/162) remains unresolved. | blocked inference qualification | No omitted Claude profile was qualified, no consumed case was replayed, and no billing or credential change was made. |
+
+The unchanged runtime retains its prior qualification history, recorded below.
+This content release did not repeat that matrix. Existing host conversations
+can retain an earlier skill catalog until a fresh session loads the update.
+
+### v7.0.6 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root and package README | **updated** | One 7.0.6 showcase, published state, advisory-review behavior and installed-versus-loaded limits match the release evidence. |
+| Architecture handbook | **updated** | Current-release references, review/intent/delegation explanations, Antigravity support, caller sandbox guidance and Claude access status align with released source. |
+| Runtime and inventory | **verified current** | Runtime 5.0.7, schemas/protocol, 12 actions, eight agents, two architectures and 53 skills come from the released manifest/package. Older snapshot counts remain historical. |
+| Project-estimation maintenance | **updated** | The verified receipt is bound to 7.0.6; the prior remains bootstrap/last-good and unknown quotas remain unknown. No promoted calibration is claimed. |
+| Generated changelog | **verified current at the signed tag** | [PR #206](https://github.com/sumitake/agent-collab/pull/206) compiled the exact version section; the published notes contain it unchanged after the workflow's standard preamble. This closeout adds a fragment without editing signed history. |
+
+## Historical snapshot — v7.0.5
 
 The [`v7.0.5` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)
 was published on 2026-09-08 UTC.
@@ -86,7 +126,7 @@ readiness remain host-specific evidence planes.
 
 The public [`v7.0.1` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)
 is published and its immutable release workflow succeeded. It is retained as a
-dated snapshot; v7.0.5 is the current published release.
+dated snapshot; see the current snapshot above for the latest published release.
 
 | Observation | Status | Interpretation |
 | --- | --- | --- |
