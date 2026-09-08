@@ -74,14 +74,18 @@ Installation, selection, and readiness are separate checks.
    second opinion on a short draft, and verify the returned family is eligible
    and independent.
 
-For an activation package, the installed package can report status without
-model inference. Run the provider-free doctor and the single readiness
-snapshot:
+For an activation package, inspect the provider-free migration report:
 
 ```text
 python3 "<installed-plugin-root>/migration_doctor.py" --json
-printf '%s\n' '{"operation":"readiness","request_id":"runtime-status-1","quality_profile":"frontier","effort_class":"maximum","timeout_ms":120000}' | python3 "<installed-plugin-root>/coordinator.py"
 ```
+
+For zero-inference routing, use the manifest-bound example in the package
+README's [Routing request](../../plugins/agent-collab/README.md#routing-request) section and set
+`dispatch_requested=false`. Keep its wire digest, request identity, quality,
+effort, and logical work units. The retired `operation=readiness` request
+shape is not supported. Planning returns route decisions; it does not check
+provider authentication or establish live task completion.
 
 Use the exact installed plugin root supplied by the host or migration doctor.
 Do not search for provider executables, substitute a binary, or add path/model
@@ -115,7 +119,7 @@ Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v7.0.0
+`project-estimation` is offline and read-only by default. The packaged v7.0.5
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
@@ -220,12 +224,12 @@ fall back to a retired provider-specific plugin.
 | Skill is missing | The package may not be installed, enabled, or loaded in this session. | Check host plugin inventory, then start a new session/task. |
 | `duplicate_blocked` or migration conflict | A retired package remains active or installed. | Run migration doctor, apply only its host-specific removal actions, and run it again. |
 | `unavailable` | The route, runtime, provider prerequisite, or observed readiness is not currently usable. | Run runtime status and migration doctor; check supported vendor authentication separately. Do not use a raw-provider fallback. |
-| `same_family_blocked` | The requested reviewer/worker is not independent from the primary or artifact author. | Select an eligible different family or treat the review as non-independent. |
-| `unknown_family` | Current identity or artifact lineage cannot establish governance independence. | Correct the supported host identity signals; do not guess from a model nickname or installation path. |
+| Reviewer shares a required excluded family | The primary cannot count that output as independent governance evidence. | Select an eligible different family before dispatch or record the existing review as non-independent; the current routing wire does not enforce lineage exclusion. |
+| Reviewer or author lineage is unknown | The primary cannot establish governance independence. | Verify the actual model lineage and authorship; do not guess from a host nickname or installation path. |
 | `config_error` | Request fields, host identity, or route/action pairing violate the closed schema. | Use the installed skill/package reference; remove unsupported fields rather than widening the schema. |
 | `auth_error` or `quota_error` | The managed provider prerequisite failed after routing. | Use the provider's supported login/account interface or wait for quota. Keep the same authority. |
 | Output-only worker made no caller-worktree changes | Expected behavior. | Review the returned artifact and apply it through the trusted primary if appropriate. |
-| Governance call refuses partial identity | Expected fail-closed behavior. | Establish all required current-session identity fields or use a non-governance workflow with its warning. |
+| Governance evidence lacks required identity | Repository/skill policy is not satisfied, regardless of runtime success. | Establish the required provenance before accepting the review; this is the primary workflow responsibility. |
 | Version in a running session is stale | The host loaded an earlier package snapshot. | Finish the marketplace/package update and start a genuinely new session/task. |
 
 Preserve typed errors. Do not infer failure from response prose, retry a
@@ -234,10 +238,11 @@ explicit target.
 
 ## Fail closed and release correction
 
-The direct runtime fails typed when the selected package, manifest, bundle,
-provider prerequisite, source boundary, or cleanup proof is not usable. It
-does not silently choose a wider authority, restore a retired package, or
-replay the whole request through another provider.
+Package verification and routing errors remain explicit. Native execution and
+cleanup observations stay separate from retained content, so a diagnostic is
+not itself a verdict on whether that content is useful. The primary verifies
+task completion and effects. A failure never authorizes wider access, a retired
+package, or replay through another provider.
 
 A published release correction is a release-governance decision. Do not move
 or reuse a published tag, detach a shared marketplace clone, copy a runtime

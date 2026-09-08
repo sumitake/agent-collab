@@ -11,11 +11,11 @@ governance, repository, or code-generation authority.
 ## The managed route
 
 The signed runtime descriptor admits Claude only for
-`context.documents.intent` with document source. The runtime invokes the
-locally installed official Claude CLI through its structured interface and
-returns the existing read-only `context_text` artifact with all-document-read
-evidence. It does not expose provider credentials, a raw CLI escape hatch, or
-a general Claude transport to callers.
+`context.documents.intent`. The selected carrier invokes the locally installed
+official Claude CLI and returns bounded opaque content with separate execution
+diagnostics. The caller supplies and verifies the document inputs; a response
+does not prove every document was read or establish a `context_text` artifact.
+No general Claude transport is exposed in the routing request.
 
 Routing is deliberately cost-last: eligible Gemini and Grok document-intent
 routes precede Claude. Claude becomes a candidate only within the same sealed
@@ -30,29 +30,27 @@ The boundary is action- and source-specific:
 - not allowed: review, governance, architecture, planning, delegation, or
   code generation.
 
-Readiness reports Claude only for the compatible action/source pair. A ready
-Claude CLI does not make Claude eligible elsewhere, and an unavailable Claude
-candidate does not make the family globally unavailable.
+Planning can select Claude only for its admitted action. A route decision
+does not prove authentication, enable another action, or establish the
+availability of the whole family.
 
 ## Provider and credential boundary
 
-The route uses the provider's own installed CLI and its supported structured
-output surface. The package does not extract or reuse Claude subscription
-credentials in another client, translate them into an API credential, or
-publish a provider invocation recipe. Authentication and CLI currency remain
-owned by the official tool; the signed adapter observes readiness and returns
-typed failures without weakening the request contract.
+The route uses the provider's own installed CLI. The package does not extract
+subscription credentials, reuse them in another client, or convert them into
+API credentials. Authentication and CLI currency remain owned by the official
+tool. The runtime preserves native results and available content separately;
+the caller determines whether the requested intent comparison completed.
 
-This distinction matters. Driving an interactive terminal UI by screen
-scraping would create an unversioned, brittle completion heuristic and could
-not produce the runtime's structured evidence. The managed route does not do
-that: it uses a bounded structured CLI contract, one fresh process for the
-sealed request, typed output validation, and deterministic cleanup.
+Native transport and lifecycle controls may be parsed, but provider prose or
+structured-output shape does not establish document evidence or gate bounded
+opaque-content recovery. The invocation has one owned process lifecycle and
+separate cleanup evidence. There is no interactive screen-scraping completion
+heuristic, credential fallback, or automatic replay.
 
-Provider terms and the official CLI contract remain authoritative. If either
-withdraws the structured surface, readiness fails closed for this route rather
-than substituting a raw command, another credential mechanism, or broader
-authority.
+The 7.0.5 host qualification explicitly deferred restoration of local Claude
+subscription access and live Claude intent qualification. That deferral does
+not enable another Claude action and is not a passed native inference check.
 
 ## Host and resident-primary role
 
@@ -63,7 +61,7 @@ authors and integrates work, adjudicates cross-family feedback, runs
 verification, and owns landing decisions within operator authority.
 
 The native document-intent route does not change independence rules. When the
-active primary or artifact author is Anthropic-family, policy still excludes
+active primary or artifact author is Anthropic-family, the primary and repository/skill workflow must exclude
 same-family evidence where an independent family is required. Conversely,
 when another family is primary, Claude document intent remains context only;
 it cannot satisfy a review or governance evidence contract.
@@ -71,8 +69,8 @@ it cannot satisfy a review or governance evidence contract.
 ## Asynchronous participation
 
 Host-owned asynchronous coordination remains a separate, explicitly
-authorized surface. The public coordinator may report its readiness but does
-not send async messages. An async response keeps the authority of that
+authorized surface. Host tooling owns addressability checks; the public coordinator does
+not report async readiness or send async messages. An async response keeps the authority of that
 coordination channel and does not become managed runtime evidence merely
 because Claude also has a native document-intent route.
 

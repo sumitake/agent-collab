@@ -17,7 +17,48 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.3
+## Current snapshot — v7.0.5
+
+The [`v7.0.5` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)
+was published on 2026-09-08 UTC.
+The signed annotated v7.0.5 tag object `b50a6333e5de709edf421d0cf08d604318c95977` identifies public commit `e2ff45467c1cf5ade7235f40ff6c822b7d9e5c87`. The exact-tag
+[workflow 34180596517](https://github.com/sumitake/agent-collab/actions/runs/34180596517)
+succeeded. The release cutter compared the downloaded assets to its locally
+built commit-bound canonical archive, checksum, and SPDX evidence.
+
+| Published asset | Verified SHA-256 |
+| --- | --- |
+| `agent-collab-v7.0.5.spdx.json` | `5e46ea2df5ca9c975bab9101382bbf9498d443de273630ee8a2bd630c24a0c1c` |
+| `agent-collab.v7.0.5.plugin` | `c32159ab6bd61cd149839a95d033f8d2c2fc857192393acfc7dd63d4d24bbc4f` |
+| `agent-collab.v7.0.5.plugin.sha256` | `7a9c22ec28a79235941034ce9e5d795eed9d64975b0ed7807e8bfdbee18f4008` |
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| Package 7.0.5 carries runtime 5.0.7, manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12. Manifest SHA-256 `a11571908933c48fc301838d1cdb5d5f71433924af5b4b8419fd7b658695f440` binds wire digest `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a`. | verified release identity | ARM bundle `0d1897e08fc7ad13621681a60f9242d759adc04b4433eac93f53f196dd53d2f3` and Intel bundle `672dd9b2d4d69b34ffe3d8f99a5269b4ce38f43c940bf8627280fd0a0e3b86b0` were signed, notarized, and qualified before publication. |
+| Claude, Codex, Antigravity/Agy, and Grok resolve package 7.0.5 through their supported plugin managers. All 178 released files match every installed root. Additional marketplace/import/in-use metadata is separately inventoried; no released file is omitted from comparison. | verified installed bytes | Grok pins the exact v7.0.5 tag/commit. Claude and Codex had already auto-updated from merged main before the explicit update/readback. |
+| Both JSON and text migration-doctor reports succeed from all four roots, with runtime available, current wire digest, and 12 logical actions. Each root's fresh provider-free routing request returns 12 decisions. | verified resolution and planning | These checks execute the installed package boundary without model inference; planning does not establish authentication or live provider availability. |
+| The installed packaged Grok qualifier returns schema 4 `qualified`, verifies both fixture reads, preserves opaque prose, and confirms source invariance and cleanup against the installed ARM artifact. | provider-free mechanical qualification | Its carrier is a deterministic fixture, not a live model. |
+| Fresh installed Google/Agy repository extraction, Codex repository architecture, Grok repository architecture, and OpenCode/Zhipu repository architecture return correct fixture markers and dependency/output facts. Each actual native invocation reports ok/rc0 and confirmed cleanup; tracked fixture sources are unchanged and owned fixtures are archived/removed. | verified bounded native execution | Four actual model invocations, one per non-deferred carrier; no provider replay. Google's earlier unsupported action was rejected during planning with no dispatch, then corrected to the admitted extraction action. |
+| All non-deferred staged outcomes were qualified: eight original successful rows plus six explicitly authorized corrected cases. Original incomplete rows remain retained as such. Native Intel CI smoke and signed Intel execution under Rosetta also succeeded. | qualified release scope | The initial matrix is not relabeled as a full pass. Concrete task payloads and inactive obsolete Agy selectors resolved the later checks; no coordinator/adapter hardening was added. |
+| Claude subscription restoration and live document-intent qualification are explicitly operator-deferred to a later release. | deferred | Package installation and provider-free checks pass; no new Claude inference was attempted or counted as passing. Omitted Claude actions remain separate in [#162](https://github.com/sumitake/agent-collab/issues/162). |
+| The source fixes' publication and installed readback conditions are satisfied for [#144](https://github.com/sumitake/agent-collab/issues/144), [#165](https://github.com/sumitake/agent-collab/issues/165), and [#194](https://github.com/sumitake/agent-collab/issues/194). | closed within recorded scope | Successful bounded cases do not prove universal provider availability or eliminate every native tool-choice failure. The earlier generic-prompt Grok recursion observation remains a documented limitation. |
+
+The native checks start fresh processes from the installed roots. A running
+host conversation can retain its earlier skill catalog until that host reloads;
+this snapshot does not relabel an already-running conversation or claim that
+Claude's deferred inference is active.
+
+### v7.0.5 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root and package `README.md` | **updated** | Current publication is 7.0.5 / runtime 5.0.7; opaque output, normal invocation, and progress-inactivity descriptions agree with the signed contract. |
+| Architecture handbook | **updated** | This snapshot binds release and host evidence. Lifecycle guidance uses manifest-bound planning rather than the retired readiness request; caller obligations are distinguished from runtime guarantees. |
+| Independent-review policy | **verified current; description corrected** | Repository/skill requirements for an independent family remain unchanged. The current routing wire has no dynamic primary/artifact-lineage exclusion fields; the primary verifies independence and substantive review evidence. |
+| Project-estimation maintenance | **updated** | The release carries a verified version-bound 7.0.5 receipt, an explicit last-good bootstrap, refreshed pricing, and unknown quota where numeric evidence is absent. It is not promoted calibration. |
+| Generated release changelog | **verified current at the signed tag** | The versioned 7.0.5 section exactly matched its source fragment before tagging. This closeout adds a fragment and does not alter the immutable release or regenerate its history. |
+
+## Historical snapshot — v7.0.3
 
 The public [`v7.0.3` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)
 is published and its immutable release workflow succeeded. Installation and
@@ -45,7 +86,7 @@ readiness remain host-specific evidence planes.
 
 The public [`v7.0.1` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.1)
 is published and its immutable release workflow succeeded. It is retained as a
-dated snapshot; v7.0.3 is the current published release.
+dated snapshot; v7.0.5 is the current published release.
 
 | Observation | Status | Interpretation |
 | --- | --- | --- |
@@ -57,7 +98,7 @@ dated snapshot; v7.0.3 is the current published release.
 
 The public [`v7.0.0` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.0)
 is published and its release evidence is verified. This is a dated snapshot:
-the release is current, while installation and readiness remain host-specific
+its publication remains historical, while installation and readiness are host-specific
 evidence planes.
 
 | Observation | Status | Interpretation |

@@ -42,7 +42,7 @@ in [Governance and authority](governance-and-authority.md).
 
 Current repository route contracts cover:
 
-- Claude read-only document-intent work through the official structured CLI,
+- Claude read-only document-intent work through the official native CLI,
   cost-last after eligible Gemini and Grok routes;
 - Gemini advisory, governance, and bounded context work;
 - Codex advisory, governance, and output-only code-generation work;
@@ -66,8 +66,8 @@ tests, or user approval; “primary-executed” is not “unchecked.”
 
 Claude and Antigravity participation can use host-owned asynchronous transport
 after the exact target identity, family, session, and current readiness are
-observed. For that surface, the public coordinator exposes readiness only and
-does not send. Async coordination is separate from Claude's narrow managed
+observed through host tooling. The public coordinator neither reports async
+readiness nor sends async messages. Async coordination is separate from Claude's narrow managed
 `context.documents.intent` route, and an async reply is not independent
 governance merely because it arrived. [Claude participation](claude-participation.md)
 explains the action-scoped boundary.
@@ -91,8 +91,9 @@ the primary for integration.
 1. Identify the exact artifact and its author lineage.
 2. Invoke `second-opinion`, `code-review`, `governance-review`, `red-team`, or
    `qa-verify` according to the risk.
-3. Policy excludes the primary and artifact-author families where independence
-   is required.
+3. The skill/repository workflow requires a reviewer outside the primary and
+   artifact-author families. The primary verifies that independence; the
+   current routing request does not dynamically enforce those lineages.
 4. Preserve the raw finding and typed status.
 5. The primary adjudicates, changes the artifact if needed, and re-verifies the
    exact head.
@@ -104,8 +105,8 @@ the primary for integration.
    condition.
 3. Read-heavy work can use a cheaper capable tier; judgment and landing stay
    with the primary.
-4. Output-only code is returned as an artifact from a private temporary
-   workspace; it is not written into the caller's checkout.
+4. The caller supplies a disposable repository or copy, captures any patch,
+   and verifies it before application; the runtime does not apply output.
 5. The primary reviews and tests all delegated output before it becomes source.
 
 ### Architecture and planning
@@ -123,7 +124,7 @@ workflows explicitly compose the checkpoint before final presentation. A host
 without contextual skill selection uses explicit invocation and reports that
 the automatic checkpoint was unavailable. See
 [Project estimation](project-estimation.md) for modes, examples, output
-semantics, and the published v7.0.0 maintenance evidence.
+semantics, and the published v7.0.5 maintenance evidence.
 
 The packaged prior is currently an explicit bootstrap: enhancement duration is
 descriptive, bootstrap confidence cannot be high, and unsupported greenfield,
@@ -142,7 +143,7 @@ authority.
 
 | Surface | Public package evidence | User expectation |
 | --- | --- | --- |
-| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official structured CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
+| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official native CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
 | Antigravity | Dynamic host policy and async target model; no separate package. | Use only through a compatible package host and observed async readiness. It is not a coordinator `target_agent` unless the current signed descriptor explicitly admits it. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |

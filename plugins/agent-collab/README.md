@@ -8,9 +8,9 @@ interpreted by the calling agent with ordinary reasoning.
 
 Current repository source: **7.0.5**
 
-Current published release: **7.0.3**
-([`v7.0.3`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.3)); it
-carries signed provider runtime `5.0.5`. Host installation, readiness, and
+Current published release: **7.0.5**
+([`v7.0.5`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)); it
+carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
 Version 7.0.5 pairs provider runtime `5.0.7` with manifest schema 4,
@@ -21,11 +21,12 @@ schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
 content-availability gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
 
-The 7.0.5 source candidate restores migration-doctor reports for this descriptor
+The 7.0.5 release restores migration-doctor reports for this descriptor
 and retains bounded opaque native output when final-answer extraction finds no
 text, including bytes observed during completion and cleanup. Native execution
 status remains separate from retained content, which the caller interprets.
-The current published package remains 7.0.3.
+The dated status snapshot records host verification and the explicit Claude
+subscription/live-qualification deferral.
 
 General users should start with the public
 [architecture handbook](../../docs/architecture/README.md) and
@@ -33,7 +34,7 @@ General users should start with the public
 
 ## Skills
 
-This source candidate includes signed runtime 5.0.7 and wire schema 12 for
+This release includes signed runtime 5.0.7 and wire schema 12 for
 both macOS architectures.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the

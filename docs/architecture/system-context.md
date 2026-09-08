@@ -22,8 +22,8 @@ to land the result.
 - A single plugin package for supported host plugin systems.
 - A library of collaboration skills for review, planning, assurance,
   delegation, knowledge work, orchestration, and domain expertise.
-- A public policy boundary that resolves primary and artifact lineage, excludes
-  ineligible families, and seals route authority.
+- A public policy boundary that defines lineage and independence requirements
+  for repository and skill workflows, and seals route authority.
 - A verified client for an optional co-packaged native runtime.
 - A migration and safe-mode boundary for retiring older package generations.
 - A deterministic offline project-estimation component with a released,
@@ -56,12 +56,12 @@ flowchart LR
     Skill --> Coord["Public coordinator and host policy"]
     Skill --> Async["Host-owned async coordination readiness"]
 
-    Coord --> Identity["Primary and artifact lineage"]
-    Identity --> Policy["Family independence and sealed authority"]
+    Coord --> Identity["Manifest-bound routing request"]
+    Identity --> Policy["Descriptor-admitted routes and resources"]
     Policy --> Client["Verified runtime client"]
     Client --> Runtime["Manifest-selected signed runtime"]
     Runtime --> Role["Managed provider role"]
-    Role --> Result["Typed result and evidence"]
+    Role --> Result["Opaque content and execution facts"]
     Result --> Primary
 
     Local --> Primary
@@ -90,11 +90,11 @@ bundle and the metadata needed to verify it may cross into the public package.
 | Supported host | Loads the plugin and exposes its skills in the host's normal interaction model. | Does not redefine model family or route authority. |
 | Trusted primary | Interprets intent, selects a workflow, reviews output, applies changes, tests, and decides what to land within user authority. | Cannot turn same-family output into independent governance evidence. |
 | Skill | Encodes one public workflow and its triggers, evidence needs, and stop conditions. | Does not prove the underlying managed route is active. |
-| Public coordinator and policy | Resolve current identity, family eligibility, route/action pairing, and typed preflight results. | No raw provider, binary, credential, or arbitrary tool selection. |
+| Public coordinator and policy | Forward the manifest-bound request and preserve routing decisions, opaque content, and execution facts. | No raw provider, binary, credential, or arbitrary tool selection. |
 | Managed reviewer | Returns bounded read-only critique or governance evidence. | No source mutation, merge, deployment, or self-approval. |
 | Managed worker | Returns bounded output under its declared authority. | No hidden promotion from output-only to caller-workspace mutation. |
 | Async target | Participates through a host-owned, explicitly addressed handoff after readiness is observed. | The public coordinator does not send async messages; this surface is separate from action-scoped managed routes such as Claude document intent. |
-| Native runtime | Executes the manifest-selected managed contract and returns typed output. | Cannot advertise contracts absent from the closed manifest. |
+| Native runtime | Executes the selected carrier and returns bounded opaque content plus separate execution diagnostics. | Cannot advertise contracts absent from the closed manifest. |
 | Repository governance | Requires trace, review, CI, ownership, and release evidence. | Does not prove that quoted review prose is genuine or replace implementation tests. |
 | Operator | Retains reserved merge, release, activation, security, and recovery authority defined by policy. | Is not silently bypassed by agent consensus or green CI. |
 
@@ -118,34 +118,31 @@ boundary.
 ## Data and control flow
 
 1. The primary invokes a skill or follows a primary-executed playbook.
-2. For a managed route, the public coordinator observes current identity and
-   validates the bounded request.
-3. Policy excludes the active primary family and, when applicable, the
-   artifact-author family from independent review or worker selection.
+2. For a managed route, the public client validates the manifest-bound request;
+   the primary owns author and reviewer identity verification.
+3. The primary and repository/skill workflow record the primary and artifact
+   author lineages and verify an independent reviewer where required.
 4. The request receives one declared authority. Fallback cannot widen it.
 5. The client validates the manifest and native bundle before the managed
    runtime receives a request.
-6. The runtime returns one typed result under the same contract.
+6. The runtime returns bounded opaque content frames, where present, plus
+   terminal routing and execution facts for caller interpretation.
 7. The trusted primary evaluates the result, applies nothing automatically,
    and runs task-appropriate verification.
 8. Pull-request, merge, release, and operator gates remain separate decisions.
 
 ## Threat and trust limit
 
-The public runtime boundary narrows artifact substitution, route confusion,
-authority promotion, unsafe package state, and uncontrolled provider
-invocation. It does not claim isolation from arbitrary malicious code already
-running as the same operating-system user. A canonical user home is not a
-deny-all-read confidentiality boundary; the implementation uses explicit
-same-UID read trust while containing writes, execution/lifecycle state,
-provider-state access, and cleanup.
+The public client verifies the signed package and closed routing contract.
+Native permissions and caller-owned repository handling remain relevant: the
+routing envelope is not a new sandbox, and it does not isolate arbitrary code
+running as the same operating-system user. Callers must supply disposable
+copies for mutation work and verify actual source/patch consequences.
 
-A blocked access attempt inside an established boundary is containment success,
-not a failure. A structural containment failure means the boundary could not be
-established or there is positive evidence of an escaped write or protected-state
-change. Authentication, protocol/output, timeout, provider, teardown, and
-cleanup failures remain distinct. Direct CLI invocation is not a normal
-fallback for a managed route.
+Execution diagnostics and retained content are independent observations.
+Neither unexpected output nor a denied native operation grants broader access,
+a new credential mechanism, or automatic provider replay. Direct raw CLI
+invocation is not a fallback for a consumed managed request.
 
 Continue with [Capabilities and workflows](capabilities-and-workflows.md) or
 [Governance and authority](governance-and-authority.md).
