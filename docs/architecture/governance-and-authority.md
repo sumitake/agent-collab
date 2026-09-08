@@ -130,8 +130,8 @@ and its evidence is verified.
   expose correlated assumptions than another instance of the author's family.
 - **Least authority:** a route receives only the permission its work requires,
   reducing the cost of a hallucination or prompt-injection failure.
-- **Honest evidence:** typed unavailable and unknown-family results preserve
-  uncertainty instead of inventing success.
+- **Honest evidence:** unavailable execution and explicitly unknown lineage
+  remain uncertain; neither is converted into successful governance evidence.
 - **Separation of duties:** authoring, reviewing, integrating, merging, and
   releasing remain distinct accountable acts.
 - **Recoverability:** safe mode and retained verified state stop execution
