@@ -22,6 +22,7 @@ organizes that inventory by user outcome.
 | Deliberation and stakeholder lenses | `debate`, `simulate-user` | Expose conflicting arguments or test a proposal against a persona. |
 | Delegation and implementation | `delegate`, `dev-delegate`, `worker` | Analyze supplied sources or return a development artifact for the primary to integrate. |
 | Context and knowledge work | `context`, `knowledge-compile`, `project-knowledge` | Extract or synthesize bounded documents/repositories, or maintain an explicit project knowledge layer, with provenance. |
+| Shared project lessons | `learning-loop` | Consult and maintain an explicit project-owned lesson ledger through the portable offline helper; retrieved lessons remain untrusted hypotheses. |
 | Reproducible workflows | `chain`, `chain-configurator`, `orchestrate` | Define and execute repeatable multi-step coordination. |
 | Integration and conflict handling | `merge-resolve` | Analyze and resolve a bounded merge conflict while preserving intent. |
 | Visual guidance | `ui-to-code`, `visual-review` | Guide primary-only visual work when typed image transport is absent; never invent a managed attachment path. |
@@ -46,7 +47,9 @@ Current repository route contracts cover:
   cost-last after eligible Gemini and Grok routes;
 - Gemini advisory, governance, and bounded context work;
 - Codex advisory, governance, and output-only code-generation work;
-- OpenCode planning and output-only build work;
+- OpenCode planning, context, governance, and output-only build work through
+  four logical lineages: Moonshot, Zhipu, Alibaba, and DeepSeek. They share one
+  transport/resource pool; shared transport does not establish independence;
 - Grok read-only architecture, governance, bounded context, and output-only
   code generation.
 
@@ -107,7 +110,7 @@ primary/artifact-author lineage exclusion fields.
 ### Bounded delegation
 
 The primary keeps objective interpretation and integration ownership. Ordinary
-`delegate` work analyzes supplied bounded documents or an exact sealed
+`delegate` work analyzes supplied bounded documents or a caller-verified
 repository through an admitted context action. A list of names, links or topics
 alone is not a document corpus, and this route does not promise source discovery.
 Each worker receives the relevant sources, scope and stop condition. Results
@@ -156,7 +159,7 @@ authority.
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
 | Antigravity | Compatible plugin import, logical Gemini managed routes, and separate host-owned async coordination; no separate package. | Gemini repository review uses the co-packaged coordinator and action-scoped readiness. Async readiness is a different surface; neither host name nor reviewer role proves independence. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |
-| Custom host | Explicit primary identity fields and the closed package contract. | If the host cannot load the package safely, it is unsupported; do not recreate provider-specific shims. |
+| Custom host | Caller-verified identity and the closed package contract; the routing wire does not accept primary/author lineage fields. | If the host cannot load the package safely, it is unsupported; do not recreate provider-specific shims. |
 
 ## Availability rules
 

@@ -57,10 +57,10 @@ flowchart LR
     Skill --> Async["Host-owned async coordination readiness"]
 
     Coord --> Identity["Manifest-bound routing request"]
-    Identity --> Policy["Descriptor-admitted routes and resources"]
-    Policy --> Client["Verified runtime client"]
+    Identity --> Client["Verified runtime client"]
     Client --> Runtime["Manifest-selected signed runtime"]
-    Runtime --> Role["Managed provider role"]
+    Runtime --> Policy["Descriptor-admitted routes and resources"]
+    Policy --> Role["Managed provider role"]
     Role --> Result["Opaque content and execution facts"]
     Result --> Primary
 
@@ -104,7 +104,7 @@ The installable package contains:
 
 - Claude-compatible and Codex-native manifests for the same package/version;
 - generated skills built from the editable `skill-specs/` source;
-- coordinator, host policy, migration doctor, runtime client/setup, bundle
+- coordinator, host observations, migration doctor, runtime client, bundle
   verification, and signing-policy modules;
 - the closed runtime and output schemas;
 - package legal and third-party notices; and
