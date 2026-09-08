@@ -19,9 +19,9 @@ runtime. Each has a different evidence source.
 
 ## Current snapshot — v7.0.5
 
-The [v7.0.5 release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)
-was published on 2026-09-08 UTC. Its signed annotated tag object `b50a6333e5de709edf421d0cf08d604318c95977`
-identifies public commit `e2ff45467c1cf5ade7235f40ff6c822b7d9e5c87`. The exact-tag
+The [`v7.0.5` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.5)
+was published on 2026-09-08 UTC.
+The signed annotated v7.0.5 tag object `b50a6333e5de709edf421d0cf08d604318c95977` identifies public commit `e2ff45467c1cf5ade7235f40ff6c822b7d9e5c87`. The exact-tag
 [workflow 34180596517](https://github.com/sumitake/agent-collab/actions/runs/34180596517)
 succeeded. The release cutter compared the downloaded assets to its locally
 built commit-bound canonical archive, checksum, and SPDX evidence.
