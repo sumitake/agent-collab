@@ -49,7 +49,7 @@ def _candidate_manifest(base: dict[str, object]) -> dict[str, object]:
     ).encode("utf-8")
     base["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
     for artifact in base.get("artifacts", []):
-        artifact["provider_runtime_version"] = "5.0.5"
+        artifact["provider_runtime_version"] = "5.0.7"
         artifact["wire_contract_sha256"] = base["wire_contract_sha256"]
     return base
 
@@ -80,7 +80,7 @@ def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "5.0.5",
+            "provider_runtime_version": "5.0.7",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -149,7 +149,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "5.0.5",
+                "provider_runtime_version": "5.0.7",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -412,7 +412,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-            "provider version mismatch: expected 5\\.0\\.5, received 9\\.9\\.9",
+            "provider version mismatch: expected 5\\.0\\.7, received 9\\.9\\.9",
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 
