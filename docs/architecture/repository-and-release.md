@@ -22,7 +22,7 @@ contributors do not need access to it.
 | `docs/architecture/` | current | Public architecture handbook. | Update with boundary or lifecycle changes. |
 | `docs/design/` | mixed | Design-of-record and historical review evidence. | Consult the design index and source/tests before treating it as current. |
 | `docs/public-governance.md` | current/normative | Contribution and merge contract. | Keep prose and automation aligned. |
-| `docs/migration-from-legacy-packages.md` | current | Retirement, cleanup, safe mode, and package migration. | Do not revive retired install surfaces. |
+| `docs/migration-from-legacy-packages.md` | current | Retirement inventory, cleanup guidance, and package migration. | Do not revive retired install surfaces. |
 | `changelog.d/` | staged | Per-change release-note fragments. | Commit one unique fragment; do not compile `CHANGELOG.md` on feature branches. |
 | `CHANGELOG.md` | generated | Release-time compilation of fragments. | Updated only by the release flow. |
 | `scripts/` | current | Build, validation, compliance, archive, evidence, and release tools. | Preserve fail-closed behavior and tests. |

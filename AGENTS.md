@@ -60,11 +60,20 @@ these rules.
 
 ## Runtime policy
 
-Provider routing must pass the provider-free startup preflight. Active legacy
-package state blocks all provider routing. Unknown-family governance review
-requires explicit configuration and fails closed; non-governance use carries an
-independence warning. Policy-only safe mode preserves only validated async
-inbox/coordination seams and returns typed unavailable for every model route.
+The coordinator is a routing-only shim. Its client validates the manifest,
+request, and native bundle; the signed runtime selects descriptor-admitted
+routes. Provider-free planning does not establish authentication or live
+availability. Run the migration doctor as a separate host inventory step; do
+not claim that the coordinator automatically runs a migration or identity
+preflight. Host-owned asynchronous coordination is outside this routing wire.
+
+The caller and skill/repository workflow verify the primary, artifact-author,
+and reviewer lineages wherever independence is required. The current wire has
+no dynamic primary/author-family exclusion fields; host observations and a
+route decision cannot establish independent approval. Unknown-family output
+can be advisory but cannot satisfy governance-grade independence. A policy-only
+package has no admitted native artifact and returns typed unavailable for model
+execution. It does not expose a separate async-runtime safe-mode service.
 
 The native client accepts no path or member override, resolves only the
 manifest-selected closed bundle beneath the plugin root, and rejects links,

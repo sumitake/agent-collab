@@ -108,7 +108,7 @@ not a public issue or pull request.
 | How are agent projects estimated? | [Project estimation](project-estimation.md) | Public request/result schemas, deterministic helper, released v7.0.6 maintenance evidence, skill checkpoints, maintenance verifier, producer-byte compatibility fixtures, and focused tests. |
 | Who may review, write, or merge? | [Governance and authority](governance-and-authority.md) | Host policy, coordinator, public governance contract, PR template, and compliance checks. |
 | Is a route usable now? | [Status and evidence](status-and-evidence.md) | Installed version plus provider-free readiness on that host. Repository presence alone is insufficient. |
-| How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, runtime-management surface, and migration policy. |
+| How do I install or recover? | [Lifecycle and operations](lifecycle-and-operations.md) | Current host CLI, migration doctor, verified runtime client, and migration policy. |
 | How is a release produced? | [Repository and release architecture](repository-and-release.md) | Release scripts, workflows, signed-tag contract, archive checks, and release evidence. |
 | Where may Claude participate? | [Claude participation](claude-participation.md) | Signed action/source targeting, official structured-CLI boundary, async coordination, and host-support statements in this handbook. |
 

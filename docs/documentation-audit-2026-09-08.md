@@ -36,3 +36,9 @@ This audit changes repository documentation only. It does not regenerate
 skills, alter package/runtime bytes or policy, move tags, or claim a new release.
 Private producer identifiers, local paths, credentials, and native invocation
 recipes are excluded. Validation and review evidence are recorded in the PR.
+
+The follow-up instruction-file correction removes the obsolete `AGENTS.md`
+claim that the routing shim automatically runs identity/migration preflight
+or owns an async safe-mode service. The doctor is a separate inventory tool,
+and lineage verification is a caller workflow requirement. This clarification
+changes no runtime enforcement and follows the operator-reserved review path.
