@@ -26,6 +26,10 @@ def _load_client():
 
 
 class RuntimeClientConfigurationEnvironmentTests(unittest.TestCase):
+    def test_client_import_does_not_require_a_posix_account_database(self) -> None:
+        with mock.patch.dict(sys.modules, {"pwd": None}):
+            self.assertTrue(callable(_load_client().invoke))
+
     def test_native_runtime_uses_account_home_not_a_caller_temporary_home(self) -> None:
         client = _load_client()
         canonical = pwd.getpwuid(os.getuid()).pw_dir

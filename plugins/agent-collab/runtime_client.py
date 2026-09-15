@@ -15,7 +15,6 @@ import importlib.util
 import json
 import os
 import platform
-import pwd
 import re
 import selectors
 import shutil
@@ -828,6 +827,10 @@ class _PrivateTmpCleanupError(RuntimeError):
 
 
 def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
+    # Resolve accounts only after the native platform has been admitted. The
+    # client still imports and reports typed unavailability on other hosts.
+    import pwd
+
     env = {
         # Native login state belongs to the OS account, not a caller's scratch
         # HOME. Keep request artifacts under TMPDIR without relocating profiles.
