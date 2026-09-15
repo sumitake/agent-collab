@@ -258,7 +258,7 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "governance task without an operator-named provider, also use that field "
         "to bind the caller-verified distinct reviewer selected by the caller or "
         "designated by the workflow. Carry the same target into planning and live "
-        "dispatch; verify returned native lineage before accepting independence. "
+        "dispatch; verify returned response-scoped native evidence before accepting independence. "
         "Otherwise use normal untargeted routing. Choose quality and effort for "
         "the workload; include context/output token estimates when known. "
         "Read the current manifest digest and actual cwd device/inode; do not "
@@ -269,7 +269,7 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
     ) + suffix + (
         "A planning-only request sets `dispatch_requested=false`; a live request "
         "sets it true and consumes at most one provider attempt per work unit.\n"
-        "Planning reports route eligibility, not live availability or authentication. "
+        "Planning reports route eligibility, not model identity, live availability, or authentication. "
         "Report a caller/client failure at that layer; provider state remains unknown "
         "unless native evidence establishes it. Content availability and each work "
         "unit's `execution_status` are separate facts.\n"

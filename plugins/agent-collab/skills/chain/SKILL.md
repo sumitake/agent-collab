@@ -80,6 +80,9 @@ OpenAI, xAI, Zhipu, and unknown lineage, excludes both immutable primary and
 artifact-author families, and fails closed for unknown governance provenance.
 The YAML does not expose a `verifier_family` override; reject one rather than
 honoring a caller assertion.
+Route exclusions alone do not establish response identity or all-contributor
+independence. The caller verifies those facts rather than claiming changed
+chain execution.
 
 This mirrors the orchestrator's Router rule and the verifier-independence block in `second-opinion`, `code-review`, etc. Bypassing it produces an audit log entry that reads as cross-checking but is structurally one-family.
 

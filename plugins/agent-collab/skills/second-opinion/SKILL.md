@@ -10,8 +10,8 @@ description: Send a draft, analysis, plan, or decision to the reviewer for a rev
 
 ## Unified runtime invocation
 
-Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned native lineage before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. Let the native runtime complete its own turns and tool recovery within the original invocation. Keep the OS account's canonical HOME and native configuration; do not create copied login profiles or replacement runtimes. Carry existing operator authorization across tool steps for the same action, source, provider, and scope; do not ask for it again merely because a diagnostic or tool boundary occurred. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
-Planning reports route eligibility, not live availability or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
+Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned response-scoped native evidence before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. Let the native runtime complete its own turns and tool recovery within the original invocation. Keep the OS account's canonical HOME and native configuration; do not create copied login profiles or replacement runtimes. Carry existing operator authorization across tool steps for the same action, source, provider, and scope; do not ask for it again merely because a diagnostic or tool boundary occurred. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
+Planning reports route eligibility, not model identity, live availability, or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
 When a completed or terminated read-only review or governance attempt definitively produced no substantive result and no uncertain external mutation, retain that failed attempt as evidence. The caller may then issue at most one new corrected request as a new work unit after fixing a demonstrated setup defect with already authorized context and tools, such as inlining an inaccessible external plan or using an already available interpreter. Keep the same source hash, provider, and known-distinct reviewer requirements, and the original identical authorized scope. Do not copy login profiles or expand permissions. This is not a replay, retry, or failover of the consumed work unit, not a runtime automatic retry, and not a provider switch to evade findings. Do not use it to repair formatting or missing lineage, or when failure is unproven. If findings or usable partial content exist, interpret them instead. Native one-process completion remains separate.
 
 # Second opinion — review with caller-verified independence
@@ -34,7 +34,7 @@ Use this skill when one or more of the following are true:
 Skip this skill when:
 
 - The artifact is a routine lookup or factual query — invoke the underlying console backend (`python3 "<plugin-root>/coordinator.py"`) directly.
-- Independent approval is required but no reviewer with known lineage distinct from the primary and artifact author can be established (see Verifier independence below).
+- Independent approval is required but no reviewer with known lineage distinct from the primary and every contributing artifact author can be established (see Verifier independence below).
 - The cost of being wrong is trivially recoverable (a draft no one has seen, a sketch of a sketch). The framing overhead is not worth it.
 - The user has *already* received a second opinion this cycle and is asking for a third — at that point the issue is decision avoidance, not under-scrutiny.
 
@@ -42,28 +42,39 @@ Skip this skill when:
 ## Verifier independence (functional contract)
 
 Independence is caller-verified governance evidence, not a routing guarantee.
-For independent governance evidence, before dispatch record the observed lineage
-and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
-distinct from both. The caller may use provider-free planning to inspect known
-family evidence. Honor an operator-named provider; do not silently replace it.
+Selecting a candidate and accepting independent approval are different stages.
+
+Before dispatch, record the observed lineage and source for the active primary
+and every contributing artifact author. Use currently known native configuration
+or response-scoped observations for potential family selection only.
+Provider-free planning inspects eligible actions and routes; it does not prove
+model identity. Select a reviewer only when its currently known lineage is
+distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
 dispatch; untargeted planning does not bind a later live request. If the target
 becomes unavailable, report it without silent substitution or replay.
 If no known-distinct eligible reviewer is established, do not dispatch
-as independent governance; explain the missing lineage or selection evidence.
+as independent governance; explain the missing capability or evidence before
+an expensive dispatch. Do not classify an untried provider unavailable, loop
+operator waivers, or invent a required identity probe or schema service before
+every review. An authorized advisory review may still proceed.
 An OpenCode name is transport information, not lineage. Use only a
 descriptor-admitted review or governance action; never substitute document
 intent for review.
 
 After the response returns, record the observed reviewer lineage and source.
-Accept the response as independent governance evidence only when all three
-lineages are known and the reviewer differs from both the primary and artifact
-author. A route, provider name, status, receipt, or self-assertion alone does
-not prove lineage. Preserve unknown lineage as unknown. Do not replay a
-consumed review to repair missing lineage; retain it only as clearly labelled
-advisory content.
+Configuration-scoped observations remain configuration; they never prove the
+model that produced the returned response. Independent approval requires
+response-scoped native evidence correlated to that returned response, with
+known primary, contributing-author, and reviewer lineages, and a reviewer
+distinct from the primary and every contributing author family. A route,
+provider name, status, receipt, self-assertion, or configuration observation
+alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage, formatting, or adverse findings;
+retain useful advisory content without looping waivers or clearing required
+independent approval.
 <!-- verifier-independence:end -->
 
 See this skill's Unified runtime invocation and Public repository governance
@@ -88,21 +99,28 @@ Do not dump the artifact at the reviewer with a vague "thoughts?" — that produ
 
 ### 3. Call the panel — in parallel
 
-Send the **same** framed request (the four-section template below) to **every available cross-family panelist at once**, not sequentially — the reads are independent, so issue them concurrently and collect all responses before synthesizing. Each panelist gets the identical artifact + template, so their outputs are directly comparable.
+Send the **same** framed request (the four-section template below) to the
+required initial independent reviewers at once, not sequentially — the reads
+are independent, so issue them concurrently and collect all responses before
+synthesizing. Each panelist gets the identical artifact + template, so their
+outputs are directly comparable.
 
 Build the panel from reviewers whose observed lineage is known and differs from
-both the recorded primary and artifact author. A route result does not establish
-that fact. If no known-distinct eligible reviewer can be established, do not
-dispatch an independent governance review; explain the missing lineage or
-selection evidence. A raw binary or legacy plugin is never a route. Host-owned
+the recorded primary and every contributing artifact author. A route result
+does not establish that fact. If no known-distinct eligible reviewer can be
+established, do not dispatch an independent governance review; explain the
+missing capability or evidence before an expensive dispatch. A raw binary or legacy plugin is never a route. Host-owned
 async coordination is supplementary advisory content, never a managed review
 panelist. Callers must not bypass the managed route with a raw `claude -p`
 invocation.
 
 For every panelist and tiebreaker, select the reviewer before dispatch and
-verify its observed lineage after the response. Do not replay a consumed review
-to repair incomplete lineage evidence. Hold one known-distinct eligible reviewer
-as the tiebreaker rather than including it in the first wave.
+verify its observed lineage after the response with response-scoped evidence.
+Do not replay a consumed review to repair incomplete lineage evidence. Seat
+required initial reviewers first. Use a sole eligible independent reviewer in
+the initial wave; reserve a tiebreaker only from spare independent eligible
+reviewers after those seats are filled. If the governing panel requires more
+reviewers than available, keep that unmet requirement visible.
 
 Use one documented routing work unit for each panelist with
 `quality_profile="frontier"` and `effort_class="maximum"`; never name a model
@@ -140,8 +158,9 @@ an eligible independent managed reviewer **only** when the panel is in genuine
 - **Trigger:** the panelists reach **opposing bottom-line conclusions** — e.g. one lands on a confident "this is sound / proceed" while another lands on "this is unsound / do not proceed" — **OR** one panelist flags a **load-bearing risk** (a critical architectural / security / correctness defect) that another explicitly dismisses or did not surface. Resolving *which read is right* is high-stakes and a neutral third family earns its cost here.
 - **NOT a trigger:** panelists broadly agree on the verdict but list different,
   additive risks. Aggregate the union and move on; do not add a third reviewer.
-- A tiebreaker is selected dynamically from the remaining eligible distinct-
-  family advisory routes and receives the same template plus conflicting reads.
+- A tiebreaker is spare capacity only. Select it dynamically from remaining
+  independent eligible reviewers after the required initial seats are filled,
+  and give it the same template plus the conflicting reads.
 
 If no eligible independent tiebreaker is reachable, surface the unresolved
 conflict to the operator; never fabricate a resolution.
@@ -225,6 +244,9 @@ When picking the right example to share with the user mid-invocation, match the 
 - **Paraphrasing the panel's critiques of your own work.** When the authoring model summarizes the verifiers' objections, it tends — even unintentionally — to soften the sharpest ones. Surface the raw four-section reads (or faithful direct quotes), attributed; let the operator see the actual critiques.
 - **Firing a tiebreaker on agreement.** A tiebreaker resolves a verdict conflict;
   it does not ratify a panel or adjudicate additive compatible notes.
+- **Reserving the only eligible independent reviewer as a tiebreaker.** Seat
+  required initial reviewers first. A sole eligible independent reviewer is used
+  initially; unmet required panel size stays visible.
 - **Claiming independent review without observed lineage.** When the reviewer shares the author or primary family, or lineage is unknown, retain the response as advisory and keep required independent approval unmet.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
 - **Replaying for formatting.** Preserve every nonempty raw response and reason

@@ -30,9 +30,26 @@ genuine; reviewers and the operator remain responsible for substance.
   governance gates. Record an independent cross-family review; operator-reserved
   paths also require the operator to merge.
 
-The reviewer family must differ from the artifact author or active agent family.
-Unknown-family evidence cannot establish governance-grade independence. A
-multi-round trace records the final operative verdict.
+The reviewer family must differ from the active primary and every contributing
+artifact-author family. Selecting a candidate and accepting independent approval
+are different stages. Provider-free planning proves an eligible action or route,
+not model identity. Currently known native configuration or response-scoped
+observations may identify a potential candidate; configuration remains
+configuration. After a review returns, independent approval requires
+response-scoped native evidence correlated to that returned response. Optional
+native model-identity observations, when present, carry a source and a scope
+such as generation metadata at response scope; missing or uncorrelated
+observation is evidence unavailability, not provider unavailability, and does
+not invent a required identity probe, schema service, or operator-waiver loop.
+An authorized advisory review may still return useful content. Unknown-family
+or configuration-only evidence cannot establish governance-grade independence.
+A multi-round trace records the final operative verdict.
+
+A required initial review uses every needed independent eligible reviewer first.
+A tiebreaker is reserved only from spare independent eligible reviewers after
+those seats are filled. A sole eligible independent reviewer is used initially.
+If the governing panel requires more reviewers than available, keep that unmet
+requirement visible.
 
 ## Pull-request contract
 
@@ -79,8 +96,14 @@ Runtime status and diagnostic fields remain attempt-local observations. They do
 not discard bounded provider content already observed, establish provider-wide
 unavailability, quarantine a route, or authorize replay. The caller interprets
 the preserved raw response and separately verifies the reviewer, exact source,
-scope, and any operational effects needed for governance. Never fabricate
-reviewer convergence, approval, a receipt, or authority from process exit.
+scope, and any operational effects needed for governance. Optional native
+model-identity observations, when present, include a source and a scope.
+Configuration-scoped observations may inform candidate selection only.
+Response-scoped observations correlated to the returned native response are
+what independent approval may count. Missing observation is evidence
+unavailability, not a provider-health verdict, and does not expand the public
+routing wire. Never fabricate reviewer convergence, approval, a receipt, or
+authority from process exit.
 
 The coordinator has no automatic failure-evidence capture or filing plane.
 Issue filing is an explicit, separately authorized operation after the typed

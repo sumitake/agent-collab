@@ -25,7 +25,7 @@ Use this skill when one or more of the following are true:
 Skip this skill when:
 
 - The artifact is a routine lookup or factual query — invoke the underlying console backend (`{{ mcp_tool_ask_short }}`) directly.
-- Independent approval is required but no reviewer with known lineage distinct from the primary and artifact author can be established (see Verifier independence below).
+- Independent approval is required but no reviewer with known lineage distinct from the primary and every contributing artifact author can be established (see Verifier independence below).
 - The cost of being wrong is trivially recoverable (a draft no one has seen, a sketch of a sketch). The framing overhead is not worth it.
 - The user has *already* received a second opinion this cycle and is asking for a third — at that point the issue is decision avoidance, not under-scrutiny.
 
@@ -33,28 +33,39 @@ Skip this skill when:
 ## Verifier independence (functional contract)
 
 Independence is caller-verified governance evidence, not a routing guarantee.
-For independent governance evidence, before dispatch record the observed lineage
-and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
-distinct from both. The caller may use provider-free planning to inspect known
-family evidence. Honor an operator-named provider; do not silently replace it.
+Selecting a candidate and accepting independent approval are different stages.
+
+Before dispatch, record the observed lineage and source for the active primary
+and every contributing artifact author. Use currently known native configuration
+or response-scoped observations for potential family selection only.
+Provider-free planning inspects eligible actions and routes; it does not prove
+model identity. Select a reviewer only when its currently known lineage is
+distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
 dispatch; untargeted planning does not bind a later live request. If the target
 becomes unavailable, report it without silent substitution or replay.
 If no known-distinct eligible reviewer is established, do not dispatch
-as independent governance; explain the missing lineage or selection evidence.
+as independent governance; explain the missing capability or evidence before
+an expensive dispatch. Do not classify an untried provider unavailable, loop
+operator waivers, or invent a required identity probe or schema service before
+every review. An authorized advisory review may still proceed.
 An OpenCode name is transport information, not lineage. Use only a
 descriptor-admitted review or governance action; never substitute document
 intent for review.
 
 After the response returns, record the observed reviewer lineage and source.
-Accept the response as independent governance evidence only when all three
-lineages are known and the reviewer differs from both the primary and artifact
-author. A route, provider name, status, receipt, or self-assertion alone does
-not prove lineage. Preserve unknown lineage as unknown. Do not replay a
-consumed review to repair missing lineage; retain it only as clearly labelled
-advisory content.
+Configuration-scoped observations remain configuration; they never prove the
+model that produced the returned response. Independent approval requires
+response-scoped native evidence correlated to that returned response, with
+known primary, contributing-author, and reviewer lineages, and a reviewer
+distinct from the primary and every contributing author family. A route,
+provider name, status, receipt, self-assertion, or configuration observation
+alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage, formatting, or adverse findings;
+retain useful advisory content without looping waivers or clearing required
+independent approval.
 <!-- verifier-independence:end -->
 
 See this skill's Unified runtime invocation and Public repository governance
@@ -79,21 +90,28 @@ Do not dump the artifact at {{ verifier_agent }} with a vague "thoughts?" — th
 
 ### 3. Call the panel — in parallel
 
-Send the **same** framed request (the four-section template below) to **every available cross-family panelist at once**, not sequentially — the reads are independent, so issue them concurrently and collect all responses before synthesizing. Each panelist gets the identical artifact + template, so their outputs are directly comparable.
+Send the **same** framed request (the four-section template below) to the
+required initial independent reviewers at once, not sequentially — the reads
+are independent, so issue them concurrently and collect all responses before
+synthesizing. Each panelist gets the identical artifact + template, so their
+outputs are directly comparable.
 
 Build the panel from reviewers whose observed lineage is known and differs from
-both the recorded primary and artifact author. A route result does not establish
-that fact. If no known-distinct eligible reviewer can be established, do not
-dispatch an independent governance review; explain the missing lineage or
-selection evidence. A raw binary or legacy plugin is never a route. Host-owned
+the recorded primary and every contributing artifact author. A route result
+does not establish that fact. If no known-distinct eligible reviewer can be
+established, do not dispatch an independent governance review; explain the
+missing capability or evidence before an expensive dispatch. A raw binary or legacy plugin is never a route. Host-owned
 async coordination is supplementary advisory content, never a managed review
 panelist. Callers must not bypass the managed route with a raw `claude -p`
 invocation.
 
 For every panelist and tiebreaker, select the reviewer before dispatch and
-verify its observed lineage after the response. Do not replay a consumed review
-to repair incomplete lineage evidence. Hold one known-distinct eligible reviewer
-as the tiebreaker rather than including it in the first wave.
+verify its observed lineage after the response with response-scoped evidence.
+Do not replay a consumed review to repair incomplete lineage evidence. Seat
+required initial reviewers first. Use a sole eligible independent reviewer in
+the initial wave; reserve a tiebreaker only from spare independent eligible
+reviewers after those seats are filled. If the governing panel requires more
+reviewers than available, keep that unmet requirement visible.
 
 Use one documented routing work unit for each panelist with
 `quality_profile="frontier"` and `effort_class="maximum"`; never name a model
@@ -131,8 +149,9 @@ an eligible independent managed reviewer **only** when the panel is in genuine
 - **Trigger:** the panelists reach **opposing bottom-line conclusions** — e.g. one lands on a confident "this is sound / proceed" while another lands on "this is unsound / do not proceed" — **OR** one panelist flags a **load-bearing risk** (a critical architectural / security / correctness defect) that another explicitly dismisses or did not surface. Resolving *which read is right* is high-stakes and a neutral third family earns its cost here.
 - **NOT a trigger:** panelists broadly agree on the verdict but list different,
   additive risks. Aggregate the union and move on; do not add a third reviewer.
-- A tiebreaker is selected dynamically from the remaining eligible distinct-
-  family advisory routes and receives the same template plus conflicting reads.
+- A tiebreaker is spare capacity only. Select it dynamically from remaining
+  independent eligible reviewers after the required initial seats are filled,
+  and give it the same template plus the conflicting reads.
 
 If no eligible independent tiebreaker is reachable, surface the unresolved
 conflict to the operator; never fabricate a resolution.
@@ -216,6 +235,9 @@ When picking the right example to share with the user mid-invocation, match the 
 - **Paraphrasing the panel's critiques of your own work.** When the authoring model summarizes the verifiers' objections, it tends — even unintentionally — to soften the sharpest ones. Surface the raw four-section reads (or faithful direct quotes), attributed; let the operator see the actual critiques.
 - **Firing a tiebreaker on agreement.** A tiebreaker resolves a verdict conflict;
   it does not ratify a panel or adjudicate additive compatible notes.
+- **Reserving the only eligible independent reviewer as a tiebreaker.** Seat
+  required initial reviewers first. A sole eligible independent reviewer is used
+  initially; unmet required panel size stays visible.
 - **Claiming independent review without observed lineage.** When the reviewer shares the author or primary family, or lineage is unknown, retain the response as advisory and keep required independent approval unmet.
 - **Reviewing a structured config diff with the generic four-section template only.** Invoke the structured-artifact lens above — the recurring failure categories catch defects the generic template will miss.
 - **Replaying for formatting.** Preserve every nonempty raw response and reason

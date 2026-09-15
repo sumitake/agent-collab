@@ -39,7 +39,9 @@ use `explicit_target` to bind the caller-verified distinct reviewer selected by
 the caller or designated by the workflow. Carry the same target into planning
 and live dispatch; untargeted planning does not bind a later live request.
 Otherwise use normal economic routing. The caller may use provider-free planning
-to inspect known family evidence before dispatch. A route, provider name, status, receipt,
+to inspect eligible actions and routes before dispatch; planning does not prove
+model identity. Currently known native configuration or response-scoped
+observations may identify a potential candidate family. A route, provider name, status, receipt,
 or self-assertion alone does not prove lineage. One selected provider attempt is
 not replayed after a model call. The skill contains no provider command, model
 name, version gate, or transport membership table. A route-local diagnostic

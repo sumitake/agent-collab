@@ -109,11 +109,16 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("Carry that same target into planning and live", block)
                 self.assertIn("Honor an operator-named provider", block)
                 self.assertNotIn("only when the operator names", block)
-                self.assertIn("all three\nlineages are known", block)
+                self.assertIn("every contributing author family", block)
+                self.assertIn("does not prove\nmodel identity", block)
+                self.assertIn("Configuration-scoped observations remain configuration", block)
+                self.assertIn("response-scoped native evidence", block)
                 self.assertIn("OpenCode name is transport information", block)
                 self.assertNotIn("shared policy", block)
                 self.assertNotIn("same_family_blocked", block)
                 self.assertNotIn("unknown_family", block)
+                self.assertNotIn("inspect known family evidence", block)
+                self.assertNotIn("all three\nlineages are known", block)
 
             rendered = (PLUGIN / "skills" / name / "SKILL.md").read_text(
                 encoding="utf-8"

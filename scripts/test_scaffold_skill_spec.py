@@ -116,13 +116,17 @@ class RenderTemplateTests(unittest.TestCase):
         )
         normalized = " ".join(body.split())
         for required in (
-            "For independent governance evidence, before dispatch record the observed lineage",
+            "Before dispatch, record the observed lineage",
             "After the response returns, record the observed reviewer lineage",
-            "all three lineages are known",
+            "every contributing author family",
             "OpenCode name is transport information, not lineage",
-            "provider-free planning to inspect known family evidence",
+            "Provider-free planning inspects eligible actions and routes",
+            "it does not prove model identity",
             "If no known-distinct eligible reviewer is established, do not dispatch",
             "Do not replay a consumed review",
+            "response-scoped native evidence",
+            "Configuration-scoped observations remain configuration",
+            "using `explicit_target`",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, normalized)
@@ -132,6 +136,8 @@ class RenderTemplateTests(unittest.TestCase):
             "performs the critique itself",
             "Retry-on-malformed",
             "Skipping the retry on malformed output",
+            "provider-free planning to inspect known family evidence",
+            "all three lineages are known",
         ):
             with self.subTest(stale_claim=stale_claim):
                 self.assertNotIn(stale_claim, body)

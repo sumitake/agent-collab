@@ -34,28 +34,39 @@ Reviewer independence is conditional on the caller verifying the observed famili
 ## Verifier independence (functional contract)
 
 Independence is caller-verified governance evidence, not a routing guarantee.
-For independent governance evidence, before dispatch record the observed lineage
-and source for both the active primary and artifact author. Select a reviewer only when its known lineage is
-distinct from both. The caller may use provider-free planning to inspect known
-family evidence. Honor an operator-named provider; do not silently replace it.
+Selecting a candidate and accepting independent approval are different stages.
+
+Before dispatch, record the observed lineage and source for the active primary
+and every contributing artifact author. Use currently known native configuration
+or response-scoped observations for potential family selection only.
+Provider-free planning inspects eligible actions and routes; it does not prove
+model identity. Select a reviewer only when its currently known lineage is
+distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
 dispatch; untargeted planning does not bind a later live request. If the target
 becomes unavailable, report it without silent substitution or replay.
 If no known-distinct eligible reviewer is established, do not dispatch
-as independent governance; explain the missing lineage or selection evidence.
+as independent governance; explain the missing capability or evidence before
+an expensive dispatch. Do not classify an untried provider unavailable, loop
+operator waivers, or invent a required identity probe or schema service before
+every review. An authorized advisory review may still proceed.
 An OpenCode name is transport information, not lineage. Use only a
 descriptor-admitted review or governance action; never substitute document
 intent for review.
 
 After the response returns, record the observed reviewer lineage and source.
-Accept the response as independent governance evidence only when all three
-lineages are known and the reviewer differs from both the primary and artifact
-author. A route, provider name, status, receipt, or self-assertion alone does
-not prove lineage. Preserve unknown lineage as unknown. Do not replay a
-consumed review to repair missing lineage; retain it only as clearly labelled
-advisory content.
+Configuration-scoped observations remain configuration; they never prove the
+model that produced the returned response. Independent approval requires
+response-scoped native evidence correlated to that returned response, with
+known primary, contributing-author, and reviewer lineages, and a reviewer
+distinct from the primary and every contributing author family. A route,
+provider name, status, receipt, self-assertion, or configuration observation
+alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
+consumed review to repair missing lineage, formatting, or adverse findings;
+retain useful advisory content without looping waivers or clearing required
+independent approval.
 <!-- verifier-independence:end -->
 
 ## Inputs

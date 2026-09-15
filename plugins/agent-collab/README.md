@@ -160,13 +160,15 @@ cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
 Honor an operator-named provider with `explicit_target`. For an authorized
 independent review or governance task without an operator-named provider, use
-that same field to bind the caller-verified distinct reviewer selected by the
-caller or designated by the workflow. Carry the same target into planning and
+that same field to bind the caller-verified reviewer distinct from the primary
+and every contributing author family. Carry the same target into planning and
 live dispatch; untargeted planning does not bind a later live request. Target
 unavailability is reported without silent substitution or replay. Ordinary
-advisory calls otherwise use normal economic routing. Target binding does not
-prove independence: verify the returned native lineage before accepting review
-or governance evidence.
+advisory calls otherwise use normal economic routing. Configuration may
+identify a candidate; target binding does not prove independence. Verify
+returned response-scoped native evidence before accepting independent approval.
+Missing evidence keeps useful advisory content and does not imply a provider
+outage.
 
 Required common fields
 are `wire_contract_sha256`, `request_id`, `quality_profile`, `effort_class`,
@@ -193,8 +195,8 @@ the caller: it would terminate healthy progressing work.
 Set `dispatch_requested=false` for a planning-only routing decision and `true`
 for live dispatch. One selected work unit is never automatically replayed,
 retried, or failed over after provider access.
-Planning is a policy result; it does not check provider authentication or
-prove live availability.
+Planning reports route eligibility, not model identity, live availability, or
+authentication.
 
 The 12 logical actions are:
 
