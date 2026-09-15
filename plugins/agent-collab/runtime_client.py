@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import platform
+import pwd
 import re
 import selectors
 import shutil
@@ -828,12 +829,15 @@ class _PrivateTmpCleanupError(RuntimeError):
 
 def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
     env = {
+        # Native login state belongs to the OS account, not a caller's scratch
+        # HOME. Keep request artifacts under TMPDIR without relocating profiles.
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
         "PATH": os.environ.get("PATH") or "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(tmpdir),
         "LANG": os.environ.get("LANG", "en_US.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "en_US.UTF-8"),
     }
-    for name in ("HOME", "USER", "LOGNAME", "SHELL"):
+    for name in ("USER", "LOGNAME", "SHELL", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"):
         value = os.environ.get(name)
         if value:
             env[name] = value

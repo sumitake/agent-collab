@@ -209,6 +209,12 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "returned content record or recovered partial response and interpret it "
         "with ordinary model reasoning. Never synthesize approval, authority, or "
         "a receipt from process exit or missing diagnostics. "
+        "Let the native runtime complete its own turns and tool recovery within "
+        "the original invocation. Keep the OS account's canonical HOME and native "
+        "configuration; do not create copied login profiles or replacement runtimes. "
+        "Carry existing operator authorization across tool steps for the same "
+        "action, source, provider, and scope; do not ask for it again merely "
+        "because a diagnostic or tool boundary occurred. "
     )
     block = prefix + (
         "routing request on EOF-delimited stdin, without a PTY. Use the Python "

@@ -84,6 +84,14 @@ passes the object through once, and writes one canonical JSON result. It adds
 no provider command, semantic schema, verdict parser, retry, replay, fallback,
 receipt, or authority claim.
 
+The client uses the OS account's canonical `HOME`, keeps native configuration
+locations and SSH session markers, and places only request artifacts in its
+temporary directory. It does not copy login profiles or manage provider
+credentials. When a native CLI works in a terminal but a managed call fails,
+compare the host and native session before treating the result as provider
+unavailability. Existing task authorization persists across tool steps within
+its approved scope.
+
 The request shape is signed in `runtime-manifest.json`. This Python example
 constructs a repository review from current values. Save it as `caller.py` and
 run `python3 caller.py <plugin-root> <review-repository> <prompt-file>`:

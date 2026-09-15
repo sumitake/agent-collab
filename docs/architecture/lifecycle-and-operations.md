@@ -95,6 +95,14 @@ overrides. Policy-only packages return typed unavailable for native actions.
 
 Invoke the skills in normal language or by their host command. Examples:
 
+Native providers use the account's canonical home and their own configuration
+and authentication. The coordinator keeps request files in a temporary
+directory without relocating login state, and preserves SSH session markers
+used by native CLIs. A terminal on another host or in another login session is
+not an equivalent availability check. Preserve existing authorization for the
+same task scope across tool steps; native recovery inside the original call
+does not require a new caller invocation.
+
 ```text
 /agent-collab:second-opinion Review this architecture decision.
 /agent-collab:code-review Review the current diff against the task.
