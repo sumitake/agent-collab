@@ -94,6 +94,25 @@ optional diagnostics or presentation. Every bounded nonempty final or recovered
 partial reaches the caller for ordinary reasoning; only absent content remains
 absent. No consumed request is replayed merely to change formatting.
 
+A completed or terminated read-only review or governance attempt remains
+evidence. When that attempt definitively produced no substantive result and no
+uncertain external mutation, the caller may issue at most one new corrected
+request as a new work unit after fixing a demonstrated setup defect with already
+authorized context and tools — for example inlining an inaccessible external
+plan or using an already available interpreter. Keep the same source hash, the
+same provider, and the same known-distinct reviewer requirements where they
+apply, and stay inside the original identical authorized scope. Do not copy
+login profiles or demand renewed permission for that same already authorized
+scope. This is the bounded caller fresh-review allowance. It is not a replay,
+retry, or failover of the consumed work unit; the runtime must not auto-retry;
+and a provider must not be switched to evade findings. Do not use it to repair
+formatting or missing lineage, to evade substantive findings, or when the
+failure is unproven or a native mutation is ambiguous. If findings or a usable
+partial result exist, interpret them instead. Native one-process completion and
+tool recovery within the original invocation remain separate. Worker,
+dev-delegate, and merge-resolve work stay under the shared consumed-work
+no-replay rule with no such allowance.
+
 Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
 change. For any external contribution, use `OPERATOR-CONFIRMED` only after John
 Osumi or Osumi Consulting LLC has verified a separate written agreement that

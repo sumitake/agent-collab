@@ -82,7 +82,10 @@ python3 "<plugin-root>/coordinator.py"
 The shim reads one bounded object, loads the plugin-relative runtime client,
 passes the object through once, and writes one canonical JSON result. It adds
 no provider command, semantic schema, verdict parser, retry, replay, fallback,
-receipt, or authority claim.
+receipt, or authority claim. Caller-owned bounded fresh-review, when permitted
+for read-only review or governance, is a separate routing request documented in
+Public repository governance and those generated skills; the shim still passes
+each request through once.
 
 The client uses the OS account's canonical `HOME`, keeps native configuration
 locations and SSH session markers, and places only request artifacts in its

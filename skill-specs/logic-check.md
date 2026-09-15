@@ -61,6 +61,11 @@ consumed review to repair missing lineage; retain it only as clearly labelled
 advisory content.
 <!-- verifier-independence:end -->
 
+See this skill's Unified runtime invocation and Public repository governance
+for the one bounded caller fresh-review allowance. It is a new work unit after
+a completed or terminated attempt with no substantive result, not a replay of
+the consumed work unit.
+
 ## Procedure
 
 ### 1. Show {{ primary_agent }}'s work transparently — do not gate on the audit

@@ -74,6 +74,36 @@ ROUTED_SPECS = frozenset(
         "worker",
     }
 )
+# Read-only review/governance skills may document one caller-owned corrected
+# request after a null terminated attempt. Worker, codegen, and merge-resolve
+# stay on the shared consumed-work no-replay rule alone.
+REVIEW_GOVERNANCE_SPECS = frozenset(
+    {
+        "code-review",
+        "debate",
+        "governance-review",
+        "logic-check",
+        "qa-verify",
+        "red-team",
+        "second-opinion",
+    }
+)
+FRESH_REVIEW_ALLOWANCE = (
+    "When a completed or terminated read-only review or governance attempt "
+    "definitively produced no substantive result and no uncertain external "
+    "mutation, retain that failed attempt as evidence. The caller may then "
+    "issue at most one new corrected request as a new work unit after fixing "
+    "a demonstrated setup defect with already authorized context and tools, "
+    "such as inlining an inaccessible external plan or using an already "
+    "available interpreter. Keep the same source hash, provider, and "
+    "known-distinct reviewer requirements, and the original identical "
+    "authorized scope. Do not copy login profiles or expand permissions. "
+    "This is not a replay, retry, or failover of the consumed work unit, "
+    "not a runtime automatic retry, and not a provider switch to evade "
+    "findings. Do not use it to repair formatting or missing lineage, or "
+    "when failure is unproven. If findings or usable partial content exist, "
+    "interpret them instead. Native one-process completion remains separate.\n"
+)
 
 # Two-brace syntax. Restricted character class so a literal "{{" appearing
 # in a code block (e.g., JSON output examples) does NOT accidentally match —
@@ -244,6 +274,8 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "unless native evidence establishes it. Content availability and each work "
         "unit's `execution_status` are separate facts.\n"
     )
+    if spec_name in REVIEW_GOVERNANCE_SPECS:
+        block += FRESH_REVIEW_ALLOWANCE
     return rendered[: match.end()] + block + rendered[match.end() :]
 
 

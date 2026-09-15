@@ -32,3 +32,7 @@ not discard provider content when they are absent or malformed. If reviewer
 independence, exact source identity, or scope cannot be positively established,
 keep the response as advisory content and do not claim authoritative approval.
 Do not replay a consumed review to repair incomplete lineage evidence.
+See this skill's Unified runtime invocation and Public repository governance
+for the one bounded caller fresh-review allowance. It is a new work unit after
+a completed or terminated attempt with no substantive result, not a replay of
+the consumed work unit.

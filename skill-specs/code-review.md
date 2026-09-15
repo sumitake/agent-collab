@@ -145,7 +145,10 @@ and verifies the exact repository head, supplies the bounded review prompt as
 opaque payload, rechecks the head before using the response, and records the
 observed reviewer lineage and the result's advisory or independent status.
 Preserve the single-attempt, no-replay contract; selecting an advisory mode does
-not authorize replay of a consumed provider attempt.
+not authorize replay of a consumed provider attempt. The one exception is the
+bounded caller fresh-review allowance in this skill's Unified runtime invocation
+and Public repository governance: a new work unit, never a replay of the
+consumed attempt.
 
 Use this prompt template for review content. Provider formatting is not an
 output contract; the caller reasons over the complete raw response:
