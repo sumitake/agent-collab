@@ -172,7 +172,7 @@ End with the result, a confidence note, and the established review status. Use
 all independent-governance requirements. Otherwise use "Advisory result" and
 state that reviewer independence remains unverified. Examples:
 
-- "Independently audited result: $47,283.50 (verified independent reviewer the reviewer agrees on the final answer AND each intermediate)."
+- "Independently audited result: $47,283.50 (the verified independent reviewer agrees on the final answer AND each intermediate)."
 - "Advisory result: $47,283.50 (reviewer independence unverified; revised from $47,282.50 after checking the year-3 vesting error surfaced at step 9)."
 - "Advisory result: PENDING — the reviewer returned an incoherent derivation; falling back to manual re-check against constraints."
 
