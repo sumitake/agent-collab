@@ -39,11 +39,10 @@ class PublicDistributionContractTests(unittest.TestCase):
         )
         current_release = f"Current published release: **{version}**"
 
-        for path in (ROOT / "README.md", PLUGIN / "README.md"):
-            with self.subTest(path=path):
-                self.assertIn(current_release, path.read_text(encoding="utf-8"))
-
+        # Postpublication closeout updates repository docs. The package README
+        # remains part of the immutable archive produced before publication.
         root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(current_release, root_readme)
         self.assertIn(f"The v{version} closeout is recorded", root_readme)
 
         self.assertIn(f"## Current snapshot — v{version}", status)

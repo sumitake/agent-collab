@@ -58,6 +58,11 @@ provider-free readiness did not establish inference access. Omitted Claude
 profiles remain unqualified in [#162](https://github.com/sumitake/agent-collab/issues/162);
 the attempt was not replayed, and no billing or credential change was made.
 
+For 7.0.7, the supported Claude package update succeeded and every released
+file matched the published artifact. Managed Claude inference remains
+explicitly excepted under the operator's absence/authentication decision; no
+new Claude inference qualification or existing-session reload is claimed.
+
 ## Host and resident-primary role
 
 Claude Code remains a fully supported host: the package installs natively,
