@@ -105,7 +105,7 @@ State the assignment clearly to the user before starting: "{{ primary_agent }} w
 **{{ primary_agent }}'s opening:** Write the strongest case for {{ primary_agent }}'s assigned side. Not a hedge, not "on balance" — the *strongest* case. Three to five specific points with evidence or reasoning. Treat it like a debate brief, not an analysis.
 
 **{{ verifier_agent }}'s opening:** Before dispatch, select a reviewer with
-known lineage distinct from the observed primary and artifact author. Submit the
+known lineage distinct from the observed primary and every contributing artifact author. Submit the
 sealed debate role through `{{ mcp_tool_ask }}` with {{ debate_call_params }}.
 Verify the observed reviewer lineage before treating its response as independent
 governance evidence. Use this prompt template for debate content; the returned

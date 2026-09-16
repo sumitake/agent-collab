@@ -12,7 +12,7 @@ description: Audit a verifiable, step-wise computation (arithmetic, financial ca
 
 Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned response-scoped native evidence before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. Read the current manifest digest and actual cwd device/inode; do not copy example values. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. Let the native runtime complete its own turns and tool recovery within the original invocation. Keep the OS account's canonical HOME and native configuration; do not create copied login profiles or replacement runtimes. Carry existing operator authorization across tool steps for the same action, source, provider, and scope; do not ask for it again merely because a diagnostic or tool boundary occurred. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not model identity, live availability, or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
-When a completed or terminated read-only review or governance attempt definitively produced no substantive result and no uncertain external mutation, retain that failed attempt as evidence. The caller may then issue at most one new corrected request as a new work unit after fixing a demonstrated setup defect with already authorized context and tools, such as inlining an inaccessible external plan or using an already available interpreter. Keep the same source hash, provider, and known-distinct reviewer requirements, and the original identical authorized scope. Do not copy login profiles or expand permissions. This is not a replay, retry, or failover of the consumed work unit, not a runtime automatic retry, and not a provider switch to evade findings. Do not use it to repair formatting or missing lineage, or when failure is unproven. If findings or usable partial content exist, interpret them instead. Native one-process completion remains separate.
+When a completed or terminated read-only review or governance attempt definitively produced no substantive result and no uncertain external mutation, retain that failed attempt as evidence. The caller may then issue at most one new corrected request as a new work unit after fixing a demonstrated setup defect with already authorized context and tools, such as inlining an inaccessible external plan or using an already available interpreter. Keep the same source hash, provider, and known-distinct reviewer requirements, and the original identical authorized scope. The allowance is one correction total per original request across all descendant work units; a corrected work unit cannot issue another correction or reset the allowance. Retain the original-request identity and both attempts in the caller's trace. Do not copy login profiles or expand permissions. This is not a replay, retry, or failover of the consumed work unit, not a runtime automatic retry, and not a provider switch to evade findings. Do not use it to repair formatting or missing lineage, or when failure is unproven or a native mutation is ambiguous. If findings or usable partial content exist, interpret them instead. Native one-process completion remains separate.
 
 # Logic check — separate re-derivation of a verifiable computation
 
@@ -90,7 +90,7 @@ the consumed work unit.
 
 ### 1. Show the active primary's work transparently — do not gate on the audit
 
-Present the active primary's derivation and final answer to the user as you would normally. Then note: "Independent audit in progress; will reconcile if it disagrees." This serves two purposes: the user is not blocked waiting on the verifier, and if the audit later disagrees the reconciliation is visible — the user sees what changed and why.
+Present the active primary's derivation and final answer to the user as you would normally. Then note: "Advisory re-derivation in progress; will reconcile if it disagrees." Reviewer independence is pending until the returned response-scoped evidence establishes it. The user can use the initial answer while seeing any later correction and its reason.
 
 Do not withhold the answer pending the audit. Suspense without purpose is just latency.
 
@@ -101,7 +101,7 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 But: **do send the constraints and assumptions** the active primary used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance the active primary was solving.
 
 Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and artifact author. Submit the sealed logic-check role through
+primary and every contributing artifact author. Submit the sealed logic-check role through
 `python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Verify the observed
 reviewer lineage before treating its response as independent governance evidence.
 Use this prompt template for substantive derivation. The caller reasons over the
@@ -153,7 +153,13 @@ TRACE:
 
 ### 4. Compare the two derivations
 
-**Both agree on the final answer AND key intermediates:** report "Independent re-derivation agrees: answer = X." High confidence (but not certainty — agreement is one signal, not a proof; both models can be wrong in the same way on a textbook-style problem with a well-known wrong answer).
+First verify the returned response-scoped evidence against the primary and every
+contributing author family. Use independent wording only when every independent-
+governance requirement is met; otherwise label the comparison advisory. Asking
+for a derivation without sharing the original answer reduces anchoring, but does
+not itself establish reviewer-family independence.
+
+**Both agree on the final answer AND key intermediates:** report "Independent re-derivation agrees: answer = X" only after that verification; otherwise report "Advisory re-derivation agrees: answer = X; reviewer independence unverified." Agreement is one signal, not a proof; both models can be wrong in the same way on a textbook-style problem with a well-known wrong answer.
 
 **Disagree on the final answer:** first, evaluate the verifier's derivation **quality**. Is it coherent end-to-end? Or is it garbled / hallucinated / internally inconsistent? If the verifier's work is broken, do not try to reconcile — flag the verifier's failure to the user, fall back to re-checking the active primary's math against the constraints. If both derivations are coherent, identify the **step where they diverge**, then work out which is correct: re-check the arithmetic at that step, re-check the constraints, re-check the definitions, re-check the edge-case treatment. Report the corrected result with the source of the error explicitly named ("step 7 used a different rounding rule than the constraints specified"). **Do not silently switch the answer** — show the user what changed and why.
 
@@ -161,11 +167,14 @@ TRACE:
 
 ### 5. Close the loop
 
-End the user-facing report with a one-line statement of the audited result and a confidence note. Examples:
+End with the result, a confidence note, and the established review status. Use
+"Independently audited result" only when the response-scoped evidence establishes
+all independent-governance requirements. Otherwise use "Advisory result" and
+state that reviewer independence remains unverified. Examples:
 
-- "Audited result: $47,283.50 (independent re-derivation by the reviewer agrees on the final answer AND each intermediate)."
-- "Audited result: $47,283.50 (revised from the original $47,282.50 — the year-3 vesting acceleration was applied to the wrong tranche in the active primary's computation; verifier's derivation surfaced the error at step 9)."
-- "Audited result: PENDING — the reviewer returned an incoherent derivation; falling back to manual re-check against constraints."
+- "Independently audited result: $47,283.50 (verified independent reviewer the reviewer agrees on the final answer AND each intermediate)."
+- "Advisory result: $47,283.50 (reviewer independence unverified; revised from $47,282.50 after checking the year-3 vesting error surfaced at step 9)."
+- "Advisory result: PENDING — the reviewer returned an incoherent derivation; falling back to manual re-check against constraints."
 
 ## Examples across domains
 

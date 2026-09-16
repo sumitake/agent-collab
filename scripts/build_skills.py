@@ -97,11 +97,16 @@ FRESH_REVIEW_ALLOWANCE = (
     "such as inlining an inaccessible external plan or using an already "
     "available interpreter. Keep the same source hash, provider, and "
     "known-distinct reviewer requirements, and the original identical "
-    "authorized scope. Do not copy login profiles or expand permissions. "
+    "authorized scope. The allowance is one correction total per original "
+    "request across all descendant work units; a corrected work unit cannot "
+    "issue another correction or reset the allowance. Retain the original-request "
+    "identity and both attempts in the caller's trace. Do not copy login "
+    "profiles or expand permissions. "
     "This is not a replay, retry, or failover of the consumed work unit, "
     "not a runtime automatic retry, and not a provider switch to evade "
     "findings. Do not use it to repair formatting or missing lineage, or "
-    "when failure is unproven. If findings or usable partial content exist, "
+    "when failure is unproven or a native mutation is ambiguous. If findings "
+    "or usable partial content exist, "
     "interpret them instead. Native one-process completion remains separate.\n"
 )
 

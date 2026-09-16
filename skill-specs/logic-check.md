@@ -81,7 +81,7 @@ the consumed work unit.
 
 ### 1. Show {{ primary_agent }}'s work transparently — do not gate on the audit
 
-Present {{ primary_agent }}'s derivation and final answer to the user as you would normally. Then note: "Independent audit in progress; will reconcile if it disagrees." This serves two purposes: the user is not blocked waiting on the verifier, and if the audit later disagrees the reconciliation is visible — the user sees what changed and why.
+Present {{ primary_agent }}'s derivation and final answer to the user as you would normally. Then note: "Advisory re-derivation in progress; will reconcile if it disagrees." Reviewer independence is pending until the returned response-scoped evidence establishes it. The user can use the initial answer while seeing any later correction and its reason.
 
 Do not withhold the answer pending the audit. Suspense without purpose is just latency.
 
@@ -92,7 +92,7 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 But: **do send the constraints and assumptions** {{ primary_agent }} used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance {{ primary_agent }} was solving.
 
 Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and artifact author. Submit the sealed logic-check role through
+primary and every contributing artifact author. Submit the sealed logic-check role through
 `{{ mcp_tool_ask }}` with {{ logic_check_call_params }}. Verify the observed
 reviewer lineage before treating its response as independent governance evidence.
 Use this prompt template for substantive derivation. The caller reasons over the
@@ -144,7 +144,13 @@ TRACE:
 
 ### 4. Compare the two derivations
 
-**Both agree on the final answer AND key intermediates:** report "Independent re-derivation agrees: answer = X." High confidence (but not certainty — agreement is one signal, not a proof; both models can be wrong in the same way on a textbook-style problem with a well-known wrong answer).
+First verify the returned response-scoped evidence against the primary and every
+contributing author family. Use independent wording only when every independent-
+governance requirement is met; otherwise label the comparison advisory. Asking
+for a derivation without sharing the original answer reduces anchoring, but does
+not itself establish reviewer-family independence.
+
+**Both agree on the final answer AND key intermediates:** report "Independent re-derivation agrees: answer = X" only after that verification; otherwise report "Advisory re-derivation agrees: answer = X; reviewer independence unverified." Agreement is one signal, not a proof; both models can be wrong in the same way on a textbook-style problem with a well-known wrong answer.
 
 **Disagree on the final answer:** first, evaluate the verifier's derivation **quality**. Is it coherent end-to-end? Or is it garbled / hallucinated / internally inconsistent? If the verifier's work is broken, do not try to reconcile — flag the verifier's failure to the user, fall back to re-checking {{ primary_agent }}'s math against the constraints. If both derivations are coherent, identify the **step where they diverge**, then work out which is correct: re-check the arithmetic at that step, re-check the constraints, re-check the definitions, re-check the edge-case treatment. Report the corrected result with the source of the error explicitly named ("step 7 used a different rounding rule than the constraints specified"). **Do not silently switch the answer** — show the user what changed and why.
 
@@ -152,11 +158,14 @@ TRACE:
 
 ### 5. Close the loop
 
-End the user-facing report with a one-line statement of the audited result and a confidence note. Examples:
+End with the result, a confidence note, and the established review status. Use
+"Independently audited result" only when the response-scoped evidence establishes
+all independent-governance requirements. Otherwise use "Advisory result" and
+state that reviewer independence remains unverified. Examples:
 
-- "Audited result: $47,283.50 (independent re-derivation by {{ verifier_agent }} agrees on the final answer AND each intermediate)."
-- "Audited result: $47,283.50 (revised from the original $47,282.50 — the year-3 vesting acceleration was applied to the wrong tranche in {{ primary_agent }}'s computation; verifier's derivation surfaced the error at step 9)."
-- "Audited result: PENDING — {{ verifier_agent }} returned an incoherent derivation; falling back to manual re-check against constraints."
+- "Independently audited result: $47,283.50 (verified independent reviewer {{ verifier_agent }} agrees on the final answer AND each intermediate)."
+- "Advisory result: $47,283.50 (reviewer independence unverified; revised from $47,282.50 after checking the year-3 vesting error surfaced at step 9)."
+- "Advisory result: PENDING — {{ verifier_agent }} returned an incoherent derivation; falling back to manual re-check against constraints."
 
 ## Examples across domains
 

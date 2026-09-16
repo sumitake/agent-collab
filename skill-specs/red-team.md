@@ -101,7 +101,7 @@ A focused objective produces focused output. "Find security issues" produces a g
 ### 3. Call the verifier
 
 Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and artifact author. Submit one `review.repository` work unit through
+primary and every contributing artifact author. Submit one `review.repository` work unit through
 `{{ mcp_tool_ask }}`. The caller seals and verifies the exact repository head,
 supplies the bounded red-team prompt as opaque payload, and verifies the
 observed reviewer lineage before treating it as independent governance evidence.

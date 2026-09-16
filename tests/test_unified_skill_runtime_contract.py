@@ -372,6 +372,9 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
         self.assertIn("repair formatting or missing lineage", allowance)
         self.assertIn("provider switch to evade findings", allowance)
         self.assertIn("no uncertain external mutation", allowance)
+        self.assertIn("one correction total per original request across all descendant work units", allowance)
+        self.assertIn("a corrected work unit cannot issue another correction or reset the allowance", allowance)
+        self.assertIn("native mutation is ambiguous", allowance)
         self.assertIn("Native one-process completion remains separate", allowance)
 
         for name in sorted(build_skills.ROUTED_SPECS):

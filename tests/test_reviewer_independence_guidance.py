@@ -49,6 +49,19 @@ def _independence_block(text: str) -> str:
 
 
 class ReviewerIndependenceGuidanceTests(unittest.TestCase):
+    def test_procedures_retain_all_author_and_advisory_boundaries(self) -> None:
+        for name in ("debate", "logic-check", "red-team"):
+            for path in (SPECS / f"{name}.md", PLUGIN / "skills" / name / "SKILL.md"):
+                procedure = " ".join(path.read_text(encoding="utf-8").split("## Procedure", 1)[1].split())
+                with self.subTest(path=path):
+                    self.assertIn("primary and every contributing artifact author", procedure)
+                    self.assertNotIn("primary and artifact author", procedure)
+                    if name == "logic-check":
+                        self.assertIn("Advisory re-derivation in progress", procedure)
+                        self.assertNotIn("Independent audit in progress", procedure)
+                        self.assertIn("reviewer independence unverified", procedure)
+                        self.assertIn('Otherwise use "Advisory result"', procedure)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.scaffold = _load_module(

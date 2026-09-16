@@ -126,7 +126,10 @@ plan or using an already available interpreter. Keep the same source hash, the
 same provider, and the same known-distinct reviewer requirements where they
 apply, and stay inside the original identical authorized scope. Do not copy
 login profiles or demand renewed permission for that same already authorized
-scope. This is the bounded caller fresh-review allowance. It is not a replay,
+scope. The allowance is one correction total per original request across all
+descendant work units; a corrected work unit cannot issue another correction
+or reset the allowance. Retain the original-request identity and both attempts
+in the caller's trace. This is the bounded caller fresh-review allowance. It is not a replay,
 retry, or failover of the consumed work unit; the runtime must not auto-retry;
 and a provider must not be switched to evade findings. Do not use it to repair
 formatting or missing lineage, to evade substantive findings, or when the
