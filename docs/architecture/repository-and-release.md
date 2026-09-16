@@ -18,7 +18,7 @@ contributors do not need access to it.
 | `plugins/agent-collab/.claude-plugin/` and `.codex-plugin/` | current | Host manifests for the same name and version. | Update together. |
 | `.claude-plugin/` and `.agents/plugins/` | generated/current | Claude-compatible and Codex marketplace views. | Regenerate with `scripts/build_marketplace.py`. |
 | `plugins/agent-collab/runtime-manifest.json` | current contract | Closed runtime artifact and route metadata. | Generated/reviewed release input; never use it to infer host activation. |
-| `plugins/agent-collab/runtime/` | repository-only when present | Final manifest-listed native bundle. | Only final reviewed signed artifacts may enter. No native source. |
+| `plugins/agent-collab/runtime/` | verified release artifacts; host state separate | Final manifest-listed native bundles shipped in the current release. | Only final reviewed signed artifacts may enter. No native source. |
 | `docs/architecture/` | current | Public architecture handbook. | Update with boundary or lifecycle changes. |
 | `docs/design/` | mixed | Design-of-record and historical review evidence. | Consult the design index and source/tests before treating it as current. |
 | `docs/public-governance.md` | current/normative | Contribution and merge contract. | Keep prose and automation aligned. |
@@ -101,11 +101,11 @@ operator notification if still unsuccessful. Expired pricing becomes
 `unpriced`; expired quota becomes `unknown`. Structural, privacy, provenance,
 integrity, schema, and material-regression failures always block.
 
-The published v7.0.6 release admits the governed bootstrap aggregate,
+The published v7.0.7 release admits the governed bootstrap aggregate,
 pricing/quota snapshots, notification, and schema-3 receipt introduced in
 v6.2.0. The enhancement duration prior is descriptive; greenfield and
 unsupported metric families remain unavailable. The bootstrap is not promoted
-calibration; the refreshed maintenance evidence is receipt-bound to 7.0.6. See
+calibration; the refreshed maintenance evidence is receipt-bound to 7.0.7. See
 [Project estimation](project-estimation.md).
 
 ### Policy-only

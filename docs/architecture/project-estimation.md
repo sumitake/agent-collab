@@ -19,7 +19,7 @@ consents to an output path.
 ## Current status
 
 The skill, helper, schemas, planning checkpoints, and release-verification
-source ship in the published v7.0.6 release. A governed, content-addressed
+source ship in the published v7.0.7 release. A governed, content-addressed
 bootstrap handoff is admitted from the frozen producer. It contains a supported
 enhancement duration hierarchy but no greenfield root and no published token,
 wait, rework, quota-delay, or marginal-cash metrics.
@@ -27,8 +27,10 @@ wait, rework, quota-delay, or marginal-cash metrics.
 This is production maintenance evidence in the explicit `bootstrap` state, not
 a promoted calibration claim. Its estimates are descriptive and never high
 confidence. The refreshed maintenance evidence is receipt-bound to the
-published 7.0.6 source; v6.2.0 remains the historical release that introduced
-the bootstrap.
+published 7.0.7 source; v6.2.0 remains the historical release that introduced
+the bootstrap. The 7.0.7 handoff retains verified last-good calibration dated
+2026-08-25; it does not claim newly promoted calibration. Unknown provider
+quotas remain unknown.
 
 ## Mental model
 

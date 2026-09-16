@@ -7,9 +7,12 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.7).
 
-Current published release: **7.0.6** ([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)).
-It carries signed provider runtime `5.0.7`. Host installation, readiness, and
-provider availability remain separate evidence planes.
+Current published release: **7.0.7** ([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)).
+It carries signed provider runtime `5.0.8`. Host installation, readiness, and
+provider availability remain separate evidence planes. The package README
+remains the immutable release-time snapshot; current postpublication facts
+belong in this README and the handbook. Later repository documentation does
+not rewrite the tagged release artifact.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -20,7 +23,7 @@ installation, and readiness claims separate.
 
 ## What's new - v7.0.7
 
-The 7.0.7 source prepares runtime `5.0.8`. Native calls keep the operating
+Release 7.0.7 carries runtime `5.0.8`. Native calls keep the operating
 account's login context and SSH session markers. Bounded native output remains
 available when optional event metadata or Unicode is irregular. Eligible
 read-only Gemini work can complete one correlated empty successful turn within
@@ -32,9 +35,12 @@ advisory. A demonstrated caller setup defect permits at most one corrected
 read-only request per original request across all descendants, without
 replaying uncertain mutations or switching providers.
 
-Signed dual-architecture delivery and staged qualification are in progress.
-The currently published release remains 7.0.6; this source preparation does not
-claim a new release, installation, or provider availability.
+Both macOS architectures are signed, notarized, and published. Released files
+match the observed installations. Fresh installed Codex and Grok canaries
+passed; installed Gemini qualification remains unmet after a native service
+503, and Claude inference remains explicitly excepted. The
+[dated evidence](docs/architecture/status-and-evidence.md) separates these
+results from staged qualification and existing-session skill loading.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -123,7 +129,7 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The 7.0.7 source targets:
+The 7.0.7 release carries:
 
 - manifest schema 4;
 - runtime protocol 5;
@@ -196,7 +202,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v7.0.6 closeout is recorded in the
+The v7.0.7 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing
