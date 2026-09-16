@@ -6,20 +6,27 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.6**
+Current repository source: **7.0.7**
 
 Current published release: **7.0.6**
 ([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)); it
 carries signed provider runtime `5.0.7`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
-Version 7.0.6 retains provider runtime `5.0.7` with manifest schema 4,
+Version 7.0.7 prepares provider runtime `5.0.8` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
-admits 12 logical actions and eight logical agents. It replaces the semantic
-coordinator with a bounded routing-only shim and removes provider-authored
-schema, verdict, findings, receipt, telemetry, and terminal-wrapper fields as
-content-availability gates. Every bounded observed nonempty final or recovered
+admits 12 logical actions and eight logical agents. The public coordinator is
+a bounded routing-only shim. Provider-authored schema, verdict, findings,
+receipt, telemetry, and terminal-wrapper fields are not content-availability
+gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
+
+The 7.0.7 source preserves canonical native HOME and SSH context, bounded
+recovery, and optional native model observations with their scope. Reviewer
+selection compares every contributing author family; response-scoped evidence
+is required for independent approval. Corrected read-only work is limited to
+one correction total per original request, including descendants, and cannot
+replay ambiguous mutations. Production publication remains pending.
 
 The 7.0.6 content update corrects reviewer-independence instructions: the caller
 establishes the primary and artifact-author families, checks an eligible
@@ -42,8 +49,8 @@ General users should start with the public
 
 ## Skills
 
-This release includes signed runtime 5.0.7 and wire schema 12 for
-both macOS architectures.
+The source includes signed and notarized runtime 5.0.8 and wire schema 12
+for both macOS architectures. Publication remains pending.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
@@ -82,7 +89,18 @@ python3 "<plugin-root>/coordinator.py"
 The shim reads one bounded object, loads the plugin-relative runtime client,
 passes the object through once, and writes one canonical JSON result. It adds
 no provider command, semantic schema, verdict parser, retry, replay, fallback,
-receipt, or authority claim.
+receipt, or authority claim. Caller-owned bounded fresh-review, when permitted
+for read-only review or governance, is a separate routing request documented in
+Public repository governance and those generated skills; the shim still passes
+each request through once.
+
+The client uses the OS account's canonical `HOME`, keeps native configuration
+locations and SSH session markers, and places only request artifacts in its
+temporary directory. It does not copy login profiles or manage provider
+credentials. When a native CLI works in a terminal but a managed call fails,
+compare the host and native session before treating the result as provider
+unavailability. Existing task authorization persists across tool steps within
+its approved scope.
 
 The request shape is signed in `runtime-manifest.json`. This Python example
 constructs a repository review from current values. Save it as `caller.py` and
@@ -149,13 +167,15 @@ cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
 Honor an operator-named provider with `explicit_target`. For an authorized
 independent review or governance task without an operator-named provider, use
-that same field to bind the caller-verified distinct reviewer selected by the
-caller or designated by the workflow. Carry the same target into planning and
+that same field to bind the caller-verified reviewer distinct from the primary
+and every contributing author family. Carry the same target into planning and
 live dispatch; untargeted planning does not bind a later live request. Target
 unavailability is reported without silent substitution or replay. Ordinary
-advisory calls otherwise use normal economic routing. Target binding does not
-prove independence: verify the returned native lineage before accepting review
-or governance evidence.
+advisory calls otherwise use normal economic routing. Configuration may
+identify a candidate; target binding does not prove independence. Verify
+returned response-scoped native evidence before accepting independent approval.
+Missing evidence keeps useful advisory content and does not imply a provider
+outage.
 
 Required common fields
 are `wire_contract_sha256`, `request_id`, `quality_profile`, `effort_class`,
@@ -182,8 +202,8 @@ the caller: it would terminate healthy progressing work.
 Set `dispatch_requested=false` for a planning-only routing decision and `true`
 for live dispatch. One selected work unit is never automatically replayed,
 retried, or failed over after provider access.
-Planning is a policy result; it does not check provider authentication or
-prove live availability.
+Planning reports route eligibility, not model identity, live availability, or
+authentication.
 
 The 12 logical actions are:
 
@@ -205,7 +225,7 @@ review.repository
 ## Direct runtime boundary
 
 The package emits one schema-4 manifest with wire schema 12, runtime protocol
-5, native contract 4, and provider runtime `5.0.7`. The manifest binds the
+5, native contract 4, and provider runtime `5.0.8`. The final manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 

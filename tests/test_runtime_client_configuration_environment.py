@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import pwd
 from pathlib import Path
 import sys
 import tempfile
@@ -25,6 +26,28 @@ def _load_client():
 
 
 class RuntimeClientConfigurationEnvironmentTests(unittest.TestCase):
+    def test_client_import_does_not_require_a_posix_account_database(self) -> None:
+        with mock.patch.dict(sys.modules, {"pwd": None}):
+            self.assertTrue(callable(_load_client().invoke))
+
+    def test_native_runtime_uses_account_home_not_a_caller_temporary_home(self) -> None:
+        client = _load_client()
+        canonical = pwd.getpwuid(os.getuid()).pw_dir
+        for inherited in ({}, {"HOME": "/temporary/caller-home"}):
+            with mock.patch.dict(os.environ, inherited, clear=True):
+                environment = client._scrubbed_env(Path("/temporary/request"))
+            self.assertEqual(environment["HOME"], canonical)
+            self.assertEqual(environment["TMPDIR"], "/temporary/request")
+
+    def test_native_runtime_preserves_ssh_session_detection_without_forwarding_agent(self) -> None:
+        client = _load_client()
+        session = {"SSH_CONNECTION": "fixture-connection", "SSH_CLIENT": "fixture-client", "SSH_TTY": "/dev/fixture"}
+        with mock.patch.dict(os.environ, {**session, "SSH_AUTH_SOCK": "/private/agent"}, clear=True):
+            environment = client._scrubbed_env(Path("/temporary/request"))
+        for key, value in session.items():
+            self.assertEqual(environment.get(key), value)
+        self.assertNotIn("SSH_AUTH_SOCK", environment)
+
     def test_preserves_native_login_and_catalog_locations_without_credentials(self) -> None:
         client = _load_client()
         configured = {

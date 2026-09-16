@@ -94,8 +94,10 @@ the primary for integration.
 1. Identify the artifact, primary, authors and whether the task requires
    independent approval.
 2. Use the appropriate review skill. For required independence, verify a
-   reviewer outside the primary and author families and bind that selection to
-   the live call. Verify observed reviewer lineage and exact source afterward.
+   candidate outside the primary and every contributing author family and bind
+   that selection to the live call. After return, verify native identity
+   evidence correlated to that response and the exact reviewed source;
+   configuration-scoped identity alone cannot establish independent approval.
 3. For ordinary code review, an available Gemini reviewer can still help when
    no distinct-family reviewer is available. Label same-family or unknown
    lineage as advisory; leave any independent approval requirement unmet.
@@ -103,7 +105,7 @@ the primary for integration.
    routing, role names or a subscription, repeatedly attempt an unavailable
    provider, or replay a consumed request to repair formatting or evidence.
 
-This is caller-owned behavior in the [released code-review
+This is caller-owned behavior in the [code-review
 skill](../../skill-specs/code-review.md). The routing request has no dynamic
 primary/artifact-author lineage exclusion fields.
 
@@ -175,9 +177,10 @@ A capability is usable only when all applicable gates pass:
 
 Runtime and planning diagnostics describe the attempted route; they do not
 perform the caller's family-exclusion check or establish provider-wide failure.
-Missing independent-review evidence leaves that requirement unmet. Preserve
-available advisory content without claiming broader authority, silently
-substituting an operator-named target, or replaying a consumed request.
+Missing independent-review evidence leaves that requirement unmet; it is not
+provider unavailability. Preserve available advisory content without claiming
+broader authority, silently substituting an operator-named target, or replaying
+a consumed request.
 
 For installation and recovery, continue to
 [Lifecycle and operations](lifecycle-and-operations.md).

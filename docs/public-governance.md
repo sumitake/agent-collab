@@ -30,9 +30,26 @@ genuine; reviewers and the operator remain responsible for substance.
   governance gates. Record an independent cross-family review; operator-reserved
   paths also require the operator to merge.
 
-The reviewer family must differ from the artifact author or active agent family.
-Unknown-family evidence cannot establish governance-grade independence. A
-multi-round trace records the final operative verdict.
+The reviewer family must differ from the active primary and every contributing
+artifact-author family. Selecting a candidate and accepting independent approval
+are different stages. Provider-free planning proves an eligible action or route,
+not model identity. Currently known native configuration or response-scoped
+observations may identify a potential candidate; configuration remains
+configuration. After a review returns, independent approval requires
+response-scoped native evidence correlated to that returned response. Optional
+native model-identity observations, when present, carry a source and a scope
+such as generation metadata at response scope; missing or uncorrelated
+observation is evidence unavailability, not provider unavailability, and does
+not invent a required identity probe, schema service, or operator-waiver loop.
+An authorized advisory review may still return useful content. Unknown-family
+or configuration-only evidence cannot establish governance-grade independence.
+A multi-round trace records the final operative verdict.
+
+A required initial review uses every needed independent eligible reviewer first.
+A tiebreaker is reserved only from spare independent eligible reviewers after
+those seats are filled. A sole eligible independent reviewer is used initially.
+If the governing panel requires more reviewers than available, keep that unmet
+requirement visible.
 
 ## Pull-request contract
 
@@ -79,8 +96,14 @@ Runtime status and diagnostic fields remain attempt-local observations. They do
 not discard bounded provider content already observed, establish provider-wide
 unavailability, quarantine a route, or authorize replay. The caller interprets
 the preserved raw response and separately verifies the reviewer, exact source,
-scope, and any operational effects needed for governance. Never fabricate
-reviewer convergence, approval, a receipt, or authority from process exit.
+scope, and any operational effects needed for governance. Optional native
+model-identity observations, when present, include a source and a scope.
+Configuration-scoped observations may inform candidate selection only.
+Response-scoped observations correlated to the returned native response are
+what independent approval may count. Missing observation is evidence
+unavailability, not a provider-health verdict, and does not expand the public
+routing wire. Never fabricate reviewer convergence, approval, a receipt, or
+authority from process exit.
 
 The coordinator has no automatic failure-evidence capture or filing plane.
 Issue filing is an explicit, separately authorized operation after the typed
@@ -93,6 +116,28 @@ findings structure, receipts, telemetry, terminal wrappers, and prose style are
 optional diagnostics or presentation. Every bounded nonempty final or recovered
 partial reaches the caller for ordinary reasoning; only absent content remains
 absent. No consumed request is replayed merely to change formatting.
+
+A completed or terminated read-only review or governance attempt remains
+evidence. When that attempt definitively produced no substantive result and no
+uncertain external mutation, the caller may issue at most one new corrected
+request as a new work unit after fixing a demonstrated setup defect with already
+authorized context and tools — for example inlining an inaccessible external
+plan or using an already available interpreter. Keep the same source hash, the
+same provider, and the same known-distinct reviewer requirements where they
+apply, and stay inside the original identical authorized scope. Do not copy
+login profiles or demand renewed permission for that same already authorized
+scope. The allowance is one correction total per original request across all
+descendant work units; a corrected work unit cannot issue another correction
+or reset the allowance. Retain the original-request identity and both attempts
+in the caller's trace. This is the bounded caller fresh-review allowance. It is not a replay,
+retry, or failover of the consumed work unit; the runtime must not auto-retry;
+and a provider must not be switched to evade findings. Do not use it to repair
+formatting or missing lineage, to evade substantive findings, or when the
+failure is unproven or a native mutation is ambiguous. If findings or a usable
+partial result exist, interpret them instead. Native one-process completion and
+tool recovery within the original invocation remain separate. Worker,
+dev-delegate, and merge-resolve work stay under the shared consumed-work
+no-replay rule with no such allowance.
 
 Set `contributor_rights` to `OWNER-AUTHORED` only when John Osumi authored the
 change. For any external contribution, use `OPERATOR-CONFIRMED` only after John

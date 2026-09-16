@@ -1,9 +1,11 @@
 # Skill-spec authoring brief
 
 Author every collaboration skill for a dynamically resolved primary. Where
-independence matters, require the caller to establish the primary, artifact
-author, and reviewer lineages before accepting a response as independent
-governance evidence; routing does not establish that fact.
+independence matters, require the caller to establish the primary, every
+contributing artifact author, and reviewer lineages before accepting a
+response as independent governance evidence. Selecting a candidate is not
+independent approval: planning reports route eligibility, not model identity,
+and configuration-scoped observations never prove response identity.
 
 Required frontmatter:
 

@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_6(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_7(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.6\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.0.7\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.6")
+            self.assertEqual(manifest["version"], "7.0.7")
 
     def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -109,11 +109,16 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("Carry that same target into planning and live", block)
                 self.assertIn("Honor an operator-named provider", block)
                 self.assertNotIn("only when the operator names", block)
-                self.assertIn("all three\nlineages are known", block)
+                self.assertIn("every contributing author family", block)
+                self.assertIn("does not prove\nmodel identity", block)
+                self.assertIn("Configuration-scoped observations remain configuration", block)
+                self.assertIn("response-scoped native evidence", block)
                 self.assertIn("OpenCode name is transport information", block)
                 self.assertNotIn("shared policy", block)
                 self.assertNotIn("same_family_blocked", block)
                 self.assertNotIn("unknown_family", block)
+                self.assertNotIn("inspect known family evidence", block)
+                self.assertNotIn("all three\nlineages are known", block)
 
             rendered = (PLUGIN / "skills" / name / "SKILL.md").read_text(
                 encoding="utf-8"
@@ -347,6 +352,138 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 for phrase in ("disposable", "patch", "caller", "cleanup", "source head"):
                     self.assertIn(phrase, text)
                 self.assertIn("never infer a patch", text)
+
+    def test_fresh_review_allowance_is_review_governance_only(self) -> None:
+        build_skills = self._load_build_skills()
+        denied = frozenset({"worker", "dev-delegate", "merge-resolve"})
+        self.assertTrue(
+            build_skills.REVIEW_GOVERNANCE_SPECS.isdisjoint(denied)
+        )
+        self.assertTrue(
+            build_skills.REVIEW_GOVERNANCE_SPECS.issubset(build_skills.ROUTED_SPECS)
+        )
+        dummy = "---\nname: demo\n---\n# Title\nbody\n"
+        shared_no_replay = "replay, retry, or fail over a consumed work unit"
+        allowance = build_skills.FRESH_REVIEW_ALLOWANCE
+        self.assertIn("at most one new corrected request as a new work unit", allowance)
+        self.assertIn("inlining an inaccessible external plan", allowance)
+        self.assertIn("already available interpreter", allowance)
+        self.assertIn("not a runtime automatic retry", allowance)
+        self.assertIn("repair formatting or missing lineage", allowance)
+        self.assertIn("provider switch to evade findings", allowance)
+        self.assertIn("no uncertain external mutation", allowance)
+        self.assertIn("one correction total per original request across all descendant work units", allowance)
+        self.assertIn("a corrected work unit cannot issue another correction or reset the allowance", allowance)
+        self.assertIn("native mutation is ambiguous", allowance)
+        self.assertIn("Native one-process completion remains separate", allowance)
+
+        for name in sorted(build_skills.ROUTED_SPECS):
+            injected = build_skills.inject_runtime_invocation(name, dummy)
+            generated = (PLUGIN / "skills" / name / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            invocation = generated.split("\n# ", 1)[0]
+            spec = (ROOT / "skill-specs" / f"{name}.md").read_text(encoding="utf-8")
+            with self.subTest(name=name):
+                self.assertIn(shared_no_replay, injected)
+                self.assertIn(shared_no_replay, invocation)
+                self.assertIn("at most one provider attempt per work unit", invocation)
+                if name in build_skills.REVIEW_GOVERNANCE_SPECS:
+                    self.assertIn(allowance, injected)
+                    self.assertIn(allowance, invocation)
+                    self.assertIn("bounded caller fresh-review allowance", spec)
+                    if "<!-- verifier-independence:start -->" in spec:
+                        independence = spec.split(
+                            "<!-- verifier-independence:start -->", 1
+                        )[1].split("<!-- verifier-independence:end -->", 1)[0]
+                        self.assertNotIn(
+                            "bounded caller fresh-review allowance", independence
+                        )
+                else:
+                    self.assertNotIn(allowance, injected)
+                    self.assertNotIn(allowance, invocation)
+                    self.assertNotIn(
+                        "at most one new corrected request as a new work unit",
+                        generated,
+                    )
+                    self.assertNotIn("bounded caller fresh-review allowance", spec)
+                    self.assertNotIn("bounded caller fresh-review allowance", generated)
+
+        for name in denied:
+            with self.subTest(denied=name):
+                self.assertNotIn(name, build_skills.REVIEW_GOVERNANCE_SPECS)
+                spec = (ROOT / "skill-specs" / f"{name}.md").read_text(encoding="utf-8")
+                generated = (PLUGIN / "skills" / name / "SKILL.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertNotIn("bounded caller fresh-review allowance", spec)
+                self.assertNotIn("new corrected request as a new work unit", generated)
+
+        independence_consumers = (
+            "code-review",
+            "debate",
+            "logic-check",
+            "merge-resolve",
+            "qa-verify",
+            "red-team",
+            "second-opinion",
+        )
+        marker_start = "<!-- verifier-independence:start -->"
+        marker_end = "<!-- verifier-independence:end -->"
+        expected_block = None
+        for name in independence_consumers:
+            spec_text = (ROOT / "skill-specs" / f"{name}.md").read_text(
+                encoding="utf-8"
+            )
+            block = spec_text.split(marker_start, 1)[1].split(marker_end, 1)[0]
+            if expected_block is None:
+                expected_block = block
+            with self.subTest(independence=name):
+                self.assertEqual(block, expected_block)
+                self.assertIn(
+                    "Do not replay a\nconsumed review to repair missing lineage",
+                    block,
+                )
+                self.assertNotIn("fresh-review allowance", block)
+                self.assertNotIn("new corrected request", block)
+
+        governance = " ".join(
+            (ROOT / "docs" / "public-governance.md").read_text(encoding="utf-8").split()
+        )
+        for phrase in (
+            "bounded caller fresh-review allowance",
+            "at most one new corrected request as a new work unit",
+            "inlining an inaccessible external plan",
+            "already available interpreter",
+            "same source hash",
+            "known-distinct reviewer",
+            "must not auto-retry",
+            "switched to evade findings",
+            "repair formatting or missing lineage",
+            "native mutation is ambiguous",
+            "Worker, dev-delegate, and merge-resolve",
+        ):
+            self.assertIn(phrase, governance)
+        self.assertIn(
+            "No consumed request is replayed merely to change formatting",
+            governance,
+        )
+        readme = " ".join(
+            (PLUGIN / "README.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("Caller-owned bounded fresh-review", readme)
+        self.assertIn("the shim still passes each request through once", readme)
+
+        code_review = " ".join(
+            (ROOT / "skill-specs" / "code-review.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("Preserve the single-attempt, no-replay contract", code_review)
+        self.assertIn(
+            "The one exception is the bounded caller fresh-review allowance",
+            code_review,
+        )
+        merge = (ROOT / "skill-specs" / "merge-resolve.md").read_text(encoding="utf-8")
+        self.assertNotIn("The one exception is the", merge)
 
     @staticmethod
     def _load_build_skills():

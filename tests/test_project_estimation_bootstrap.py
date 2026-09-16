@@ -160,7 +160,7 @@ class ProducerByteContractTests(unittest.TestCase):
 
     def test_current_maintenance_is_admitted_for_version_7_0_6(self) -> None:
         ok, lines = self.verifier.verify_maintenance(
-            ROOT, expected_version="7.0.6"
+            ROOT, expected_version="7.0.7"
         )
         self.assertTrue(ok, lines)
 

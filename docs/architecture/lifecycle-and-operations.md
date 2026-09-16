@@ -72,7 +72,11 @@ Installation, selection, and readiness are separate checks.
    snapshot. A listed route is not proof of readiness.
 5. **Bounded smoke test:** invoke one low-risk read-only workflow, such as a
    second opinion on a short draft, and verify the returned family is eligible
-   and independent where the task requires independent approval.
+   and independent of the primary and every contributing author where the task
+   requires independent approval. Use native identity evidence correlated to
+   the returned response; configuration and routing alone are insufficient.
+   Missing evidence leaves independent approval unmet and the result advisory;
+   it is not provider unavailability.
 
 For an activation package, inspect the provider-free migration report:
 
@@ -94,6 +98,14 @@ overrides. Policy-only packages return typed unavailable for native actions.
 ## Use
 
 Invoke the skills in normal language or by their host command. Examples:
+
+Native providers use the account's canonical home and their own configuration
+and authentication. The coordinator keeps request files in a temporary
+directory without relocating login state, and preserves SSH session markers
+used by native CLIs. A terminal on another host or in another login session is
+not an equivalent availability check. Preserve existing authorization for the
+same task scope across tool steps; native recovery inside the original call
+does not require a new caller invocation.
 
 ```text
 /agent-collab:second-opinion Review this architecture decision.
@@ -237,11 +249,11 @@ contains the invocation guidance.
 | `duplicate_blocked` or migration conflict | A retired package remains active or installed. | Run migration doctor, apply only its host-specific removal actions, and run it again. |
 | `unavailable` | The route, runtime, provider prerequisite, or observed readiness is not currently usable. | Run runtime status and migration doctor; check supported vendor authentication separately. Do not use a raw-provider fallback. |
 | Reviewer shares a required excluded family | The primary cannot count that output as independent governance evidence. | Where independence is required, select an eligible different family before dispatch. Ordinary review may retain the output as advisory; the current routing wire does not enforce lineage exclusion. |
-| Reviewer or author lineage is unknown | The primary cannot establish governance independence. | Verify the actual model lineage and authorship; do not guess from a host nickname or installation path. |
+| Reviewer or any contributing author lineage is unknown | Independent approval remains unmet. Missing reviewer evidence is not provider unavailability and does not stop ordinary read-only advisory work. | Verify every author's lineage and response-correlated native reviewer identity; configuration, a host nickname, or an installation path is insufficient. Keep usable advisory content; do not replay a consumed request to improve lineage. |
 | `config_error` | Request fields, host identity, or route/action pairing violate the closed schema. | Use the installed skill/package reference; remove unsupported fields rather than widening the schema. |
 | `auth_error` or `quota_error` | The managed provider prerequisite failed after routing. | Use the provider's supported login/account interface or wait for quota. Keep the same authority. |
 | Output-only worker made no caller-worktree changes | Expected behavior. | Review the returned artifact and apply it through the trusted primary if appropriate. |
-| Governance evidence lacks required identity | Repository/skill policy is not satisfied, regardless of runtime success. | Establish the required provenance before accepting the review; this is the primary workflow responsibility. |
+| Governance evidence lacks required identity | Independent approval remains unmet regardless of runtime success; this is missing provenance, not provider unavailability. | Establish the required provenance before accepting independent approval; keep usable advisory content. This is the primary workflow responsibility. |
 | Version in a running session is stale | The host loaded an earlier package snapshot. | Finish the marketplace/package update and start a genuinely new session/task. |
 
 Preserve typed errors. Do not infer failure from response prose, retry a

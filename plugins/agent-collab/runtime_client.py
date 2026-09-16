@@ -34,7 +34,7 @@ MANIFEST_NAME = "runtime-manifest.json"
 MANIFEST_SCHEMA_VERSION = 4
 PROTOCOL_VERSION = 5
 CONTRACT_VERSION = 4
-PROVIDER_RUNTIME_VERSION = "5.0.7"
+PROVIDER_RUNTIME_VERSION = "5.0.8"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_REQUEST_BYTES = 48 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -827,13 +827,20 @@ class _PrivateTmpCleanupError(RuntimeError):
 
 
 def _scrubbed_env(tmpdir: Path) -> dict[str, str]:
+    # Resolve accounts only after the native platform has been admitted. The
+    # client still imports and reports typed unavailability on other hosts.
+    import pwd
+
     env = {
+        # Native login state belongs to the OS account, not a caller's scratch
+        # HOME. Keep request artifacts under TMPDIR without relocating profiles.
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
         "PATH": os.environ.get("PATH") or "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(tmpdir),
         "LANG": os.environ.get("LANG", "en_US.UTF-8"),
         "LC_ALL": os.environ.get("LC_ALL", "en_US.UTF-8"),
     }
-    for name in ("HOME", "USER", "LOGNAME", "SHELL"):
+    for name in ("USER", "LOGNAME", "SHELL", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"):
         value = os.environ.get(name)
         if value:
             env[name] = value

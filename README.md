@@ -1,11 +1,11 @@
 # agent-collab
 
 `agent-collab` publishes one collaboration plugin for Claude Code, Codex, and
-compatible hosts. Version 7.0.6 pairs a routing-only public client with the
+compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.6).
+This public repository's current source is **agent-collab** (v7.0.7).
 
 Current published release: **7.0.6** ([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)).
 It carries signed provider runtime `5.0.7`. Host installation, readiness, and
@@ -18,22 +18,23 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.6
+## What's new - v7.0.7
 
-When independent review is required, the skills make reviewer independence a
-caller responsibility. Before dispatch, the caller establishes the primary and
-artifact-author families and checks the proposed reviewer. Afterward, it verifies the observed reviewer
-family and source before accepting independent evidence. Unknown lineage stays
-unknown; a routing result alone does not establish independence.
-Ordinary code review can still use available Gemini when no eligible independent
-reviewer exists, with an explicit advisory label and no independent-approval claim.
+The 7.0.7 source prepares runtime `5.0.8`. Native calls keep the operating
+account's login context and SSH session markers. Bounded native output remains
+available when optional event metadata or Unicode is irregular. Eligible
+read-only Gemini work can complete one correlated empty successful turn within
+the same native process, retaining the original diagnostic and recovered answer.
 
-This content update retains the signed runtime `5.0.7` and wire schema 12
-unchanged. The release is published, and all 178 released files match each of
-the four observed local installations. Provider-free planning and migration
-checks passed from the control session against those roots; existing tasks
-still need a fresh session to load updated skills. The dated status snapshot
-records those limits and the unresolved Claude subscription-access denial.
+Reviewer selection considers every contributing author family. Independent
+approval requires response-correlated native evidence; unverified results stay
+advisory. A demonstrated caller setup defect permits at most one corrected
+read-only request per original request across all descendants, without
+replaying uncertain mutations or switching providers.
+
+Signed dual-architecture delivery and staged qualification are in progress.
+The currently published release remains 7.0.6; this source preparation does not
+claim a new release, installation, or provider availability.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -122,18 +123,18 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The published package carries:
+The 7.0.7 source targets:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.7`;
+- provider runtime version `5.0.8`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-The checked-in signed artifact rows are the imported 5.0.7 / wire-schema-12
-generation for both macOS architectures.
+Both macOS architectures carry the imported signed and notarized 5.0.8
+artifact set. Wire schema 12 is unchanged.
 
 Production provider work uses admitted progress inactivity so active work is
 not killed by a strict elapsed timer. Homogeneous `total_deadline` requests
