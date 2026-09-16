@@ -67,10 +67,11 @@ authors and integrates work, adjudicates cross-family feedback, runs
 verification, and owns landing decisions within operator authority.
 
 The native document-intent route does not change independence rules. When the
-active primary or artifact author is Anthropic-family, the primary and repository/skill workflow must exclude
-same-family evidence where an independent family is required. Conversely,
-when another family is primary, Claude document intent remains context only;
-it cannot satisfy a review or governance evidence contract.
+active primary or any contributing artifact author is Anthropic-family, the
+primary and repository/skill workflow must exclude same-family evidence where
+an independent family is required. Conversely, when another family is primary,
+Claude document intent remains context only; it cannot satisfy a review or
+governance evidence contract.
 
 ## Asynchronous participation
 

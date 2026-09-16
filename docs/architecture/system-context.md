@@ -89,7 +89,7 @@ bundle and the metadata needed to verify it may cross into the public package.
 | --- | --- | --- |
 | User | Sets the objective, constraints, and any reserved decisions. | No requirement to understand provider transport or package internals. |
 | Supported host | Loads the plugin and exposes its skills in the host's normal interaction model. | Does not redefine model family or route authority. |
-| Trusted primary | Interprets intent, selects a workflow, reviews output, applies changes, tests, and decides what to land within user authority. | Cannot turn same-family output into independent governance evidence. |
+| Trusted primary | Interprets intent, selects a workflow, reviews output, applies changes, tests, and decides what to land within user authority. | Cannot turn same-family or lineage-unverified output into independent governance evidence. |
 | Skill | Encodes one public workflow and its triggers, evidence needs, and stop conditions. | Does not prove the underlying managed route is active. |
 | Public coordinator and policy | Forward the manifest-bound request and preserve routing decisions, opaque content, and execution facts. | No raw provider, binary, credential, or arbitrary tool selection. |
 | Managed reviewer | Returns bounded read-only critique or governance evidence. | No source mutation, merge, deployment, or self-approval. |
@@ -121,8 +121,10 @@ boundary.
 1. The primary invokes a skill or follows a primary-executed playbook.
 2. For a managed route, the public client validates the manifest-bound request;
    the primary owns author and reviewer identity verification.
-3. The primary and repository/skill workflow record the primary and artifact
-   author lineages and verify an independent reviewer where required.
+3. The primary and repository/skill workflow record the primary and every
+   contributing artifact-author lineage. Where independent approval is
+   required, they verify reviewer identity from native evidence correlated to
+   the returned response, rather than configuration or routing alone.
 4. The request receives one declared authority. Fallback cannot widen it.
 5. The client validates the manifest and native bundle before the managed
    runtime receives a request.

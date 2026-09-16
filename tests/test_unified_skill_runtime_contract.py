@@ -22,7 +22,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_6(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_0_7(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
             self.assertIn("\nversion: 7.0.7\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):

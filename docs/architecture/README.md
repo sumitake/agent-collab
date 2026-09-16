@@ -65,7 +65,8 @@ The public repository and package preserve these invariants:
 2. Callers select a skill or logical collaboration job. They do not receive a
    raw provider-execution escape hatch.
 3. Governance review requires a model family independent of the active primary
-   and the reviewed artifact's known author family.
+   and every contributing artifact-author family, established through native
+   identity evidence correlated to the returned review.
 4. Route authorities are closed. Read-only, output-only, and unavailable
    actions do not promote themselves because another route failed.
 5. Provider output is an artifact for the trusted primary to inspect. It does

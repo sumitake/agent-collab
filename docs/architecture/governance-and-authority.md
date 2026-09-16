@@ -10,22 +10,29 @@ tool call is not evidence that the caller should receive broader permissions.
 ## Independence model
 
 For governance-grade review, repository and skill policy requires a recorded
-active-primary lineage and artifact-author lineage. The primary must select
-and preserve evidence from a reviewer outside both required families. If either
-lineage is unknown, the governance workflow fails closed. OpenCode is a
-transport/host surface; the selected model's lineage supplies family provenance.
+active-primary lineage and the lineage of every contributing artifact author.
+The primary must select a reviewer outside the primary and all contributing
+author families. If any required lineage is unknown, independent approval
+remains unmet. Missing reviewer identity evidence is not provider
+unavailability: keep usable advisory content, do not stop ordinary read-only
+advisory work, and do not replay a consumed request to improve lineage.
+OpenCode is a transport/host surface; the selected model's lineage supplies
+family provenance.
 
 The current public runtime request has no primary or artifact-author-lineage
 field. It does not dynamically perform this exclusion. The skill and repository
 workflow require it, and the primary verifies the selected reviewer and the
 substance of the exact-head review.
 
-For an authorized independent review, the caller binds its verified reviewer
-selection to the actual request, honors an operator-named provider, and checks
-observed native lineage afterward. Planning an untargeted call does not reserve
-that selection for a later call. Role names, receipts and routing success do
-not establish independence, and a consumed request is not replayed to improve
-its evidence. The [released review skill](../../skill-specs/code-review.md)
+For an authorized independent review, known native configuration or earlier
+observations can identify a candidate. The caller binds that selection to the
+actual request and honors an operator-named provider. After return, independent
+approval requires response-scoped native identity evidence correlated to that
+specific response, plus verification of the reviewed source and findings.
+Configuration alone cannot establish that approval. Planning an untargeted
+call does not reserve a selection for a later call. Role names, receipts and
+routing success do not establish independence, and a consumed request is not
+replayed to improve its evidence. The [review skill](../../skill-specs/code-review.md)
 contains the caller procedure.
 
 Ordinary code review remains useful when no independent reviewer is available.
@@ -41,11 +48,11 @@ cannot become governance evidence through a role assignment or successful call.
 
 ```mermaid
 flowchart LR
-    Artifact["Artifact plus author lineage"] --> Eligibility["Caller verifies required lineages"]
+    Artifact["Artifact plus all contributing author lineages"] --> Eligibility["Caller verifies required lineages"]
     Primary["Active primary lineage"] --> Eligibility
-    Eligibility --> Exclude["Caller excludes primary and author families"]
-    Exclude --> Reviewer["Caller selects an independent reviewer"]
-    Reviewer --> Evidence["Review artifact or governance verdict"]
+    Eligibility --> Exclude["Caller excludes primary and every author family"]
+    Exclude --> Reviewer["Caller selects a reviewer candidate"]
+    Reviewer --> Evidence["Caller verifies response identity, source and findings"]
     Evidence --> PrimaryGate["Primary integration and repository gates"]
 ```
 
@@ -72,7 +79,9 @@ No failure converts one row to another. In particular:
   unavailable;
 - the runtime does not itself apply output; callers must supply a disposable
   copy and verify it before application;
-- the governance workflow cannot accept an unknown primary or artifact family;
+- independent approval cannot accept an unknown primary or contributing
+  author family; that missing evidence leaves the requirement unmet and
+  does not make the provider unavailable;
 - an explicit target is not silently replaced by a different provider; and
 - a successful result does not gain merge, deployment, release, or policy
   authority.
@@ -115,8 +124,9 @@ The trace proves that required evidence was recorded in the expected form. It
 does **not** cryptographically prove that quoted review prose came from the
 claimed reviewer. This is an intentional, documented residual boundary:
 
-- skill and repository policy require family independence, verified by the
-  primary against the actual selected reviewer;
+- skill and repository policy require family independence from the primary
+  and every contributing author, verified against native identity evidence
+  correlated to the returned response;
 - repository automation validates trace form and presence; and
 - the primary, independent reviewer, and operator validate substance and exact
   head before merge.
@@ -146,11 +156,14 @@ and its evidence is verified.
 ## Why these controls matter
 
 - **Different failure modes:** independent model families are more likely to
-  expose correlated assumptions than another instance of the author's family.
+  expose correlated assumptions than another instance of the primary or a
+  contributing author's family.
 - **Least authority:** a route receives only the permission its work requires,
   reducing the cost of a hallucination or prompt-injection failure.
-- **Honest evidence:** unavailable execution and explicitly unknown lineage
-  remain uncertain; neither is converted into successful governance evidence.
+- **Honest evidence:** unavailable execution describes that attempt;
+  unknown lineage is missing independence evidence. Neither alone establishes
+  provider-wide failure or independent approval. Preserve usable advisory
+  content without claiming broader authority.
 - **Separation of duties:** authoring, reviewing, integrating, merging, and
   releasing remain distinct accountable acts.
 - **Recoverability:** an unavailable native artifact stops execution

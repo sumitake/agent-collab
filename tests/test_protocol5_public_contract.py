@@ -201,7 +201,7 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
                 descriptor, expected_sha256=digest
             )
 
-    def test_distribution_metadata_is_version_7_0_6(self) -> None:
+    def test_distribution_metadata_is_version_7_0_7(self) -> None:
         for host in (".claude-plugin", ".codex-plugin"):
             value = json.loads((PLUGIN / host / "plugin.json").read_text())
             self.assertEqual(value["version"], "7.0.7")
