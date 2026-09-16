@@ -1,0 +1,7 @@
+### agent-collab 7.0.7 — runtime 5.0.8
+
+- Pair runtime 5.0.8 with the public client that preserves canonical account HOME and native SSH context. Both macOS architectures must pass the coordinated signing, import and staged qualification gates before publication.
+- Gemini's existing native carrier supports one correlated read-only completion after an empty successful turn in the same process, keeping the original diagnostic and recovered answer. Codex tolerates nonprotocol startup noise and malformed optional tool metadata. Codex and ACP preserve irregular Unicode and correctly scope optional model observations. Shared interactive stdin writes remain under supervision and backpressure handling.
+- Existing native transports and descriptor-admitted actions remain in place; no provider fallback, automatic request replay, replacement login profile, broker, or new route is introduced. Claude and Grok transport selection is unchanged; no omitted Claude profile is activated.
+- Keep wire schema 12, protocol 5, native contract 4, 12 logical actions, eight logical agents and wire digest `a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a` unchanged. Bind the new public client and release-exact manifest schema to the signed producer.
+- Retain caller-owned independent-review checks, advisory results when evidence is missing, all-author reviewer selection and a nonrenewable corrected-review allowance.

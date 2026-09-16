@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-version: 7.0.6
+version: 7.0.7
 defaults:
   quality_profile: economical
   effort_class: minimal

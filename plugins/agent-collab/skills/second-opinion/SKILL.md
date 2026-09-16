@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-version: 7.0.6
+version: 7.0.7
 defaults:
   quality_profile: frontier
   effort_class: maximum
