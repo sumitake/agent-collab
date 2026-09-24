@@ -8,9 +8,9 @@ interpreted by the calling agent with ordinary reasoning.
 
 Current repository source: **7.0.8**
 
-Current published release: **7.0.6**
-([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)); it
-carries signed provider runtime `5.0.7`. Host installation, readiness, and
+Current published release: **7.0.7**
+([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)); it
+carries signed provider runtime `5.0.8`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
 Version 7.0.8 prepares provider runtime `5.0.9` with manifest schema 4,
