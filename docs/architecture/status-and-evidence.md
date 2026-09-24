@@ -17,7 +17,53 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.7
+## Current snapshot — v7.0.8
+
+The [`v7.0.8` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.8) was published on
+2026-09-24 at 07:59:58 UTC.
+The signed annotated v7.0.8 tag object `40a2185360f9b180d1bcb333b4e8e8ea83212415` identifies public commit `c9035d9c5e5d6e7771d00f740b5178e8f8dadbb9`.
+The [exact release workflow](https://github.com/sumitake/agent-collab/actions/runs/35972414711)
+succeeded. The released archive was independently rebuilt from the exact
+tagged commit in a separate clone and found byte-identical to the downloaded
+asset, in addition to the checksum match.
+
+| Published asset | Verified SHA-256 |
+| --- | --- |
+| `agent-collab.v7.0.8.plugin` | `6590230d69218a6a537988db520af905684cc14b4fd64c0a44e16bbf965fd4b3` |
+| `agent-collab-v7.0.8.spdx.json` | `7d8cc8797459d441be159248dde16ca06c8b596455299c0a68c635611e6b810b` |
+| `agent-collab.v7.0.8.plugin.sha256` | (contains the archive digest above) |
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| Package 7.0.8 carries signed and notarized runtime 5.0.9 for macOS ARM64 and Intel. Manifest schema 4, protocol 5, native contract 4 and wire schema 12 remain unchanged. | verified release identity | A request whose effort is below an action's descriptor floor is now raised to the lowest admitted class before route selection instead of failing closed, reported in the optional terminal field `routing_adjustments`. Request-validation and carrier-launch errors carry a constant `detail`; an unsupported explicit target reports `target_agent_unsupported`. The wire digest is unchanged because the terminal record already permitted additional properties. The coordinator also repairs a small class of request-construction mistakes before dispatch (binding an unbound read-only repository action to the caller's own repository, or a linked worktree of it that the request names) and reports each repair in a `repairs` field; a request naming only another directory is rejected before dispatch. |
+| The released manifest lists 12 logical actions, eight logical agents and two architecture artifacts; the package has 53 generated skills. | verified current inventory | Historical transport-action/source-pair counts remain historical. |
+| All 184 released files match all four primary host installations (Claude, Codex, Antigravity/Agy and Grok). Source `marketplace-fragment.json` also remains unchanged at its exact release-tag Git blob. | verified installed file contents | Installed source-manager marketplace metadata matches the exact release source. Agy-generated host metadata (`plugin.json`) is separately identified. Installed filesystem modes follow the documented client checks; no literal identical-tree claim is made for host-added files. |
+| Provider-free planning passed from all four installed roots. The provider-free packaged Grok qualifier returned `qualified` with zero model calls. | verified package readiness and mechanical qualification | These checks do not prove authentication, inference or provider service availability. |
+| Before publication, the full staged qualification matrix (12 actions, 5 carriers, maximum effort) returned `qualified: true` with every case content-correct and cleaned up, including a genuine live Claude `context.documents.intent` canary. After install, one consumed native canary per host returned content-correct results. | bounded native execution verified for the named cases | Each case used one new request, with source/package bytes unchanged, zero replay and confirmed native and fixture cleanup. Two of the four installed canaries needed one retry after a first attempt returned no output under concurrent host load; the retried attempts succeeded cleanly and no consumed provider work was replayed. Successful staged evidence is not a substitute for the installed canary. |
+| Claude package installation succeeded; managed inference (`context.documents.intent`, Claude's sole admitted action) was qualified in the staged matrix above. | installed; inference qualified in staging | The installed unit was not separately re-canaried for Claude specifically; the byte-identical release plus the staged qualification stand in for it. No other Claude action is admitted. |
+| No existing desktop session was restarted for the update. | fresh-session skill loading unverified | Package installation and execution from its installed path do not establish the skill catalog already loaded by a running conversation. |
+| Maintenance is bound to 7.0.8 with a freshly-generated (not carried-forward) receipt dated 2026-09-24. | verified fresh bootstrap maintenance | Calibration state remains `bootstrap`, not `promoted`. All four configured pricing providers resolved; exact numeric quota contracts remain unavailable for all four, and the receipt-bound operator notification fired accordingly. Unknown quotas remain unknown. |
+
+The evidence supports publication and the recorded installations, with the explicit limits above. This record does not claim all-carrier qualification beyond what is listed or authorize replay of any consumed attempt. Later repository documentation does not rewrite the tagged release artifact. [PR #222](https://github.com/sumitake/agent-collab/pull/222) contains the distribution's review and validation evidence. [PR #223](https://github.com/sumitake/agent-collab/pull/223) compiled the canonical changelog before the signed release. The closeout adds its own fragment without changing that signed history.
+
+### v7.0.8 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root README | **updated** | Published 7.0.8/runtime 5.0.9, one current showcase, and scoped installed qualification match the release evidence. Current postpublication facts belong here and in the handbook. |
+| Package README | **verified current at the signed tag** | The package README remains the immutable release-time snapshot. Later repository documentation does not rewrite the tagged release artifact. All 184 released package files plus source `marketplace-fragment.json` remain unchanged. |
+| Handbook index | **updated** | Current release and maintenance links identify 7.0.8. |
+| System context | **verified current** | Package ownership, public/private boundaries, caller integration and all-author identity checks match the released source. |
+| Capabilities and workflows | **verified current** | Maintenance version is current; the 53-skill map, authority limits and caller-owned independence procedure remain valid. |
+| Governance and authority | **verified current** | Candidate selection remains separate from response-correlated approval; every contributing author family is excluded where independence is required. No policy change is part of this closeout. |
+| Lifecycle and operations | **verified current** | Maintenance version is current. Existing Grok pinned uninstall `--keep-data` and tagged reinstall guidance already covers the observed replacement; no new installation machinery or procedure is added. |
+| Repository and release architecture | **updated** | Shipped native artifacts and the version-bound maintenance receipt are current; source, publication, installation and qualification remain separate. |
+| Project estimation | **updated** | The 7.0.8 handoff is a freshly-generated receipt with exact pricing/quota coverage recorded; no new promoted calibration is claimed. |
+| Claude participation | **updated** | The current package installation is recorded, along with the new positive `context.documents.intent` qualification evidence from the staged matrix. |
+| Status and evidence | **updated** | Exact assets and scoped staged/installed outcomes are recorded above; earlier release snapshots remain historical. |
+| Generated changelog | **verified current at the signed tag** | PR #223 compiled the canonical changelog before the immutable tag. This closeout adds a fragment and leaves the signed history unchanged. |
+
+## Historical snapshot — v7.0.7
 
 The [`v7.0.7` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7) was published on
 2026-09-16 at 07:11:29 UTC.

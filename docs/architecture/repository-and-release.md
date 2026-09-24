@@ -101,11 +101,12 @@ operator notification if still unsuccessful. Expired pricing becomes
 `unpriced`; expired quota becomes `unknown`. Structural, privacy, provenance,
 integrity, schema, and material-regression failures always block.
 
-The published v7.0.7 release admits the governed bootstrap aggregate,
+The published v7.0.8 release admits the governed bootstrap aggregate,
 pricing/quota snapshots, notification, and schema-3 receipt introduced in
 v6.2.0. The enhancement duration prior is descriptive; greenfield and
 unsupported metric families remain unavailable. The bootstrap is not promoted
-calibration; the refreshed maintenance evidence is receipt-bound to 7.0.7. See
+calibration; the freshly-generated maintenance evidence is receipt-bound to
+7.0.8. See
 [Project estimation](project-estimation.md).
 
 ### Policy-only
