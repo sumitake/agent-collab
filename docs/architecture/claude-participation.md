@@ -63,6 +63,15 @@ file matched the published artifact. Managed Claude inference remains
 explicitly excepted under the operator's absence/authentication decision; no
 new Claude inference qualification or existing-session reload is claimed.
 
+For 7.0.8, the supported Claude package update again succeeded with every
+released file matched. Managed Claude inference (`context.documents.intent`,
+its sole admitted action) was qualified during pre-publication staged live
+qualification: one consumed canary against a disposable fixture returned a
+substantive, fixture-marker-correct answer with confirmed cleanup. This
+qualifies the staged, byte-identical-to-released runtime; no separate
+installed-host Claude inference canary or existing-session reload is
+claimed, and no other Claude action is admitted.
+
 ## Host and resident-primary role
 
 Claude Code remains a fully supported host: the package installs natively,

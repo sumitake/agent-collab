@@ -7,8 +7,8 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.8).
 
-Current published release: **7.0.7** ([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)).
-It carries signed provider runtime `5.0.8`. Host installation, readiness, and
+Current published release: **7.0.8** ([`v7.0.8`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.8)).
+It carries signed provider runtime `5.0.9`. Host installation, readiness, and
 provider availability remain separate evidence planes. The package README
 remains the immutable release-time snapshot; current postpublication facts
 belong in this README and the handbook. Later repository documentation does
@@ -199,7 +199,7 @@ Dependabot for dependency update review.
 
 After every other release task finishes, complete the
 [documentation closeout](docs/architecture/repository-and-release.md#final-documentation-closeout).
-The v7.0.7 closeout is recorded in the
+The v7.0.8 closeout is recorded in the
 [status and evidence snapshot](docs/architecture/status-and-evidence.md). Each
 future closeout must likewise align the architecture handbook, this README,
 and generated changelog evidence with the exact release without exposing

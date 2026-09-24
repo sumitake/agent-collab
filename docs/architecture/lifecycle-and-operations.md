@@ -131,7 +131,7 @@ Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v7.0.7
+`project-estimation` is offline and read-only by default. The packaged v7.0.8
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
