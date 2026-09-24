@@ -5,7 +5,7 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.7).
+This public repository's current source is **agent-collab** (v7.0.8).
 
 Current published release: **7.0.7** ([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)).
 It carries signed provider runtime `5.0.8`. Host installation, readiness, and
@@ -21,26 +21,23 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.7
+## What's new - v7.0.8
 
-Release 7.0.7 carries runtime `5.0.8`. Native calls keep the operating
-account's login context and SSH session markers. Bounded native output remains
-available when optional event metadata or Unicode is irregular. Eligible
-read-only Gemini work can complete one correlated empty successful turn within
-the same native process, retaining the original diagnostic and recovered answer.
+Release 7.0.8 carries runtime `5.0.9`. A request whose effort is below an
+action's required floor is now raised to the lowest admitted class instead of
+failing before any provider starts, and the raised effort is reported in the
+terminal result when it happens. An unsupported explicitly named provider now
+reports a distinct, stable reason instead of a generic failure.
 
-Reviewer selection considers every contributing author family. Independent
-approval requires response-correlated native evidence; unverified results stay
-advisory. A demonstrated caller setup defect permits at most one corrected
-read-only request per original request across all descendants, without
-replaying uncertain mutations or switching providers.
+The coordinator now repairs a small class of request-construction mistakes
+before dispatch and reports each repair it made. A read-only repository
+action whose request omits the caller's repository is bound to the caller's
+own repository (or a linked worktree of it that the request names); a
+request that names only some other directory is rejected before dispatch.
 
-Both macOS architectures are signed, notarized, and published. Released files
-match the observed installations. Fresh installed Codex and Grok canaries
-passed; installed Gemini qualification remains unmet after a native service
-503, and Claude inference remains explicitly excepted. The
-[dated evidence](docs/architecture/status-and-evidence.md) separates these
-results from staged qualification and existing-session skill loading.
+Both macOS architectures are signed, notarized, and published together. The
+[dated evidence](docs/architecture/status-and-evidence.md) separates staged
+qualification, review, and installed-instance evidence from this snapshot.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -129,17 +126,17 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The 7.0.7 release carries:
+The 7.0.8 release carries:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.8`;
+- provider runtime version `5.0.9`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-Both macOS architectures carry the imported signed and notarized 5.0.8
+Both macOS architectures carry the imported signed and notarized 5.0.9
 artifact set. Wire schema 12 is unchanged.
 
 Production provider work uses admitted progress inactivity so active work is

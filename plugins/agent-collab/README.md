@@ -6,14 +6,14 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.7**
+Current repository source: **7.0.8**
 
-Current published release: **7.0.6**
-([`v7.0.6`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.6)); it
-carries signed provider runtime `5.0.7`. Host installation, readiness, and
+Current published release: **7.0.7**
+([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)); it
+carries signed provider runtime `5.0.8`. Host installation, readiness, and
 provider availability remain separate evidence planes.
 
-Version 7.0.7 prepares provider runtime `5.0.8` with manifest schema 4,
+Version 7.0.8 prepares provider runtime `5.0.9` with manifest schema 4,
 runtime protocol 5, native contract 4, and wire schema 12. The descriptor
 admits 12 logical actions and eight logical agents. The public coordinator is
 a bounded routing-only shim. Provider-authored schema, verdict, findings,
@@ -21,12 +21,22 @@ receipt, telemetry, and terminal-wrapper fields are not content-availability
 gates. Every bounded observed nonempty final or recovered
 partial remains available to the caller.
 
+The 7.0.8 source raises a request's effort to the lowest class an action
+admits instead of failing before any provider starts, and reports that
+adjustment in the terminal result when it happens; an unsupported explicitly
+named provider now reports a distinct, stable reason. It also repairs a small
+class of request-construction mistakes before dispatch — including binding an
+unbound read-only repository action to the caller's own repository or a named
+linked worktree of it — and reports each repair made, rejecting a request
+that names only some other directory before dispatch. Production publication
+remains pending.
+
 The 7.0.7 source preserves canonical native HOME and SSH context, bounded
 recovery, and optional native model observations with their scope. Reviewer
 selection compares every contributing author family; response-scoped evidence
 is required for independent approval. Corrected read-only work is limited to
 one correction total per original request, including descendants, and cannot
-replay ambiguous mutations. Production publication remains pending.
+replay ambiguous mutations.
 
 The 7.0.6 content update corrects reviewer-independence instructions: the caller
 establishes the primary and artifact-author families, checks an eligible
@@ -49,7 +59,7 @@ General users should start with the public
 
 ## Skills
 
-The source includes signed and notarized runtime 5.0.8 and wire schema 12
+The source includes signed and notarized runtime 5.0.9 and wire schema 12
 for both macOS architectures. Publication remains pending.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
@@ -243,7 +253,7 @@ review.repository
 ## Direct runtime boundary
 
 The package emits one schema-4 manifest with wire schema 12, runtime protocol
-5, native contract 4, and provider runtime `5.0.8`. The final manifest binds the
+5, native contract 4, and provider runtime `5.0.9`. The final manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 

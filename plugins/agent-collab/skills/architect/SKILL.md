@@ -1,6 +1,6 @@
 ---
 name: architect
-version: 7.0.7
+version: 7.0.8
 description: Request read-only architecture consultation for codebase analysis, system design, implementation planning, decomposition, or long-horizon strategy. Use when the user says "ask the architect," "have Grok design this," "architecture consultation," "plan this implementation," or "/agent-collab:architect." Also offer this before a substantial multi-system implementation where an additional architecture pass can reduce rework.
 ---
 
