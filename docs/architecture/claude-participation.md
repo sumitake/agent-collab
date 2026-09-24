@@ -65,12 +65,15 @@ new Claude inference qualification or existing-session reload is claimed.
 
 For 7.0.8, the supported Claude package update again succeeded with every
 released file matched. Managed Claude inference (`context.documents.intent`,
-its sole admitted action) was qualified during pre-publication staged live
-qualification: one consumed canary against a disposable fixture returned a
-substantive, fixture-marker-correct answer with confirmed cleanup. This
-qualifies the staged, byte-identical-to-released runtime; no separate
-installed-host Claude inference canary or existing-session reload is
-claimed, and no other Claude action is admitted.
+its sole admitted action) was qualified twice: during pre-publication staged
+live qualification (one consumed canary against a disposable fixture,
+substantive fixture-marker-correct answer, confirmed cleanup), and again on
+the installed unit via a separately-run, explicitly-targeted
+(`explicit_target: "claude"`) request against the installed cache
+(`selected_logical_agent: claude`, `native_model_identity.model:
+claude-opus-5-5`, `execution_status: ok`, confirmed cleanup, correct
+fixture-marker answer). No existing-session reload is claimed, and no other
+Claude action is admitted.
 
 ## Host and resident-primary role
 
