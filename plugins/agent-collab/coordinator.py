@@ -5,7 +5,7 @@ The caller supplies a routing request. Before passing it through once, this
 shim repairs mechanical request-construction mistakes that would otherwise
 fail before any provider starts: it fills the signed wire digest and omitted
 defaults, maps common field aliases and value synonyms, clamps the deadline,
-and binds a read-only repository action to the repository it is about. Every
+and binds a read-only repository action to the caller's own repository. Every
 repair is listed in the response. It adds no semantic schema, provider
 command, retry, fallback, receipt, verdict, or output parser, never changes a
 named target or action, and never binds a code-generation action to a
@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import uuid
 from types import ModuleType
@@ -109,6 +110,10 @@ def _load_client() -> ModuleType:
     return module
 
 
+class _Unrepairable(ValueError):
+    """A request mistake that cannot be repaired without guessing intent."""
+
+
 def _label(value: object) -> str:
     text = str(value)
     return text[:64] if text.isascii() and text.isprintable() else "<non-printable>"
@@ -121,14 +126,35 @@ def _git_root(path: Path) -> Path | None:
     return None
 
 
-def _directory_identity(path: Path) -> dict[str, object] | None:
+def _directory_identity(path: Path, *, owned: bool = False) -> dict[str, object] | None:
     try:
-        observed = path.stat()
+        observed = path.lstat()
     except OSError:
         return None
-    if not path.is_dir():
+    if not stat.S_ISDIR(observed.st_mode) or (owned and observed.st_uid != os.geteuid()):
         return None
     return {"cwd": str(path), "cwd_device": observed.st_dev, "cwd_inode": observed.st_ino}
+
+
+def _repository_identity(root: Path) -> Path | None:
+    """The shared git directory, so linked worktrees of one repository match."""
+
+    marker = root / ".git"
+    try:
+        if marker.is_dir():
+            return marker.resolve()
+        text = marker.read_text(encoding="utf-8")[:4096]
+    except (OSError, UnicodeError):
+        return None
+    if not text.startswith("gitdir:"):
+        return None
+    gitdir = Path(text[len("gitdir:"):].strip())
+    gitdir = gitdir if gitdir.is_absolute() else root / gitdir
+    try:
+        common = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return gitdir.resolve()
+    return (gitdir / common).resolve()
 
 
 def _payload_roots(payload: object) -> set[Path]:
@@ -178,14 +204,25 @@ def _bind_cwd(unit: dict[str, object], supplied: object, caller_cwd: Path, repai
     if ".repository" not in action or "codegen" in action:
         return
     # A read-only repository action run in an empty private directory cannot
-    # see its source, so bind it to the repository the request is about.
+    # see its source. Bind it only to the caller's own repository: its root,
+    # or one linked worktree of it that the payload names. Payload text is
+    # untrusted, so it can choose among those but never point elsewhere.
     here = _git_root(caller_cwd)
+    repository = None if here is None else _repository_identity(here)
     named = _payload_roots(unit.get("payload"))
-    root = here if here in named or len(named) != 1 else next(iter(named))
-    identity = None if root is None else _directory_identity(root)
+    same = {root for root in named if repository is not None and _repository_identity(root) == repository}
+    if named and not same:
+        raise _Unrepairable(
+            f"work unit {_label(name)}: the payload names files outside the caller's "
+            "repository; set native_restrictions.cwd to the directory to review"
+        )
+    root = here if here in same or len(same) != 1 else next(iter(same))
+    identity = None if root is None or repository is None else _directory_identity(root, owned=True)
     if identity is None:
-        repairs.append(f"work unit {_label(name)}: no repository found for its read-only repository action")
-        return
+        raise _Unrepairable(
+            f"work unit {_label(name)}: no repository to bind; run from the repository "
+            "or set native_restrictions.cwd"
+        )
     unit["native_restrictions"] = identity
     repairs.append(f"work unit {_label(name)}: bound to repository {root}")
 
@@ -393,6 +430,9 @@ def main() -> int:
         if wire is not None:
             try:
                 request, repairs = _normalize_request(request, wire, Path.cwd())
+            except _Unrepairable as exc:
+                _write({"status": "invalid_request", "result": [], "error": str(exc)})
+                return 2
             except Exception:
                 repairs = ["request repair was skipped; the request passed through unchanged"]
         response = _response(client.invoke(envelope=request))

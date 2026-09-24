@@ -249,11 +249,22 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
         self.assertTrue(any("stale wire" in item for item in repairs))
         self.assertTrue(any("telemetry" in item for item in repairs))
 
-    def test_correction_without_cwd_binds_the_repository_its_payload_names(self) -> None:
+    @staticmethod
+    def _linked_worktree(repository: Path, root: Path, name: str) -> Path:
+        admin = repository / ".git" / "worktrees" / name
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+        worktree = root / name
+        (worktree / "src").mkdir(parents=True)
+        (worktree / "src" / "module.py").write_text("x = 2\n")
+        (worktree / ".git").write_text(f"gitdir: {admin}\n")
+        return worktree.resolve()
+
+    def test_correction_without_cwd_binds_a_worktree_of_the_callers_repository(self) -> None:
         wire = self._wire()
         with tempfile.TemporaryDirectory() as raw:
             caller = self._repository(Path(raw), "primary")
-            review_copy = self._repository(Path(raw), "review-copy")
+            review_copy = self._linked_worktree(caller, Path(raw), "review-copy")
             request = {"work_units": [{
                 "id": "corrected",
                 "capability": "review.repository",
@@ -271,6 +282,58 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
                 document["work_units"][0]["native_restrictions"],
                 self._identity(caller),
             )
+
+            request["work_units"][0]["payload"] = "Review src/module.py."
+            document, _repairs = self.coordinator._normalize_request(
+                request, wire, caller / "src"
+            )
+            self.assertEqual(
+                document["work_units"][0]["native_restrictions"],
+                self._identity(caller),
+            )
+
+    def test_payload_cannot_bind_a_reviewer_outside_the_callers_repository(self) -> None:
+        wire = self._wire()
+        with tempfile.TemporaryDirectory() as raw:
+            caller = self._repository(Path(raw), "primary")
+            other = self._repository(Path(raw), "other")
+            (caller / "src" / "link").symlink_to(other / "src")
+            cases = {
+                "separate repository": f"Read {other}/src/module.py.",
+                "symlink out of the repository": f"Read {caller}/src/link/module.py.",
+            }
+            for name, payload in cases.items():
+                with self.subTest(name=name):
+                    request = {"work_units": [{
+                        "id": "review", "capability": "review.repository", "payload": payload,
+                    }]}
+                    with self.assertRaisesRegex(ValueError, "outside the caller's repository"):
+                        self.coordinator._normalize_request(request, wire, caller)
+
+            request = {"work_units": [{
+                "id": "review", "capability": "review.repository", "payload": "Review it.",
+            }]}
+            with self.assertRaisesRegex(ValueError, "no repository to bind"):
+                self.coordinator._normalize_request(request, wire, Path(raw))
+
+    def test_unrepairable_request_stops_before_the_runtime(self) -> None:
+        wire = self._wire()
+        fake = types.SimpleNamespace(
+            invoke=mock.Mock(),
+            runtime_contract_snapshot=lambda: (wire, "", ""),
+        )
+        written: list[object] = []
+        request = {"capability": "review.repository", "payload": "Review it."}
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(self.coordinator.Path, "cwd", return_value=Path(raw)), \
+                mock.patch.object(self.coordinator, "_read_request", return_value=request), \
+                mock.patch.object(self.coordinator, "_load_client", return_value=fake), \
+                mock.patch.object(self.coordinator, "_write", side_effect=written.append):
+            code = self.coordinator.main()
+        self.assertEqual(code, 2)
+        fake.invoke.assert_not_called()
+        self.assertEqual(written[0]["status"], "invalid_request")
+        self.assertIn("native_restrictions.cwd", written[0]["error"])
 
     def test_supplied_binding_is_refreshed_and_codegen_is_never_bound(self) -> None:
         wire = self._wire()

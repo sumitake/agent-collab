@@ -270,7 +270,7 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "working directory's current device/inode at dispatch. For a "
         "repository action, name the exact source directory as "
         "`native_restrictions.cwd`; if omitted, a read-only action is bound to "
-        "the repository its payload names, else the caller's repository. Read "
+        "the caller's repository or a linked worktree of it, never elsewhere. Read "
         "the result's `repairs` list. The runtime owns its timeout; do not wrap it in a "
         "shorter fixed timeout. Repository identity, source-head "
         "verification, disposable copies, patch capture, and cleanup remain "

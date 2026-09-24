@@ -99,7 +99,10 @@ common aliases (`action`, `prompt`, `target_agent`, `timeout_ms`, `cwd`) and
 synonyms (`high` effort is `maximum`); resolves a unique action prefix such as
 `review`; clamps an over-limit deadline; and accepts one Markdown-fenced JSON
 object. A read-only repository action without a working directory is bound to
-the repository its payload names, or else to the caller's repository; a
+the caller's repository, or to one linked worktree of it that the payload
+names. Payload text never selects any other directory: if it names files
+outside the caller's repository, or the caller is not in a repository, the
+request is rejected before dispatch and asks for `native_restrictions.cwd`. A
 supplied directory's device and inode are read at dispatch. Code-generation
 actions are never bound to a caller repository, and a named target is
 normalized but never dropped or replaced. Unknown fields are ignored and
