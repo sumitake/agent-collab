@@ -89,7 +89,25 @@ python3 "<plugin-root>/coordinator.py"
 The shim reads one bounded object, loads the plugin-relative runtime client,
 passes the object through once, and writes one canonical JSON result. It adds
 no provider command, semantic schema, verdict parser, retry, replay, fallback,
-receipt, or authority claim. Caller-owned bounded fresh-review, when permitted
+receipt, or authority claim.
+
+Before that single pass, the shim repairs request-construction mistakes that
+would otherwise fail before any provider starts, and lists each repair in the
+result's `repairs` field. It fills the installed wire digest, `request_id`,
+`depends_on`, `max_parallel`, and omitted quality/effort (`standard`); reads
+common aliases (`action`, `prompt`, `target_agent`, `timeout_ms`, `cwd`) and
+synonyms (`high` effort is `maximum`); resolves a unique action prefix such as
+`review`; clamps an over-limit deadline; and accepts one Markdown-fenced JSON
+object. A read-only repository action without a working directory is bound to
+the caller's repository, or to one linked worktree of it that the payload
+names. Payload text never selects any other directory: if it names files
+outside the caller's repository, or the caller is not in a repository, the
+request is rejected before dispatch and asks for `native_restrictions.cwd`. A
+supplied directory's device and inode are read at dispatch. Code-generation
+actions are never bound to a caller repository, and a named target is
+normalized but never dropped or replaced. Unknown fields are ignored and
+reported. The signed runtime separately raises effort that is below an
+action's descriptor floor to the lowest admitted class before launch. Caller-owned bounded fresh-review, when permitted
 for read-only review or governance, is a separate routing request documented in
 Public repository governance and those generated skills; the shim still passes
 each request through once.

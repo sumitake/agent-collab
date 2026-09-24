@@ -197,6 +197,220 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
             })
             self.assertNotIn("explicit_target", unit)
 
+    def _wire(self):
+        wire, _digest, _note = self.coordinator._load_client().runtime_contract_snapshot()
+        self.assertIsNotNone(wire)
+        return wire
+
+    @staticmethod
+    def _repository(root: Path, name: str) -> Path:
+        repository = root / name
+        (repository / ".git").mkdir(parents=True)
+        (repository / "src").mkdir()
+        (repository / "src" / "module.py").write_text("x = 1\n")
+        return repository.resolve()
+
+    @staticmethod
+    def _identity(path: Path) -> dict[str, object]:
+        observed = path.stat()
+        return {"cwd": str(path), "cwd_device": observed.st_dev, "cwd_inode": observed.st_ino}
+
+    def test_loose_request_becomes_one_strictly_valid_envelope(self) -> None:
+        wire = self._wire()
+        client = self.coordinator._load_client()
+        with tempfile.TemporaryDirectory() as raw:
+            repository = self._repository(Path(raw), "repo")
+            request = {
+                "action": "review",
+                "prompt": "Review the change.",
+                "effort": "High",
+                "quality": "pro",
+                "timeout_ms": 10**12,
+                "wire_contract_sha256": "0" * 64,
+                "telemetry": True,
+            }
+            document, repairs = self.coordinator._normalize_request(
+                request, wire, repository / "src"
+            )
+            client._envelope_document(document, wire)
+            expected = self._identity(repository)
+        unit = document["work_units"][0]
+        self.assertEqual(document["wire_contract_sha256"], wire.sha256)
+        self.assertEqual(document["effort_class"], "maximum")
+        self.assertEqual(document["quality_profile"], "frontier")
+        self.assertEqual(document["deadline_ms"], self.coordinator.MAX_DEADLINE_MS)
+        self.assertIs(document["dispatch_requested"], True)
+        self.assertEqual(document["max_parallel"], 1)
+        self.assertEqual(unit["capability"], "review.repository")
+        self.assertEqual(unit["payload"], "Review the change.")
+        self.assertEqual(unit["depends_on"], [])
+        self.assertEqual(unit["native_restrictions"], expected)
+        self.assertNotIn("telemetry", unit)
+        self.assertTrue(any("stale wire" in item for item in repairs))
+        self.assertTrue(any("telemetry" in item for item in repairs))
+
+    @staticmethod
+    def _linked_worktree(repository: Path, root: Path, name: str) -> Path:
+        admin = repository / ".git" / "worktrees" / name
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+        worktree = root / name
+        (worktree / "src").mkdir(parents=True)
+        (worktree / "src" / "module.py").write_text("x = 2\n")
+        (worktree / ".git").write_text(f"gitdir: {admin}\n")
+        return worktree.resolve()
+
+    def test_correction_without_cwd_binds_a_worktree_of_the_callers_repository(self) -> None:
+        wire = self._wire()
+        with tempfile.TemporaryDirectory() as raw:
+            caller = self._repository(Path(raw), "primary")
+            review_copy = self._linked_worktree(caller, Path(raw), "review-copy")
+            request = {"work_units": [{
+                "id": "corrected",
+                "capability": "review.repository",
+                "payload": f"Read {review_copy}/src/module.py and report findings.",
+            }]}
+            document, _repairs = self.coordinator._normalize_request(request, wire, caller)
+            self.assertEqual(
+                document["work_units"][0]["native_restrictions"],
+                self._identity(review_copy),
+            )
+
+            request["work_units"][0]["payload"] = f"Compare {caller}/src and {review_copy}/src."
+            document, _repairs = self.coordinator._normalize_request(request, wire, caller)
+            self.assertEqual(
+                document["work_units"][0]["native_restrictions"],
+                self._identity(caller),
+            )
+
+            request["work_units"][0]["payload"] = "Review src/module.py."
+            document, _repairs = self.coordinator._normalize_request(
+                request, wire, caller / "src"
+            )
+            self.assertEqual(
+                document["work_units"][0]["native_restrictions"],
+                self._identity(caller),
+            )
+
+    def test_payload_cannot_bind_a_reviewer_outside_the_callers_repository(self) -> None:
+        wire = self._wire()
+        with tempfile.TemporaryDirectory() as raw:
+            caller = self._repository(Path(raw), "primary")
+            other = self._repository(Path(raw), "other")
+            (caller / "src" / "link").symlink_to(other / "src")
+            cases = {
+                "separate repository": f"Read {other}/src/module.py.",
+                "symlink out of the repository": f"Read {caller}/src/link/module.py.",
+            }
+            for name, payload in cases.items():
+                with self.subTest(name=name):
+                    request = {"work_units": [{
+                        "id": "review", "capability": "review.repository", "payload": payload,
+                    }]}
+                    with self.assertRaisesRegex(ValueError, "outside the caller's repository"):
+                        self.coordinator._normalize_request(request, wire, caller)
+
+            request = {"work_units": [{
+                "id": "review", "capability": "review.repository", "payload": "Review it.",
+            }]}
+            with self.assertRaisesRegex(ValueError, "no repository to bind"):
+                self.coordinator._normalize_request(request, wire, Path(raw))
+
+    def test_unrepairable_request_stops_before_the_runtime(self) -> None:
+        wire = self._wire()
+        fake = types.SimpleNamespace(
+            invoke=mock.Mock(),
+            runtime_contract_snapshot=lambda: (wire, "", ""),
+        )
+        written: list[object] = []
+        request = {"capability": "review.repository", "payload": "Review it."}
+        with tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(self.coordinator.Path, "cwd", return_value=Path(raw)), \
+                mock.patch.object(self.coordinator, "_read_request", return_value=request), \
+                mock.patch.object(self.coordinator, "_load_client", return_value=fake), \
+                mock.patch.object(self.coordinator, "_write", side_effect=written.append):
+            code = self.coordinator.main()
+        self.assertEqual(code, 2)
+        fake.invoke.assert_not_called()
+        self.assertEqual(written[0]["status"], "invalid_request")
+        self.assertIn("native_restrictions.cwd", written[0]["error"])
+
+    def test_supplied_binding_is_refreshed_and_codegen_is_never_bound(self) -> None:
+        wire = self._wire()
+        with tempfile.TemporaryDirectory() as raw:
+            repository = self._repository(Path(raw), "repo")
+            request = {"work_units": [
+                {"id": "review", "capability": "review.repository", "payload": "p",
+                 "native_restrictions": {"cwd": "repo", "cwd_device": 1, "cwd_inode": 2}},
+                {"id": "patch", "capability": "codegen.repository", "payload": "p"},
+                {"id": "missing", "capability": "architecture.repository", "payload": "p",
+                 "cwd": str(Path(raw) / "absent")},
+            ]}
+            document, repairs = self.coordinator._normalize_request(request, wire, Path(raw))
+            expected = self._identity(repository)
+        review, patch, missing = document["work_units"]
+        self.assertEqual(review["native_restrictions"], expected)
+        self.assertNotIn("native_restrictions", patch)
+        self.assertEqual(set(missing["native_restrictions"]), {"cwd"})
+        self.assertTrue(any("not an existing directory" in item for item in repairs))
+        self.assertEqual(document["max_parallel"], 3)
+
+    def test_named_targets_and_actions_are_normalized_but_never_dropped(self) -> None:
+        wire = self._wire()
+        request = {"work_units": [
+            {"capability": "context.documents.extract", "payload": "p", "target_agent": " Google "},
+            {"capability": "context.documents.extract", "payload": "p", "target": "someone-else"},
+            {"capability": "context", "payload": "p"},
+        ]}
+        document, _repairs = self.coordinator._normalize_request(request, wire, Path("/"))
+        first, second, third = document["work_units"]
+        self.assertEqual(first["explicit_target"], "gemini")
+        self.assertEqual(second["explicit_target"], "someone-else")
+        self.assertEqual(third["capability"], "context")
+        self.assertEqual([unit["id"] for unit in document["work_units"]], ["unit-1", "unit-2", "unit-3"])
+
+    def test_cli_reports_repairs_and_still_invokes_once(self) -> None:
+        wire = self._wire()
+        calls: list[object] = []
+
+        def invoke(*, envelope):
+            calls.append(envelope)
+            return Result("ok", [], {"wire_contract_sha256": wire.sha256})
+
+        fake = types.SimpleNamespace(
+            invoke=invoke,
+            runtime_contract_snapshot=lambda: (wire, "", ""),
+        )
+        written: list[object] = []
+        raw = b"```json\n" + json.dumps({
+            "capability": "context.documents.extract", "payload": "p",
+        }).encode() + b"\n```\n"
+        fake_stdin = types.SimpleNamespace(isatty=lambda: False, buffer=io.BytesIO(raw))
+        with mock.patch.object(self.coordinator.sys, "stdin", fake_stdin), \
+                mock.patch.object(self.coordinator, "_load_client", return_value=fake), \
+                mock.patch.object(self.coordinator, "_write", side_effect=written.append):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["wire_contract_sha256"], wire.sha256)
+        self.assertIn("repairs", written[0])
+
+    def test_repair_failure_passes_the_original_request_through(self) -> None:
+        request = {"work_units": [{"id": "one"}]}
+        calls: list[object] = []
+        fake = types.SimpleNamespace(
+            invoke=lambda *, envelope: calls.append(envelope) or Result("ok", []),
+            runtime_contract_snapshot=lambda: (object(), "", ""),
+        )
+        written: list[object] = []
+        with mock.patch.object(self.coordinator, "_read_request", return_value=request), \
+                mock.patch.object(self.coordinator, "_load_client", return_value=fake), \
+                mock.patch.object(self.coordinator, "_write", side_effect=written.append):
+            code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [request])
+        self.assertEqual(len(written[0]["repairs"]), 1)
+
     def test_no_retired_semantic_or_provider_surface_exists(self) -> None:
         for name in (
             "validate_request",
