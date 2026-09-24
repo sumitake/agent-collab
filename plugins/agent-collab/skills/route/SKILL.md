@@ -1,6 +1,6 @@
 ---
 name: route
-version: 7.0.7
+version: 7.0.8
 description: Use when the operator says "ask Codex," "target Gemini," "target Grok," "target Moonshot," "target Zhipu," or explicitly names a collaboration agent. Also offer this when a semantic action needs a provider-neutral plan or a truthful typed availability decision.
 ---
 

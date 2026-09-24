@@ -1,6 +1,6 @@
 ---
 name: chain-configurator
-version: 7.0.7
+version: 7.0.8
 defaults:
   quality_profile: standard
   effort_class: standard

@@ -71,7 +71,7 @@ def synthetic_candidate_manifest() -> bytes:
     manifest["wire_contract"] = descriptor
     manifest["wire_contract_sha256"] = digest
     for artifact in manifest["artifacts"]:
-        artifact["provider_runtime_version"] = "5.0.8"
+        artifact["provider_runtime_version"] = "5.0.9"
         artifact["wire_contract_sha256"] = digest
     return json.dumps(
         manifest, sort_keys=True, separators=(",", ":"),
@@ -96,10 +96,10 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
         self.assertEqual(self.manifest["channel"], "production")
         self.assertEqual(self.client.PROTOCOL_VERSION, 5)
         self.assertEqual(self.client.CONTRACT_VERSION, 4)
-        self.assertEqual(self.client.PROVIDER_RUNTIME_VERSION, "5.0.8")
+        self.assertEqual(self.client.PROVIDER_RUNTIME_VERSION, "5.0.9")
 
     def test_wire_is_routing_only_and_descriptor_derived(self) -> None:
-        # The checked-in signed bundles are the 5.0.8/schema-12 generation.
+        # The checked-in signed bundles are the 5.0.9/schema-12 generation.
         # Keep the synthetic descriptor check as an independent client contract.
         descriptor, digest = synthetic_wire_descriptor()
         snapshot = self.client.validate_wire_descriptor(
@@ -134,11 +134,11 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
         ):
             self.assertNotIn(retired, descriptor)
 
-    def test_dual_architecture_artifacts_are_exactly_runtime_5_0_8(self) -> None:
+    def test_dual_architecture_artifacts_are_exactly_runtime_5_0_9(self) -> None:
         artifacts = self.manifest["artifacts"]
         self.assertEqual({item["arch"] for item in artifacts}, {"arm64", "x86_64"})
         self.assertEqual(
-            {item["provider_runtime_version"] for item in artifacts}, {"5.0.8"}
+            {item["provider_runtime_version"] for item in artifacts}, {"5.0.9"}
         )
         self.assertEqual(
             self.client.PROVIDER_RUNTIME_VERSION,
@@ -201,14 +201,14 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
                 descriptor, expected_sha256=digest
             )
 
-    def test_distribution_metadata_is_version_7_0_7(self) -> None:
+    def test_distribution_metadata_is_version_7_0_8(self) -> None:
         for host in (".claude-plugin", ".codex-plugin"):
             value = json.loads((PLUGIN / host / "plugin.json").read_text())
-            self.assertEqual(value["version"], "7.0.7")
+            self.assertEqual(value["version"], "7.0.8")
         config = json.loads(
             (ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.7")
+        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.8")
 
     def test_routed_skills_publish_provider_neutral_quality_and_effort(self) -> None:
         build = load_module("protocol5_build_skills", ROOT / "scripts" / "build_skills.py")

@@ -1,6 +1,6 @@
 ---
 name: code-review
-version: 7.0.7
+version: 7.0.8
 defaults:
   quality_profile: frontier
   effort_class: maximum
