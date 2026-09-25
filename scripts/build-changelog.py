@@ -32,11 +32,12 @@ DESIGN
     reverse order puts the most recently landed change nearest the top of
     ``[Unreleased]`` — matching Keep a Changelog's most-recent-on-top
     convention instead of burying it at the bottom of the section.
-  * The compiler inserts fragments BETWEEN the ``## [Unreleased]`` line and
-    the first ``###`` sub-heading (or end of section if no sub-headings).
-    Existing inline entries under ``## [Unreleased]`` are PRESERVED below the
-    inserted fragment block. This lets historical entries continue to live in
-    CHANGELOG.md while new entries land via fragments going forward.
+  * The compiler replaces the auto-generated block delimited by the
+    ``<!-- changelog-fragments ... -->`` markers under ``## [Unreleased]``
+    (or inserts that block immediately after the header if the markers are
+    absent). Existing inline entries outside the markers are PRESERVED. This
+    lets historical entries continue to live in CHANGELOG.md while new entries
+    land via fragments going forward.
 
 LIMITATIONS
   * Does NOT migrate existing inline entries. That's deliberate per the M1

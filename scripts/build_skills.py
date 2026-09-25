@@ -116,8 +116,8 @@ FRESH_REVIEW_ALLOWANCE = (
 PLACEHOLDER_RE = re.compile(r"\{\{\s*([a-z][a-z0-9_]*)\s*\}\}")
 # Matches the opening ``---`` frontmatter block of a spec.
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
-# Matches a ``packages:`` list field inside frontmatter YAML (simple inline or
-# block list; we use a lightweight regex rather than a YAML parser to keep the
+# Matches a ``packages:`` list field inside frontmatter YAML (inline bracket
+# form only; we use a lightweight regex rather than a YAML parser to keep the
 # build stdlib-only).  Captures the value portion after "packages:".
 PACKAGES_FIELD_RE = re.compile(
     r"^packages:\s*\[([^\]]*)\]", re.MULTILINE
@@ -345,7 +345,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--package", default=None,
-        help="generate only for the named package (skip the _active filter)",
+        help="generate only for the named package",
     )
     parser.add_argument(
         "--spec", default=None,

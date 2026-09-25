@@ -492,7 +492,7 @@ Run:
 ```bash
 python3 scripts/test_check_release_consistency.py
 python3 scripts/check_release_consistency.py
-python3 scripts/build_changelog.py --dry-run
+python3 scripts/build-changelog.py --dry-run
 ```
 
 Expected: all commands PASS and dry-run displays the v3.1.0 fragment without modifying `CHANGELOG.md`.
