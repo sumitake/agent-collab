@@ -163,7 +163,7 @@ class CiSecurityContractTests(unittest.TestCase):
     def test_release_provisions_pinned_uv_before_schema_validation(self) -> None:
         text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
         setup = text.index(
-            "astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4"
+            "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7"
         )
         version = text.index("version: '0.12.5'", setup)
         validate = text.index("scripts/validate_runtime_manifest_schema.py", version)
