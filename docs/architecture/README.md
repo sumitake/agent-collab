@@ -122,5 +122,8 @@ and focused evidence. If delivery evidence lags source, keep both observations
 and label them; do not “fix” the discrepancy by declaring one generation
 active everywhere.
 
-The [2026-09-08 documentation audit](../documentation-audit-2026-09-08.md)
-records the inspected baseline, update delta, coverage, and historical boundaries.
+The [2026-10-01 documentation audit](../documentation-audit-2026-10-01.md)
+records the current remote-main baseline, post-2026-09-08 implementation delta,
+full handbook verification, and release-showcase enforcement. The
+[2026-09-08 audit](../documentation-audit-2026-09-08.md) remains a historical
+snapshot.
