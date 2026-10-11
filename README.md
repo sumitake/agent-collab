@@ -26,7 +26,7 @@ installation, and readiness claims separate.
 Release 7.0.8 carries runtime `5.0.9`. A request whose effort is below an
 action's required floor is now raised to the lowest admitted class instead of
 failing before any provider starts, and the raised effort is reported in the
-terminal result when it happens. An unsupported explicitly named provider now
+terminal result when it happens. An unsupported explicitly named logical agent now
 reports a distinct, stable reason instead of a generic failure.
 
 The coordinator now repairs a small class of request-construction mistakes
@@ -149,8 +149,10 @@ automatic replay or retry.
 The public client verifies fixed plugin-relative path, exact membership and
 digests, Mach-O architecture/minimum macOS, hardened Developer ID identity,
 team, and secure timestamp. Online notarization verification remains a release
-gate. One accepted request launches one process group with bounded streams,
-deadline, TERM/KILL/reap, and no hidden replay.
+gate. For each accepted request, the verified native-runtime invocation is
+isolated in one process group with bounded streams, deadline enforcement,
+TERM/KILL/reap, and no hidden replay. Provider-native sessions are owned inside
+that runtime boundary, not directly by the public client.
 
 ## Migration status
 

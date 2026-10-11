@@ -13,7 +13,12 @@ Checked surfaces (the canonical marketplace entry):
                                      changelog fragment mentions each bumped entry
   - README.md                        "**<plugin>** (vX.Y.Z)" summary line for each
                                      and "## What's new - vX.Y.Z" heading
-  - plugins/<plugin>/README.md       "Current: **X.Y.Z**" in the Version section
+  - plugins/<plugin>/README.md       optional legacy "Current: **X.Y.Z**" marker;
+                                     absent markers are not validated here
+
+The current package README has no legacy Current marker. It is an immutable
+release-time snapshot verified separately against its tag/archive; this script
+does not assert its current repository narrative or validate handbook prose.
 
 Modes (combinable):
   (default)            consistency check across the files above
@@ -542,7 +547,9 @@ def run_consistency(root: Path) -> tuple[bool, list[str]]:
             except Exception:
                 pass
 
-    # 5. Check each plugin's README.md Current: **X.Y.Z** version
+    # 5. Compare a legacy package-README Current marker only when present.
+    # The current immutable release-time README has no such marker; exact
+    # tag/archive identity is a separate evidence check, not this regex gate.
     if m_text is not None:
         try:
             m_data = json.loads(m_text)
