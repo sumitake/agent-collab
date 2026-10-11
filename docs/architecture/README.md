@@ -39,6 +39,10 @@ Historical and design material is indexed separately in
 [`docs/design/README.md`](../design/README.md). It is not automatically the
 current runtime contract.
 
+The [2026-10-10 source audit](source-audit-2026-10-10.md) records whole-handbook
+coverage and current-document corrections without changing the tagged package
+or claiming new installation or qualification evidence.
+
 ## Status vocabulary
 
 | Label | Meaning | Appropriate evidence |

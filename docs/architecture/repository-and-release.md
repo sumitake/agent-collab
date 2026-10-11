@@ -178,6 +178,15 @@ are:
 7. **Governance:** compliance-trace schema, tier rules, CODEOWNERS, required
    checks, signed commits, and resolved review threads.
 
+The README version guard has a narrower scope than the documentation review:
+`check_release_consistency.py` enforces the root README summary and exactly one
+latest-release showcase. Its optional legacy package-README marker is absent
+from the current package reference, so that regex check is not evidence of
+package-README alignment. The package reference remains an immutable
+release-time archive member; verify it against the exact tag/archive instead.
+Handbook prose still requires source and release-evidence review, not just a
+passing version guard.
+
 ## History-scan scope
 
 The public-export history check scans refs available in the local clone. A
