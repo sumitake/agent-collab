@@ -27,10 +27,13 @@ The provider-free report distinguishes active, installed, and cached legacy
 observations. Active retired packages block direct routing. Cache-only residue
 does not become an executable route.
 
-The current source package unit is manifest schema 4, runtime protocol 5,
-native contract 4, provider runtime `5.0.9`, and descriptor schema 12. The generated
-manifest carries one top-level `wire_contract` and
-`wire_contract_sha256`. A mixed unit fails typed.
+The staged 7.0.9 package includes signed and notarized runtime `5.0.10` for
+macOS arm64 and x86_64, with manifest schema 4, runtime protocol 5, native
+contract 4, and descriptor schema 12. Current publication and installation
+evidence is recorded separately in the repository README and architecture
+handbook. The generated manifest
+carries one top-level `wire_contract` and `wire_contract_sha256`. A mixed unit
+fails typed.
 
 No broker, socket, plist, selector, lane, launchd job, installed runtime copy,
 or setup lifecycle is required. Do not restore a retired provider package as a
