@@ -87,6 +87,46 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 7.0.9 — runtime 5.0.12
+
+#### Changed
+- Worker guidance distinguishes expected task duration from the configured
+  inactivity bound and keeps cancellation, partial work, cleanup, and provider
+  status separate. Validation stays primary-owned unless a focused worker
+  check has an exact preverified interpreter.
+- Review guidance grounds external API blockers in the exact called method and
+  relevant version, and identifies uncertainty when that evidence is missing.
+- Runtime 5.0.12 improves diagnostics for certain Gemini startup failures
+  without changing request status or returned content.
+- Add OpenCode 2 compatibility with clearer readiness reporting.
+- Keep existing routing eligibility and public request/response contracts.
+- Refresh version-bound project-estimation bootstrap data, retaining calibration
+  warnings and unknown numeric quotas. Pricing covers exact configured models
+  without borrowing prices for unknown models.
+
+#### Why
+- Make bounded delegation predictable, reduce worker time spent searching for
+  unavailable test environments, and prevent review findings from encoding an
+  unsupported SDK contract.
+- Make startup failures easier to diagnose while preserving existing routing
+  and returned content.
+
+### Documentation
+
+- Audit all public architecture pages and the README; clarify logical-agent
+  targeting, native-runtime process ownership, and the limits of package-README
+  version checking without changing the immutable release-time reference.
+
+### Documentation
+
+- Record the published `agent-collab` 7.0.8 / runtime 5.0.9 release, verified byte-identical assets, and installed file contents across all four primary hosts. Record a new positive Claude `context.documents.intent` qualification from staged live qualification, and the fresh (not carried-forward) project-estimation maintenance receipt. Keep this evidence separate from staged qualification and existing-session skill loading.
+- Align the root README and architecture handbook publication and maintenance references with the release. The package README and all 184 released package files plus source `marketplace-fragment.json` remain the immutable tagged snapshot; later repository documentation does not rewrite that artifact.
+
+### Documentation
+
+- Correct the v7.0.8 closeout evidence for two installed canaries: their first attempts, run under concurrent host load, timed out with zero output, and their provider-dispatch status is unknown -- neither attempt is counted as qualified or failed. A separately-issued, isolated request for each is recorded as its own qualification evidence instead of being described as resolving the earlier attempt.
+- Add real, separately-run, explicitly-targeted installed Claude `context.documents.intent` qualification evidence, replacing the prior claim that staged qualification alone stood in for an installed canary.
+
 ### agent-collab 7.0.8 — runtime 5.0.9
 
 - Pair runtime 5.0.9 with the coordinator's request-repair reporting. Both
