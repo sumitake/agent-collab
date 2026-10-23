@@ -26,14 +26,16 @@ installation, and readiness claims separate.
 ## What's new - v7.0.9
 
 The staged 7.0.9 package includes signed and notarized provider runtime
-`5.0.10` for both macOS architectures. Worker guidance distinguishes expected
+`5.0.12` for both macOS architectures. Worker guidance distinguishes expected
 task time from the runtime's admitted-progress inactivity lease, which defaults
 to 24 hours when omitted. It shows callers how to choose a bound, retain
 partial work when stopping, and use primary-owned validation or a specific
 preverified interpreter. Review guidance asks for exact, version-matched
-evidence before reporting an external API blocker. Runtime 5.0.10 adds bounded
+evidence before reporting an external API blocker. Runtime 5.0.12 adds bounded
 optional hints for some native Agy startup failures without changing request
-status or returned content. Routes and admissions remain unchanged; Claude is
+status or returned content. OpenCode 2 compatibility uses plain ACP startup and
+checks model availability without creating a session or sending a prompt.
+Routes and admissions remain unchanged; Claude is
 admitted only for document intent.
 
 The package includes a fresh version-bound project-estimation bootstrap. Its
@@ -138,12 +140,12 @@ The staged 7.0.9 package carries:
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.10`;
+- provider runtime version `5.0.12`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-Both macOS architectures carry the imported signed and notarized 5.0.10
+Both macOS architectures carry the imported signed and notarized 5.0.12
 artifact set. Wire schema 12 is unchanged.
 
 Production provider work uses admitted progress inactivity so active work is

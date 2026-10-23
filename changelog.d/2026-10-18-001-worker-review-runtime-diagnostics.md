@@ -1,4 +1,4 @@
-### agent-collab 7.0.9 — runtime 5.0.10
+### agent-collab 7.0.9 — runtime 5.0.12
 
 #### Changed
 - Worker guidance distinguishes expected task duration from the runtime's
@@ -8,9 +8,12 @@
   only with an exact preverified interpreter and focused command.
 - Review guidance grounds external API blockers in the exact called method and
   relevant version, and identifies uncertainty when that evidence is missing.
-- Runtime 5.0.10 adds bounded optional hints for certain
+- Runtime 5.0.12 adds bounded optional hints for certain
   native Agy startup failures without changing request status or returned
   content.
+- OpenCode 2 compatibility uses plain ACP startup. Availability checks verify
+  model catalog and initialization metadata without creating a session or
+  sending a prompt; unknown or contradictory lineage remains unavailable.
 - Carrier bindings stay the same: Codex app-server, Gemini through native Agy,
   Grok through ACP, OpenCode ACP for Moonshot, Zhipu, Alibaba and DeepSeek, and
   native Claude structured print for document intent only. Wire schema 12,

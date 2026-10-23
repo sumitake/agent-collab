@@ -8,7 +8,7 @@ interpreted by the calling agent with ordinary reasoning.
 
 Package version: **7.0.9**
 
-This package includes signed and notarized provider runtime `5.0.10` for macOS
+This package includes signed and notarized provider runtime `5.0.12` for macOS
 arm64 and x86_64, with manifest schema 4, runtime protocol 5, native contract 4,
 and wire schema 12. The descriptor admits 12 logical actions and eight logical
 agents. The public coordinator is a bounded routing-only shim.
@@ -18,9 +18,11 @@ observed nonempty final or recovered partial remains available to the caller.
 
 Worker guidance sets an inactivity bound, distinguishes it from expected task
 duration, and defines the primary's validation handoff. Review guidance requires
-exact method-level evidence for external API blockers. Runtime 5.0.10 adds
+exact method-level evidence for external API blockers. Runtime 5.0.12 adds
 bounded optional hints for some native Agy startup failures while leaving
-request status and content semantics unchanged. Carrier bindings and route
+request status and content semantics unchanged. OpenCode 2 compatibility uses
+plain ACP startup and checks model availability without creating a session or
+sending a prompt. Carrier bindings and route
 admissions remain unchanged; Claude is admitted only for document intent.
 
 The included project-estimation data is a fresh version-bound bootstrap with
@@ -259,7 +261,7 @@ review.repository
 ## Direct runtime boundary
 
 The package source targets one schema-4 manifest with wire schema 12, runtime
-protocol 5, native contract 4, and provider runtime `5.0.10`. The final manifest binds the
+protocol 5, native contract 4, and provider runtime `5.0.12`. The final manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 

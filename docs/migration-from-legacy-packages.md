@@ -27,7 +27,7 @@ The provider-free report distinguishes active, installed, and cached legacy
 observations. Active retired packages block direct routing. Cache-only residue
 does not become an executable route.
 
-The staged 7.0.9 package includes signed and notarized runtime `5.0.10` for
+The staged 7.0.9 package includes signed and notarized runtime `5.0.12` for
 macOS arm64 and x86_64, with manifest schema 4, runtime protocol 5, native
 contract 4, and descriptor schema 12. Current publication and installation
 evidence is recorded separately in the repository README and architecture
