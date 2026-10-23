@@ -7,14 +7,16 @@ remains opaque content for the calling agent to interpret.
 
 This public repository's current source is **agent-collab** (v7.0.9).
 
-Current published release: **7.0.8** ([`v7.0.8`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.8)).
-The v7.0.8 closeout is recorded in the
-[dated evidence snapshot](docs/architecture/status-and-evidence.md).
-It carries signed provider runtime `5.0.9`. Host installation, readiness, and
-provider availability remain separate evidence planes. The package README
-remains the immutable release-time snapshot; current postpublication facts
-belong in this README and the handbook. Later repository documentation does
-not rewrite the tagged release artifact.
+Current published release: **7.0.9** ([`v7.0.9`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)),
+The v7.0.9 closeout is recorded in the dated evidence below. It carries
+signed and notarized provider runtime `5.0.12` for macOS ARM64 and
+Intel. The [dated evidence snapshot](docs/architecture/status-and-evidence.md)
+records verified publication, installation through four local host managers,
+and native Intel installation. Fresh installed checks passed for Claude
+intent, Codex and Grok repository architecture, Google repository extraction,
+and Intel OpenCode Go repository architecture. Existing conversations can
+retain their earlier skill catalog until the host reloads. The package README
+remains the immutable release-time snapshot.
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -25,7 +27,7 @@ installation, and readiness claims separate.
 
 ## What's new - v7.0.9
 
-The staged 7.0.9 package includes signed and notarized provider runtime
+The published 7.0.9 package includes signed and notarized provider runtime
 `5.0.12` for both macOS architectures. Worker guidance distinguishes expected
 task time from the runtime's admitted-progress inactivity lease, which defaults
 to 24 hours when omitted. It shows callers how to choose a bound, retain
@@ -43,10 +45,9 @@ pricing snapshot covers the configured model records; unknown models remain
 unpriced and numeric quotas remain unknown. Bootstrap calibration warnings are
 retained.
 
-The published 7.0.8 release and its runtime `5.0.9` remain the current release
-until the staged candidate passes qualification, is merged, and is published.
-The [dated evidence](docs/architecture/status-and-evidence.md) keeps staged
-qualification, review, publication, and installed-instance evidence separate.
+The [dated evidence](docs/architecture/status-and-evidence.md) separates
+staged qualification, review, publication, and installed-instance observations.
+Earlier failed or incomplete attempts remain historical evidence.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -135,7 +136,7 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The staged 7.0.9 package carries:
+The published 7.0.9 package carries:
 
 - manifest schema 4;
 - runtime protocol 5;
