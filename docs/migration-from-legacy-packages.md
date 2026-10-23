@@ -29,9 +29,9 @@ does not become an executable route.
 
 The staged 7.0.9 package includes signed and notarized runtime `5.0.12` for
 macOS arm64 and x86_64, with manifest schema 4, runtime protocol 5, native
-contract 4, and descriptor schema 12. Current publication and installation
-evidence is recorded separately in the repository README and architecture
-handbook. The generated manifest
+contract 4, and descriptor schema 12. Publication and installation evidence
+for the staged package will be recorded separately in the repository README
+and architecture handbook after those gates complete. The generated manifest
 carries one top-level `wire_contract` and `wire_contract_sha256`. A mixed unit
 fails typed.
 
