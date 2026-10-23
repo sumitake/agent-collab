@@ -75,6 +75,14 @@ claude-opus-5-5`, `execution_status: ok`, confirmed cleanup, correct
 fixture-marker answer). No existing-session reload is claimed, and no other
 Claude action is admitted.
 
+For 7.0.9, all 184 released files again match the supported host installation.
+A fresh installed document-intent request returned the exact new fixture value
+with native success, one observed attempt, zero replays, and confirmed cleanup.
+Current publisher and capability metadata also passed the separate zero-model
+readiness probe. The staged document-intent case passed before publication.
+No additional Claude action or existing-session reload is claimed; earlier
+release-specific deferrals and incomplete attempts above remain historical.
+
 ## Host and resident-primary role
 
 Claude Code remains a fully supported host: the package installs natively,

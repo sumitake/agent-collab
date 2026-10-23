@@ -17,7 +17,62 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.8
+## Current snapshot — v7.0.9
+
+The [`v7.0.9` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)
+was published on 2026-10-23 at 06:48:00 UTC. The signed annotated v7.0.9 tag object `b591102eba6f2100c607f38395d1f4e9d14bb612` identifies public commit `404ba2b31421a44749a60f59e3d44f3f867318a6`. The
+[exact release workflow](https://github.com/sumitake/agent-collab/actions/runs/39913391573)
+succeeded. Independently downloaded assets match the exact-commit canonical
+archive, checksum and SPDX metadata; the archive is also byte-identical to the
+package qualified before publication.
+
+| Published asset | Verified SHA-256 |
+| --- | --- |
+| `agent-collab.v7.0.9.plugin` | `87960564a2121d1a51f5215c1b094a3c982c245af6ef9f35b99605e34a432da4` |
+| `agent-collab-v7.0.9.spdx.json` | `41bc6a7ab54e87008b103172869ce9a07b67590624a54c74b7c7e3c4ea2cbe4e` |
+| `agent-collab.v7.0.9.plugin.sha256` | `3a4c8d5dc30c74d576844a78365159498316f6d23dee5b6cd9e231a8c91f8844` |
+
+| Observation | Status | Interpretation |
+| --- | --- | --- |
+| Package 7.0.9 contains signed and notarized runtime 5.0.12 for ARM64 and Intel. Manifest schema 4, protocol 5, native contract 4 and wire schema 12 remain unchanged. | verified release identity | OpenCode 2 compatibility and its current metadata-readiness profile are shipped. Readiness proves metadata capability; authentication and inference require live evidence. Optional Agy startup hints do not change status or returned content. |
+| Released inventory is 12 logical actions, eight logical agents, two architecture artifacts and 53 generated skills. | verified current inventory | Historical transport/source-pair counts remain historical. |
+| All 184 released files match Claude, Codex, Antigravity/Agy and Grok installations on the observed ARM host, and the native Codex-managed installation on an Intel host. All five checks preserve these file contents. | verified installed bytes | Source marketplace metadata and host-generated extras are separately accounted for; no literal whole-tree or filesystem-mode identity is claimed. Grok selects the signed v7.0.9 tag. |
+| Provider-free migration and 15-unit routing plans pass from all four ARM roots. The packaged Grok qualifier returns qualified with zero model calls; Intel routing planning also passes. | verified package readiness | This evidence is separate from provider authentication and inference. |
+| The pre-publication matrix's 14 ARM cases and one native Intel OpenCode Go case returned substantive correct content and confirmed cleanup. Additional signed Intel execution under Rosetta also succeeded. | accepted staged scope | The ARM harness's final source-purity check originally exited unsuccessfully because of an extra untracked historical manifest. The extra was preserved and adjudicated as outside the fixed load closure; all tracked source and selected runtime bytes were unchanged. The failed wrapper is retained as failed, and no native request was replayed to repair it. |
+| Fresh installed checks passed for Claude document intent, Google repository extraction, Codex/Grok repository architecture, and native Intel OpenCode Go repository architecture. | bounded installed native execution verified | Each of five new requests returned its exact fresh fixture value; repository cases also described the dependency correctly. Native cleanup, disposable-fixture removal and all 184 immutable package files were verified. Earlier failed ARM Go or legacy attempts remain unqualified; no credential repair or copy is claimed. |
+| The Intel OpenCode Go check uses native OpenCode 2.1.3 and the existing native profile. | verified native Intel compatibility | The observed model name is initial-session configuration, not response-correlated independent governance approval. |
+| Claude's sole admitted action is document intent; the fresh installed result succeeds with one observed attempt and zero replays. Current publisher/capability readiness also succeeds without model calls. | installed intent qualified | No other Claude action is admitted. Cleanup is confirmed. The caller requested no tools; the returned telemetry does not independently inventory tool/MCP activity. The retained legacy adapter's stronger tool controls are not attributed to the current carrier. |
+| No running desktop session was restarted. | existing-session catalog reload unverified | Installed-path execution does not establish that a conversation already loaded the new skill catalog. |
+| Maintenance evidence is freshly receipt-bound to 7.0.9, dated 2026-10-19. | verified bootstrap maintenance | Configured pricing records are covered; unknown models remain unpriced and numeric quotas remain unknown. Bootstrap coverage warnings and the required operator notification remain explicit. |
+
+[PR #235](https://github.com/sumitake/agent-collab/pull/235) contains the
+source, qualification and independent exact-head review evidence.
+[PR #238](https://github.com/sumitake/agent-collab/pull/238) compiled the
+canonical changelog before tagging. The additional automated security review
+was excluded from the release wait under the operator's explicit instruction;
+its unfinished result is not represented as a clean review. Required CI and
+the completed independent exact-head review passed, and both PRs merged
+through the ordinary protected path. The changelog-only PR required no new
+model review under the documented Tier 1 compiler exception.
+
+### v7.0.9 closeout determinations
+
+| Surface | Determination | Evidence basis |
+| --- | --- | --- |
+| Root README | **updated** | Published 7.0.9/runtime 5.0.12, exactly one current showcase and bounded installation/qualification facts replace staged wording. |
+| Package README | **verified current at the signed tag** | Immutable release-time snapshot; all 184 released package files remain unchanged after publication. |
+| Handbook index | **updated** | Current release, runtime and maintenance references identify 7.0.9. |
+| System context | **verified current** | Public/private ownership, single-package boundary and caller-owned integration remain unchanged. |
+| Capabilities and workflows | **updated** | Published maintenance reference is current; 53 skills, admitted actions and authority limits match the release. |
+| Governance and authority | **verified current** | Caller-owned family independence and response-correlated approval remain required where applicable; configuration-only identity does not become approval. |
+| Lifecycle and operations | **updated** | Maintenance version is current; supported native installation, pinned Grok replacement and existing-session reload boundaries match observed behavior. |
+| Repository and release architecture | **updated** | Published version-bound maintenance is current; release, installed bytes and invocation evidence remain separate. |
+| Project estimation | **updated** | Fresh 2026-10-19 receipt is bound to 7.0.9; bootstrap warnings and unknown quotas remain visible. |
+| Claude participation | **updated** | Fresh installed document-intent success and current publisher/capability metadata are recorded without widening admission. |
+| Status and evidence | **updated** | This exact release and five installed confirmations are current; earlier snapshots and failed attempts remain historical. |
+| Generated changelog | **verified current at the signed tag** | Canonical compiled section agrees with the published notes and assets, including previously merged untagged documentation fragments. This closeout adds a new fragment without rewriting generated history. |
+
+## Historical snapshot — v7.0.8
 
 The [`v7.0.8` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.8) was published on
 2026-09-24 at 07:59:58 UTC.
