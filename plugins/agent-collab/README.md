@@ -6,30 +6,41 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Current repository source: **7.0.8**
+Package version: **7.0.9**
 
-Current published release: **7.0.7**
-([`v7.0.7`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.7)); it
-carries signed provider runtime `5.0.8`. Host installation, readiness, and
-provider availability remain separate evidence planes.
+This package includes signed and notarized provider runtime `5.0.12` for macOS
+arm64 and x86_64, with manifest schema 4, runtime protocol 5, native contract 4,
+and wire schema 12. The descriptor admits 12 logical actions and eight logical
+agents. The public coordinator is a bounded routing-only shim.
+Provider-authored schema, verdict, findings, receipt, telemetry, and
+terminal-wrapper fields are not content-availability gates. Every bounded
+observed nonempty final or recovered partial remains available to the caller.
 
-Version 7.0.8 prepares provider runtime `5.0.9` with manifest schema 4,
-runtime protocol 5, native contract 4, and wire schema 12. The descriptor
-admits 12 logical actions and eight logical agents. The public coordinator is
-a bounded routing-only shim. Provider-authored schema, verdict, findings,
-receipt, telemetry, and terminal-wrapper fields are not content-availability
-gates. Every bounded observed nonempty final or recovered
-partial remains available to the caller.
+Worker guidance sets an inactivity bound, distinguishes it from expected task
+duration, and defines the primary's validation handoff. Review guidance requires
+exact method-level evidence for external API blockers. Runtime 5.0.12 adds
+bounded optional hints for some native Agy startup failures while leaving
+request status and content semantics unchanged. OpenCode 2 compatibility uses
+plain ACP startup and checks model availability without creating a session or
+sending a prompt. Carrier bindings and route
+admissions remain unchanged; Claude is admitted only for document intent.
 
-The 7.0.8 source raises a request's effort to the lowest class an action
-admits instead of failing before any provider starts, and reports that
-adjustment in the terminal result when it happens; an unsupported explicitly
-named provider now reports a distinct, stable reason. It also repairs a small
-class of request-construction mistakes before dispatch — including binding an
-unbound read-only repository action to the caller's own repository or a named
-linked worktree of it — and reports each repair made, rejecting a request
-that names only some other directory before dispatch. Production publication
-remains pending.
+The included project-estimation data is a fresh version-bound bootstrap with
+its calibration warnings retained. Prices cover configured model records only;
+unknown models remain unpriced and numeric quotas remain unknown.
+
+This README records the package contract. Current publication, installation,
+and host-session evidence belongs in the repository README and architecture
+handbook; installation, readiness, and provider availability are separate
+observations.
+
+The 7.0.8 source raises a request's effort to the lowest class an action admits
+and reports the adjustment; an unsupported explicitly named provider reports
+a distinct, stable reason. It also repairs a small class of request-construction
+mistakes before dispatch, including binding an unbound read-only repository
+action to the caller's own repository or a named linked worktree of it. Each
+repair is reported; a request naming only some other directory is rejected
+before dispatch.
 
 The 7.0.7 source preserves canonical native HOME and SSH context, bounded
 recovery, and optional native model observations with their scope. Reviewer
@@ -58,9 +69,6 @@ General users should start with the public
 [lifecycle guide](../../docs/architecture/lifecycle-and-operations.md).
 
 ## Skills
-
-The source includes signed and notarized runtime 5.0.9 and wire schema 12
-for both macOS architectures. Publication remains pending.
 
 The package ships 53 generated skills. Their `SKILL.md` files are the
 authoritative invocation contracts; the
@@ -252,8 +260,8 @@ review.repository
 
 ## Direct runtime boundary
 
-The package emits one schema-4 manifest with wire schema 12, runtime protocol
-5, native contract 4, and provider runtime `5.0.9`. The final manifest binds the
+The package source targets one schema-4 manifest with wire schema 12, runtime
+protocol 5, native contract 4, and provider runtime `5.0.12`. The final manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 

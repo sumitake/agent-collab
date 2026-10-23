@@ -202,6 +202,45 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
         self.assertIsNotNone(wire)
         return wire
 
+    def test_worker_recipe_forwards_explicit_inactivity_lease_once(self) -> None:
+        source = (ROOT / "skill-specs" / "worker.md").read_text()
+        recipe = source.split("```python\n", 1)[1].split("\n```", 1)[0]
+        wire = self._wire()
+        client = self.coordinator._load_client()
+        with tempfile.TemporaryDirectory() as raw:
+            repository = self._repository(Path(raw), "worker copy")
+            namespace = {
+                "manifest": {"wire_contract_sha256": wire.sha256},
+                "request_id": "worker-lease-example",
+                "brief": "Make the bounded change; primary owns validation.",
+                "disposable_repository": repository,
+            }
+            exec(compile(recipe, "worker.md", "exec"), namespace)
+            request = namespace["request"]
+            calls = []
+
+            def invoke(*, envelope):
+                client._envelope_document(envelope, wire)
+                calls.append(envelope)
+                return Result("ok", [])
+
+            fake = types.SimpleNamespace(
+                invoke=invoke, runtime_contract_snapshot=lambda: (wire, "", ""),
+            )
+            stdin = types.SimpleNamespace(
+                isatty=lambda: False,
+                buffer=io.BytesIO(json.dumps(request).encode()),
+            )
+            with mock.patch.object(self.coordinator.sys, "stdin", stdin), \
+                    mock.patch.object(self.coordinator, "_load_client", return_value=fake), \
+                    mock.patch.object(self.coordinator, "_write"):
+                code = self.coordinator.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["deadline_ms"], 600000)
+        self.assertEqual(calls[0]["work_units"][0]["payload"], namespace["brief"])
+        self.assertEqual(calls[0]["work_units"][0]["capability"], "codegen.repository")
+
     @staticmethod
     def _repository(root: Path, name: str) -> Path:
         repository = root / name

@@ -5,9 +5,11 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.8).
+This public repository's current source is **agent-collab** (v7.0.9).
 
 Current published release: **7.0.8** ([`v7.0.8`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.8)).
+The v7.0.8 closeout is recorded in the
+[dated evidence snapshot](docs/architecture/status-and-evidence.md).
 It carries signed provider runtime `5.0.9`. Host installation, readiness, and
 provider availability remain separate evidence planes. The package README
 remains the immutable release-time snapshot; current postpublication facts
@@ -21,23 +23,30 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.8
+## What's new - v7.0.9
 
-Release 7.0.8 carries runtime `5.0.9`. A request whose effort is below an
-action's required floor is now raised to the lowest admitted class instead of
-failing before any provider starts, and the raised effort is reported in the
-terminal result when it happens. An unsupported explicitly named logical agent now
-reports a distinct, stable reason instead of a generic failure.
+The staged 7.0.9 package includes signed and notarized provider runtime
+`5.0.12` for both macOS architectures. Worker guidance distinguishes expected
+task time from the runtime's admitted-progress inactivity lease, which defaults
+to 24 hours when omitted. It shows callers how to choose a bound, retain
+partial work when stopping, and use primary-owned validation or a specific
+preverified interpreter. Review guidance asks for exact, version-matched
+evidence before reporting an external API blocker. Runtime 5.0.12 adds bounded
+optional hints for some native Agy startup failures without changing request
+status or returned content. OpenCode 2 compatibility uses plain ACP startup and
+checks model availability without creating a session or sending a prompt.
+Routes and admissions remain unchanged; Claude is
+admitted only for document intent.
 
-The coordinator now repairs a small class of request-construction mistakes
-before dispatch and reports each repair it made. A read-only repository
-action whose request omits the caller's repository is bound to the caller's
-own repository (or a linked worktree of it that the request names); a
-request that names only some other directory is rejected before dispatch.
+The package includes a fresh version-bound project-estimation bootstrap. Its
+pricing snapshot covers the configured model records; unknown models remain
+unpriced and numeric quotas remain unknown. Bootstrap calibration warnings are
+retained.
 
-Both macOS architectures are signed, notarized, and published together. The
-[dated evidence](docs/architecture/status-and-evidence.md) separates staged
-qualification, review, and installed-instance evidence from this snapshot.
+The published 7.0.8 release and its runtime `5.0.9` remain the current release
+until the staged candidate passes qualification, is merged, and is published.
+The [dated evidence](docs/architecture/status-and-evidence.md) keeps staged
+qualification, review, publication, and installed-instance evidence separate.
 
 For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
 
@@ -126,17 +135,17 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The 7.0.8 release carries:
+The staged 7.0.9 package carries:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.9`;
+- provider runtime version `5.0.12`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-Both macOS architectures carry the imported signed and notarized 5.0.9
+Both macOS architectures carry the imported signed and notarized 5.0.12
 artifact set. Wire schema 12 is unchanged.
 
 Production provider work uses admitted progress inactivity so active work is

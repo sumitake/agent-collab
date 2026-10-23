@@ -180,6 +180,14 @@ Additionally:
 
 Ignore style and formatting. Verify each finding against the actual code — do not flag plausible-sounding issues that are not present.
 
+For a blocker about an external API contract, cite the exact called method in
+the supplied or installed implementation, or matching official documentation
+for the relevant version. Check wrapper serialization and method-specific
+overloads before asserting a native or FFI type requirement. If that evidence
+is unavailable, state the uncertainty and the smallest read-only verification
+needed; do not present a remembered contract as a confirmed blocker. Proposed
+fake-client assertions must match the actual method interface.
+
 For each real finding, include severity, path, line when available, the defect,
 a concrete fix, and any applicable spec reference in the descriptor-owned
 finding message. If no real issues surface, explain what was checked in the
