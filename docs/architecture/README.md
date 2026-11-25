@@ -33,7 +33,7 @@ manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12.
    labels and records the dated evidence snapshot used by this documentation.
 8. [Claude participation](claude-participation.md) explains Claude's three
    distinct roles: fully supported host and resident primary, optional async
-   participant, and action-scoped managed document-intent carrier.
+   participant, and managed carrier for conceptual architecture and document work.
 
 Historical and design material is indexed separately in
 [`docs/design/README.md`](../design/README.md). It is not automatically the

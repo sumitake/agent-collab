@@ -106,7 +106,7 @@ VERIFIER_INDEPENDENCE_BLOCK = """<!-- verifier-independence:start -->
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is

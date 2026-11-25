@@ -78,7 +78,7 @@ For a `kind: cross_check` step or semantic AI gate, the runner binds the
 reviewer and the caller verifies the response identity and reviewed source.
 The released chain runner has its own target and source constraints. Use the
 governance review action directly if a chain cannot express an eligible
-reviewer. Prior contributors remain eligible for a fresh independent review.
+reviewer. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance.
 The caller verifies the distinct reviewer family and the substantive result.
 The YAML accepts no `verifier_family` override.
 

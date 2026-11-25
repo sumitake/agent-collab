@@ -22,7 +22,8 @@ Required body properties:
 - keep executable substitutions as bare commands without prose or Markdown;
   the spec owns the surrounding sentence and code backticks;
 - state that unavailable native routes return typed unavailable;
-- keep Claude action-scoped: managed only for document intent, ineligible for
+- limit Claude to conceptual architecture and document intent, extraction, and
+  reasoning. Use another admitted provider for
   review, governance, repository, and code-generation actions, with host-owned
   asynchronous coordination treated as a separate surface;
 - never weaken the plan/build or advisory/build authority boundary.

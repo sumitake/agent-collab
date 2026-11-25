@@ -34,8 +34,9 @@ The caller checks and applies proposed edits from a disposable checkout.
 Reviewer guidance asks the caller to weigh the failure a proposed safeguard
 would prevent against the failure paths the safeguard would add.
 
-Claude conceptual architecture and document extraction and reasoning await
-comparison against the incumbent providers on the staged release.
+On the signed candidate, Claude passed conceptual architecture, document
+extraction, and document reasoning at economical, standard, and frontier
+quality. Its comparison providers passed the same nine fixtures.
 
 ## What ships
 

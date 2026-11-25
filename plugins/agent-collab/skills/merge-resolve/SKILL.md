@@ -44,7 +44,7 @@ Reviewer independence is conditional on the caller verifying the observed famili
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is
@@ -92,7 +92,7 @@ If the operator only said "resolve this conflict" without listing files, START w
 
 ### 1. Verifier-independence check
 
-Record the observed lineage of the primary. For independent review, select and verify a resolver distinct from the primary. Prior contributors remain eligible for a fresh independent review. Primary-authored sides alone do not prove independence. If no eligible distinct resolver can be established, keep required independent approval unmet. Advisory merge analysis may proceed when the task does not require independent evidence; changing roles cannot create independence.
+Record the observed lineage of the primary. For independent review, select and verify a resolver distinct from the primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Primary-authored sides alone do not prove independence. If no eligible distinct resolver can be established, keep required independent approval unmet. Advisory merge analysis may proceed when the task does not require independent evidence; changing roles cannot create independence.
 
 ### 2. Hunk extraction
 

@@ -30,7 +30,7 @@ genuine; reviewers and the operator remain responsible for substance.
   governance gates. Record an independent cross-family review; operator-reserved
   paths also require the operator to merge.
 
-The reviewer family must differ from the active primary. Prior contributors remain eligible for a fresh independent review. Each reviewer inspects the exact source and reaches a separate verdict. Selecting a candidate and accepting independent approval
+The reviewer family must differ from the active primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Each reviewer inspects the exact source and reaches a separate verdict. Selecting a candidate and accepting independent approval
 are different stages. Provider-free planning proves an eligible action or route,
 not model identity. Currently known native configuration or response-scoped
 observations may identify a potential candidate; configuration remains

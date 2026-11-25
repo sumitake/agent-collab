@@ -18,9 +18,9 @@ OpenCode is a transport/host surface; the selected model's lineage supplies
 family provenance.
 
 The current public runtime request has no primary or artifact-author-lineage
-field. It does not dynamically perform this exclusion. The skill and repository
-workflow require it, and the primary verifies the selected reviewer and the
-substance of the exact-head review.
+field. The caller records artifact authorship for provenance, verifies that the
+reviewer and active primary have distinct lineages, and checks the substance
+of the review against the exact source. Contributors can review that source.
 
 For an authorized independent review, known native configuration or earlier
 observations can identify a candidate. The caller binds that selection to the
@@ -65,7 +65,7 @@ be mistaken for additional sandbox guarantees in the routing envelope:
 
 | Authority | Meaning | Examples in the current public contract |
 | --- | --- | --- |
-| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude document intent, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
+| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude conceptual architecture and document work, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
 | **output-only** | The caller supplies a disposable repository or copy, captures output or patches, reviews/tests them, and owns application and cleanup. | Admitted code-generation work; inspect the current descriptor for eligible targets. |
 | **unavailable** | The contract name is recognized but no hardened backend currently satisfies it on the observing host or runtime. | Any route whose typed readiness result is unavailable; this is not inferred from the descriptor alone. |
 | **primary-executed** | The active primary follows the skill locally; no independent managed route is implied. | Self-executed engineering-process skills and primary-only visual guidance where typed media transport is absent. |
