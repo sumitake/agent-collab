@@ -22,9 +22,9 @@ exact method-level evidence for external API blockers. Runtime 5.0.12 adds
 bounded optional hints for some native Agy startup failures while leaving
 request status and content semantics unchanged. OpenCode 2 compatibility uses
 plain ACP startup and checks model availability without creating a session or
-sending a prompt. Runtime 5.1.0 adds Gemini architecture and code generation. Claude document
-intent is available in 7.0.9. Additional Claude actions in 7.1.0 are subject
-to staged qualification.
+sending a prompt. Runtime 5.1.0 adds Gemini architecture and code generation.
+Claude supports conceptual architecture, document extraction, reasoning, and
+intent. Target Claude explicitly to request it for these actions.
 
 When both CLI generations are installed, put the OpenCode 2 executable first on the PATH of the host that launches the plugin. From that environment, `opencode --version` should report 2.x and `opencode models --standalone` should list the available models.
 

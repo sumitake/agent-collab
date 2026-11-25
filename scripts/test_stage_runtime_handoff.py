@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import sys
@@ -400,6 +401,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
             )
             manifest_path = handoff / "runtime-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            expected_version = manifest["artifacts"][0]["provider_runtime_version"]
             manifest["artifacts"][0]["provider_runtime_version"] = "9.9.9"
             manifest_path.chmod(0o600)
             manifest_path.write_text(
@@ -412,7 +414,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-                "provider version mismatch: expected 5\\.0\\.12, received 9\\.9\\.9",
+                re.escape(f"provider version mismatch: expected {expected_version}, received 9.9.9"),
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 
