@@ -49,13 +49,13 @@ def _independence_block(text: str) -> str:
 
 
 class ReviewerIndependenceGuidanceTests(unittest.TestCase):
-    def test_procedures_retain_all_author_and_advisory_boundaries(self) -> None:
+    def test_procedures_retain_primary_and_advisory_boundaries(self) -> None:
         for name in ("debate", "logic-check", "red-team"):
             for path in (SPECS / f"{name}.md", PLUGIN / "skills" / name / "SKILL.md"):
                 procedure = " ".join(path.read_text(encoding="utf-8").split("## Procedure", 1)[1].split())
                 with self.subTest(path=path):
-                    self.assertIn("primary and every contributing artifact author", procedure)
-                    self.assertNotIn("primary and artifact author", procedure)
+                    self.assertIn("primary", procedure)
+                    self.assertNotIn("and every contributing artifact author", procedure)
                     if name == "logic-check":
                         self.assertIn("Advisory re-derivation in progress", procedure)
                         self.assertNotIn("Independent audit in progress", procedure)
@@ -151,22 +151,21 @@ class ReviewerIndependenceGuidanceTests(unittest.TestCase):
             normalized,
         )
 
-    def test_same_family_contributors_cannot_count_as_independent(self) -> None:
+    def test_prior_contributors_can_review_independently(self) -> None:
         normalized = " ".join(self.shared_block.split())
         self.assertIn(
-            "distinct from the primary and every contributing author family",
+            "Prior contributors remain eligible for a fresh independent review.",
             normalized,
         )
         self.assertIn(
-            "known primary, contributing-author, and reviewer lineages",
+            "known primary and reviewer lineages",
             normalized,
         )
         merge = " ".join(
             (SPECS / "merge-resolve.md").read_text(encoding="utf-8").split()
         )
         self.assertIn(
-            "select and verify a resolver distinct from the primary and every "
-            "known side-author family",
+            "select and verify a resolver distinct from the primary",
             merge,
         )
 
@@ -266,8 +265,8 @@ class ReviewerIndependenceGuidanceTests(unittest.TestCase):
         for label, text in (("spec", spec), ("generated", generated)):
             normalized = " ".join(text.split())
             with self.subTest(source=label):
-                self.assertIn("every contributing author family", normalized)
-                self.assertIn("every contributing artifact author", normalized)
+                self.assertIn("distinct from the primary", normalized)
+                self.assertIn("Prior contributors remain eligible", normalized)
                 self.assertIn(
                     "planning reports route eligibility, not model identity",
                     normalized.casefold(),
@@ -289,7 +288,7 @@ class ReviewerIndependenceGuidanceTests(unittest.TestCase):
         preamble, rest = text.split("## Routing request", 1)
         invocation = rest.split("\n## ", 1)[0]
         normalized = " ".join(invocation.split())
-        self.assertIn("every contributing author family", normalized)
+        self.assertIn("distinct from the primary", normalized)
         self.assertIn(
             "Planning reports route eligibility, not model identity, live "
             "availability, or authentication.",
@@ -326,24 +325,9 @@ class ReviewerIndependenceGuidanceTests(unittest.TestCase):
         for label, text in (("spec", spec), ("generated", generated)):
             normalized = " ".join(text.split())
             with self.subTest(source=label):
-                self.assertIn(
-                    "excludes both immutable primary and artifact-author families",
-                    normalized,
-                )
-                self.assertIn(
-                    "Anthropic, Google, OpenAI, xAI, Zhipu, and unknown lineage",
-                    normalized,
-                )
-                self.assertIn(
-                    "Route exclusions alone do not establish response identity "
-                    "or all-contributor independence.",
-                    normalized,
-                )
-                self.assertIn(
-                    "The caller verifies those facts rather than claiming "
-                    "changed chain execution.",
-                    normalized,
-                )
+                self.assertIn("Prior contributors remain eligible for a fresh independent review.", normalized)
+                self.assertIn("caller verifies the response identity and reviewed source", normalized)
+                self.assertIn("runner has its own target and source constraints", normalized)
 
     def test_public_guidance_stays_provider_neutral(self) -> None:
         surfaces = [

@@ -72,7 +72,7 @@ Installation, selection, and readiness are separate checks.
    snapshot. A listed route is not proof of readiness.
 5. **Bounded smoke test:** invoke one low-risk read-only workflow, such as a
    second opinion on a short draft, and verify the returned family is eligible
-   and independent of the primary and every contributing author where the task
+   and independent of the primary where the task
    requires independent approval. Use native identity evidence correlated to
    the returned response; configuration and routing alone are insufficient.
    Missing evidence leaves independent approval unmet and the result advisory;

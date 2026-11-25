@@ -109,7 +109,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("Carry that same target into planning and live", block)
                 self.assertIn("Honor an operator-named provider", block)
                 self.assertNotIn("only when the operator names", block)
-                self.assertIn("every contributing author family", block)
+                self.assertIn("Prior contributors remain eligible for a fresh independent review.", block)
                 self.assertIn("does not prove\nmodel identity", block)
                 self.assertIn("Configuration-scoped observations remain configuration", block)
                 self.assertIn("response-scoped native evidence", block)
@@ -193,7 +193,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 for fictional in ("independent family", "independent-family", "resolved family", "independent vs. resolved", "only when the operator names"):
                     self.assertNotIn(fictional, text)
         merge = " ".join((PLUGIN / "skills" / "merge-resolve" / "SKILL.md").read_text().split())
-        self.assertIn("authors of both sides", merge)
+        self.assertIn("Prior contributors remain eligible for a fresh independent review.", merge)
         self.assertIn("Switching to the primary cannot clear that requirement", merge)
         self.assertNotIn("switch the independent-resolver direction", merge)
         debate = (PLUGIN / "skills" / "debate" / "SKILL.md").read_text()

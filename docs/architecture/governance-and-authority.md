@@ -10,9 +10,7 @@ tool call is not evidence that the caller should receive broader permissions.
 ## Independence model
 
 For governance-grade review, repository and skill policy requires a recorded
-active-primary lineage and the lineage of every contributing artifact author.
-The primary must select a reviewer outside the primary and all contributing
-author families. If any required lineage is unknown, independent approval
+active-primary and reviewer lineage. The reviewer must be distinct from the primary. Prior contributors remain eligible for a fresh independent review. If any required lineage is unknown, independent approval
 remains unmet. Missing reviewer identity evidence is not provider
 unavailability: keep usable advisory content, do not stop ordinary read-only
 advisory work, and do not replay a consumed request to improve lineage.
@@ -48,9 +46,9 @@ cannot become governance evidence through a role assignment or successful call.
 
 ```mermaid
 flowchart LR
-    Artifact["Artifact plus all contributing author lineages"] --> Eligibility["Caller verifies required lineages"]
+    Artifact["Exact artifact under review"] --> Eligibility["Caller verifies required lineages"]
     Primary["Active primary lineage"] --> Eligibility
-    Eligibility --> Exclude["Caller excludes primary and every author family"]
+    Eligibility --> Exclude["Caller verifies an independent reviewer"]
     Exclude --> Reviewer["Caller selects a reviewer candidate"]
     Reviewer --> Evidence["Caller verifies response identity, source and findings"]
     Evidence --> PrimaryGate["Primary integration and repository gates"]
@@ -79,8 +77,7 @@ No failure converts one row to another. In particular:
   unavailable;
 - the runtime does not itself apply output; callers must supply a disposable
   copy and verify it before application;
-- independent approval cannot accept an unknown primary or contributing
-  author family; that missing evidence leaves the requirement unmet and
+- independent approval cannot accept an unknown primary or reviewer family; that missing evidence leaves the requirement unmet and
   does not make the provider unavailable;
 - an explicit target is not silently replaced by a different provider; and
 - a successful result does not gain merge, deployment, release, or policy
@@ -124,8 +121,7 @@ The trace proves that required evidence was recorded in the expected form. It
 does **not** cryptographically prove that quoted review prose came from the
 claimed reviewer. This is an intentional, documented residual boundary:
 
-- skill and repository policy require family independence from the primary
-  and every contributing author, verified against native identity evidence
+- skill and repository policy require family independence from the primary, verified against native identity evidence
   correlated to the returned response;
 - repository automation validates trace form and presence; and
 - the primary, independent reviewer, and operator validate substance and exact
@@ -156,8 +152,7 @@ and its evidence is verified.
 ## Why these controls matter
 
 - **Different failure modes:** independent model families are more likely to
-  expose correlated assumptions than another instance of the primary or a
-  contributing author's family.
+  expose correlated assumptions than another instance of the primary.
 - **Least authority:** a route receives only the permission its work requires,
   reducing the cost of a hallucination or prompt-injection failure.
 - **Honest evidence:** unavailable execution describes that attempt;

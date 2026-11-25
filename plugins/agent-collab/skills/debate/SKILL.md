@@ -47,12 +47,11 @@ Skip this skill when:
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary
-and every contributing artifact author. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is
-distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
+distinct from the primary. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
@@ -71,8 +70,8 @@ After the response returns, record the observed reviewer lineage and source.
 Configuration-scoped observations remain configuration; they never prove the
 model that produced the returned response. Independent approval requires
 response-scoped native evidence correlated to that returned response, with
-known primary, contributing-author, and reviewer lineages, and a reviewer
-distinct from the primary and every contributing author family. A route,
+known primary and reviewer lineages, and a reviewer
+distinct from the primary. A route,
 provider name, status, receipt, self-assertion, or configuration observation
 alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
 consumed review to repair missing lineage, formatting, or adverse findings;
@@ -115,7 +114,7 @@ State the assignment clearly to the user before starting: "the active primary wi
 **the active primary's opening:** Write the strongest case for the active primary's assigned side. Not a hedge, not "on balance" — the *strongest* case. Three to five specific points with evidence or reasoning. Treat it like a debate brief, not an analysis.
 
 **the reviewer's opening:** Before dispatch, select a reviewer with
-known lineage distinct from the observed primary and every contributing artifact author. Submit the
+known lineage distinct from the observed primary. Submit the
 sealed debate role through `python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`.
 Verify the observed reviewer lineage before treating its response as independent
 governance evidence. Use this prompt template for debate content; the returned
@@ -264,6 +263,6 @@ Match the example you cite to the user's domain. The skill applies wherever bina
 - **Running more than three rounds.** Diminishing returns; the user checks out. If the proposition is unresolved after three rounds, the bottleneck is decision-fatigue or missing information, not under-argumentation.
 - **Letting the reviewer hedge.** If its opening reads as balanced or its rebuttal includes "to be fair," record that limitation and weigh it in the synthesis rather than steering a replacement round automatically.
 - **Using economical/minimal for debate calls.** Argumentation depth matters; frontier/maximum is the default for every debate invocation.
-- **Treating opposing positions as independent model evidence.** Verify the observed reviewer, primary, and position-author lineages under the shared contract. Same-family or unknown-lineage arguments remain advisory regardless of side assignment.
+- **Treating opposing positions as independent model evidence.** Verify the observed reviewer and primary lineages under the shared contract. Same-family or unknown-lineage arguments remain advisory regardless of side assignment.
 - **Phrasing the proposition as a question rather than a claim.** "Should we X?" is fuzzy; "Resolved: we should X" anchors the debate. The two-second reframe pays off across all three rounds.
 - **Debating an empirically-decidable question.** "Did our churn rate go up" is a data question. Run the numbers; do not argue the answer.

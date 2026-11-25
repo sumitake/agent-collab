@@ -106,12 +106,11 @@ VERIFIER_INDEPENDENCE_BLOCK = """<!-- verifier-independence:start -->
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary
-and every contributing artifact author. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is
-distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
+distinct from the primary. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
@@ -130,8 +129,8 @@ After the response returns, record the observed reviewer lineage and source.
 Configuration-scoped observations remain configuration; they never prove the
 model that produced the returned response. Independent approval requires
 response-scoped native evidence correlated to that returned response, with
-known primary, contributing-author, and reviewer lineages, and a reviewer
-distinct from the primary and every contributing author family. A route,
+known primary and reviewer lineages, and a reviewer
+distinct from the primary. A route,
 provider name, status, receipt, self-assertion, or configuration observation
 alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
 consumed review to repair missing lineage, formatting, or adverse findings;

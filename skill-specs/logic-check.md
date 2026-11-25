@@ -39,12 +39,11 @@ Skip this skill when:
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary
-and every contributing artifact author. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is
-distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
+distinct from the primary. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
@@ -63,8 +62,8 @@ After the response returns, record the observed reviewer lineage and source.
 Configuration-scoped observations remain configuration; they never prove the
 model that produced the returned response. Independent approval requires
 response-scoped native evidence correlated to that returned response, with
-known primary, contributing-author, and reviewer lineages, and a reviewer
-distinct from the primary and every contributing author family. A route,
+known primary and reviewer lineages, and a reviewer
+distinct from the primary. A route,
 provider name, status, receipt, self-assertion, or configuration observation
 alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
 consumed review to repair missing lineage, formatting, or adverse findings;
@@ -91,8 +90,7 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 
 But: **do send the constraints and assumptions** {{ primary_agent }} used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance {{ primary_agent }} was solving.
 
-Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and every contributing artifact author. Submit the sealed logic-check role through
+Before dispatch, select a reviewer with known lineage distinct from the observed primary. Submit the sealed logic-check role through
 `{{ mcp_tool_ask }}` with {{ logic_check_call_params }}. Verify the observed
 reviewer lineage before treating its response as independent governance evidence.
 Use this prompt template for substantive derivation. The caller reasons over the
@@ -144,8 +142,7 @@ TRACE:
 
 ### 4. Compare the two derivations
 
-First verify the returned response-scoped evidence against the primary and every
-contributing author family. Use independent wording only when every independent-
+First verify the returned response-scoped evidence against the primary. Use independent wording only when every independent-
 governance requirement is met; otherwise label the comparison advisory. Asking
 for a derivation without sharing the original answer reduces anchoring, but does
 not itself establish reviewer-family independence.
@@ -195,6 +192,6 @@ The constraints-explicit final-answer pattern applies uniformly across all of th
 - **Using this skill for non-verifiable judgment work.** Open-ended reasoning, strategy, recommendations belong in `second-opinion`. The re-derivation mechanism requires a definite right answer.
 - **Treating final-answer agreement as proof.** Two models can both be wrong in the same way, especially on textbook-style problems with well-known wrong answers (or on problems where the constraint statement is ambiguous in the same way to both models). Agreement is one signal, not a guarantee.
 - **Using economical/minimal for multi-step calculations.** Computational care benefits from reasoning depth; use frontier/maximum unless the check is genuinely trivial.
-- **Claiming independent verification when observed reviewer and computation-author lineages match or are unknown.** Re-derivation may still provide useful advisory findings, but cannot clear an independent verification requirement.
+- **Claiming independent verification when observed reviewer and primary lineages match or are unknown.** Re-derivation may still provide useful advisory findings, but cannot clear an independent verification requirement.
 - **Silently switching the answer** if the audit disagrees and the verifier is right. Show the user what changed and why; the source-of-error attribution is the deliverable, not just the corrected number.
 - **Re-deriving a 30+ step trace blindly when transition critique would work.** Incomparable parallel derivations waste both turns; fall back to step-by-step transition verification for large traces.

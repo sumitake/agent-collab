@@ -94,7 +94,7 @@ the primary for integration.
 1. Identify the artifact, primary, authors and whether the task requires
    independent approval.
 2. Use the appropriate review skill. For required independence, verify a
-   candidate outside the primary and every contributing author family and bind
+   candidate outside the primary and bind
    that selection to the live call. After return, verify native identity
    evidence correlated to that response and the exact reviewed source;
    configuration-scoped identity alone cannot establish independent approval.

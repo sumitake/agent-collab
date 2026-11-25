@@ -203,8 +203,7 @@ cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
 Honor an operator-named provider with `explicit_target`. For an authorized
 independent review or governance task without an operator-named provider, use
-that same field to bind the caller-verified reviewer distinct from the primary
-and every contributing author family. Carry the same target into planning and
+that same field to bind the caller-verified reviewer distinct from the primary. Carry the same target into planning and
 live dispatch; untargeted planning does not bind a later live request. Target
 unavailability is reported without silent substitution or replay. Ordinary
 advisory calls otherwise use normal economic routing. Configuration may

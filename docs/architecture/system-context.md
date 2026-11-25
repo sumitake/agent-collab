@@ -121,8 +121,7 @@ boundary.
 1. The primary invokes a skill or follows a primary-executed playbook.
 2. For a managed route, the public client validates the manifest-bound request;
    the primary owns author and reviewer identity verification.
-3. The primary and repository/skill workflow record the primary and every
-   contributing artifact-author lineage. Where independent approval is
+3. The primary and repository/skill workflow record the primary and reviewer lineages. Where independent approval is
    required, they verify reviewer identity from native evidence correlated to
    the returned response, rather than configuration or routing alone.
 4. The request receives one declared authority. Fallback cannot widen it.

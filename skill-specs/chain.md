@@ -71,17 +71,13 @@ Expand templates in the chain's `outputs:` section against the accumulated `step
 
 ## Family-aware routing (verifier-independence for cross-check steps)
 
-When a chain has a `kind: cross_check` step or a semantic AI gate, the runner
-must route through the shared dynamic policy. It recognizes Anthropic, Google,
-OpenAI, xAI, Zhipu, and unknown lineage, excludes both immutable primary and
-artifact-author families, and fails closed for unknown governance provenance.
-The YAML does not expose a `verifier_family` override; reject one rather than
-honoring a caller assertion.
-Route exclusions alone do not establish response identity or all-contributor
-independence. The caller verifies those facts rather than claiming changed
-chain execution.
-
-This mirrors the orchestrator's Router rule and the verifier-independence block in `second-opinion`, `code-review`, etc. Bypassing it produces an audit log entry that reads as cross-checking but is structurally one-family.
+For a `kind: cross_check` step or semantic AI gate, the runner binds the
+reviewer and the caller verifies the response identity and reviewed source.
+The released chain runner has its own target and source constraints. Use the
+governance review action directly if a chain cannot express an eligible
+reviewer. Prior contributors remain eligible for a fresh independent review.
+The caller verifies the distinct reviewer family and the substantive result.
+The YAML accepts no `verifier_family` override.
 
 ## Skill-reference contract
 
