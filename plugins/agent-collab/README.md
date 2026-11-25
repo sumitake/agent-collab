@@ -26,6 +26,8 @@ sending a prompt. Runtime 5.1.0 adds Gemini architecture and code generation. Cl
 intent is available in 7.0.9. Additional Claude actions in 7.1.0 are subject
 to staged qualification.
 
+When both CLI generations are installed, put the OpenCode 2 executable first on the PATH of the host that launches the plugin. From that environment, `opencode --version` should report 2.x and `opencode models --standalone` should list the available models.
+
 Release preparation requires a version-bound project-estimation handoff.
 The cost estimator identifies unpriced models and unknown quotas explicitly.
 
