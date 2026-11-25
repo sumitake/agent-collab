@@ -26,9 +26,8 @@ sending a prompt. Runtime 5.1.0 adds Gemini architecture and code generation. Cl
 intent is available in 7.0.9. Additional Claude actions in 7.1.0 are subject
 to staged qualification.
 
-The included project-estimation data is a fresh version-bound bootstrap with
-its calibration warnings retained. Prices cover configured model records only;
-unknown models remain unpriced and numeric quotas remain unknown.
+Release preparation requires a version-bound project-estimation handoff.
+The cost estimator identifies unpriced models and unknown quotas explicitly.
 
 This README records the package contract. Current publication, installation,
 and host-session evidence belongs in the repository README and architecture
