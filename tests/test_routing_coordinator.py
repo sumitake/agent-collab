@@ -299,6 +299,15 @@ class RoutingOnlyCoordinatorTests(unittest.TestCase):
         (worktree / ".git").write_text(f"gitdir: {admin}\n")
         return worktree.resolve()
 
+    def test_targeted_gemini_choice_survives_normalization(self) -> None:
+        wire = self._wire()
+        request = {"work_units": [{
+            "id": "design", "capability": "architecture.conceptual", "payload": "Review",
+            "explicit_target": "gemini", "gemini_model": "live-catalog-fixture",
+        }]}
+        document, _ = self.coordinator._normalize_request(request, wire, Path.cwd())
+        self.assertEqual(document["work_units"][0]["gemini_model"], "live-catalog-fixture")
+
     def test_correction_without_cwd_binds_a_worktree_of_the_callers_repository(self) -> None:
         wire = self._wire()
         with tempfile.TemporaryDirectory() as raw:

@@ -6,24 +6,21 @@ description: Use when the operator says "governance review," "high-stakes review
 
 # Independent governance review
 
-Use only `governance.repository`. The caller creates one bounded work unit for
+Use only `governance.repository`. When targeting Gemini, supply the currently qualified frontier selection in `gemini_model` as described in the package README. The caller creates one bounded work unit for
 the immutable review scope and runs it from the canonical repository at the
 exact expected source head. Do not send a provider route/action pair or
 reconstruct a provider command.
 Use `quality_profile="frontier"` and `effort_class="maximum"`. These are closed
 provider-neutral request fields and never authorize a model or version pin.
 
-Independence follows Public repository governance. Exclude the primary and
-every contributing author family. Selecting a candidate and accepting
+Independence follows Public repository governance. Select a reviewer distinct from the primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Selecting a candidate and accepting
 independent approval are different stages. Provider-free planning reports
 route eligibility, not model identity. Currently known configuration may
 identify a candidate; bind that reviewer with `explicit_target` through
 planning and live dispatch. Independent approval requires response-scoped
 native evidence correlated to the returned response.
 
-Before dispatch, record observed lineage and source for the active primary and
-every contributing artifact author, then select a reviewer whose currently
-known lineage differs from all of them. Honor an operator-named provider; a
+Before dispatch, record observed lineage and source for the active primary, then select a reviewer whose currently known lineage differs from the primary. Honor an operator-named provider; a
 specifically selected ineligible or same-family agent is not silently replaced.
 If no known-distinct eligible reviewer can be established, do not claim
 independent governance; explain the missing capability or evidence. Missing

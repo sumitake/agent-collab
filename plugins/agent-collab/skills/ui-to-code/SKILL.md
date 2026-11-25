@@ -1,6 +1,6 @@
 ---
 name: ui-to-code
-version: 7.0.9
+version: 7.1.0
 defaults:
   quality_profile: frontier
   effort_class: maximum

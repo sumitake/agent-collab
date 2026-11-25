@@ -43,9 +43,10 @@ in [Governance and authority](governance-and-authority.md).
 
 Current repository route contracts cover:
 
-- Claude read-only document-intent work through the official native CLI,
-  cost-last after eligible Gemini and Grok routes;
-- Gemini advisory, governance, and bounded context work;
+- Claude conceptual architecture and document intent, extraction, and reasoning
+  through the official native CLI, after existing eligible providers;
+- Gemini advisory, governance, bounded context, architecture, and Orchestrator
+  code generation in a disposable checkout;
 - Codex advisory, governance, and output-only code-generation work;
 - OpenCode planning, context, governance, and output-only build work through
   four logical lineages: Moonshot, Zhipu, Alibaba, and DeepSeek. They share one
@@ -70,9 +71,8 @@ tests, or user approval; “primary-executed” is not “unchecked.”
 Claude and Antigravity participation can use host-owned asynchronous transport
 after the exact target identity, family, session, and current readiness are
 observed through host tooling. The public coordinator neither reports async
-readiness nor sends async messages. Async coordination is separate from Claude's narrow managed
-`context.documents.intent` route, and an async reply is not independent
-governance merely because it arrived. [Claude participation](claude-participation.md)
+readiness nor sends async messages. Claude’s managed read-only actions use the official CLI. The authority of an
+asynchronous reply depends on verified reviewer identity, source, and substance. [Claude participation](claude-participation.md)
 explains the action-scoped boundary.
 
 ### Reproducible composition
@@ -94,7 +94,7 @@ the primary for integration.
 1. Identify the artifact, primary, authors and whether the task requires
    independent approval.
 2. Use the appropriate review skill. For required independence, verify a
-   candidate outside the primary and every contributing author family and bind
+   candidate outside the primary and bind
    that selection to the live call. After return, verify native identity
    evidence correlated to that response and the exact reviewed source;
    configuration-scoped identity alone cannot establish independent approval.
@@ -157,7 +157,7 @@ authority.
 
 | Surface | Public package evidence | User expectation |
 | --- | --- | --- |
-| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official native CLI may serve read-only document intent when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
+| Claude Code | Claude-compatible plugin manifest and marketplace metadata. | Native package install and `/agent-collab:*` skills. The official native CLI may serve conceptual architecture and read-only document work when action-scoped readiness passes; Claude is not eligible for managed review, governance, repository, or code-generation actions (see [Claude participation](claude-participation.md)). |
 | Codex CLI/app | Codex-native manifest and generated Codex marketplace. | Native package install and the same skill namespace. Start a new task after install/update. |
 | Antigravity | Compatible plugin import, logical Gemini managed routes, and separate host-owned async coordination; no separate package. | Gemini repository review uses the co-packaged coordinator and action-scoped readiness. Async readiness is a different surface; neither host name nor reviewer role proves independence. |
 | OpenCode and ZCode | Dynamic host/model policy and managed OpenCode routes; no separate package. | A compatible host/plugin surface is required. OpenCode is a transport; the selected model supplies family lineage. |

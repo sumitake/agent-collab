@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import sys
@@ -49,7 +50,7 @@ def _candidate_manifest(base: dict[str, object]) -> dict[str, object]:
     ).encode("utf-8")
     base["wire_contract_sha256"] = hashlib.sha256(encoded).hexdigest()
     for artifact in base.get("artifacts", []):
-        artifact["provider_runtime_version"] = "5.0.12"
+        artifact["provider_runtime_version"] = "5.1.0"
         artifact["wire_contract_sha256"] = base["wire_contract_sha256"]
     return base
 
@@ -80,7 +81,7 @@ def _manifest_bytes(payload: bytes, arch: str = "arm64") -> bytes:
             "entrypoint": "agent-collab-runtime",
             "size": len(payload),
             "sha256": archive_builder.runtime_bundle.compute_bundle_identity([record]),
-            "provider_runtime_version": "5.0.12",
+            "provider_runtime_version": "5.1.0",
             "wire_contract_sha256": base["wire_contract_sha256"],
             "signing": {
                 "mode": "developer_id",
@@ -149,7 +150,7 @@ def _make_matrix_handoff(parent: Path, name: str) -> tuple[Path, dict[Path, byte
                 "sha256": archive_builder.runtime_bundle.compute_bundle_identity(
                     [record]
                 ),
-                "provider_runtime_version": "5.0.12",
+                "provider_runtime_version": "5.1.0",
                 "wire_contract_sha256": base["wire_contract_sha256"],
                 "signing": {
                     "mode": "developer_id",
@@ -400,6 +401,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
             )
             manifest_path = handoff / "runtime-manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            expected_version = manifest["artifacts"][0]["provider_runtime_version"]
             manifest["artifacts"][0]["provider_runtime_version"] = "9.9.9"
             manifest_path.chmod(0o600)
             manifest_path.write_text(
@@ -412,7 +414,7 @@ class StageRuntimeHandoffTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-                "provider version mismatch: expected 5\\.0\\.12, received 9\\.9\\.9",
+                re.escape(f"provider version mismatch: expected {expected_version}, received 9.9.9"),
             ):
                 importer.stage_runtime_handoff(handoff, repo_root=repo)
 

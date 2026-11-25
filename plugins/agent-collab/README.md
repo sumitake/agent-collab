@@ -6,9 +6,9 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Package version: **7.0.9**
+Package version: **7.1.0**
 
-This package includes signed and notarized provider runtime `5.0.12` for macOS
+This package targets signed and notarized provider runtime `5.1.0` for macOS
 arm64 and x86_64, with manifest schema 4, runtime protocol 5, native contract 4,
 and wire schema 12. The descriptor admits 12 logical actions and eight logical
 agents. The public coordinator is a bounded routing-only shim.
@@ -22,12 +22,14 @@ exact method-level evidence for external API blockers. Runtime 5.0.12 adds
 bounded optional hints for some native Agy startup failures while leaving
 request status and content semantics unchanged. OpenCode 2 compatibility uses
 plain ACP startup and checks model availability without creating a session or
-sending a prompt. Carrier bindings and route
-admissions remain unchanged; Claude is admitted only for document intent.
+sending a prompt. Runtime 5.1.0 adds Gemini architecture and code generation.
+Claude supports conceptual architecture, document extraction, reasoning, and
+intent. Target Claude explicitly to request it for these actions.
 
-The included project-estimation data is a fresh version-bound bootstrap with
-its calibration warnings retained. Prices cover configured model records only;
-unknown models remain unpriced and numeric quotas remain unknown.
+When both CLI generations are installed, put the OpenCode 2 executable first on the PATH of the host that launches the plugin. From that environment, `opencode --version` should report 2.x and `opencode models --standalone` should list the available models.
+
+Release preparation requires a version-bound project-estimation handoff.
+The cost estimator identifies unpriced models and unknown quotas explicitly.
 
 This README records the package contract. Current publication, installation,
 and host-session evidence belongs in the repository README and architecture
@@ -203,8 +205,7 @@ cwd restrictions for document-only work. For code generation, pass a disposable
 copy rather than the canonical repository and retain the patch before cleanup.
 Honor an operator-named provider with `explicit_target`. For an authorized
 independent review or governance task without an operator-named provider, use
-that same field to bind the caller-verified reviewer distinct from the primary
-and every contributing author family. Carry the same target into planning and
+that same field to bind the caller-verified reviewer distinct from the primary. Carry the same target into planning and
 live dispatch; untargeted planning does not bind a later live request. Target
 unavailability is reported without silent substitution or replay. Ordinary
 advisory calls otherwise use normal economic routing. Configuration may
@@ -221,6 +222,22 @@ inputs. A work unit requires `id`, descriptor-admitted `capability`, and
 `depends_on`, and exactly one of `payload` or `payload_ref`. Live dispatch
 requires a materialized `payload`; `explicit_target`, `native_restrictions`,
 and size estimates are optional.
+
+For example, set `dispatch_requested` to `false` and include this work unit
+to plan a Gemini repository architecture review from a checkout:
+
+```json
+{"id":"design","capability":"architecture.repository","explicit_target":"gemini","depends_on":[],"payload":"Review the module boundaries and identify one maintainability risk."}
+```
+
+For live Gemini architecture or governance, set `gemini_model` on the explicitly
+targeted work unit to the currently qualified frontier model’s catalog ID or
+exact label. The native catalog supplies no frontier ranking. For general or
+frontend code generation, supply a disposable checkout. The runtime uses the
+selected native Gemini Orchestrator, or you can choose one for this work unit
+using `gemini_model`. An ambiguous or unavailable selection
+stops before inference. The caller verifies source and response identity for
+governance and reviews and tests the returned diff for code generation.
 
 Use one work unit per independently useful deliverable and `depends_on` only
 for actual ordering. Choose quality and effort for the work, and supply
@@ -261,7 +278,7 @@ review.repository
 ## Direct runtime boundary
 
 The package source targets one schema-4 manifest with wire schema 12, runtime
-protocol 5, native contract 4, and provider runtime `5.0.12`. The final manifest binds the
+protocol 5, native contract 4, and provider runtime `5.1.0`. The final manifest binds the
 canonical wire digest and one signed/notarized standalone bundle for each
 supported macOS architecture (`arm64` and `x86_64`).
 

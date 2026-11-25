@@ -72,7 +72,7 @@ Installation, selection, and readiness are separate checks.
    snapshot. A listed route is not proof of readiness.
 5. **Bounded smoke test:** invoke one low-risk read-only workflow, such as a
    second opinion on a short draft, and verify the returned family is eligible
-   and independent of the primary and every contributing author where the task
+   and independent of the primary where the task
    requires independent approval. Use native identity evidence correlated to
    the returned response; configuration and routing alone are insufficient.
    Missing evidence leaves independent approval unmet and the result advisory;
@@ -249,7 +249,7 @@ contains the invocation guidance.
 | `duplicate_blocked` or migration conflict | A retired package remains active or installed. | Run migration doctor, apply only its host-specific removal actions, and run it again. |
 | `unavailable` | The route, runtime, provider prerequisite, or observed readiness is not currently usable. | Run runtime status and migration doctor; check supported vendor authentication separately. Do not use a raw-provider fallback. |
 | Reviewer shares a required excluded family | The primary cannot count that output as independent governance evidence. | Where independence is required, select an eligible different family before dispatch. Ordinary review may retain the output as advisory; the current routing wire does not enforce lineage exclusion. |
-| Reviewer or any contributing author lineage is unknown | Independent approval remains unmet. Missing reviewer evidence is not provider unavailability and does not stop ordinary read-only advisory work. | Verify every author's lineage and response-correlated native reviewer identity; configuration, a host nickname, or an installation path is insufficient. Keep usable advisory content; do not replay a consumed request to improve lineage. |
+| Active-primary or reviewer lineage is unknown | Independent approval requires verified distinct lineages. | Verify the primary and the response-scoped reviewer identity. Preserve useful advisory content and record contributor provenance separately. |
 | `config_error` | Request fields, host identity, or route/action pairing violate the closed schema. | Use the installed skill/package reference; remove unsupported fields rather than widening the schema. |
 | `auth_error` or `quota_error` | The managed provider prerequisite failed after routing. | Use the provider's supported login/account interface or wait for quota. Keep the same authority. |
 | Output-only worker made no caller-worktree changes | Expected behavior. | Review the returned artifact and apply it through the trusted primary if appropriate. |

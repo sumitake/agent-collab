@@ -2,37 +2,23 @@
 
 < [Architecture handbook index](README.md)
 
-Claude participates in three distinct roles: as a supported host and resident
-primary, through separately authorized host-owned asynchronous coordination,
-and through one narrow managed native route. Keeping those roles separate
-prevents a valid document-intent route from being mistaken for review,
-governance, repository, or code-generation authority.
+Claude can host the plugin, act as the resident primary, and serve selected
+managed actions through its official CLI. Host-owned asynchronous coordination
+requires separate authorization.
 
-## The managed route
+## Managed actions
 
-The signed runtime descriptor admits Claude only for
-`context.documents.intent`. The selected carrier invokes the locally installed
-official Claude CLI and returns bounded opaque content with separate execution
-diagnostics. The caller supplies and verifies the document inputs; a response
-does not prove every document was read or establish a `context_text` artifact.
-No general Claude transport is exposed in the routing request.
+Runtime 5.1.0 admits Claude for four read-only actions. Use
+`architecture.conceptual` for a design question supplied as text,
+`context.documents.intent` for intent comparison, `context.documents.extract`
+for extraction, and `context.documents.reason` for reasoning over supplied
+documents. The caller reads the returned content and checks it against the
+inputs. Repository access, managed review, governance, and code generation
+remain outside Claude's managed authority.
 
-Routing is deliberately cost-last: eligible Gemini and Grok document-intent
-routes precede Claude. Claude becomes a candidate only within the same sealed
-request after those higher-priority routes are ineligible before provider
-execution. This is route selection, not replay or a second invocation.
-
-The boundary is action- and source-specific:
-
-- allowed: document intent under `context.documents.intent`;
-- not allowed: document extraction or general document reasoning;
-- not allowed: repository or conceptual-prompt sources; and
-- not allowed: review, governance, architecture, planning, delegation, or
-  code generation.
-
-Planning can select Claude only for its admitted action. A route decision
-does not prove authentication, enable another action, or establish the
-availability of the whole family.
+Set `explicit_target` to `claude` to select it. Automatic planning places
+Claude after the existing eligible routes for these actions. Live authentication
+and execution are checked separately for the selected route.
 
 ## Provider and credential boundary
 
@@ -40,7 +26,7 @@ The route uses the provider's own installed CLI. The package does not extract
 subscription credentials, reuse them in another client, or convert them into
 API credentials. Authentication and CLI currency remain owned by the official
 tool. The runtime preserves native results and available content separately;
-the caller determines whether the requested intent comparison completed.
+the caller determines whether the response satisfies the requested action.
 
 Native transport and lifecycle controls may be parsed, but provider prose or
 structured-output shape does not establish document evidence or gate bounded
@@ -54,8 +40,8 @@ not enable another Claude action and is not a passed native inference check.
 
 During the 7.0.6 follow-up, one fresh admitted document-intent attempt returned
 an organization subscription-access denial. Package installation and
-provider-free readiness did not establish inference access. Omitted Claude
-profiles remain unqualified in [#162](https://github.com/sumitake/agent-collab/issues/162);
+provider-free readiness did not establish inference access. At that release, additional Claude
+profiles remained unqualified in [#162](https://github.com/sumitake/agent-collab/issues/162);
 the attempt was not replayed, and no billing or credential change was made.
 
 For 7.0.7, the supported Claude package update succeeded and every released
@@ -91,12 +77,12 @@ the trusted resident primary. The primary interprets the user's objective,
 authors and integrates work, adjudicates cross-family feedback, runs
 verification, and owns landing decisions within operator authority.
 
-The native document-intent route does not change independence rules. When the
-active primary or any contributing artifact author is Anthropic-family, the
+Managed text actions carry advisory authority. When the
+active primary is Anthropic-family, the
 primary and repository/skill workflow must exclude same-family evidence where
 an independent family is required. Conversely, when another family is primary,
-Claude document intent remains context only; it cannot satisfy a review or
-governance evidence contract.
+Claude can provide text input to a review. Independent approval requires an
+admitted governance reviewer.
 
 ## Asynchronous participation
 
@@ -104,9 +90,4 @@ Host-owned asynchronous coordination remains a separate, explicitly
 authorized surface. Host tooling owns addressability checks; the public coordinator does
 not report async readiness or send async messages. An async response keeps the authority of that
 coordination channel and does not become managed runtime evidence merely
-because Claude also has a native document-intent route.
-
-The accurate summary is therefore action-scoped: Claude is a fully supported
-host and resident primary, may participate through separately authorized async
-coordination, and is a managed native carrier only for read-only document
-intent. No one of those roles silently widens either of the others.
+because Claude also has managed native routes.

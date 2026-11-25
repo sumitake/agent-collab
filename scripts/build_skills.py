@@ -291,7 +291,11 @@ def inject_runtime_invocation(spec_name: str, rendered: str) -> str:
         "unit's `execution_status` are separate facts.\n"
     )
     if spec_name in REVIEW_GOVERNANCE_SPECS:
-        block += FRESH_REVIEW_ALLOWANCE
+        block += (
+            "For each proposed hardening change, identify the requirement or credible failure "
+            "it addresses and the failure paths it would introduce. Choose the simplest remedy "
+            "that resolves the problem. Explain why you set aside speculative complexity.\n"
+        ) + FRESH_REVIEW_ALLOWANCE
     return rendered[: match.end()] + block + rendered[match.end() :]
 
 

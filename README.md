@@ -5,9 +5,9 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.9).
+This public repository's candidate source is **agent-collab** (v7.1.0).
 
-Current published release: **7.0.9** ([`v7.0.9`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)),
+Current published release: **7.0.9** ([`v7.0.9`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)).
 The v7.0.9 closeout is recorded in the dated evidence below. It carries
 signed and notarized provider runtime `5.0.12` for macOS ARM64 and
 Intel. The [dated evidence snapshot](docs/architecture/status-and-evidence.md)
@@ -25,31 +25,18 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.0.9
+## What's new - v7.1.0
 
-The published 7.0.9 package includes signed and notarized provider runtime
-`5.0.12` for both macOS architectures. Worker guidance distinguishes expected
-task time from the runtime's admitted-progress inactivity lease, which defaults
-to 24 hours when omitted. It shows callers how to choose a bound, retain
-partial work when stopping, and use primary-owned validation or a specific
-preverified interpreter. Review guidance asks for exact, version-matched
-evidence before reporting an external API blocker. Runtime 5.0.12 adds bounded
-optional hints for some native Agy startup failures without changing request
-status or returned content. OpenCode 2 compatibility uses plain ACP startup and
-checks model availability without creating a session or sending a prompt.
-Routes and admissions remain unchanged; Claude is
-admitted only for document intent.
+The release candidate adds Gemini conceptual and repository architecture,
+governance with a qualified frontier model, and general and frontend code
+generation with a Gemini Orchestrator. Agy chooses its native effort.
+The caller checks and applies proposed edits from a disposable checkout.
+Reviewer guidance asks the caller to weigh the failure a proposed safeguard
+would prevent against the failure paths the safeguard would add.
 
-The package includes a fresh version-bound project-estimation bootstrap. Its
-pricing snapshot covers the configured model records; unknown models remain
-unpriced and numeric quotas remain unknown. Bootstrap calibration warnings are
-retained.
-
-The [dated evidence](docs/architecture/status-and-evidence.md) separates
-staged qualification, review, publication, and installed-instance observations.
-Earlier failed or incomplete attempts remain historical evidence.
-
-For earlier release history, see the full [CHANGELOG](CHANGELOG.md).
+On the signed candidate, Claude passed conceptual architecture, document
+extraction, and document reasoning at economical, standard, and frontier
+quality. Its comparison providers passed the same nine fixtures.
 
 ## What ships
 

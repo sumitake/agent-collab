@@ -63,7 +63,7 @@ _TOP_FIELDS = {
 _UNIT_FIELDS = {
     "id", "capability", "depends_on", "payload", "payload_ref",
     "explicit_target", "native_restrictions", "context_size_estimate",
-    "output_size_estimate",
+    "output_size_estimate", "gemini_model",
 }
 _QUALITY = {
     "frontier": "frontier", "pro": "frontier", "high": "frontier",

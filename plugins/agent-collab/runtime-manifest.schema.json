@@ -18,7 +18,7 @@
     "protocol_version": {"const": 5},
     "contract_version": {"const": 4},
     "wire_contract_sha256": {
-      "const": "a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a"
+      "const": "378bfe6807cb58a84a4057f577a95e98223be8e6f1c74d4ae3e9f456787d37eb"
     },
     "wire_contract": {
       "type": "object",
@@ -169,8 +169,8 @@
           "entrypoint": {"const": "agent-collab-runtime"},
           "size": {"type": "integer", "minimum": 1, "maximum": 67108864},
           "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "provider_runtime_version": {"const": "5.0.12"},
-          "wire_contract_sha256": {"const": "a675807e0ff5f0544d7cc9d659914ce2dadac9be8efd0fb56635815e5c3e842a"},
+          "provider_runtime_version": {"const": "5.1.0"},
+          "wire_contract_sha256": {"const": "378bfe6807cb58a84a4057f577a95e98223be8e6f1c74d4ae3e9f456787d37eb"},
           "files": {
             "type": "array",
             "minItems": 1,

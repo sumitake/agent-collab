@@ -118,7 +118,7 @@ class RenderTemplateTests(unittest.TestCase):
         for required in (
             "Before dispatch, record the observed lineage",
             "After the response returns, record the observed reviewer lineage",
-            "every contributing author family",
+            "Prior contributors remain eligible for a fresh independent review.",
             "OpenCode name is transport information, not lineage",
             "Provider-free planning inspects eligible actions and routes",
             "it does not prove model identity",

@@ -22,12 +22,12 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
     ) -> None:
         self.assertEqual([str(expected)], re.findall(pattern, section))
 
-    def test_generated_skills_and_host_manifests_are_version_7_0_9(self) -> None:
+    def test_generated_skills_and_host_manifests_are_version_7_1_0(self) -> None:
         for path in (PLUGIN / "skills").glob("*/SKILL.md"):
-            self.assertIn("\nversion: 7.0.9\n", path.read_text(encoding="utf-8"))
+            self.assertIn("\nversion: 7.1.0\n", path.read_text(encoding="utf-8"))
         for host in (".claude-plugin", ".codex-plugin"):
             manifest = json.loads((PLUGIN / host / "plugin.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "7.0.9")
+            self.assertEqual(manifest["version"], "7.1.0")
 
     def test_readme_documents_routing_only_protocol_five(self) -> None:
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
@@ -109,7 +109,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 self.assertIn("Carry that same target into planning and live", block)
                 self.assertIn("Honor an operator-named provider", block)
                 self.assertNotIn("only when the operator names", block)
-                self.assertIn("every contributing author family", block)
+                self.assertIn("Prior contributors remain eligible for a fresh independent review.", block)
                 self.assertIn("does not prove\nmodel identity", block)
                 self.assertIn("Configuration-scoped observations remain configuration", block)
                 self.assertIn("response-scoped native evidence", block)
@@ -193,7 +193,7 @@ class UnifiedSkillRuntimeContractTests(unittest.TestCase):
                 for fictional in ("independent family", "independent-family", "resolved family", "independent vs. resolved", "only when the operator names"):
                     self.assertNotIn(fictional, text)
         merge = " ".join((PLUGIN / "skills" / "merge-resolve" / "SKILL.md").read_text().split())
-        self.assertIn("authors of both sides", merge)
+        self.assertIn("Prior contributors remain eligible for a fresh independent review.", merge)
         self.assertIn("Switching to the primary cannot clear that requirement", merge)
         self.assertNotIn("switch the independent-resolver direction", merge)
         debate = (PLUGIN / "skills" / "debate" / "SKILL.md").read_text()

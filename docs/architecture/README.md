@@ -33,7 +33,7 @@ manifest schema 4, runtime protocol 5, native contract 4, and wire schema 12.
    labels and records the dated evidence snapshot used by this documentation.
 8. [Claude participation](claude-participation.md) explains Claude's three
    distinct roles: fully supported host and resident primary, optional async
-   participant, and action-scoped managed document-intent carrier.
+   participant, and managed carrier for conceptual architecture and document work.
 
 Historical and design material is indexed separately in
 [`docs/design/README.md`](../design/README.md). It is not automatically the
@@ -68,8 +68,7 @@ The public repository and package preserve these invariants:
    provider.
 2. Callers select a skill or logical collaboration job. They do not receive a
    raw provider-execution escape hatch.
-3. Governance review requires a model family independent of the active primary
-   and every contributing artifact-author family, established through native
+3. Governance review requires a model family independent of the active primary, established through native
    identity evidence correlated to the returned review.
 4. Route authorities are closed. Read-only, output-only, and unavailable
    actions do not promote themselves because another route failed.

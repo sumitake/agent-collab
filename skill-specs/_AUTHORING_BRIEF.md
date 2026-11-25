@@ -1,8 +1,7 @@
 # Skill-spec authoring brief
 
 Author every collaboration skill for a dynamically resolved primary. Where
-independence matters, require the caller to establish the primary, every
-contributing artifact author, and reviewer lineages before accepting a
+independence matters, require the caller to establish the primary and reviewer lineages before accepting a
 response as independent governance evidence. Selecting a candidate is not
 independent approval: planning reports route eligibility, not model identity,
 and configuration-scoped observations never prove response identity.
@@ -23,7 +22,8 @@ Required body properties:
 - keep executable substitutions as bare commands without prose or Markdown;
   the spec owns the surrounding sentence and code backticks;
 - state that unavailable native routes return typed unavailable;
-- keep Claude action-scoped: managed only for document intent, ineligible for
+- limit Claude to conceptual architecture and document intent, extraction, and
+  reasoning. Use another admitted provider for
   review, governance, repository, and code-generation actions, with host-owned
   asynchronous coordination treated as a separate surface;
 - never weaken the plan/build or advisory/build authority boundary.

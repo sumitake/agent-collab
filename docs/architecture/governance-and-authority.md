@@ -10,9 +10,7 @@ tool call is not evidence that the caller should receive broader permissions.
 ## Independence model
 
 For governance-grade review, repository and skill policy requires a recorded
-active-primary lineage and the lineage of every contributing artifact author.
-The primary must select a reviewer outside the primary and all contributing
-author families. If any required lineage is unknown, independent approval
+active-primary and reviewer lineage. The reviewer must be distinct from the primary. Prior contributors remain eligible for a fresh independent review. If any required lineage is unknown, independent approval
 remains unmet. Missing reviewer identity evidence is not provider
 unavailability: keep usable advisory content, do not stop ordinary read-only
 advisory work, and do not replay a consumed request to improve lineage.
@@ -20,9 +18,9 @@ OpenCode is a transport/host surface; the selected model's lineage supplies
 family provenance.
 
 The current public runtime request has no primary or artifact-author-lineage
-field. It does not dynamically perform this exclusion. The skill and repository
-workflow require it, and the primary verifies the selected reviewer and the
-substance of the exact-head review.
+field. The caller records artifact authorship for provenance, verifies that the
+reviewer and active primary have distinct lineages, and checks the substance
+of the review against the exact source. Contributors can review that source.
 
 For an authorized independent review, known native configuration or earlier
 observations can identify a candidate. The caller binds that selection to the
@@ -48,9 +46,9 @@ cannot become governance evidence through a role assignment or successful call.
 
 ```mermaid
 flowchart LR
-    Artifact["Artifact plus all contributing author lineages"] --> Eligibility["Caller verifies required lineages"]
+    Artifact["Exact artifact under review"] --> Eligibility["Caller verifies required lineages"]
     Primary["Active primary lineage"] --> Eligibility
-    Eligibility --> Exclude["Caller excludes primary and every author family"]
+    Eligibility --> Exclude["Caller verifies an independent reviewer"]
     Exclude --> Reviewer["Caller selects a reviewer candidate"]
     Reviewer --> Evidence["Caller verifies response identity, source and findings"]
     Evidence --> PrimaryGate["Primary integration and repository gates"]
@@ -67,7 +65,7 @@ be mistaken for additional sandbox guarantees in the routing envelope:
 
 | Authority | Meaning | Examples in the current public contract |
 | --- | --- | --- |
-| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude document intent, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
+| **read-only** | May inspect bounded input and return analysis, review, plans, or context. | Claude conceptual architecture and document work, Gemini advisory/governance/context, Codex advisory/governance, OpenCode plan/context/governance, Grok architecture/governance/context. |
 | **output-only** | The caller supplies a disposable repository or copy, captures output or patches, reviews/tests them, and owns application and cleanup. | Admitted code-generation work; inspect the current descriptor for eligible targets. |
 | **unavailable** | The contract name is recognized but no hardened backend currently satisfies it on the observing host or runtime. | Any route whose typed readiness result is unavailable; this is not inferred from the descriptor alone. |
 | **primary-executed** | The active primary follows the skill locally; no independent managed route is implied. | Self-executed engineering-process skills and primary-only visual guidance where typed media transport is absent. |
@@ -79,8 +77,7 @@ No failure converts one row to another. In particular:
   unavailable;
 - the runtime does not itself apply output; callers must supply a disposable
   copy and verify it before application;
-- independent approval cannot accept an unknown primary or contributing
-  author family; that missing evidence leaves the requirement unmet and
+- independent approval cannot accept an unknown primary or reviewer family; that missing evidence leaves the requirement unmet and
   does not make the provider unavailable;
 - an explicit target is not silently replaced by a different provider; and
 - a successful result does not gain merge, deployment, release, or policy
@@ -124,8 +121,7 @@ The trace proves that required evidence was recorded in the expected form. It
 does **not** cryptographically prove that quoted review prose came from the
 claimed reviewer. This is an intentional, documented residual boundary:
 
-- skill and repository policy require family independence from the primary
-  and every contributing author, verified against native identity evidence
+- skill and repository policy require family independence from the primary, verified against native identity evidence
   correlated to the returned response;
 - repository automation validates trace form and presence; and
 - the primary, independent reviewer, and operator validate substance and exact
@@ -156,8 +152,7 @@ and its evidence is verified.
 ## Why these controls matter
 
 - **Different failure modes:** independent model families are more likely to
-  expose correlated assumptions than another instance of the primary or a
-  contributing author's family.
+  expose correlated assumptions than another instance of the primary.
 - **Least authority:** a route receives only the permission its work requires,
   reducing the cost of a hallucination or prompt-injection failure.
 - **Honest evidence:** unavailable execution describes that attempt;

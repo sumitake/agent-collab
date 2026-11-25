@@ -1,6 +1,6 @@
 ---
 name: logic-check
-version: 7.0.9
+version: 7.1.0
 defaults:
   quality_profile: frontier
   effort_class: maximum
@@ -12,6 +12,7 @@ description: Audit a verifiable, step-wise computation (arithmetic, financial ca
 
 Resolve the **plugin root** from this loaded file: `SKILL.md` is at `<plugin-root>/skills/<skill-name>/SKILL.md`. Invoke only `python3 "<plugin-root>/coordinator.py"` and send one bounded JSON routing request on EOF-delimited stdin, without a PTY. Use the Python invocation example in the **Routing request** section in `<plugin-root>/README.md` and the co-packaged manifest's signed `wire_contract`; never invent fields or provider actions. Supply one caller-defined work unit per independently useful deliverable, with this skill's logical action and a bounded opaque payload. Use `depends_on` only for actual dependencies. Honor an operator-named provider with `explicit_target`. For an authorized independent review or governance task without an operator-named provider, also use that field to bind the caller-verified distinct reviewer selected by the caller or designated by the workflow. Carry the same target into planning and live dispatch; verify returned response-scoped native evidence before accepting independence. Otherwise use normal untargeted routing. Choose quality and effort for the workload; include context/output token estimates when known. The coordinator fills the installed wire digest and reads each working directory's current device/inode at dispatch. For a repository action, name the exact source directory as `native_restrictions.cwd`; if omitted, a read-only action is bound to the caller's repository or a linked worktree of it, never elsewhere. Read the result's `repairs` list. The runtime owns its timeout; do not wrap it in a shorter fixed timeout. Repository identity, source-head verification, disposable copies, patch capture, and cleanup remain caller-owned where applicable. For bounded delegation, explicitly set the supported top-level `deadline_ms`; omitting it uses the 24-hour default. Production actions use an admitted-progress inactivity lease, so this is not a hard total-duration limit: valid progress can renew it. Treat prose duration estimates as expectations, not runtime limits. The caller owns any decision to cancel and verifies the runtime's cleanup; preserve partial content and classify caller cancellation accurately. Never replay the consumed work unit or infer provider outage from cancellation. The shim runs standalone from the installed plugin and transports the routing client's bounded result without semantic interpretation. Never discover a provider executable, reconstruct a raw command, or replay, retry, or fail over a consumed work unit. Provider status, terminal records, receipts, telemetry, and other structured fields are optional diagnostics; none is a content-availability gate. Preserve every returned content record or recovered partial response and interpret it with ordinary model reasoning. Never synthesize approval, authority, or a receipt from process exit or missing diagnostics. Let the native runtime complete its own turns and tool recovery within the original invocation. Keep the OS account's canonical HOME and native configuration; do not create copied login profiles or replacement runtimes. Carry existing operator authorization across tool steps for the same action, source, provider, and scope; do not ask for it again merely because a diagnostic or tool boundary occurred. A planning-only request sets `dispatch_requested=false`; a live request sets it true and consumes at most one provider attempt per work unit.
 Planning reports route eligibility, not model identity, live availability, or authentication. Report a caller/client failure at that layer; provider state remains unknown unless native evidence establishes it. Content availability and each work unit's `execution_status` are separate facts.
+For each proposed hardening change, identify the requirement or credible failure it addresses and the failure paths it would introduce. Choose the simplest remedy that resolves the problem. Explain why you set aside speculative complexity.
 When a completed or terminated read-only review or governance attempt definitively produced no substantive result and no uncertain external mutation, retain that failed attempt as evidence. The caller may then issue at most one new corrected request as a new work unit after fixing a demonstrated setup defect with already authorized context and tools, such as inlining an inaccessible external plan or using an already available interpreter. Keep the same source hash, provider, and known-distinct reviewer requirements, and the original identical authorized scope. The allowance is one correction total per original request across all descendant work units; a corrected work unit cannot issue another correction or reset the allowance. Retain the original-request identity and both attempts in the caller's trace. Do not copy login profiles or expand permissions. This is not a replay, retry, or failover of the consumed work unit, not a runtime automatic retry, and not a provider switch to evade findings. Do not use it to repair formatting or missing lineage, or when failure is unproven or a native mutation is ambiguous. If findings or usable partial content exist, interpret them instead. Native one-process completion remains separate.
 
 # Logic check — separate re-derivation of a verifiable computation
@@ -48,12 +49,11 @@ Skip this skill when:
 Independence is caller-verified governance evidence, not a routing guarantee.
 Selecting a candidate and accepting independent approval are different stages.
 
-Before dispatch, record the observed lineage and source for the active primary
-and every contributing artifact author. Use currently known native configuration
+Before dispatch, record the observed lineage and source for the active primary. Prior contributors remain eligible for a fresh independent review. Record and verify artifact-author lineage for provenance. Use currently known native configuration
 or response-scoped observations for potential family selection only.
 Provider-free planning inspects eligible actions and routes; it does not prove
 model identity. Select a reviewer only when its currently known lineage is
-distinct from the primary and every contributing author family. Honor an operator-named provider; do not silently replace it.
+distinct from the primary. Honor an operator-named provider; do not silently replace it.
 For an authorized independent review or governance task without an operator-named
 provider, bind the verified reviewer selected by the caller or designated by the
 workflow using `explicit_target`. Carry that same target into planning and live
@@ -72,8 +72,8 @@ After the response returns, record the observed reviewer lineage and source.
 Configuration-scoped observations remain configuration; they never prove the
 model that produced the returned response. Independent approval requires
 response-scoped native evidence correlated to that returned response, with
-known primary, contributing-author, and reviewer lineages, and a reviewer
-distinct from the primary and every contributing author family. A route,
+known primary and reviewer lineages, and a reviewer
+distinct from the primary. A route,
 provider name, status, receipt, self-assertion, or configuration observation
 alone does not prove lineage. Preserve unknown lineage as unknown. Do not replay a
 consumed review to repair missing lineage, formatting, or adverse findings;
@@ -100,8 +100,7 @@ This is the load-bearing methodological discipline of the skill. **Send the prob
 
 But: **do send the constraints and assumptions** the active primary used. Implicit choices (currency, rounding rule, FIFO/LIFO ordering, time zone, leap-year handling, edge-case treatment, unit conventions, statistical-test-tail-handling) will produce spurious divergence if the verifier defaults differently. Stating constraints explicitly is not "leading the witness" — it pins the problem to the same instance the active primary was solving.
 
-Before dispatch, select a reviewer with known lineage distinct from the observed
-primary and every contributing artifact author. Submit the sealed logic-check role through
+Before dispatch, select a reviewer with known lineage distinct from the observed primary. Submit the sealed logic-check role through
 `python3 "<plugin-root>/coordinator.py"` with `quality_profile='frontier'` and `effort_class='maximum'`. Verify the observed
 reviewer lineage before treating its response as independent governance evidence.
 Use this prompt template for substantive derivation. The caller reasons over the
@@ -153,8 +152,7 @@ TRACE:
 
 ### 4. Compare the two derivations
 
-First verify the returned response-scoped evidence against the primary and every
-contributing author family. Use independent wording only when every independent-
+First verify the returned response-scoped evidence against the primary. Use independent wording only when every independent-
 governance requirement is met; otherwise label the comparison advisory. Asking
 for a derivation without sharing the original answer reduces anchoring, but does
 not itself establish reviewer-family independence.
@@ -204,6 +202,6 @@ The constraints-explicit final-answer pattern applies uniformly across all of th
 - **Using this skill for non-verifiable judgment work.** Open-ended reasoning, strategy, recommendations belong in `second-opinion`. The re-derivation mechanism requires a definite right answer.
 - **Treating final-answer agreement as proof.** Two models can both be wrong in the same way, especially on textbook-style problems with well-known wrong answers (or on problems where the constraint statement is ambiguous in the same way to both models). Agreement is one signal, not a guarantee.
 - **Using economical/minimal for multi-step calculations.** Computational care benefits from reasoning depth; use frontier/maximum unless the check is genuinely trivial.
-- **Claiming independent verification when observed reviewer and computation-author lineages match or are unknown.** Re-derivation may still provide useful advisory findings, but cannot clear an independent verification requirement.
+- **Claiming independent verification when observed reviewer and primary lineages match or are unknown.** Re-derivation may still provide useful advisory findings, but cannot clear an independent verification requirement.
 - **Silently switching the answer** if the audit disagrees and the verifier is right. Show the user what changed and why; the source-of-error attribution is the deliverable, not just the corrected number.
 - **Re-deriving a 30+ step trace blindly when transition critique would work.** Incomparable parallel derivations waste both turns; fall back to step-by-step transition verification for large traces.
