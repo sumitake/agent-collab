@@ -176,7 +176,7 @@ A useful structure for the user-facing report:
 
 ### 5. Adjudicate, then close
 
-Finish with a short synthesis paragraph that **calls the question** for the user. Which of the panel's points are load-bearing — i.e., should change the artifact or the decision? Which are noise the user can set aside? What, if anything, should be revised before commit? A cross-check that ends "here is what the panel said" without an adjudication has pushed the synthesis work back onto the user; do not stop there. The operator remains the final gate on any consequential or irreversible decision — the panel informs, it does not decide.
+Finish with a short synthesis paragraph that **calls the question** for the user. Which of the panel's points are load-bearing — i.e., should change the artifact or the decision? For a proposed safeguard, what concrete failure would it prevent, and could a simpler change address it with fewer ways to fail? What, if anything, should be revised before commit? A cross-check that ends "here is what the panel said" without an adjudication has pushed the synthesis work back onto the user; do not stop there. The operator remains the final gate on any consequential or irreversible decision — the panel informs, it does not decide.
 
 ## Structured-artifact review lens
 

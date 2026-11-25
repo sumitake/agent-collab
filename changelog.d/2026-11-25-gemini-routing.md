@@ -1,0 +1,1 @@
+- Add Gemini architecture and code-generation routing guidance and clarify how review callers weigh proposed safeguards.

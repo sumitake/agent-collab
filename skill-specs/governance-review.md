@@ -6,7 +6,7 @@ description: Use when the operator says "governance review," "high-stakes review
 
 # Independent governance review
 
-Use only `governance.repository`. The caller creates one bounded work unit for
+Use only `governance.repository`. When targeting Gemini, supply the currently qualified frontier selection in `gemini_model` as described in the package README. The caller creates one bounded work unit for
 the immutable review scope and runs it from the canonical repository at the
 exact expected source head. Do not send a provider route/action pair or
 reconstruct a provider command.

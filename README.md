@@ -5,7 +5,7 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's current source is **agent-collab** (v7.0.9).
+This public repository's candidate source is **agent-collab** (v7.1.0).
 
 Current published release: **7.0.9** ([`v7.0.9`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)),
 The v7.0.9 closeout is recorded in the dated evidence below. It carries

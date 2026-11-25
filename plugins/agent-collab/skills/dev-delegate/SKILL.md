@@ -1,6 +1,6 @@
 ---
 name: dev-delegate
-version: 7.0.9
+version: 7.1.0
 defaults:
   quality_profile: standard
   effort_class: standard
@@ -15,7 +15,7 @@ Planning reports route eligibility, not model identity, live availability, or au
 
 # Dev-delegate
 
-Use `codegen.repository` or `frontend_codegen.repository`. Provide the canonical
+Use `codegen.repository` or `frontend_codegen.repository`. A Gemini target uses a current Gemini Orchestrator. To select a different live Orchestrator for this unit, use `gemini_model` as described in the package README. Provide the canonical
 source identity, objective, owned paths, expected patch, test expectations,
 budget, and stop conditions. The caller creates a disposable repository copy,
 records its identity and source head, and supplies that directory as the work
