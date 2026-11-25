@@ -87,6 +87,18 @@ The public changelog intentionally records policy, compatibility, and migration 
   the fix takes effect once the primary checkout (whose working tree hosts
   the active hooksPath copies) is updated to a commit containing it.
 
+### agent-collab 7.1.0 — runtime 5.1.0
+
+- Request Gemini conceptual or repository architecture, repository governance, and general or frontend code generation using a model selected from the current native catalog.
+- Let Agy select native effort and preserve the caller's logical review floor.
+- Ask review callers to identify the failure a proposed safeguard addresses and weigh the new failure paths it would add.
+- Keep prior contributors eligible to review the exact change in a fresh independent assessment alongside other reviewers.
+- Target Claude for conceptual architecture, document extraction, or document reasoning at any supported quality level.
+
+### Documentation
+
+- Record agent-collab 7.0.9 publication, complete installed-file verification and bounded native confirmations; align the architecture handbook and root README while preserving historical limitations.
+
 ### agent-collab 7.0.9 — runtime 5.0.12
 
 #### Changed
