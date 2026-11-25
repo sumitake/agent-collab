@@ -5,18 +5,16 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-This public repository's candidate source is **agent-collab** (v7.1.0).
+**agent-collab** (v7.1.0)
 
-Current published release: **7.0.9** ([`v7.0.9`](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)).
-The v7.0.9 closeout is recorded in the dated evidence below. It carries
-signed and notarized provider runtime `5.0.12` for macOS ARM64 and
-Intel. The [dated evidence snapshot](docs/architecture/status-and-evidence.md)
-records verified publication, installation through four local host managers,
-and native Intel installation. Fresh installed checks passed for Claude
-intent, Codex and Grok repository architecture, Google repository extraction,
-and Intel OpenCode Go repository architecture. Existing conversations can
-retain their earlier skill catalog until the host reloads. The package README
-remains the immutable release-time snapshot.
+Current published release: **7.1.0**. The v7.1.0 closeout is recorded in the
+dated evidence below. The package carries signed and
+notarized runtime 5.1.0 for macOS ARM64 and Intel. All 184 released files
+matched installations managed by Claude Code, Codex, Antigravity and Grok on
+Apple Silicon and by Codex on native Intel. The dated evidence records which
+providers answered fresh requests. Existing conversations can retain an
+earlier skill catalog. [Release](https://github.com/sumitake/agent-collab/releases/tag/v7.1.0)
+· [Dated evidence](docs/architecture/status-and-evidence.md)
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
 the system boundaries and lifecycle. The package reference below is the
@@ -27,14 +25,14 @@ installation, and readiness claims separate.
 
 ## What's new - v7.1.0
 
-The release candidate adds Gemini conceptual and repository architecture,
+The release adds Gemini conceptual and repository architecture,
 governance with a qualified frontier model, and general and frontend code
 generation with a Gemini Orchestrator. Agy chooses its native effort.
 The caller checks and applies proposed edits from a disposable checkout.
 Reviewer guidance asks the caller to weigh the failure a proposed safeguard
 would prevent against the failure paths the safeguard would add.
 
-On the signed candidate, Claude passed conceptual architecture, document
+Before publication, on the signed runtime, Claude passed conceptual architecture, document
 extraction, and document reasoning at economical, standard, and frontier
 quality. Its comparison providers passed the same nine fixtures.
 
@@ -123,17 +121,17 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The published 7.0.9 package carries:
+The published 7.1.0 package carries:
 
 - manifest schema 4;
 - runtime protocol 5;
 - native manifest contract 4;
-- provider runtime version `5.0.12`;
+- provider runtime version `5.1.0`;
 - one top-level closed `wire_contract` plus canonical
   `wire_contract_sha256`, bound into each artifact record; and
 - wire schema 12 with 12 logical actions and per-action timeout modes.
 
-Both macOS architectures carry the imported signed and notarized 5.0.12
+Both macOS architectures carry the imported signed and notarized 5.1.0
 artifact set. Wire schema 12 is unchanged.
 
 Production provider work uses admitted progress inactivity so active work is
