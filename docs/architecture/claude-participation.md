@@ -20,6 +20,13 @@ Set `explicit_target` to `claude` to select it. Automatic planning places
 Claude after the existing eligible routes for these actions. Live authentication
 and execution are checked separately for the selected route.
 
+On the signed 7.1.0 package, Claude passed one fresh case for each new
+action at each of three quality levels. Grok answered the same architecture
+cases and Gemini answered the same document cases. The first installed
+extraction reached the native subscription's five-hour limit. The release
+record distinguishes provider access at invocation from package installation.
+[Qualification and installed results](https://github.com/sumitake/agent-collab/issues/162)
+
 ## Provider and credential boundary
 
 The route uses the provider's own installed CLI. The package does not extract

@@ -17,7 +17,59 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.0.9
+## Current snapshot — v7.1.0
+
+The signed annotated v7.1.0 tag object `c10c6416260e8a556dc2480153eb7deb412bcd98` identifies public commit `214d490e744e8079d93590c93f2ca10ad19f0639`.
+The release was published on 2026-11-25 at 04:09:24 UTC. An independent
+rebuild from that commit matched all three downloaded assets byte for byte.
+[`v7.1.0` release](https://github.com/sumitake/agent-collab/releases/tag/v7.1.0)
+· [Release workflow](https://github.com/sumitake/agent-collab/actions/runs/45544463797)
+
+| Asset | Verified SHA-256 |
+| --- | --- |
+| `agent-collab.v7.1.0.plugin` | `7fbb93d1dc9a6de88982ed814cd0fbc459f1dde5ce80a36498660479b6d6dca5` |
+| `agent-collab.v7.1.0.plugin.sha256` | `73c8cdf13ce36b9b6718ff2cdd4b3796f6673ce07948b33c0397afcf26adaea6` |
+| `agent-collab-v7.1.0.spdx.json` | `314fcb40a66bb5c0b1009a67d997c63b855c34f78caa1a66c312638f409e6dcb` |
+
+**Signed runtime.** Runtime 5.1.0 ships for macOS ARM64 and Intel with
+manifest schema 4, protocol 5, native contract 4 and wire schema 12. The
+descriptor covers 12 logical actions. Gemini's frontier and Orchestrator
+roles resolve against Agy's current catalog at invocation. The installed
+reference documents the logical actions and OpenCode 2 host selection.
+[Distribution PR](https://github.com/sumitake/agent-collab/pull/243)
+· [Compiled changelog](https://github.com/sumitake/agent-collab/pull/244)
+
+**Staged execution.** Claude and its comparison providers passed nine
+matched cases each across three quality levels. Gemini completed 13 cases
+covering conceptual and repository architecture, general and frontend
+patch generation, and governance. The caller checked the repository reads,
+patches and governance response against the fixtures. Signed Intel OpenCode
+execution also passed under translation and on native hardware.
+
+**Installed execution.** All 184 release members matched four ARM installations
+(Claude Code, Codex, Antigravity and Grok) and the native Intel Codex installation.
+Fresh checks returned the expected fixture and dependency for Codex and Grok
+repository architecture, Gemini governance and repository review, and native
+Intel OpenCode Go architecture. Cleanup and package preservation were verified.
+The first installed Claude extraction encountered its native five-hour usage
+limit. The matched Claude qualification and subsequent installed observations
+are recorded on [issue #162](https://github.com/sumitake/agent-collab/issues/162).
+Existing desktop conversations were left running. Their skill catalogs can
+refresh when the host reloads.
+
+### v7.1.0 closeout determinations
+
+| Surface | Determination |
+| --- | --- |
+| Root README, handbook index, lifecycle, repository and release | **Updated** to identify the published version and signed runtime. |
+| Status and evidence, Claude participation | **Updated** with signed qualification, installation and bounded invocation results. |
+| Project estimation | **Updated** for the 2026-11-25 version-bound receipt, bootstrap calibration and pricing coverage. Numeric quotas remain unknown. |
+| Capabilities and workflows | **Updated** the maintenance reference and verified the released action table. |
+| System context and governance | **Verified current** against the caller authority and host boundaries. |
+| Package README, generated changelog | **Verified current at the signed tag** against the staged contract and compiled release notes. |
+| Earlier snapshots and source audit | **Historical** observations retain their dates and release identities. |
+
+## Historical snapshot — v7.0.9
 
 The [`v7.0.9` release](https://github.com/sumitake/agent-collab/releases/tag/v7.0.9)
 was published on 2026-10-23 at 06:48:00 UTC. The signed annotated v7.0.9 tag object `b591102eba6f2100c607f38395d1f4e9d14bb612` identifies public commit `404ba2b31421a44749a60f59e3d44f3f867318a6`. The
