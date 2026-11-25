@@ -71,9 +71,8 @@ tests, or user approval; “primary-executed” is not “unchecked.”
 Claude and Antigravity participation can use host-owned asynchronous transport
 after the exact target identity, family, session, and current readiness are
 observed through host tooling. The public coordinator neither reports async
-readiness nor sends async messages. Async coordination is separate from Claude's narrow managed
-`context.documents.intent` route, and an async reply is not independent
-governance merely because it arrived. [Claude participation](claude-participation.md)
+readiness nor sends async messages. Claude’s managed read-only actions use the official CLI. The authority of an
+asynchronous reply depends on verified reviewer identity, source, and substance. [Claude participation](claude-participation.md)
 explains the action-scoped boundary.
 
 ### Reproducible composition
