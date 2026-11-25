@@ -201,14 +201,14 @@ class ProtocolFivePublicContractTests(unittest.TestCase):
                 descriptor, expected_sha256=digest
             )
 
-    def test_distribution_metadata_is_version_7_0_9(self) -> None:
+    def test_distribution_metadata_is_version_7_1_0(self) -> None:
         for host in (".claude-plugin", ".codex-plugin"):
             value = json.loads((PLUGIN / host / "plugin.json").read_text())
-            self.assertEqual(value["version"], "7.0.9")
+            self.assertEqual(value["version"], "7.1.0")
         config = json.loads(
             (ROOT / "scripts" / "skill-build-config.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(config["agent-collab"]["skill_version"], "7.0.9")
+        self.assertEqual(config["agent-collab"]["skill_version"], "7.1.0")
 
     def test_routed_skills_publish_provider_neutral_quality_and_effort(self) -> None:
         build = load_module("protocol5_build_skills", ROOT / "scripts" / "build_skills.py")
