@@ -71,6 +71,24 @@ class RoutingRuntimeClientTests(unittest.TestCase):
         self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
         self.assertEqual(result.result, [])
 
+    def test_native_timeout_arrives_during_cleanup_reserve(self) -> None:
+        terminal = {
+            "frame_type": "terminal",
+            "dispatch_results": [{"work_unit_id": "unit-0", "execution_status": "timeout"}],
+        }
+        for renew in (False, True):
+            with self.subTest(renew=renew):
+                # After renewal, the terminal also falls beyond the original deadline.
+                mark = "time.sleep(0.7)\nos.write(int(fd), bytes([1]))\n" if renew else ""
+                result, calls = self._run_fixture(
+                    mark
+                    + "time.sleep(request['deadline_ms'] / 1000 + 0.5)\n"
+                    + f"print({json.dumps(terminal)!r}, flush=True)\n"
+                )
+                self.assertEqual(calls, 1)
+                self.assertEqual(result.status, self.client.RuntimeStatus.OK)
+                self.assertEqual(result.result, [terminal])
+
     def test_total_deadline_does_not_inherit_progress_channel(self) -> None:
         result, calls = self._timed_runtime(progress=True, action="action-1")
         self.assertEqual(calls, 1)
@@ -116,6 +134,19 @@ class RoutingRuntimeClientTests(unittest.TestCase):
         actions: tuple[str, ...] | None = None,
         early_content: bool = False,
     ):
+        return self._run_fixture(
+            ("print(json.dumps({'content': 'partial'}), flush=True)\n" if early_content else "")
+            + "for _ in range(30):\n"
+            + ("    if fd: os.write(int(fd), b'\\x01')\n" if progress else "")
+            + "    time.sleep(0.1)\n"
+            "print(json.dumps({'content': 'finished'}), flush=True)\n",
+            action=action,
+            actions=actions,
+        )
+
+    def _run_fixture(
+        self, body: str, *, action: str = "action-0", actions: tuple[str, ...] | None = None
+    ):
         descriptor, digest = _descriptor()
         wire = self.client.validate_wire_descriptor(descriptor, expected_sha256=digest)
         selected_actions = actions or (action,)
@@ -136,11 +167,7 @@ class RoutingRuntimeClientTests(unittest.TestCase):
                 f"#!{sys.executable}\nimport json, os, sys, time\n"
                 "request = json.load(sys.stdin)\n"
                 "fd = os.environ.get('AGENT_COLLAB_RUNTIME_PROGRESS_FD')\n"
-                + ("print(json.dumps({'content': 'partial'}), flush=True)\n" if early_content else "")
-                + "for _ in range(30):\n"
-                + ("    if fd: os.write(int(fd), b'\\x01')\n" if progress else "")
-                + "    time.sleep(0.1)\n"
-                "print(json.dumps({'content': 'finished'}), flush=True)\n",
+                + body,
                 encoding="utf-8",
             )
             executable.chmod(0o700)

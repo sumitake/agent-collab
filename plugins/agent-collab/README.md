@@ -6,7 +6,7 @@ they never choose a provider transport, model, binary, socket, lane, or
 lifecycle command. Provider final content is opaque to the runtime and is
 interpreted by the calling agent with ordinary reasoning.
 
-Package version: **7.1.0**
+Package version: **7.1.1**
 
 This package targets signed and notarized provider runtime `5.1.0` for macOS
 arm64 and x86_64, with manifest schema 4, runtime protocol 5, native contract 4,
@@ -245,7 +245,9 @@ for actual ordering. Choose quality and effort for the work, and supply
 Omitting `deadline_ms` uses the runtime's default bound. Production provider
 work uses `admitted_progress_inactivity` for every listed logical action, so
 admitted progress renews the inactivity lease and active work is not killed by
-a strict elapsed timer. Homogeneous `total_deadline` requests remain supported
+a strict elapsed timer. The client uses the full caller-selected interval to
+receive output. The native runtime's shorter interval leaves time to deliver
+its terminal record. Homogeneous `total_deadline` requests remain supported
 only as an explicit descriptor-compatibility mode; mixed timeout-mode envelopes
 are rejected before launch because one process cannot combine lifecycle
 contracts. Startup and cleanup remain bounded, and partial output is retained

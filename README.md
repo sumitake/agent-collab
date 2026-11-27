@@ -5,7 +5,7 @@ compatible hosts. The package pairs a routing-only public client with the
 co-packaged direct native runtime. Callers choose logical work; provider output
 remains opaque content for the calling agent to interpret.
 
-**agent-collab** (v7.1.0)
+**agent-collab** (v7.1.1)
 
 Current published release: **7.1.0**. The v7.1.0 closeout is recorded in the
 dated evidence below. The package carries signed and
@@ -23,7 +23,14 @@ machine-operational contract for the repository source. The dated
 records the completed publication and keeps repository, tag, release,
 installation, and readiness claims separate.
 
-## What's new - v7.1.0
+## What's new - v7.1.1
+
+The client uses the full requested inactivity window to receive the runtime's
+final record, including after a valid progress signal. A native timeout can
+now reach the caller during cleanup. Second-opinion guidance includes an
+example wait for reviews that may spend several minutes reasoning quietly.
+
+### Version 7.1.0
 
 The release adds Gemini conceptual and repository architecture,
 governance with a qualified frontier model, and general and frontend code
@@ -121,7 +128,7 @@ size-branded source or generated skill surface is supported.
 ## Runtime trust boundary
 
 The canonical workspace build owns the final binary and generated manifest.
-The published 7.1.0 package carries:
+The 7.1.1 package carries:
 
 - manifest schema 4;
 - runtime protocol 5;

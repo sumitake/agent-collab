@@ -89,6 +89,13 @@ Do not dump the artifact at {{ verifier_agent }} with a vague "thoughts?" — th
 
 ### 3. Call the panel — in parallel
 
+Choose an explicit inactivity window that fits the review. For a maximum-effort
+review that can spend several minutes reasoning quietly, one example is
+`"deadline_ms": 300000`. A shorter window can expire before the first answer
+delta. If the caller times out with zero records, report that observation.
+Identify a login or approval request only when native evidence shows one.
+A delivered native timeout still means the review failed.
+
 Send the **same** framed request (the four-section template below) to the
 required initial independent reviewers at once, not sequentially — the reads
 are independent, so issue them concurrently and collect all responses before
