@@ -126,12 +126,19 @@ The primary should always:
 
 ### Failure evidence
 
+For requests using an inactivity deadline, the client listens through the
+full requested interval, including after an admitted progress signal. The
+native runtime can use the reserved cleanup time to deliver its final record.
+Read the work unit's `execution_status`: a delivered native `timeout` means
+the review failed. An empty timeout alone cannot establish whether the native
+CLI was waiting for input.
+
 The package has no automatic local capture, GitHub filing, or scheduler plane.
 Preserve the typed coordinator response. Any later issue report is an explicit,
 separately authorized action and never grants governance authority or licenses
 replay of the provider request.
 
-`project-estimation` is offline and read-only by default. The packaged v7.1.0
+`project-estimation` is offline and read-only by default. The packaged v7.1.1
 source contains an explicit bootstrap prior: enhancement duration is
 descriptive, greenfield may return `no_compatible_prior`, and absent token
 evidence returns `unavailable_no_token_prior` rather than zero. Persist an
