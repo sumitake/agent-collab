@@ -164,7 +164,7 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
         self.assertLess(elapsed, 6.0)
         self.assertNotIn("invalid_final", result.error)
 
-    def test_outer_deadline_reserves_cleanup_time(self) -> None:
+    def test_inner_and_outer_deadlines_reserve_time_for_delivery(self) -> None:
         class Stream:
             def __init__(self) -> None:
                 self.closed = False
@@ -179,13 +179,6 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
                 self.stdin = Stream()
                 self.stdout = Stream()
                 self.stderr = Stream()
-
-        observed: dict[str, object] = {}
-
-        def collect(_process, request: bytes, deadline: float, **_kwargs):
-            observed["request"] = json.loads(request)
-            observed["remaining"] = deadline - time.monotonic()
-            return b"", b"", "timeout"
 
         resolution = self.client.RuntimeResolution(
             self.client.RuntimeStatus.OK,
@@ -205,19 +198,21 @@ class ProtocolFiveLifecycleTests(unittest.TestCase):
         ), mock.patch.object(
             self.client.subprocess, "Popen", return_value=Process()
         ), mock.patch.object(
-            self.client, "_collect_bounded", side_effect=collect
-        ), mock.patch.object(
+            self.client, "_collect_bounded", return_value=(b"", b"", "timeout")
+        ) as collect, mock.patch.object(
             self.client, "_terminate_and_reap", return_value=True
-        ):
-            result = self.client.invoke(envelope=self.request(5_000))
-        reserve_ms = int(self.client.PROCESS_CLEANUP_RESERVE_SECONDS * 1000)
-        inner_timeout = observed["request"]["deadline_ms"]
-        self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
-        self.assertGreater(inner_timeout, 5_000 - reserve_ms - 100)
-        self.assertLessEqual(inner_timeout, 5_000 - reserve_ms)
-        self.assertAlmostEqual(
-            inner_timeout / 1000, observed["remaining"], delta=0.02
-        )
+        ), mock.patch.object(self.client.time, "monotonic", return_value=100.0):
+            inner_seconds = 5.0 - self.client.PROCESS_CLEANUP_RESERVE_SECONDS
+            for dispatch in (True, False):
+                with self.subTest(dispatch=dispatch):
+                    request = self.request(5_000)
+                    request["dispatch_requested"] = dispatch
+                    result = self.client.invoke(envelope=request)
+                    _, sent, deadline = collect.call_args.args
+                    self.assertEqual(result.status, self.client.RuntimeStatus.TIMEOUT)
+                    self.assertEqual(json.loads(sent)["deadline_ms"], int(inner_seconds * 1000))
+                    self.assertEqual(deadline, 100.0 + (5.0 if dispatch else inner_seconds))
+                    self.assertEqual(collect.call_args.kwargs["stall_interval"], 5.0 if dispatch else None)
 
     def test_request_size_bound_prevents_launch(self) -> None:
         resolution = self.client.RuntimeResolution(

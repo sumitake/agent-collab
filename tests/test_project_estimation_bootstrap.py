@@ -158,9 +158,9 @@ class ProducerByteContractTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertTrue(any("canonical" in line or "inventory" in line for line in lines), lines)
 
-    def test_current_maintenance_is_admitted_for_version_7_1_0(self) -> None:
+    def test_current_maintenance_is_admitted_for_the_release_version(self) -> None:
         ok, lines = self.verifier.verify_maintenance(
-            ROOT, expected_version="7.1.0"
+            ROOT, expected_version="7.1.1"
         )
         self.assertTrue(ok, lines)
 

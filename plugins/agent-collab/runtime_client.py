@@ -1218,10 +1218,11 @@ def _call_runtime(*, envelope: object) -> RuntimeResult:
                 _close_fd(progress_writer)
                 progress_writer = None
             try:
+                # The shorter native interval leaves time to deliver its terminal record.
                 stdout, _stderr, terminal = _collect_bounded(
-                    process, request, runtime_deadline,
+                    process, request, deadline if admitted_progress else runtime_deadline,
                     progress_reader=progress_reader,
-                    stall_interval=(remaining_runtime_ms / 1000.0 if admitted_progress else None),
+                    stall_interval=(timeout_ms / 1000.0 if admitted_progress else None),
                 )
             except OSError:
                 terminal = "runtime_io_error"
