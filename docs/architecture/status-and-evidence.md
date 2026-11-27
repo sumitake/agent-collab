@@ -17,7 +17,50 @@ runtime. Each has a different evidence source.
 | Runtime readiness | Provider-free evidence that the selected package and managed boundary are callable for the reported contracts. | A guarantee that provider authentication, quota, or a future request will succeed. |
 | Invocation result | The typed outcome of one bounded request. | General availability, permission to retry with wider authority, or merge approval. |
 
-## Current snapshot — v7.1.0
+## Current snapshot — v7.1.1
+
+The signed annotated v7.1.1 tag object `9b17b061bfcabf44223170a38922f5978201a85c` identifies public commit `0042d4bb9731e9feed6416ea4465cc3617d13a12`.
+GitHub published the release at 2026-11-27T21:45:14Z. All three downloaded
+assets matched an independent build from that commit. The published package
+also matched the archive tested before publication.
+[`v7.1.1` release](https://github.com/sumitake/agent-collab/releases/tag/v7.1.1)
+· [Release workflow](https://github.com/sumitake/agent-collab/actions/runs/46071995924)
+
+| Published asset | SHA-256 |
+| --- | --- |
+| `agent-collab-v7.1.1.spdx.json` | `40e9f6117ea57d7d98a66865507a5e8d9546013157d005772d4d779267238529` |
+| `agent-collab.v7.1.1.plugin` | `5fd79279e834cb0eabf2f14851831d1b474f1a05c6b79ba9d6352a5385bdc1b1` |
+| `agent-collab.v7.1.1.plugin.sha256` | `637a85fcee2315f732e443f5e3430a14270d371cdacb449d7d057a7e5ae8b2f2` |
+
+The client now uses the full inactivity interval to collect a native final
+record, including after progress renews the interval. The two cases that
+lost the native timeout on 7.1.0 passed with the fix. A silent process still
+timed out with one invocation. The candidate passed 742 tests and contains
+the same two notarized runtime 5.1.0 bundles as the previous release.
+[Issue #246](https://github.com/sumitake/agent-collab/issues/246)
+· [Reviewed fix](https://github.com/sumitake/agent-collab/pull/247)
+· [Compiled changelog](https://github.com/sumitake/agent-collab/pull/248)
+
+**Activation.** All 184 released files matched in four Apple Silicon
+installations (Claude Code, Codex, Antigravity and Grok) and in Codex on
+native Intel. The 14 routing-client tests passed against the installed client
+on both architectures. Fresh Gemini repository reviews on Apple Silicon and
+OpenCode repository architecture requests on native Intel returned their
+fixture values from both staged and installed packages. The installed
+provider-free check reported 12 available actions. Existing conversations
+can retain a previously loaded skill catalog.
+
+### v7.1.1 closeout determinations
+
+| Surface | Determination |
+| --- | --- |
+| Root README, handbook index and release evidence | Updated with the signed release, archive and observed installations. |
+| Lifecycle and operations | Updated the interpretation of a delivered timeout and an empty timeout. |
+| Project estimation, capabilities and release procedure | Updated the version-bound maintenance reference and receipt date. |
+| Package README, generated skills and compiled changelog | Verified at the signed tag. |
+| System context, governance and Claude participation | Verified current. The dated 7.1.0 Claude qualification applies to the native bundle carried forward. |
+
+## Historical snapshot — v7.1.0
 
 The signed annotated v7.1.0 tag object `c10c6416260e8a556dc2480153eb7deb412bcd98` identifies public commit `214d490e744e8079d93590c93f2ca10ad19f0639`.
 The release was published on 2026-11-25 at 04:09:24 UTC. An independent

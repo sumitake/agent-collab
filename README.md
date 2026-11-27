@@ -7,13 +7,12 @@ remains opaque content for the calling agent to interpret.
 
 **agent-collab** (v7.1.1)
 
-Current published release: **7.1.0**. The v7.1.0 closeout is recorded in the
-dated evidence below. The package carries signed and
-notarized runtime 5.1.0 for macOS ARM64 and Intel. All 184 released files
-matched installations managed by Claude Code, Codex, Antigravity and Grok on
-Apple Silicon and by Codex on native Intel. The dated evidence records which
-providers answered fresh requests. Existing conversations can retain an
-earlier skill catalog. [Release](https://github.com/sumitake/agent-collab/releases/tag/v7.1.0)
+Current published release: **7.1.1**. The v7.1.1 closeout is recorded in the
+dated evidence. All 184 release files matched the Claude Code, Codex,
+Antigravity and Grok installations on Apple Silicon and Codex on native
+Intel. Fresh Gemini and OpenCode requests returned their expected fixture
+values through the installed package.
+[Release](https://github.com/sumitake/agent-collab/releases/tag/v7.1.1)
 · [Dated evidence](docs/architecture/status-and-evidence.md)
 
 The human-first [architecture handbook](docs/architecture/README.md) explains
@@ -29,19 +28,6 @@ The client uses the full requested inactivity window to receive the runtime's
 final record, including after a valid progress signal. A native timeout can
 now reach the caller during cleanup. Second-opinion guidance includes an
 example wait for reviews that may spend several minutes reasoning quietly.
-
-### Version 7.1.0
-
-The release adds Gemini conceptual and repository architecture,
-governance with a qualified frontier model, and general and frontend code
-generation with a Gemini Orchestrator. Agy chooses its native effort.
-The caller checks and applies proposed edits from a disposable checkout.
-Reviewer guidance asks the caller to weigh the failure a proposed safeguard
-would prevent against the failure paths the safeguard would add.
-
-Before publication, on the signed runtime, Claude passed conceptual architecture, document
-extraction, and document reasoning at economical, standard, and frontier
-quality. Its comparison providers passed the same nine fixtures.
 
 ## What ships
 
